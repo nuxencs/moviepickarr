@@ -16,6 +16,8 @@ function encodeRFC3986URIComponent(str: string): string {
     );
 }
 
+const baseURL = `${window.location.origin}`;
+
 export async function HttpClient<T = unknown>(
     endpoint: string,
     config: HttpConfig = {},
@@ -65,7 +67,7 @@ export async function HttpClient<T = unknown>(
         }
     }
 
-    const response = await window.fetch(endpoint, init);
+    const response = await window.fetch(`${baseURL}/${endpoint}`, init);
     const isJSON = response.headers
         .get("Content-Type")
         ?.includes("application/json");
@@ -131,17 +133,17 @@ const appClient = {
 
 export const APIClient = {
     users: {
-        getAll: () => appClient.Get<User[]>("http://localhost:3030/api/users/list"),
+        getAll: () => appClient.Get<User[]>("api/users/list"),
         create: (name: string) =>
-            appClient.Post<User>("http://localhost:3030/api/users/create", {
+            appClient.Post<User>("api/users/create", {
                 body: {name},
             }),
         delete: (userID: string) =>
-            appClient.Delete("http://localhost:3030/api/users/delete", {
+            appClient.Delete("api/users/delete", {
                 body: {userID},
             }),
         addMovie: (userID: string, title: string, link: string) =>
-            appClient.Post<Movie>("http://localhost:3030/api/users/movie/add", {
+            appClient.Post<Movie>("api/users/movie/add", {
                 body: {
                     userID,
                     title,
@@ -149,35 +151,35 @@ export const APIClient = {
                 },
             }),
         deleteMovie: (userID: string, movieID: string) =>
-            appClient.Delete("http://localhost:3030/api/users/movie/delete", {
+            appClient.Delete("api/users/movie/delete", {
                 body: {
                     userID,
                     movieID,
                 },
             }),
         moveMovie: (userID: string, movieID: string) =>
-            appClient.Post<Movie>("http://localhost:3030/api/users/movie/move", {
+            appClient.Post<Movie>("api/users/movie/move", {
                 body: {
                     userID,
                     movieID,
                 },
             }),
         getPool: (userID: string) =>
-            appClient.Get<Movie[]>("http://localhost:3030/api/users/pool", {
+            appClient.Get<Movie[]>("api/users/pool", {
                 body: {userID},
             }),
         getStash: (userID: string) =>
-            appClient.Get<Movie[]>("http://localhost:3030/api/users/stash", {
+            appClient.Get<Movie[]>("api/users/stash", {
                 body: {userID},
             }),
     },
     movies: {
-        getPooled: () => appClient.Get<Movie[]>("http://localhost:3030/api/movies/listpool"),
-        getRandom: () => appClient.Post<Movie>("http://localhost:3030/api/movies/random"),
-        getCurrent: () => appClient.Get<Movie>("http://localhost:3030/api/movies/current"),
+        getPooled: () => appClient.Get<Movie[]>("api/movies/listpool"),
+        getRandom: () => appClient.Post<Movie>("api/movies/random"),
+        getCurrent: () => appClient.Get<Movie>("api/movies/current"),
         getWatched: () =>
-            appClient.Get<Movie[]>("http://localhost:3030/api/movies/listwatched"),
+            appClient.Get<Movie[]>("api/movies/listwatched"),
         markWatched: () =>
-            appClient.Post<Movie[]>("http://localhost:3030/api/movies/markwatched"),
+            appClient.Post<Movie[]>("api/movies/markwatched"),
     },
 };

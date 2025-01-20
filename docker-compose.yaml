@@ -1,0 +1,14 @@
+services:
+  moviepackarr:
+    build: .
+    container_name: moviepackarr
+    image: moviepackarr
+    ports:
+      - "3030:3030"
+    environment:
+      PUID: 1000
+      PGID: 1000
+      UMASK: 002
+      TZ: Etc/UTC
+    volumes:
+      - ~/.config/moviepickarr:/app

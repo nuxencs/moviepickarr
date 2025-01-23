@@ -1,4 +1,3 @@
-// import '@/App.css'
 import {useEffect, useState} from "react";
 import UserManagement from "@/components/UserManagement";
 import {Movie, User as UserData} from "@/types/Response";

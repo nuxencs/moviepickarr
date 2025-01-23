@@ -16,7 +16,13 @@ function encodeRFC3986URIComponent(str: string): string {
     );
 }
 
-const baseURL = `${window.location.origin}`;
+function baseURL(): string {
+    if (import.meta.env.DEV) {
+        return "http://localhost:3030";
+    }
+
+    return window.location.origin;
+}
 
 export async function HttpClient<T = unknown>(
     endpoint: string,
@@ -67,7 +73,7 @@ export async function HttpClient<T = unknown>(
         }
     }
 
-    const response = await window.fetch(`${baseURL}/${endpoint}`, init);
+    const response = await window.fetch(`${baseURL()}/${endpoint}`, init);
     const isJSON = response.headers
         .get("Content-Type")
         ?.includes("application/json");

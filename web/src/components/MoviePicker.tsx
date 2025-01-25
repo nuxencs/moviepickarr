@@ -55,7 +55,7 @@ const MoviePicker: React.FC<MoviePickerProps> = ({
                                     <div
                                         className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
                                         <div className="flex items-center gap-2 overflow-hidden">
-                                            <Film className="w-4 h-4 flex-shrink-0"/>
+                                            <Film className="w-4 h-4 shrink-0"/>
                                             <span className="truncate">
                                                 {movie.title}
                                                 <span
@@ -101,7 +101,7 @@ const MoviePicker: React.FC<MoviePickerProps> = ({
                     {currentMovie ? (
                         <div className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
                             <div className="flex items-center gap-2 overflow-hidden">
-                                <Film className="w-4 h-4 flex-shrink-0"/>
+                                <Film className="w-4 h-4 shrink-0"/>
                                 <span className="truncate">
                                     {currentMovie.title}
                                     <span className="pl-2 text-gray-400">
@@ -156,7 +156,7 @@ const MoviePicker: React.FC<MoviePickerProps> = ({
                                             <div
                                                 className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
                                                 <div className="flex items-center gap-2 overflow-hidden">
-                                                    <Film className="w-4 h-4 flex-shrink-0"/>
+                                                    <Film className="w-4 h-4 shrink-0"/>
                                                     <div className="flex flex-col">
                                                         <span className="truncate">
                                                             {movie.title}

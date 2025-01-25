@@ -25,10 +25,10 @@ const MovieItem = ({movie, onDelete, onMove, moveIcon, disableMove}: {
 }) => (
     <div className="flex items-center justify-between py-1">
         <div className="flex items-center gap-2 overflow-hidden">
-            <Film className="w-4 h-4 flex-shrink-0"/>
+            <Film className="w-4 h-4 shrink-0"/>
             <span className="truncate">{movie.title}</span>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
             <Button
                 variant="ghost"
                 size="icon"

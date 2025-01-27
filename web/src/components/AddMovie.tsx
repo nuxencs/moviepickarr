@@ -1,60 +1,62 @@
-import React, {useState} from 'react';
+import {FormEvent, useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Plus} from 'lucide-react';
 import {toast} from '@/components/ui/toast';
 import {APIClient} from "@/api/APIClient";
-import {Movie} from "@/types/Response";
+import {useMutation, useQueryClient} from "@tanstack/react-query";
+import {MoviesKeys, UsersKeys} from "@/api/query_keys";
 
 interface AddMovieProps {
     userID: string;
-    onMovieAdded: (movie: Movie) => void;
 }
 
-const AddMovie: React.FC<AddMovieProps> = ({userID, onMovieAdded}) => {
+export function AddMovie({userID}: AddMovieProps) {
     const [title, setTitle] = useState('');
     const [link, setLink] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const queryClient = useQueryClient();
 
-        if (!title.trim() || !link.trim()) {
-            toast.error('Please fill in both title and link');
-            return;
-        }
-
-        setIsLoading(true);
-        const addedMovie = await APIClient.users.addMovie(userID, title, link);
-        if (addedMovie) {
-            onMovieAdded(addedMovie);
+    const addMutation = useMutation({
+        mutationFn: (e: FormEvent) => {
+            e.preventDefault()
+            return APIClient.users.addMovie(userID, title, link)
+        },
+        onSuccess: () => {
+            toast.success(`Movie ${title} added successfully!`);
             setTitle('')
             setLink('')
-            setIsLoading(false);
+            void queryClient.invalidateQueries({queryKey: UsersKeys.list()});
+            void queryClient.invalidateQueries({queryKey: MoviesKeys.listpool()});
+        },
+        onError: () => {
+            toast.error(`Error adding movie`);
+            setTitle('')
+            setLink('')
         }
-    };
+    })
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-2">
+        <form onSubmit={addMutation.mutate} className="space-y-2">
             <div className="flex gap-2">
                 <Input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Enter movie title"
-                    disabled={isLoading}
+                    disabled={addMutation.isPending}
                 />
                 <Input
                     type="url"
                     value={link}
                     onChange={(e) => setLink(e.target.value)}
                     placeholder="Enter movie link"
-                    disabled={isLoading}
+                    disabled={addMutation.isPending}
                 />
             </div>
             <Button
                 type="submit"
-                disabled={isLoading || (!title.trim() || !link.trim())}
+                disabled={addMutation.isPending || (!title.trim() || !link.trim())}
                 className="w-full"
             >
                 <Plus/>
@@ -62,6 +64,4 @@ const AddMovie: React.FC<AddMovieProps> = ({userID, onMovieAdded}) => {
             </Button>
         </form>
     );
-};
-
-export default AddMovie;
+}

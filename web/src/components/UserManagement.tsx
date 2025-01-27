@@ -1,39 +1,42 @@
-import React from "react";
+import {useState} from "react";
 import CreateUser from "./CreateUser";
-import UserMovies from "./UserMovies";
+import {UserMovies} from "./UserMovies";
 import {Trash2, User} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {ConfirmDialog} from "@/components/ui/confirm-dialog";
 import {AnimatedListItem} from "@/components/ui/animated-list";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {Movie, User as UserData} from "@/types/Response";
+import {User as UserData} from "@/types/Response";
+import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
+import {APIClient} from "@/api/APIClient";
+import {UsersGetAllQueryOptions} from "@/api/queries";
+import {MoviesKeys, UsersKeys} from "@/api/query_keys";
+import {toast} from "@/components/ui/toast";
 
-interface UserManagementProps {
-    users: UserData[];
-    userIDIsDeleting: string | null;
-    userToDelete: UserData | null;
-    onUserCreate: (user: UserData) => void;
-    onInitiateUserDelete: (user: UserData) => void;
-    onUserSetDeleting: (user: UserData | null) => void;
-    onUserDelete: () => void;
-    onMovieAdd: (movie: Movie) => void;
-    onMovieDelete: (userID: string, movieID: string) => void;
-    onMovieMove: (userID: string, movieID: string) => void;
-}
+export function Users() {
+    const queryClient = useQueryClient();
+    const [userToDelete, setUserToDelete] = useState<UserData | null>(null);
 
-const UserManagement: React.FC<UserManagementProps> = ({
-                                                           users,
-                                                           userIDIsDeleting,
-                                                           userToDelete,
-                                                           onUserCreate,
-                                                           onInitiateUserDelete,
-                                                           onUserSetDeleting,
-                                                           onUserDelete,
-                                                           onMovieAdd,
-                                                           onMovieDelete,
-                                                           onMovieMove,
+    const userQuery = useQuery(UsersGetAllQueryOptions());
 
-                                                       }) => {
+    const deleteMutation = useMutation({
+        mutationFn: (user: UserData) => APIClient.users.delete(user.userID),
+        onSuccess: () => {
+            toast.success(`User ${deleteMutation.variables?.name} deleted successfully!`);
+            void queryClient.invalidateQueries({queryKey: UsersKeys.list()});
+            void queryClient.invalidateQueries({queryKey: MoviesKeys.listpool()});
+        },
+        onError: () => {
+            toast.error("Error deleting user");
+        }
+    })
+
+    const onConfirm = () => {
+        if (userToDelete) {
+            deleteMutation.mutate(userToDelete)
+        }
+    }
+
     return (
         <div className="p-4">
             <Card className="w-full">
@@ -41,13 +44,13 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     <CardTitle>User Management</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <CreateUser onUserCreated={onUserCreate}/>
+                    <CreateUser/>
                 </CardContent>
             </Card>
 
             <div className="mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {users.map((user) => (
+                    {userQuery.data?.map((user) => (
                         <AnimatedListItem key={user.userID} id={user.userID}>
                             <Card>
                                 <CardHeader>
@@ -59,40 +62,30 @@ const UserManagement: React.FC<UserManagementProps> = ({
                                         <Button
                                             variant="destructive"
                                             size="icon"
-                                            onClick={() => onInitiateUserDelete(user)}
-                                            disabled={userIDIsDeleting === user.userID}
+                                            onClick={() => setUserToDelete(user)}
                                         >
                                             <Trash2/>
                                         </Button>
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <UserMovies
-                                        pooledMovies={user.currentPool}
-                                        stashedMovies={user.stash}
-                                        userID={user.userID}
-                                        onMovieDelete={(movieID: string) => onMovieDelete(user.userID, movieID)}
-                                        onMovieAdd={onMovieAdd}
-                                        onMovieMove={(movieID: string) => onMovieMove(user.userID, movieID)}
-                                    />
+                                    <UserMovies user={user}/>
                                 </CardContent>
                             </Card>
                         </AnimatedListItem>
                     ))}
                 </div>
+
+                <ConfirmDialog
+                    isOpen={!!userToDelete}
+                    onClose={() => setUserToDelete(null)}
+                    onConfirm={onConfirm}
+                    title="Delete User"
+                    description={`Are you sure you want to delete ${userToDelete?.name}? This action cannot be undone.`}
+                    confirmText="Delete"
+                    cancelText="Cancel"
+                />
             </div>
-
-            <ConfirmDialog
-                isOpen={!!userToDelete}
-                onClose={() => onUserSetDeleting(null)}
-                onConfirm={onUserDelete}
-                title="Delete User"
-                description={`Are you sure you want to delete ${userToDelete?.name}? This action cannot be undone.`}
-                confirmText="Delete"
-                cancelText="Cancel"
-            />
         </div>
-    );
-};
-
-export default UserManagement;
+    )
+}

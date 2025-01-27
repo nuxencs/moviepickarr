@@ -1,59 +1,50 @@
-import React, {useState} from "react";
+import React, {FormEvent, useState} from "react";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Plus} from "lucide-react";
 import {toast} from "@/components/ui/toast";
+import {useMutation, useQueryClient} from "@tanstack/react-query";
 import {APIClient} from "@/api/APIClient";
-import {User as UserData} from "@/types/Response";
+import {UsersKeys} from "@/api/query_keys";
 
-interface AddUserProps {
-    onUserCreated: (user: UserData) => void;
-}
-
-const CreateUser: React.FC<AddUserProps> = ({onUserCreated}) => {
+const CreateUser: React.FC = () => {
+    const queryClient = useQueryClient();
     const [username, setUsername] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
 
-    const createUser = async (e: React.FormEvent) => {
-        e.preventDefault();
-
-        if (!username.trim()) {
-            toast.error("Username is required");
-            return;
+    const createMutation = useMutation({
+        mutationFn: (e: FormEvent) => {
+            e.preventDefault();
+            return APIClient.users.create(username)
+        },
+        onSuccess: () => {
+            toast.success(`User ${username} created successfully!`);
+            setUsername('');
+            void queryClient.invalidateQueries({queryKey: UsersKeys.list()});
+        },
+        onError: () => {
+            toast.error("Error creating user");
+            setUsername('');
         }
-
-        setIsLoading(true);
-        const newUser = await APIClient.users.create(username);
-        if (newUser) {
-            setUsername("")
-            onUserCreated(newUser);
-            toast.success(`User ${username} added successfully`);
-        } else {
-            toast.error("Failed to create user");
-        }
-        setIsLoading(false);
-    };
+    })
 
     return (
-        <div className="flex gap-2">
+        <form className="flex gap-2" onSubmit={createMutation.mutate}>
             <Input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Enter username"
-                onKeyDown={(e: React.KeyboardEvent) => e.key === 'Enter' && createUser(e)}
-                disabled={isLoading}
+                disabled={createMutation.isPending}
                 required
             />
             <Button
                 type="submit"
-                onClick={createUser}
-                disabled={isLoading || username.length === 0}
+                disabled={createMutation.isPending || username.length === 0}
             >
                 <Plus/>
-                {isLoading ? 'Adding...' : 'Add User'}
+                {createMutation.isPending ? 'Adding...' : 'Add User'}
             </Button>
-        </div>
+        </form>
     );
 };
 

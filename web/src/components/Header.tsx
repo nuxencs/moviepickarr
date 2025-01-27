@@ -1,8 +1,7 @@
-import {CardTitle} from "@/components/ui/card.tsx";
-import {ModeToggle} from "@/components/ui/mode-toggle.tsx";
-import React from "react";
+import {CardTitle} from "@/components/ui/card";
+import {ModeToggle} from "@/components/ui/mode-toggle";
 
-const Header: React.FC = () => {
+export function Header() {
     return (
         <div className="mt-4">
             <CardTitle className="p-4 flex items-center justify-between text-5xl">
@@ -12,5 +11,3 @@ const Header: React.FC = () => {
         </div>
     )
 }
-
-export default Header;

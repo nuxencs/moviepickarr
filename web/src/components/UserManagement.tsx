@@ -17,7 +17,7 @@ export function Users() {
     const queryClient = useQueryClient();
     const [userToDelete, setUserToDelete] = useState<UserData | null>(null);
 
-    const userQuery = useQuery(UsersGetAllQueryOptions());
+    const {data: users} = useQuery(UsersGetAllQueryOptions());
 
     const deleteMutation = useMutation({
         mutationFn: (user: UserData) => APIClient.users.delete(user.userID),
@@ -50,7 +50,7 @@ export function Users() {
 
             <div className="mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {userQuery.data?.map((user) => (
+                    {users?.map((user) => (
                         <AnimatedListItem key={user.userID} id={user.userID}>
                             <Card>
                                 <CardHeader>

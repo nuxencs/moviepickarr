@@ -11,3 +11,8 @@ export const MoviesKeys = {
     current: () => [...MoviesKeys.all, "current"] as const,
     listwatched: () => [...MoviesKeys.all, "listwatched"] as const,
 }
+
+export const SettingsKeys = {
+    all: ["settings"] as const,
+    poolLock: () => [...SettingsKeys.all, "poolLock"] as const,
+}

@@ -1,13 +1,15 @@
-import React, {FormEvent, useState} from "react";
-import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Plus} from "lucide-react";
-import {toast} from "@/components/ui/toast";
-import {useMutation, useQueryClient} from "@tanstack/react-query";
-import {APIClient} from "@/api/APIClient";
-import {UsersKeys} from "@/api/query_keys";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from "lucide-react";
+import { FormEvent, useState } from "react";
 
-const CreateUser: React.FC = () => {
+import { APIClient } from "@/api/APIClient";
+import { UsersKeys } from "@/api/query_keys";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
+
+export function CreateUser() {
     const queryClient = useQueryClient();
     const [username, setUsername] = useState("");
 
@@ -19,7 +21,7 @@ const CreateUser: React.FC = () => {
         onSuccess: () => {
             toast.success(`User ${username} created successfully!`);
             setUsername('');
-            void queryClient.invalidateQueries({queryKey: UsersKeys.list()});
+            void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
         },
         onError: () => {
             toast.error("Error creating user");
@@ -41,11 +43,9 @@ const CreateUser: React.FC = () => {
                 type="submit"
                 disabled={createMutation.isPending || username.length === 0}
             >
-                <Plus/>
+                <PlusIcon />
                 {createMutation.isPending ? 'Adding...' : 'Add User'}
             </Button>
         </form>
     );
-};
-
-export default CreateUser;
+}

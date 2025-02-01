@@ -1,7 +1,7 @@
-import {toast as sonnerToast, Toaster as SonnerToaster} from 'sonner';
+import { toast as sonnerToast, Toaster as SonnerToaster } from 'sonner';
 
 export const Toaster = () => {
-    return <SonnerToaster position="bottom-right"/>;
+    return <SonnerToaster position="bottom-right" />;
 };
 
 export const toast = {

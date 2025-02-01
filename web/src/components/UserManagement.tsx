@@ -1,41 +1,81 @@
-import {useState} from "react";
-import CreateUser from "./CreateUser";
-import {UserMovies} from "./UserMovies";
-import {Trash2, User} from "lucide-react";
-import {Button} from "@/components/ui/button";
-import {ConfirmDialog} from "@/components/ui/confirm-dialog";
-import {AnimatedListItem} from "@/components/ui/animated-list";
-import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
-import {User as UserData} from "@/types/Response";
-import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
-import {APIClient} from "@/api/APIClient";
-import {UsersGetAllQueryOptions} from "@/api/queries";
-import {MoviesKeys, UsersKeys} from "@/api/query_keys";
-import {toast} from "@/components/ui/toast";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trash2Icon, UserIcon } from "lucide-react";
 
-export function Users() {
+import { APIClient } from "@/api/APIClient";
+import { UsersGetAllQueryOptions } from "@/api/queries";
+import { MoviesKeys, UsersKeys } from "@/api/query_keys";
+
+import { CreateUser } from "@/components/CreateUser";
+import { UserMovies } from "@/components/UserMovies";
+
+import { AnimatedListItem } from "@/components/ui/animated-list";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeletionDialog } from "@/components/ui/deletion-dialog";
+import { toast } from "@/components/ui/toast";
+
+import { useToggle } from "@/hooks/hooks";
+import { User } from "@/types/Response";
+
+interface UserItemProps {
+    user: User
+}
+
+function UserItem({ user }: UserItemProps) {
     const queryClient = useQueryClient();
-    const [userToDelete, setUserToDelete] = useState<UserData | null>(null);
-
-    const {data: users} = useQuery(UsersGetAllQueryOptions());
+    const [deleteModalIsOpen, toggleDeleteModal] = useToggle(false);
 
     const deleteMutation = useMutation({
-        mutationFn: (user: UserData) => APIClient.users.delete(user.userID),
+        mutationFn: (userID: string) => APIClient.users.delete(userID),
         onSuccess: () => {
-            toast.success(`User ${deleteMutation.variables?.name} deleted successfully!`);
-            void queryClient.invalidateQueries({queryKey: UsersKeys.list()});
-            void queryClient.invalidateQueries({queryKey: MoviesKeys.listpool()});
+            toast.success(`User ${user.name} deleted successfully!`);
+            void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
         },
         onError: () => {
             toast.error("Error deleting user");
         }
     })
 
-    const onConfirm = () => {
-        if (userToDelete) {
-            deleteMutation.mutate(userToDelete)
-        }
-    }
+    return (
+        <>
+            <DeletionDialog
+                isOpen={deleteModalIsOpen}
+                onClose={toggleDeleteModal}
+                onConfirm={() => deleteMutation.mutate(user.userID)}
+                title="Delete User"
+                description={`Are you sure you want to delete ${user.name}? This action cannot be undone.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+            />
+            <AnimatedListItem key={user.userID} id={user.userID}>
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <UserIcon className="w-5 h-5" />
+                                <span>{user.name}</span>
+                            </div>
+                            <Button
+                                variant="destructive"
+                                size="icon"
+                                onClick={toggleDeleteModal}
+                            >
+                                <Trash2Icon />
+                            </Button>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <UserMovies user={user} />
+                    </CardContent>
+                </Card>
+            </AnimatedListItem>
+        </>
+    )
+}
+
+export function UsersGrid() {
+    const { data: users } = useQuery(UsersGetAllQueryOptions());
 
     return (
         <div className="p-4">
@@ -44,47 +84,16 @@ export function Users() {
                     <CardTitle>User Management</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <CreateUser/>
+                    <CreateUser />
                 </CardContent>
             </Card>
 
             <div className="mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {users?.map((user) => (
-                        <AnimatedListItem key={user.userID} id={user.userID}>
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <User className="w-5 h-5"/>
-                                            <span>{user.name}</span>
-                                        </div>
-                                        <Button
-                                            variant="destructive"
-                                            size="icon"
-                                            onClick={() => setUserToDelete(user)}
-                                        >
-                                            <Trash2/>
-                                        </Button>
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <UserMovies user={user}/>
-                                </CardContent>
-                            </Card>
-                        </AnimatedListItem>
+                        <UserItem user={user} />
                     ))}
                 </div>
-
-                <ConfirmDialog
-                    isOpen={!!userToDelete}
-                    onClose={() => setUserToDelete(null)}
-                    onConfirm={onConfirm}
-                    title="Delete User"
-                    description={`Are you sure you want to delete ${userToDelete?.name}? This action cannot be undone.`}
-                    confirmText="Delete"
-                    cancelText="Cancel"
-                />
             </div>
         </div>
     )

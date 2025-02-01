@@ -1,17 +1,19 @@
-import {FormEvent, useState} from 'react';
-import {Button} from '@/components/ui/button';
-import {Input} from '@/components/ui/input';
-import {Plus} from 'lucide-react';
-import {toast} from '@/components/ui/toast';
-import {APIClient} from "@/api/APIClient";
-import {useMutation, useQueryClient} from "@tanstack/react-query";
-import {MoviesKeys, UsersKeys} from "@/api/query_keys";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from 'lucide-react';
+import { FormEvent, useState } from 'react';
+
+import { APIClient } from "@/api/APIClient";
+import { MoviesKeys, UsersKeys } from "@/api/query_keys";
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { toast } from '@/components/ui/toast';
 
 interface AddMovieProps {
     userID: string;
 }
 
-export function AddMovie({userID}: AddMovieProps) {
+export function AddMovie({ userID }: AddMovieProps) {
     const [title, setTitle] = useState('');
     const [link, setLink] = useState('');
 
@@ -26,8 +28,8 @@ export function AddMovie({userID}: AddMovieProps) {
             toast.success(`Movie ${title} added successfully!`);
             setTitle('')
             setLink('')
-            void queryClient.invalidateQueries({queryKey: UsersKeys.list()});
-            void queryClient.invalidateQueries({queryKey: MoviesKeys.listpool()});
+            void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
         },
         onError: () => {
             toast.error(`Error adding movie`);
@@ -59,7 +61,7 @@ export function AddMovie({userID}: AddMovieProps) {
                 disabled={addMutation.isPending || (!title.trim() || !link.trim())}
                 className="w-full"
             >
-                <Plus/>
+                <PlusIcon />
                 Add Movie
             </Button>
         </form>

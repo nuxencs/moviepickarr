@@ -15,3 +15,7 @@ export interface User {
     stash: Record<string, Movie>;
     createdAt: string;
 }
+
+export interface Settings {
+    poolLocked: boolean;
+}

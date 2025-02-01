@@ -1,4 +1,5 @@
-import React from 'react';
+import React from "react";
+
 import {
     AlertDialog,
     AlertDialogAction,
@@ -20,27 +21,27 @@ interface ConfirmDialogProps {
     cancelText?: string;
 }
 
-export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
-                                                                isOpen,
-                                                                onClose,
-                                                                onConfirm,
-                                                                title,
-                                                                description,
-                                                                confirmText = "Continue",
-                                                                cancelText = "Cancel"
-                                                            }) => {
+export const DeletionDialog: React.FC<ConfirmDialogProps> = ({
+    isOpen,
+    onClose,
+    onConfirm,
+    title,
+    description,
+    confirmText = "Continue",
+    cancelText = "Cancel",
+}) => {
     return (
         <AlertDialog open={isOpen} onOpenChange={onClose}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>{title}</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        {description}
-                    </AlertDialogDescription>
+                    <AlertDialogDescription>{description}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                     <AlertDialogCancel>{cancelText}</AlertDialogCancel>
-                    <AlertDialogAction onClick={onConfirm}>
+                    <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={onConfirm}>
                         {confirmText}
                     </AlertDialogAction>
                 </AlertDialogFooter>

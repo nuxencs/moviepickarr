@@ -1,6 +1,7 @@
-import {queryOptions} from "@tanstack/react-query";
-import {MoviesKeys, UsersKeys} from "@/api/query_keys";
-import {APIClient} from "@/api/APIClient.ts";
+import { queryOptions } from "@tanstack/react-query";
+
+import { APIClient } from "@/api/APIClient";
+import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 
 export const UsersGetAllQueryOptions = () =>
     queryOptions({
@@ -41,5 +42,12 @@ export const MoviesGetWatchedQueryOptions = () =>
     queryOptions({
         queryKey: MoviesKeys.listwatched(),
         queryFn: () => APIClient.movies.getWatched(),
+        refetchOnWindowFocus: false
+    })
+
+export const SettingsGetPoolLockQueryOptions = () =>
+    queryOptions({
+        queryKey: SettingsKeys.poolLock(),
+        queryFn: () => APIClient.settings.getLock(),
         refetchOnWindowFocus: false
     })

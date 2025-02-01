@@ -35,10 +35,16 @@ var buckets = struct {
 	users         string
 	watchedMovies string
 	nextToWatch   string
+	settings      string
 }{
 	users:         "users",
 	watchedMovies: "watched_movies",
 	nextToWatch:   "next_to_watch",
+	settings:      "settings",
+}
+
+type Settings struct {
+	PoolLocked bool `json:"poolLocked"`
 }
 
 type Response struct {
@@ -85,7 +91,24 @@ func New() (*Data, error) {
 			return err
 		}
 		_, err = tx.CreateBucketIfNotExists([]byte(buckets.nextToWatch))
-		return err
+		if err != nil {
+			return err
+		}
+		b, err := tx.CreateBucketIfNotExists([]byte(buckets.settings))
+		if err != nil {
+			return err
+		}
+
+		// Initialize settings if they don't exist
+		if b.Get([]byte("global")) == nil {
+			settings := Settings{PoolLocked: false}
+			encoded, err := json.Marshal(settings)
+			if err != nil {
+				return err
+			}
+			return b.Put([]byte("global"), encoded)
+		}
+		return nil
 	})
 
 	if err != nil {
@@ -136,6 +159,19 @@ func (d *Data) getUser(userID string) (User, error) {
 	})
 
 	return user, err
+}
+
+func (d *Data) getSettings() (Settings, error) {
+	var settings Settings
+	err := d.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(buckets.settings))
+		data := b.Get([]byte("global"))
+		if data == nil {
+			return fiber.NewError(fiber.StatusNotFound, "Settings not found")
+		}
+		return json.Unmarshal(data, &settings)
+	})
+	return settings, err
 }
 
 func (d *Data) handleGetUsers(c *fiber.Ctx) error {
@@ -271,6 +307,42 @@ func (d *Data) handleDeleteUser(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusNoContent).JSON(nil)
 }
 
+func (d *Data) handleTogglePoolLock(c *fiber.Ctx) error {
+	type request struct {
+		Lock bool `json:"lock"`
+	}
+	var body request
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(nil)
+	}
+
+	var settings Settings
+	err := d.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(buckets.settings))
+		settings.PoolLocked = body.Lock
+		encoded, err := json.Marshal(settings)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("global"), encoded)
+	})
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(settings)
+}
+
+func (d *Data) handleGetPoolLock(c *fiber.Ctx) error {
+	settings, err := d.getSettings()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(settings.PoolLocked)
+}
+
 func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 	type request struct {
 		UserID string `json:"userID"`
@@ -308,6 +380,11 @@ func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 		AddedByName: user.Name,
 	}
 
+	settings, err := d.getSettings()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
 	err = d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(buckets.users))
 		data := b.Get([]byte(body.UserID))
@@ -320,7 +397,8 @@ func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 			return err
 		}
 
-		if len(user.CurrentPool) >= MaxPoolSize {
+		// If pool is locked or pool is full, add to stash
+		if settings.PoolLocked || len(user.CurrentPool) >= MaxPoolSize {
 			user.Stash[movie.ID] = movie
 		} else {
 			user.CurrentPool[movie.ID] = movie
@@ -534,6 +612,15 @@ func (d *Data) handleGetStash(c *fiber.Ctx) error {
 }
 
 func (d *Data) handleMove(c *fiber.Ctx) error {
+	settings, err := d.getSettings()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	if settings.PoolLocked {
+		return c.Status(fiber.StatusForbidden).JSON(nil)
+	}
+
 	type request struct {
 		UserID  string `json:"userID"`
 		MovieID string `json:"movieID"`
@@ -556,7 +643,7 @@ func (d *Data) handleMove(c *fiber.Ctx) error {
 	}
 
 	var updatedUser User
-	err := d.db.Update(func(tx *bolt.Tx) error {
+	err = d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(buckets.users))
 		data := b.Get([]byte(body.UserID))
 		if data == nil {
@@ -864,6 +951,7 @@ func main() {
 	api := app.Group("/api")
 	usersAPI := api.Group("/users")
 	moviesAPI := api.Group("/movies")
+	settingsAPI := api.Group("/settings")
 
 	usersAPI.Get("/list", data.handleGetUsers)
 	usersAPI.Post("/create", data.handleCreateUser)
@@ -879,6 +967,9 @@ func main() {
 	moviesAPI.Get("/current", data.handleGetCurrentMovie)
 	moviesAPI.Get("/listwatched", data.handleGetWatchedMovies)
 	moviesAPI.Post("/markwatched", data.handleWatchMovie)
+
+	settingsAPI.Get("/getlock", data.handleGetPoolLock)
+	settingsAPI.Post("/togglelock", data.handleTogglePoolLock)
 
 	log.Fatal(app.Listen(ServerPort))
 }

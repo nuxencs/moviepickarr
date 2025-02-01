@@ -1,4 +1,4 @@
-import {Movie, User} from "@/types/Response.ts";
+import { Movie, Settings, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
@@ -30,7 +30,7 @@ export async function HttpClient<T = unknown>(
 ): Promise<T> {
     const init: RequestInit = {
         method: config.method,
-        headers: {Accept: "*/*", "x-requested-with": "XMLHttpRequest"},
+        headers: { Accept: "*/*", "x-requested-with": "XMLHttpRequest" },
         credentials: "include",
     };
 
@@ -142,11 +142,11 @@ export const APIClient = {
         getAll: () => appClient.Get<User[]>("api/users/list"),
         create: (name: string) =>
             appClient.Post<User>("api/users/create", {
-                body: {name},
+                body: { name },
             }),
         delete: (userID: string) =>
             appClient.Delete("api/users/delete", {
-                body: {userID},
+                body: { userID },
             }),
         addMovie: (userID: string, title: string, link: string) =>
             appClient.Post<Movie>("api/users/movie/add", {
@@ -172,11 +172,11 @@ export const APIClient = {
             }),
         getPool: (userID: string) =>
             appClient.Get<Movie[]>("api/users/pool", {
-                body: {userID},
+                body: { userID },
             }),
         getStash: (userID: string) =>
             appClient.Get<Movie[]>("api/users/stash", {
-                body: {userID},
+                body: { userID },
             }),
     },
     movies: {
@@ -188,4 +188,12 @@ export const APIClient = {
         markWatched: () =>
             appClient.Post<Movie[]>("api/movies/markwatched"),
     },
+    settings: {
+        toggleLock: (lock: boolean) =>
+            appClient.Post<Settings>("api/settings/togglelock", {
+                body: { lock },
+            }),
+        getLock: () =>
+            appClient.Get<boolean>("api/settings/getlock"),
+    }
 };

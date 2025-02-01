@@ -1,30 +1,38 @@
-import {useState} from 'react';
-import {Button} from '@/components/ui/button';
-import {Eye, Film, Link, Search, Shuffle} from 'lucide-react';
-import {Input} from '@/components/ui/input';
-import {AnimatedListItem} from '@/components/ui/animated-list';
-import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
-import {ScrollArea} from "@/components/ui/scroll-area";
-import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
-import {MoviesGetCurrentQueryOptions, MoviesGetPoolQueryOptions, MoviesGetWatchedQueryOptions} from "@/api/queries";
-import {APIClient} from "@/api/APIClient";
-import {toast} from "@/components/ui/toast";
-import {MoviesKeys, UsersKeys} from "@/api/query_keys";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { EyeIcon, FilmIcon, LinkIcon, LockIcon, LockOpenIcon, SearchIcon, ShuffleIcon } from 'lucide-react';
+import { useState } from 'react';
+
+import { APIClient } from "@/api/APIClient";
+import {
+    MoviesGetCurrentQueryOptions,
+    MoviesGetPoolQueryOptions,
+    MoviesGetWatchedQueryOptions,
+    SettingsGetPoolLockQueryOptions
+} from "@/api/queries";
+import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
+
+import { AnimatedListItem } from '@/components/ui/animated-list';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "@/components/ui/toast";
 
 export function MoviePicker() {
     const queryClient = useQueryClient();
 
-    const {data: pooledMovies} = useQuery(MoviesGetPoolQueryOptions())
-    const {data: currentMovie} = useQuery(MoviesGetCurrentQueryOptions())
-    const {data: watchedMovies} = useQuery(MoviesGetWatchedQueryOptions())
+    const { data: pooledMovies } = useQuery(MoviesGetPoolQueryOptions())
+    const { data: currentMovie } = useQuery(MoviesGetCurrentQueryOptions())
+    const { data: watchedMovies } = useQuery(MoviesGetWatchedQueryOptions())
+    const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions())
 
     const pickMutation = useMutation({
         mutationFn: () => APIClient.movies.getRandom(),
         onSuccess: () => {
             toast.success('Movie picked successfully!');
-            void queryClient.invalidateQueries({queryKey: UsersKeys.list()});
-            void queryClient.invalidateQueries({queryKey: MoviesKeys.listpool()});
-            void queryClient.invalidateQueries({queryKey: MoviesKeys.current()});
+            void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
         },
         onError: () => {
             toast.error('Failed to pick a random movie')
@@ -35,11 +43,23 @@ export function MoviePicker() {
         mutationFn: () => APIClient.movies.markWatched(),
         onSuccess: () => {
             toast.success('Movie marked as watched!');
-            void queryClient.invalidateQueries({queryKey: MoviesKeys.current()});
-            void queryClient.invalidateQueries({queryKey: MoviesKeys.listwatched()});
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
         },
         onError: () => {
             toast.error('Failed to mark movie as watched')
+        }
+    })
+
+    const lockMutation = useMutation({
+        mutationFn: () => {
+            return APIClient.settings.toggleLock(!isPoolLocked)
+        },
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: SettingsKeys.poolLock() });
+        },
+        onError: () => {
+            toast.error(`Error toggling pool lock`);
         }
     })
 
@@ -57,13 +77,31 @@ export function MoviePicker() {
                 <CardHeader>
                     <CardTitle className="flex items-center justify-between">
                         <span>Pooled Movies ({pooledMovies?.length})</span>
-                        <Button
-                            onClick={() => pickMutation.mutate()}
-                            disabled={pickMutation.isPending || pooledMovies?.length === 0 || currentMovie !== null}
-                        >
-                            <Shuffle className="mr-2"/>
-                            Pick Random Movie
-                        </Button>
+                        <div className="flex items-center space-x-2">
+                            <Button
+                                onClick={() => lockMutation.mutate()}
+                                disabled={lockMutation.isPending}
+                            >
+                                {isPoolLocked ? (
+                                    <>
+                                        <LockOpenIcon />
+                                        Unlock Pool
+                                    </>
+                                ) : (
+                                    <>
+                                        <LockIcon />
+                                        Lock Pool
+                                    </>
+                                )}
+                            </Button>
+                            <Button
+                                onClick={() => pickMutation.mutate()}
+                                disabled={pickMutation.isPending || pooledMovies?.length === 0 || currentMovie !== null}
+                            >
+                                <ShuffleIcon className="mr-2" />
+                                Pick Random Movie
+                            </Button>
+                        </div>
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -74,7 +112,7 @@ export function MoviePicker() {
                                     <div
                                         className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
                                         <div className="flex items-center gap-2 overflow-hidden">
-                                            <Film className="w-4 h-4 shrink-0"/>
+                                            <FilmIcon className="w-4 h-4 shrink-0" />
                                             <span className="truncate">
                                                 {movie.title}
                                                 <span
@@ -89,7 +127,7 @@ export function MoviePicker() {
                                             asChild
                                         >
                                             <a href={movie.link} target="_blank" rel="noopener noreferrer">
-                                                <Link/>
+                                                <LinkIcon />
                                             </a>
                                         </Button>
                                     </div>
@@ -111,7 +149,7 @@ export function MoviePicker() {
                             onClick={() => watchMutation.mutate()}
                             disabled={watchMutation.isPending || !currentMovie}
                         >
-                            <Eye className="w-4 h-4 mr-2"/>
+                            <EyeIcon className="w-4 h-4 mr-2" />
                             Mark as Watched
                         </Button>
                     </CardTitle>
@@ -120,7 +158,7 @@ export function MoviePicker() {
                     {currentMovie ? (
                         <div className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
                             <div className="flex items-center gap-2 overflow-hidden">
-                                <Film className="w-4 h-4 shrink-0"/>
+                                <FilmIcon className="w-4 h-4 shrink-0" />
                                 <span className="truncate">
                                     {currentMovie.title}
                                     <span className="pl-2 text-gray-400">
@@ -135,7 +173,7 @@ export function MoviePicker() {
                                 asChild
                             >
                                 <a href={currentMovie.link} target="_blank" rel="noopener noreferrer">
-                                    <Link className="w-4 h-4"/>
+                                    <LinkIcon className="w-4 h-4" />
                                 </a>
                             </Button>
                         </div>
@@ -156,7 +194,7 @@ export function MoviePicker() {
                             )}
                         </span>
                         <div className="flex items-center space-x-2">
-                            <Search className="w-4 h-4 text-gray-500"/>
+                            <SearchIcon className="w-4 h-4 text-gray-400" />
                             <Input
                                 placeholder="Search by title or user..."
                                 value={searchTerm}
@@ -171,36 +209,36 @@ export function MoviePicker() {
                         <ScrollArea className="h-96 rounded-md">
                             <div className="grid gap-2 pr-4">
                                 {filteredWatchedMovies && filteredWatchedMovies.map((movie) => (
-                                        <AnimatedListItem key={movie.movieID} id={movie.movieID}>
-                                            <div
-                                                className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
-                                                <div className="flex items-center gap-2 overflow-hidden">
-                                                    <Film className="w-4 h-4 shrink-0"/>
-                                                    <div className="flex flex-col">
-                                                        <span className="truncate">
-                                                            {movie.title}
-                                                            <span
-                                                                className="pl-2 text-gray-400">({movie.addedByName})
-                                                            </span>
+                                    <AnimatedListItem key={movie.movieID} id={movie.movieID}>
+                                        <div
+                                            className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
+                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                <FilmIcon className="w-4 h-4 shrink-0" />
+                                                <div className="flex flex-col">
+                                                    <span className="truncate">
+                                                        {movie.title}
+                                                        <span
+                                                            className="pl-2 text-gray-400">({movie.addedByName})
                                                         </span>
-                                                        <span className="text-sm text-gray-500">
-                                                Watched on: {new Date(movie.watchedAt!).toLocaleDateString()}
-                                                        </span>
-                                                    </div>
+                                                    </span>
+                                                    <span className="text-sm text-gray-500">
+                                                        Watched on: {new Date(movie.watchedAt!).toLocaleDateString()}
+                                                    </span>
                                                 </div>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="w-8 h-8"
-                                                    asChild
-                                                >
-                                                    <a href={movie.link} target="_blank" rel="noopener noreferrer">
-                                                        <Link className="w-4 h-4"/>
-                                                    </a>
-                                                </Button>
                                             </div>
-                                        </AnimatedListItem>
-                                    )
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="w-8 h-8"
+                                                asChild
+                                            >
+                                                <a href={movie.link} target="_blank" rel="noopener noreferrer">
+                                                    <LinkIcon className="w-4 h-4" />
+                                                </a>
+                                            </Button>
+                                        </div>
+                                    </AnimatedListItem>
+                                )
                                 )}
                             </div>
                         </ScrollArea>

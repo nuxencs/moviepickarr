@@ -59,7 +59,7 @@ export function MoviePicker() {
             void queryClient.invalidateQueries({ queryKey: SettingsKeys.poolLock() });
         },
         onError: () => {
-            toast.error(`Error toggling pool lock`);
+            toast.error(`Failed to toggle the pool lock`);
         }
     })
 
@@ -115,8 +115,8 @@ export function MoviePicker() {
                                             <FilmIcon className="w-4 h-4 shrink-0" />
                                             <span className="truncate">
                                                 {movie.title}
-                                                <span
-                                                    className="pl-2 text-gray-400">({movie.addedByName})
+                                                <span className="pl-2 text-gray-400">
+                                                    ({movie.addedByName})
                                                 </span>
                                             </span>
                                         </div>
@@ -149,7 +149,7 @@ export function MoviePicker() {
                             onClick={() => watchMutation.mutate()}
                             disabled={watchMutation.isPending || !currentMovie}
                         >
-                            <EyeIcon className="w-4 h-4 mr-2" />
+                            <EyeIcon className="mr-2" />
                             Mark as Watched
                         </Button>
                     </CardTitle>
@@ -173,7 +173,7 @@ export function MoviePicker() {
                                 asChild
                             >
                                 <a href={currentMovie.link} target="_blank" rel="noopener noreferrer">
-                                    <LinkIcon className="w-4 h-4" />
+                                    <LinkIcon />
                                 </a>
                             </Button>
                         </div>
@@ -193,8 +193,8 @@ export function MoviePicker() {
                                 <span> ({watchedMovies?.length})</span>
                             )}
                         </span>
-                        <div className="flex items-center space-x-2">
-                            <SearchIcon className="w-4 h-4 text-gray-400" />
+                        <div className="flex items-center space-x-4">
+                            <SearchIcon className="w-5 h-5 text-gray-400" />
                             <Input
                                 placeholder="Search by title or user..."
                                 value={searchTerm}
@@ -238,8 +238,7 @@ export function MoviePicker() {
                                             </Button>
                                         </div>
                                     </AnimatedListItem>
-                                )
-                                )}
+                                ))}
                             </div>
                         </ScrollArea>
                     ) : (

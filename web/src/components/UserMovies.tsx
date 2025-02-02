@@ -26,9 +26,12 @@ interface MovieItemProps {
     movie: Movie;
     moveIcon: React.ReactNode;
     disableMove?: boolean;
+    disableDelete?: boolean;
 }
 
 export function UserMovies({ user }: UserMoviesProps) {
+    const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions())
+
     const isPoolFull = Object.keys(user.currentPool).length >= 3;
 
     return (
@@ -49,7 +52,9 @@ export function UserMovies({ user }: UserMoviesProps) {
                                     <MovieItem
                                         user={user}
                                         movie={movie}
-                                        moveIcon={<MoveDownIcon className="w-4 h-4" />}
+                                        moveIcon={<MoveDownIcon />}
+                                        disableMove={isPoolLocked}
+                                        disableDelete={isPoolLocked}
                                     />
                                 </AnimatedListItem>
                             ))
@@ -74,8 +79,8 @@ export function UserMovies({ user }: UserMoviesProps) {
                                     <MovieItem
                                         user={user}
                                         movie={movie}
-                                        moveIcon={<MoveUpIcon className="w-4 h-4" />}
-                                        disableMove={isPoolFull}
+                                        moveIcon={<MoveUpIcon />}
+                                        disableMove={isPoolLocked || isPoolFull}
                                     />
                                 </AnimatedListItem>
                             ))
@@ -89,11 +94,9 @@ export function UserMovies({ user }: UserMoviesProps) {
     );
 }
 
-function MovieItem({ user, movie, moveIcon, disableMove }: MovieItemProps) {
+function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieItemProps) {
     const queryClient = useQueryClient();
     const [deleteModalIsOpen, toggleDeleteModal] = useToggle(false);
-
-    const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions())
 
     const deleteMutation = useMutation({
         mutationFn: () => APIClient.users.deleteMovie(user.userID, movie.movieID),
@@ -143,7 +146,7 @@ function MovieItem({ user, movie, moveIcon, disableMove }: MovieItemProps) {
                         asChild
                     >
                         <a href={movie.link} target="_blank" rel="noopener noreferrer">
-                            <LinkIcon className="w-4 h-4" />
+                            <LinkIcon />
                         </a>
                     </Button>
                     <Button
@@ -151,18 +154,18 @@ function MovieItem({ user, movie, moveIcon, disableMove }: MovieItemProps) {
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => moveMutation.mutate()}
-                        disabled={disableMove || isPoolLocked}
+                        disabled={disableMove}
                     >
                         {moveIcon}
                     </Button>
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-8 w-8 hover:bg-destructive"
                         onClick={toggleDeleteModal}
-                        disabled={isPoolLocked}
+                        disabled={disableDelete}
                     >
-                        <Trash2Icon className="w-4 h-4" />
+                        <Trash2Icon />
                     </Button>
                 </div>
             </div>

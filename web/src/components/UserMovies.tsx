@@ -7,7 +7,6 @@ import { SettingsGetPoolLockQueryOptions } from "@/api/queries";
 import { MoviesKeys, UsersKeys } from "@/api/query_keys";
 
 import { AddMovie } from '@/components/AddMovie';
-
 import { AnimatedListItem } from '@/components/ui/animated-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -135,14 +134,14 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
 
             <div className="flex items-center justify-between py-1">
                 <div className="flex items-center gap-2 overflow-hidden">
-                    <FilmIcon className="w-4 h-4 shrink-0" />
+                    <FilmIcon className="size-4 shrink-0" />
                     <span className="truncate">{movie.title}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="size-8"
                         asChild
                     >
                         <a href={movie.link} target="_blank" rel="noopener noreferrer">
@@ -152,7 +151,7 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="size-8"
                         onClick={() => moveMutation.mutate()}
                         disabled={disableMove}
                     >
@@ -161,7 +160,7 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 hover:bg-destructive"
+                        className="size-8 hover:bg-destructive"
                         onClick={toggleDeleteModal}
                         disabled={disableDelete}
                     >

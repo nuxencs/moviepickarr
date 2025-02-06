@@ -6,13 +6,12 @@ import { UsersGetAllQueryOptions } from "@/api/queries";
 import { MoviesKeys, UsersKeys } from "@/api/query_keys";
 
 import { CreateUser } from "@/components/CreateUser";
-import { UserMovies } from "@/components/UserMovies";
-
 import { AnimatedListItem } from "@/components/ui/animated-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
 import { toast } from "@/components/ui/toast";
+import { UserMovies } from "@/components/UserMovies";
 
 import { useToggle } from "@/hooks/hooks";
 import { User } from "@/types/Response";
@@ -48,13 +47,12 @@ function UserItem({ user }: UserItemProps) {
                 confirmText="Delete"
                 cancelText="Cancel"
             />
-            <AnimatedListItem key={user.userID} id={user.userID}>
+            <AnimatedListItem id={user.userID}>
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <UserIcon className="w-5 h-5" />
-                                <span>{user.name}</span>
+                                <UserIcon className="size-5" /> {user.name}
                             </div>
                             <Button
                                 variant="destructive"
@@ -91,7 +89,7 @@ export function UsersGrid() {
             <div className="mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {users?.map((user) => (
-                        <UserItem user={user} />
+                        <UserItem key={user.userID} user={user} />
                     ))}
                 </div>
             </div>

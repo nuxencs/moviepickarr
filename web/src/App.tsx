@@ -5,9 +5,8 @@ import { queryClient } from "@/api/QueryClient";
 import { Header } from "@/components/Header";
 import { MoviePicker } from "@/components/MoviePicker";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { UsersGrid } from "@/components/UserManagement";
-
 import { Toaster } from "@/components/ui/toast";
+import { UsersGrid } from "@/components/UserManagement";
 
 function App() {
     return (

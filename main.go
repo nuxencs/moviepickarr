@@ -110,7 +110,6 @@ func New() (*Data, error) {
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +325,6 @@ func (d *Data) handleTogglePoolLock(c *fiber.Ctx) error {
 		}
 		return b.Put([]byte("global"), encoded)
 	})
-
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
@@ -893,7 +891,6 @@ func (d *Data) handleGetWatchedMovies(c *fiber.Ctx) error {
 			return nil
 		})
 	})
-
 	if err != nil {
 		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
 			Success: false,

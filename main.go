@@ -900,7 +900,7 @@ func (d *Data) handleGetWatchedMovies(c *fiber.Ctx) error {
 	}
 
 	sort.Slice(movies, func(i, j int) bool {
-		return movies[i].AddedAt > movies[j].AddedAt
+		return movies[i].WatchedAt > movies[j].WatchedAt
 	})
 
 	/*return c.JSON(Response{

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +31,8 @@ const (
 	ServerPort  = ":3030"
 	DbFile      = "moviepickarr.db"
 )
+
+var imdbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
 
 var buckets = struct {
 	users         string
@@ -119,6 +122,24 @@ func New() (*Data, error) {
 
 func sanitizeInput(input string) string {
 	return strings.TrimSpace(input)
+}
+
+func sanitizeLink(link string) string {
+	link = strings.TrimSpace(link)
+
+	// Check if it's an IMDb link
+	if strings.Contains(link, "imdb.com") {
+		// Extract the title ID (tt followed by numbers)
+		match := imdbIDRegex.FindString(link)
+
+		if match != "" {
+			// Construct clean IMDb link
+			return "https://www.imdb.com/title/" + match + "/"
+		}
+	}
+
+	// Return original link if not an IMDb link or if pattern not found
+	return link
 }
 
 func (d *Data) getPooledMovies() ([]Movie, error) {
@@ -372,7 +393,7 @@ func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 	movie := Movie{
 		ID:          uuid.New().String(),
 		Title:       sanitizeInput(body.Title),
-		Link:        sanitizeInput(body.Link),
+		Link:        sanitizeLink(body.Link),
 		AddedAt:     time.Now().Format(TimeFormat),
 		AddedByID:   body.UserID,
 		AddedByName: user.Name,

@@ -8,7 +8,7 @@ import {
     SearchIcon,
     ShuffleIcon,
 } from "lucide-react";
-import { useState } from "react";
+import {useMemo, useState} from "react";
 
 import { APIClient } from "@/api/APIClient";
 import {
@@ -75,10 +75,12 @@ export function MoviePicker() {
 
     const [searchTerm, setSearchTerm] = useState("");
 
-    const filteredWatchedMovies = watchedMovies?.filter(
-        (movie) =>
-            movie.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            movie.addedByName.toLowerCase().includes(searchTerm.toLowerCase()),
+    const filteredWatchedMovies = useMemo(() =>
+        watchedMovies?.filter(
+            (movie) =>
+                movie.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                movie.addedByName.toLowerCase().includes(searchTerm.toLowerCase())
+        ), [watchedMovies, searchTerm]
     );
     const isSearching = searchTerm.length > 0;
 

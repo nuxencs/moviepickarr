@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"embed"
 	"encoding/json"
 	"io/fs"
@@ -10,7 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,7 +48,9 @@ var buckets = struct {
 }
 
 type Settings struct {
-	PoolLocked bool `json:"poolLocked"`
+	PoolLocked     bool   `json:"poolLocked"`
+	NextPickerID   string `json:"nextPickerID"`
+	NextPickerName string `json:"nextPickerName"`
 }
 
 type Response struct {
@@ -104,7 +107,7 @@ func New() (*Data, error) {
 
 		// Initialize settings if they don't exist
 		if b.Get([]byte("global")) == nil {
-			settings := Settings{PoolLocked: false}
+			var settings Settings
 			encoded, err := json.Marshal(settings)
 			if err != nil {
 				return err
@@ -160,8 +163,8 @@ func (d *Data) getPooledMovies() ([]Movie, error) {
 		})
 	})
 
-	sort.Slice(movies, func(i, j int) bool {
-		return movies[i].AddedAt < movies[j].AddedAt
+	slices.SortFunc(movies, func(a, b Movie) int {
+		return strings.Compare(a.AddedAt, b.AddedAt)
 	})
 
 	return movies, err
@@ -194,6 +197,137 @@ func (d *Data) getSettings() (Settings, error) {
 	return settings, err
 }
 
+func (d *Data) initNextPicker() error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		// Get current settings
+		settingsB := tx.Bucket([]byte(buckets.settings))
+		settings, err := d.getSettings()
+		if err != nil {
+			return err
+		}
+
+		// Only initialize if NextPickerID is empty
+		if settings.NextPickerID != "" {
+			return nil
+		}
+
+		// Get all users
+		usersB := tx.Bucket([]byte(buckets.users))
+		var users []User
+		err = usersB.ForEach(func(k, v []byte) error {
+			var user User
+			if err := json.Unmarshal(v, &user); err != nil {
+				return err
+			}
+			users = append(users, user)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		if len(users) == 0 {
+			return nil
+		}
+
+		slices.SortFunc(users, func(a, b User) int {
+			return cmp.Compare(a.CreatedAt, b.CreatedAt)
+		})
+
+		// Initialize with first user
+		settings.NextPickerID = users[0].ID
+		settings.NextPickerName = users[0].Name
+
+		encoded, err := json.Marshal(settings)
+		if err != nil {
+			return err
+		}
+
+		return settingsB.Put([]byte("global"), encoded)
+	})
+}
+
+func (d *Data) advanceNextPicker() error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		// Get all users and count pooled movies
+		usersB := tx.Bucket([]byte(buckets.users))
+		var users []User
+		pooledMoviesCount := 0
+
+		err := usersB.ForEach(func(k, v []byte) error {
+			var user User
+			if err := json.Unmarshal(v, &user); err != nil {
+				return err
+			}
+
+			users = append(users, user)
+			pooledMoviesCount += len(user.CurrentPool)
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		if len(users) == 0 {
+			return nil
+		}
+
+		// Don't advance picker if no movies are left in the pool (last movie was just picked)
+		if pooledMoviesCount == 0 {
+			return nil
+		}
+
+		if len(users) == 1 {
+			return nil // Only one user, no need to advance
+		}
+
+		slices.SortFunc(users, func(a, b User) int {
+			return cmp.Compare(a.CreatedAt, b.CreatedAt)
+		})
+
+		// Get current settings
+		settingsB := tx.Bucket([]byte(buckets.settings))
+		var settings Settings
+		data := settingsB.Get([]byte("global"))
+		if data == nil {
+			return fiber.NewError(fiber.StatusNotFound, "Settings not found")
+		}
+
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return err
+		}
+
+		// Find current picker and advance to next
+		currentIndex := -1
+		for i, user := range users {
+			if user.ID == settings.NextPickerID {
+				currentIndex = i
+				break
+			}
+		}
+
+		var nextIndex int
+		if currentIndex == -1 {
+			// Current picker not found, start from beginning
+			nextIndex = 0
+		} else {
+			// Advance to next user (wrap around if necessary)
+			nextIndex = (currentIndex + 1) % len(users)
+		}
+
+		// Update settings with next picker
+		settings.NextPickerID = users[nextIndex].ID
+		settings.NextPickerName = users[nextIndex].Name
+
+		encoded, err := json.Marshal(settings)
+		if err != nil {
+			return err
+		}
+		return settingsB.Put([]byte("global"), encoded)
+	})
+}
+
 func (d *Data) handleGetUsers(c *fiber.Ctx) error {
 	users := make([]User, 0)
 
@@ -216,8 +350,8 @@ func (d *Data) handleGetUsers(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	sort.Slice(users, func(i, j int) bool {
-		return users[i].CreatedAt < users[j].CreatedAt
+	slices.SortFunc(users, func(a, b User) int {
+		return cmp.Compare(a.CreatedAt, b.CreatedAt)
 	})
 
 	/*return c.Status(fiber.StatusOK).JSON(Response{
@@ -336,14 +470,21 @@ func (d *Data) handleTogglePoolLock(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	var settings Settings
-	err := d.db.Update(func(tx *bolt.Tx) error {
+	settings, err := d.getSettings()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	err = d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(buckets.settings))
+
 		settings.PoolLocked = body.Lock
+
 		encoded, err := json.Marshal(settings)
 		if err != nil {
 			return err
 		}
+
 		return b.Put([]byte("global"), encoded)
 	})
 	if err != nil {
@@ -360,6 +501,32 @@ func (d *Data) handleGetPoolLock(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(settings.PoolLocked)
+}
+
+func (d *Data) handleGetNextPicker(c *fiber.Ctx) error {
+	settings, err := d.getSettings()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	// If no next picker is set, initialize it
+	if settings.NextPickerID == "" {
+		if err := d.initNextPicker(); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(nil)
+		}
+
+		settings, err = d.getSettings()
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(nil)
+		}
+	}
+
+	nextPicker := map[string]string{
+		"id":   settings.NextPickerID,
+		"name": settings.NextPickerName,
+	}
+
+	return c.Status(fiber.StatusOK).JSON(nextPicker)
 }
 
 func (d *Data) handleAddMovie(c *fiber.Ctx) error {
@@ -754,7 +921,7 @@ func (d *Data) handleGetRandomMovie(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	movies, err := d.getPooledMovies()
+	pooledMovies, err := d.getPooledMovies()
 	if err != nil {
 		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
 			Success: false,
@@ -763,7 +930,7 @@ func (d *Data) handleGetRandomMovie(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	if len(movies) == 0 {
+	if len(pooledMovies) == 0 {
 		/*return c.JSON(Response{
 			Success: false,
 			Error:   "There are no movies to watch",
@@ -771,8 +938,8 @@ func (d *Data) handleGetRandomMovie(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	randomIndex := rand.Intn(len(movies))
-	selectedMovie := movies[randomIndex]
+	randomIndex := rand.Intn(len(pooledMovies))
+	selectedMovie := pooledMovies[randomIndex]
 
 	err = d.db.Update(func(tx *bolt.Tx) error {
 		// Remove from user's pool
@@ -814,6 +981,12 @@ func (d *Data) handleGetRandomMovie(c *fiber.Ctx) error {
 			Error:   err.Error(),
 		})*/
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	// Advance to next picker after successfully picking a movie
+	if err := d.advanceNextPicker(); err != nil {
+		// Log error but don't fail the request since movie was already picked
+		log.Printf("Failed to advance next picker: %v", err)
 	}
 
 	/*return c.JSON(Response{
@@ -920,8 +1093,8 @@ func (d *Data) handleGetWatchedMovies(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	sort.Slice(movies, func(i, j int) bool {
-		return movies[i].WatchedAt > movies[j].WatchedAt
+	slices.SortFunc(movies, func(a, b Movie) int {
+		return cmp.Compare(b.WatchedAt, a.WatchedAt)
 	})
 
 	/*return c.JSON(Response{
@@ -988,6 +1161,7 @@ func main() {
 
 	settingsAPI.Get("/getlock", data.handleGetPoolLock)
 	settingsAPI.Post("/togglelock", data.handleTogglePoolLock)
+	settingsAPI.Get("/nextpicker", data.handleGetNextPicker)
 
 	log.Fatal(app.Listen(ServerPort))
 }

@@ -1,23 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-    EyeIcon,
     FilmIcon,
     LinkIcon,
     LockIcon,
     LockOpenIcon,
     SearchIcon,
-    ShuffleIcon,
 } from "lucide-react";
 import { useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import {
-    MoviesGetCurrentQueryOptions,
     MoviesGetPoolQueryOptions,
     MoviesGetWatchedQueryOptions,
     SettingsGetPoolLockQueryOptions,
 } from "@/api/queries";
-import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
+import { SettingsKeys } from "@/api/query_keys";
 
 import { AnimatedListItem } from "@/components/ui/animated-list";
 import { Button } from "@/components/ui/button";
@@ -30,36 +27,8 @@ export function MoviePicker() {
     const queryClient = useQueryClient();
 
     const { data: pooledMovies } = useQuery(MoviesGetPoolQueryOptions());
-    const { data: currentMovie } = useQuery(MoviesGetCurrentQueryOptions());
     const { data: watchedMovies } = useQuery(MoviesGetWatchedQueryOptions());
     const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions());
-
-    const pickMutation = useMutation({
-        mutationFn: () => APIClient.movies.getRandom(),
-        onSuccess: () => {
-            toast.success("Movie picked successfully!");
-            void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
-            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
-            void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
-        },
-        onError: () => {
-            toast.error("Failed to pick a random movie");
-        },
-    });
-
-    const watchMutation = useMutation({
-        mutationFn: () => APIClient.movies.markWatched(),
-        onSuccess: () => {
-            toast.success("Movie marked as watched!");
-            void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
-            void queryClient.invalidateQueries({
-                queryKey: MoviesKeys.listwatched(),
-            });
-        },
-        onError: () => {
-            toast.error("Failed to mark movie as watched");
-        },
-    });
 
     const lockMutation = useMutation({
         mutationFn: () => {
@@ -83,31 +52,18 @@ export function MoviePicker() {
     const isSearching = searchTerm.length > 0;
 
     return (
-        <div className="pr-4 pl-4 pb-4 p grid gap-4">
+        <div className="p-4 pt-0 grid gap-4">
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center justify-between">
                         <span>Pooled Movies ({pooledMovies?.length})</span>
-                        <div className="flex items-center space-x-2">
-                            <Button
-                                onClick={() => lockMutation.mutate()}
-                                disabled={lockMutation.isPending}
-                            >
-                                {isPoolLocked ? <LockOpenIcon /> : <LockIcon />}
-                                {isPoolLocked ? "Unlock Pool" : "Lock Pool"}
-                            </Button>
-                            <Button
-                                onClick={() => pickMutation.mutate()}
-                                disabled={
-                                    pickMutation.isPending ||
-                                    pooledMovies?.length === 0 ||
-                                    currentMovie !== null
-                                }
-                            >
-                                <ShuffleIcon className="mr-2" />
-                                Pick Random Movie
-                            </Button>
-                        </div>
+                        <Button
+                            onClick={() => lockMutation.mutate()}
+                            disabled={lockMutation.isPending}
+                        >
+                            {isPoolLocked ? <LockOpenIcon /> : <LockIcon />}
+                            {isPoolLocked ? "Unlock Pool" : "Lock Pool"}
+                        </Button>
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -150,51 +106,6 @@ export function MoviePicker() {
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center justify-between">
-                        <span>Currently Selected Movie</span>
-                        <Button
-                            variant="default"
-                            onClick={() => watchMutation.mutate()}
-                            disabled={watchMutation.isPending || !currentMovie}
-                        >
-                            <EyeIcon className="mr-2" />
-                            Mark as Watched
-                        </Button>
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {currentMovie ? (
-                        <div className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                                <FilmIcon className="size-4 shrink-0" />
-                                <span className="truncate">
-                                    {currentMovie.title}
-                                    <span className="pl-2 text-gray-400">
-                                        ({currentMovie.addedByName})
-                                    </span>
-                                </span>
-                            </div>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8"
-                                asChild
-                            >
-                                <a href={currentMovie.link} target="_blank" rel="noopener noreferrer">
-                                    <LinkIcon />
-                                </a>
-                            </Button>
-                        </div>
-                    ) : (
-                        <p className="text-gray-500 col-span-full text-center">
-                            No movie selected
-                        </p>
-                    )}
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
                         <span>
                             Watched Movies (
                             {isSearching
@@ -202,7 +113,7 @@ export function MoviePicker() {
                                 : watchedMovies?.length}
                             )
                         </span>
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center gap-4">
                             <SearchIcon className="size-5 shrink-0 text-gray-400" />
                             <Input
                                 placeholder="Search by title or user..."

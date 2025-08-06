@@ -51,3 +51,10 @@ export const SettingsGetPoolLockQueryOptions = () =>
         queryFn: () => APIClient.settings.getLock(),
         refetchOnWindowFocus: false
     })
+
+export const SettingsGetNextPickerQueryOptions = () =>
+    queryOptions({
+        queryKey: SettingsKeys.nextPicker(),
+        queryFn: () => APIClient.settings.getNextPicker(),
+        refetchOnWindowFocus: false
+    })

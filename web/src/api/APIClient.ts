@@ -195,5 +195,7 @@ export const APIClient = {
             }),
         getLock: () =>
             appClient.Get<boolean>("api/settings/getlock"),
+        getNextPicker: () =>
+            appClient.Get<{id: string, name: string}>("api/settings/nextpicker"),
     }
 };

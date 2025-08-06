@@ -76,7 +76,7 @@ export function UsersGrid() {
     const { data: users } = useQuery(UsersGetAllQueryOptions());
 
     return (
-        <div className="p-4">
+        <div className="p-4 pt-0">
             <Card className="w-full">
                 <CardHeader>
                     <CardTitle>User Management</CardTitle>

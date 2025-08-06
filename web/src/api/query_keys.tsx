@@ -15,4 +15,5 @@ export const MoviesKeys = {
 export const SettingsKeys = {
     all: ["settings"] as const,
     poolLock: () => [...SettingsKeys.all, "poolLock"] as const,
+    nextPicker: () => [...SettingsKeys.all, "nextPicker"] as const,
 }

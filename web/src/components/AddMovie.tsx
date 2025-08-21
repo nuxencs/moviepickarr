@@ -39,7 +39,7 @@ export function AddMovie({ userID }: AddMovieProps) {
     })
 
     return (
-        <form onSubmit={addMutation.mutate} className="space-y-2">
+        <form onSubmit={addMutation.mutate} className="space-y-4">
             <div className="flex gap-2">
                 <Input
                     type="text"

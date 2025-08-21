@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FilmIcon, LinkIcon, MoveDownIcon, MoveUpIcon, Trash2Icon } from 'lucide-react';
-import React from 'react';
+import { ReactNode, useMemo } from 'react';
 
 import { APIClient } from "@/api/APIClient";
 import { SettingsGetPoolLockQueryOptions } from "@/api/queries";
@@ -23,7 +23,7 @@ interface UserMoviesProps {
 interface MovieItemProps {
     user: User;
     movie: Movie;
-    moveIcon: React.ReactNode;
+    moveIcon: ReactNode;
     disableMove?: boolean;
     disableDelete?: boolean;
 }
@@ -32,6 +32,12 @@ export function UserMovies({ user }: UserMoviesProps) {
     const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions())
 
     const isPoolFull = Object.keys(user.currentPool).length >= 3;
+    const userPool = useMemo(() => {
+        return Object.values(user.currentPool).sort((a, b) => a.title.toLowerCase() > b.title.toLowerCase() ? 1 : -1)
+    }, [user.currentPool]);
+    const userStash = useMemo(() => {
+        return Object.values(user.stash).sort((a, b) => a.title.toLowerCase() > b.title.toLowerCase() ? 1 : -1)
+    }, [user.currentPool]);
 
     return (
         <div className="space-y-4">
@@ -46,7 +52,7 @@ export function UserMovies({ user }: UserMoviesProps) {
                 <CardContent>
                     <div className="space-y-1">
                         {Object.keys(user.currentPool).length > 0 ? (
-                            Object.values(user.currentPool).map((movie) => (
+                            userPool.map((movie) => (
                                 <AnimatedListItem key={movie.movieID} id={movie.movieID}>
                                     <MovieItem
                                         user={user}
@@ -73,7 +79,7 @@ export function UserMovies({ user }: UserMoviesProps) {
                 <CardContent>
                     <div className="space-y-1">
                         {Object.keys(user.stash).length > 0 ? (
-                            Object.values(user.stash).map((movie) => (
+                            userStash.map((movie) => (
                                 <AnimatedListItem key={movie.movieID} id={movie.movieID}>
                                     <MovieItem
                                         user={user}

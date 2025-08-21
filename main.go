@@ -164,7 +164,7 @@ func (d *Data) getPooledMovies() ([]Movie, error) {
 	})
 
 	slices.SortFunc(movies, func(a, b Movie) int {
-		return strings.Compare(a.AddedAt, b.AddedAt)
+		return strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
 	})
 
 	return movies, err

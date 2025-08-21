@@ -49,8 +49,7 @@ export function MoviePicker() {
             (movie) =>
                 movie.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 movie.addedByName.toLowerCase().includes(searchTerm.toLowerCase())
-        ), [watchedMovies, searchTerm]
-    );
+        ), [watchedMovies, searchTerm]);
     const isSearching = searchTerm.length > 0;
 
     return (

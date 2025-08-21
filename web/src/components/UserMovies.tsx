@@ -37,7 +37,7 @@ export function UserMovies({ user }: UserMoviesProps) {
     }, [user.currentPool]);
     const userStash = useMemo(() => {
         return Object.values(user.stash).sort((a, b) => a.title.toLowerCase() > b.title.toLowerCase() ? 1 : -1)
-    }, [user.currentPool]);
+    }, [user.stash]);
 
     return (
         <div className="space-y-4">

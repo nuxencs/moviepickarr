@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FilmIcon, LinkIcon, MoveDownIcon, MoveUpIcon, Trash2Icon } from 'lucide-react';
-import { ReactNode, useMemo } from 'react';
+import { FilmIcon, LinkIcon, MoveDownIcon, MoveUpIcon, SearchIcon, Trash2Icon } from 'lucide-react';
+import { ReactNode, useMemo, useState } from 'react';
 
 import { APIClient } from "@/api/APIClient";
 import { SettingsGetPoolLockQueryOptions } from "@/api/queries";
@@ -11,6 +11,7 @@ import { AnimatedListItem } from '@/components/ui/animated-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
+import { Input } from '@/components/ui/input';
 import { toast } from "@/components/ui/toast";
 
 import { useToggle } from "@/hooks/hooks";
@@ -30,6 +31,7 @@ interface MovieItemProps {
 
 export function UserMovies({ user }: UserMoviesProps) {
     const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions())
+    const [stashSearchTerm, setStashSearchTerm] = useState("");
 
     const isPoolFull = Object.keys(user.currentPool).length >= 3;
     const userPool = useMemo(() => {
@@ -38,6 +40,10 @@ export function UserMovies({ user }: UserMoviesProps) {
     const userStash = useMemo(() => {
         return Object.values(user.stash).sort((a, b) => a.title.toLowerCase() > b.title.toLowerCase() ? 1 : -1)
     }, [user.stash]);
+    const filteredUserStash = useMemo(() =>
+        userStash.filter((movie) =>
+            movie.title.toLowerCase().includes(stashSearchTerm.toLowerCase())
+        ), [userStash, stashSearchTerm]);
 
     return (
         <div className="space-y-4">
@@ -51,36 +57,55 @@ export function UserMovies({ user }: UserMoviesProps) {
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-1">
-                        {Object.keys(user.currentPool).length > 0 ? (
-                            userPool.map((movie) => (
-                                <AnimatedListItem key={movie.movieID} id={movie.movieID}>
-                                    <MovieItem
-                                        user={user}
-                                        movie={movie}
-                                        moveIcon={<MoveDownIcon />}
-                                        disableMove={isPoolLocked}
-                                        disableDelete={isPoolLocked}
-                                    />
-                                </AnimatedListItem>
-                            ))
-                        ) : (
-                            <p className="text-gray-500 col-span-full text-center">No movies in personal pool</p>
-                        )}
+                        {userPool.map((movie) => (
+                            <AnimatedListItem key={movie.movieID} id={movie.movieID}>
+                                <MovieItem
+                                    user={user}
+                                    movie={movie}
+                                    moveIcon={<MoveDownIcon />}
+                                    disableMove={isPoolLocked}
+                                    disableDelete={isPoolLocked}
+                                />
+                            </AnimatedListItem>
+                        ))}
+                        {Array.from({ length: Math.max(0, 3 - userPool.length) }).map((_, i) => (
+                            <div
+                                key={`placeholder-${i}`}
+                                className="flex items-center justify-between py-0.5 px-2.5 bg-gray-50 dark:bg-gray-800/50 rounded border-2 border-dashed border-gray-300 dark:border-gray-600"
+                            >
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                    <FilmIcon className="size-4 shrink-0 text-gray-400" />
+                                    <span className="truncate text-gray-500 dark:text-gray-400">
+                                        Empty slot
+                                    </span>
+                                </div>
+                                <div className="size-8 flex-shrink-0"></div>
+                            </div>
+                        ))}
                     </div>
                 </CardContent>
             </Card>
 
             <Card>
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">
-                        Stash ({Object.keys(user.stash).length})
+                    <CardTitle className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="shrink-0">Stash ({filteredUserStash.length}{stashSearchTerm ? `/${userStash.length}` : ''})</span>
+                        <div className="flex items-center gap-4">
+                            <SearchIcon className="size-4 shrink-0 text-gray-400" />
+                            <Input
+                                placeholder="Search stash..."
+                                value={stashSearchTerm}
+                                onChange={(e) => setStashSearchTerm(e.target.value)}
+                                className="w-full text-sm"
+                            />
+                        </div>
                     </CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <div className="space-y-1">
-                        {Object.keys(user.stash).length > 0 ? (
-                            userStash.map((movie) => (
-                                <AnimatedListItem key={movie.movieID} id={movie.movieID}>
+                <CardContent className="pr-2">
+                    {filteredUserStash.length > 0 ? (
+                        <div className="space-y-1 pr-4 max-h-64 rounded-md overflow-auto">
+                            {filteredUserStash.map((movie) => (
+                                <AnimatedListItem key={movie.movieID} id={movie.movieID} className="truncate">
                                     <MovieItem
                                         user={user}
                                         movie={movie}
@@ -88,11 +113,13 @@ export function UserMovies({ user }: UserMoviesProps) {
                                         disableMove={isPoolLocked || isPoolFull}
                                     />
                                 </AnimatedListItem>
-                            ))
-                        ) : (
-                            <p className="text-gray-500 col-span-full text-center">No movies in personal stash</p>
-                        )}
-                    </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-gray-500 col-span-full text-center">
+                          No movies in personal stash
+                        </p>
+                    )}
                 </CardContent>
             </Card>
         </div>
@@ -139,7 +166,7 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
             />
 
             <div className="flex items-center justify-between py-1">
-                <div className="flex items-center gap-2 overflow-hidden">
+                <div className="flex items-center gap-2 overflow-auto">
                     <FilmIcon className="size-4 shrink-0" />
                     <span className="truncate">{movie.title}</span>
                 </div>

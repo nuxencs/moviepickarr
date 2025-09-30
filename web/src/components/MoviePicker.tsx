@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { MovieItem } from "@/components/MovieItem";
-import { AnimatedListItem } from "@/components/ui/animated-list.tsx";
+import { AnimatedList, AnimatedListItem } from "@/components/ui/animated-list.tsx";
 
 export function MoviePicker() {
     const queryClient = useQueryClient();
@@ -64,7 +64,7 @@ export function MoviePicker() {
                 </CardHeader>
                 <CardContent>
                     {pooledMovies && pooledMovies.length > 0 ? (
-                        <div className="grid gap-2">
+                        <AnimatedList className="grid gap-2">
                             {pooledMovies.map((movie) => (
                                 <AnimatedListItem
                                     key={movie.movieID}
@@ -74,7 +74,7 @@ export function MoviePicker() {
                                     <MovieItem key={movie.movieID} movie={movie}/>
                                 </AnimatedListItem>
                             ))}
-                        </div>
+                        </AnimatedList>
                     ) : (
                         <p className="text-gray-500 col-span-full text-center">
                             No movies in the pool
@@ -106,12 +106,14 @@ export function MoviePicker() {
                 </CardHeader>
                 <CardContent className="pr-2">
                     {watchedMovies && watchedMovies.length > 0 ? (
-                        <div className="space-y-2 pr-4 max-h-96 rounded-md overflow-auto">
+                        <AnimatedList className="space-y-2 pr-4 max-h-96 rounded-md overflow-auto">
                             {filteredWatchedMovies &&
                                 filteredWatchedMovies.map((movie) => (
-                                    <MovieItem key={movie.movieID} movie={movie} watched={true}/>
+                                    <AnimatedListItem key={movie.movieID} id={movie.movieID} className="truncate">
+                                        <MovieItem movie={movie} watched={true}/>
+                                    </AnimatedListItem>
                                 ))}
-                        </div>
+                        </AnimatedList>
                     ) : (
                         <p className="text-gray-500 col-span-full text-center">
                             No movies watched

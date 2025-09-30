@@ -7,7 +7,7 @@ import { SettingsGetPoolLockQueryOptions } from "@/api/queries";
 import { MoviesKeys, UsersKeys } from "@/api/query_keys";
 
 import { AddMovie } from '@/components/AddMovie';
-import { AnimatedListItem } from '@/components/ui/animated-list';
+import { AnimatedList, AnimatedListItem } from '@/components/ui/animated-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
@@ -56,7 +56,7 @@ export function UserMovies({ user }: UserMoviesProps) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-1">
+                    <AnimatedList className="space-y-1">
                         {userPool.map((movie) => (
                             <AnimatedListItem key={movie.movieID} id={movie.movieID}>
                                 <MovieItem
@@ -82,7 +82,7 @@ export function UserMovies({ user }: UserMoviesProps) {
                                 <div className="size-8 flex-shrink-0"></div>
                             </div>
                         ))}
-                    </div>
+                    </AnimatedList>
                 </CardContent>
             </Card>
 
@@ -103,7 +103,7 @@ export function UserMovies({ user }: UserMoviesProps) {
                 </CardHeader>
                 <CardContent className="pr-2">
                     {filteredUserStash.length > 0 ? (
-                        <div className="space-y-1 pr-4 max-h-64 rounded-md overflow-auto">
+                        <AnimatedList className="space-y-1 pr-4 max-h-64 rounded-md overflow-auto">
                             {filteredUserStash.map((movie) => (
                                 <AnimatedListItem key={movie.movieID} id={movie.movieID} className="truncate">
                                     <MovieItem
@@ -114,7 +114,7 @@ export function UserMovies({ user }: UserMoviesProps) {
                                     />
                                 </AnimatedListItem>
                             ))}
-                        </div>
+                        </AnimatedList>
                     ) : (
                         <p className="text-gray-500 col-span-full text-center">
                           No movies in personal stash

@@ -10,11 +10,9 @@ import {
 } from "@/api/queries";
 import { SettingsKeys } from "@/api/query_keys";
 
-// import { AnimatedListItem } from "@/components/ui/animated-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/components/ui/toast";
 import { MovieItem } from "@/components/MovieItem";
 import { AnimatedListItem } from "@/components/ui/animated-list.tsx";
@@ -85,7 +83,7 @@ export function MoviePicker() {
                 </CardContent>
             </Card>
 
-            <Card>
+            <Card className="overflow-hidden">
                 <CardHeader>
                     <CardTitle className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <span className="shrink-0">
@@ -108,20 +106,12 @@ export function MoviePicker() {
                 </CardHeader>
                 <CardContent className="pr-2">
                     {watchedMovies && watchedMovies.length > 0 ? (
-                        <ScrollArea className="h-96 rounded-md">
-                            <div className="grid gap-2 pr-4">
-                                {filteredWatchedMovies &&
-                                    filteredWatchedMovies.map((movie) => (
-                                        <AnimatedListItem
-                                            key={movie.movieID}
-                                            id={movie.movieID}
-                                            className="truncate"
-                                        >
-                                            <MovieItem key={movie.movieID} movie={movie} watched={true}/>
-                                        </AnimatedListItem>
-                                    ))}
-                            </div>
-                        </ScrollArea>
+                        <div className="space-y-2 pr-4 max-h-96 rounded-md overflow-auto">
+                            {filteredWatchedMovies &&
+                                filteredWatchedMovies.map((movie) => (
+                                    <MovieItem key={movie.movieID} movie={movie} watched={true}/>
+                                ))}
+                        </div>
                     ) : (
                         <p className="text-gray-500 col-span-full text-center">
                             No movies watched

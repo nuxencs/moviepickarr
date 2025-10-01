@@ -22,6 +22,7 @@ export function SearchMovie({ userID }: SearchMovieProps) {
   const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFetchingExternalId, setIsFetchingExternalId] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -84,11 +85,20 @@ export function SearchMovie({ userID }: SearchMovieProps) {
   };
 
   const handleAddMovie = async (movie: TMDBMovie) => {
-    const { link } = await APIClient.tmdb.getExternalIds(movie.id);
-    addMutation.mutate({
-      title: movie.title,
-      link: link
-    });
+    if (isFetchingExternalId || addMutation.isPending) return;
+
+    setIsFetchingExternalId(true);
+    try {
+      const { link } = await APIClient.tmdb.getExternalIds(movie.id);
+      addMutation.mutate({
+        title: movie.title,
+        link: link
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to fetch movie details');
+    } finally {
+      setIsFetchingExternalId(false);
+    }
   };
 
   return (
@@ -193,12 +203,12 @@ export function SearchMovie({ userID }: SearchMovieProps) {
                                   {/* Add button at bottom */}
                                   <Button
                                     onClick={() => handleAddMovie(movie)}
-                                    disabled={addMutation.isPending}
+                                    disabled={addMutation.isPending || isFetchingExternalId}
                                     size="sm"
                                     className="w-full gap-2 mt-2"
                                   >
                                     <PlusIcon className="h-4 w-4"/>
-                                    Add Movie
+                                    {isFetchingExternalId ? 'Loading...' : 'Add Movie'}
                                   </Button>
                                 </motion.div>
                               </div>

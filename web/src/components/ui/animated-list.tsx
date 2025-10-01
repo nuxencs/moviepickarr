@@ -14,7 +14,8 @@ interface AnimatedListItemProps {
 
 const itemVariants = {
     hidden: { opacity: 0 },
-    visible: { opacity: 1 }
+    visible: { opacity: 1 },
+    exit: { opacity: 0 }
 };
 
 export const AnimatedList: React.FC<AnimatedListProps> = ({ children, className }) => {

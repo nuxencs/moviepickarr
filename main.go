@@ -4,10 +4,13 @@ import (
 	"cmp"
 	"embed"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"regexp"
@@ -20,6 +23,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -79,6 +83,22 @@ type Movie struct {
 	AddedByID   string `json:"addedByID"`
 	AddedByName string `json:"addedByName"`
 	WatchedAt   string `json:"watchedAt"`
+}
+
+type TMDBMovie struct {
+	ID          int     `json:"id"`
+	Title       string  `json:"title"`
+	PosterPath  *string `json:"poster_path"`
+	ReleaseDate string  `json:"release_date"`
+	Overview    string  `json:"overview"`
+}
+
+type TMDBSearchResponse struct {
+	Results []TMDBMovie `json:"results"`
+}
+
+type TMDBExternalIDsResponse struct {
+	IMDbID string `json:"imdb_id"`
 }
 
 func New() (*Data, error) {
@@ -1104,7 +1124,135 @@ func (d *Data) handleGetWatchedMovies(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(movies)
 }
 
+func (d *Data) handleTMDBSearch(c *fiber.Ctx) error {
+	query := c.Query("query")
+	if query == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "query parameter is required",
+		})
+	}
+
+	tmdbAPIKey := os.Getenv("TMDB_API_KEY")
+	if tmdbAPIKey == "" {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "TMDB API key not configured",
+		})
+	}
+
+	tmdbURL := fmt.Sprintf("https://api.themoviedb.org/3/search/movie?query=%s",
+		url.QueryEscape(query))
+
+	req, err := http.NewRequest(http.MethodGet, tmdbURL, nil)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to create request",
+		})
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", tmdbAPIKey))
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to search TMDB",
+		})
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "TMDB API request failed",
+		})
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to read TMDB response",
+		})
+	}
+
+	var searchResponse TMDBSearchResponse
+	if err := json.Unmarshal(body, &searchResponse); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to parse TMDB response",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(searchResponse.Results)
+}
+
+func (d *Data) handleTMDBExternalIDs(c *fiber.Ctx) error {
+	movieID := c.Query("movieId")
+	if movieID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "movieId parameter is required",
+		})
+	}
+
+	tmdbAPIKey := os.Getenv("TMDB_API_KEY")
+	if tmdbAPIKey == "" {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "TMDB API key not configured",
+		})
+	}
+
+	tmdbURL := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s/external_ids", movieID)
+
+	req, err := http.NewRequest(http.MethodGet, tmdbURL, nil)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to create request",
+		})
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", tmdbAPIKey))
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to fetch TMDB external IDs",
+		})
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "TMDB API request failed",
+		})
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to read TMDB response",
+		})
+	}
+
+	var externalIDs TMDBExternalIDsResponse
+	if err := json.Unmarshal(body, &externalIDs); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to parse TMDB response",
+		})
+	}
+
+	link := fmt.Sprintf("https://www.themoviedb.org/movie/%s", movieID)
+	if externalIDs.IMDbID != "" {
+		link = fmt.Sprintf("https://www.imdb.com/title/%s/", externalIDs.IMDbID)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"link": link,
+	})
+}
+
 func main() {
+	_ = godotenv.Load()
+
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
 	})
@@ -1162,6 +1310,10 @@ func main() {
 	settingsAPI.Get("/getlock", data.handleGetPoolLock)
 	settingsAPI.Post("/togglelock", data.handleTogglePoolLock)
 	settingsAPI.Get("/nextpicker", data.handleGetNextPicker)
+
+	tmdbAPI := api.Group("/tmdb")
+	tmdbAPI.Get("/search", data.handleTMDBSearch)
+	tmdbAPI.Get("/external-ids", data.handleTMDBExternalIDs)
 
 	log.Fatal(app.Listen(ServerPort))
 }

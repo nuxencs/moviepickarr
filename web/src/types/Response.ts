@@ -19,3 +19,15 @@ export interface User {
 export interface Settings {
     poolLocked: boolean;
 }
+
+export interface TMDBMovie {
+    id: number;
+    title: string;
+    poster_path: string | null;
+    release_date: string;
+    overview: string;
+}
+
+export interface TMDBExternalIDs {
+    link: string;
+}

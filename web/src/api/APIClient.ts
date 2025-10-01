@@ -1,4 +1,4 @@
-import { Movie, Settings, User } from "@/types/Response";
+import { Movie, Settings, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
@@ -197,5 +197,17 @@ export const APIClient = {
             appClient.Get<boolean>("api/settings/getlock"),
         getNextPicker: () =>
             appClient.Get<{id: string, name: string}>("api/settings/nextpicker"),
+    },
+    tmdb: {
+        search: (query: string) =>
+            appClient.Get<TMDBMovie[]>(
+                "api/tmdb/search",
+                { queryString: { query } }
+            ),
+        getExternalIds: (movieId: number) =>
+            appClient.Get<TMDBExternalIDs>(
+                "api/tmdb/external-ids",
+                { queryString: { movieId: String(movieId) } }
+            ),
     }
 };

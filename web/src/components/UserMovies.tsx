@@ -6,7 +6,6 @@ import { APIClient } from "@/api/APIClient";
 import { SettingsGetPoolLockQueryOptions } from "@/api/queries";
 import { MoviesKeys, UsersKeys } from "@/api/query_keys";
 
-import { AddMovie } from '@/components/AddMovie';
 import { AnimatedList, AnimatedListItem } from '@/components/ui/animated-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +15,7 @@ import { toast } from "@/components/ui/toast";
 
 import { useToggle } from "@/hooks/hooks";
 import { Movie, User } from "@/types/Response";
+import { SearchMovie } from "@/components/SearchMovie.tsx";
 
 interface UserMoviesProps {
     user: User;
@@ -47,7 +47,7 @@ export function UserMovies({ user }: UserMoviesProps) {
 
     return (
         <div className="space-y-4">
-            <AddMovie userID={user.userID} />
+            <SearchMovie userID={user.userID} />
 
             <Card>
                 <CardHeader className="pb-2">

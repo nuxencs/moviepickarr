@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils"
 
 const SPRING_TRANSITION = {
     type: "spring" as const,
-    stiffness: 300,
-    damping: 30,
+    stiffness: 200,
+    damping: 25,
 } as const;
 
 const Tabs = TabsPrimitive.Root

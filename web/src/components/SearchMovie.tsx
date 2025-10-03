@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { PlusIcon, Search } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { APIClient } from "@/api/APIClient";
 import { MoviesKeys, UsersKeys } from "@/api/query_keys";
@@ -110,8 +111,8 @@ export function SearchMovie({ userID }: SearchMovieProps) {
       </Button>
 
       {/* Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
+      {isModalOpen && createPortal(
+        <AnimatePresence>
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={closeModal}>
             {/* Backdrop with blur */}
             <motion.div
@@ -231,8 +232,9 @@ export function SearchMovie({ userID }: SearchMovieProps) {
               )}
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }

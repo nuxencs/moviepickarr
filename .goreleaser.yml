@@ -35,11 +35,11 @@ builds:
 
 archives:
   - id: moviepackarr
-    builds:
+    ids:
       - moviepackarr
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [ "zip" ]
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_

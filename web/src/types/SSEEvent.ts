@@ -1,0 +1,53 @@
+import { Movie, Settings, User } from "@/types/Response";
+
+export type SSEEventType =
+  | "user:created"
+  | "user:deleted"
+  | "movie:added"
+  | "movie:deleted"
+  | "movie:moved"
+  | "movie:picked"
+  | "movie:watched"
+  | "settings:pool-lock-changed"
+  | "settings:next-picker-changed";
+
+export interface SSEEvent<T = unknown> {
+  type: SSEEventType;
+  data?: T;
+}
+
+export interface UserCreatedEvent extends SSEEvent<User> {
+  type: "user:created";
+}
+
+export interface UserDeletedEvent extends SSEEvent<{ userID: string }> {
+  type: "user:deleted";
+}
+
+export interface MovieAddedEvent extends SSEEvent<Movie> {
+  type: "movie:added";
+}
+
+export interface MovieDeletedEvent extends SSEEvent<{ userID: string; movieID: string }> {
+  type: "movie:deleted";
+}
+
+export interface MovieMovedEvent extends SSEEvent<User> {
+  type: "movie:moved";
+}
+
+export interface MoviePickedEvent extends SSEEvent<Movie> {
+  type: "movie:picked";
+}
+
+export interface MovieWatchedEvent extends SSEEvent<Movie> {
+  type: "movie:watched";
+}
+
+export interface PoolLockChangedEvent extends SSEEvent<Settings> {
+  type: "settings:pool-lock-changed";
+}
+
+export interface NextPickerChangedEvent extends SSEEvent<Settings> {
+  type: "settings:next-picker-changed";
+}

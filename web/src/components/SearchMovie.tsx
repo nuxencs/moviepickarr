@@ -1,16 +1,16 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence, motion } from "framer-motion";
-import { PlusIcon, Search } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-
 import { APIClient } from "@/api/APIClient";
-import { MoviesKeys, UsersKeys } from "@/api/query_keys";
-import { TMDBMovie } from "@/types/Response";
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/toast';
+
+import { TMDBMovie } from "@/types/Response";
+
+import { useMutation } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
+import { PlusIcon, Search } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface SearchMovieProps {
   userID: string;
@@ -24,8 +24,6 @@ export function SearchMovie({ userID }: SearchMovieProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isFetchingExternalId, setIsFetchingExternalId] = useState(false);
-
-  const queryClient = useQueryClient();
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -60,8 +58,6 @@ export function SearchMovie({ userID }: SearchMovieProps) {
     },
     onSuccess: (_, variables) => {
       toast.success(`${variables.title} added successfully!`);
-      void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
-      void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
       closeModal();
     },
     onError: (_, variables) => {

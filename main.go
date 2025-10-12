@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"cmp"
 	"embed"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -64,7 +66,56 @@ type Response struct {
 }
 
 type Data struct {
-	db *bolt.DB
+	db     *bolt.DB
+	broker *EventBroker
+}
+
+type Event struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data,omitempty"`
+}
+
+type EventBroker struct {
+	clients map[chan Event]bool
+	mu      sync.RWMutex
+}
+
+func NewEventBroker() *EventBroker {
+	return &EventBroker{
+		clients: make(map[chan Event]bool),
+	}
+}
+
+func (b *EventBroker) Subscribe() chan Event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	client := make(chan Event, 10)
+	b.clients[client] = true
+	return client
+}
+
+func (b *EventBroker) Unsubscribe(client chan Event) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if _, ok := b.clients[client]; ok {
+		delete(b.clients, client)
+		close(client)
+	}
+}
+
+func (b *EventBroker) Broadcast(event Event) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	for client := range b.clients {
+		select {
+		case client <- event:
+		default:
+			// Client channel is full, skip
+		}
+	}
 }
 
 type User struct {
@@ -140,7 +191,10 @@ func New() (*Data, error) {
 		return nil, err
 	}
 
-	return &Data{db: db}, nil
+	return &Data{
+		db:     db,
+		broker: NewEventBroker(),
+	}, nil
 }
 
 func sanitizeInput(input string) string {
@@ -150,18 +204,14 @@ func sanitizeInput(input string) string {
 func sanitizeLink(link string) string {
 	link = strings.TrimSpace(link)
 
-	// Check if it's an IMDb link
 	if strings.Contains(link, "imdb.com") {
-		// Extract the title ID (tt followed by numbers)
 		match := imdbIDRegex.FindString(link)
 
 		if match != "" {
-			// Construct clean IMDb link
 			return "https://www.imdb.com/title/" + match + "/"
 		}
 	}
 
-	// Return original link if not an IMDb link or if pattern not found
 	return link
 }
 
@@ -268,7 +318,8 @@ func (d *Data) initNextPicker() error {
 }
 
 func (d *Data) advanceNextPicker() error {
-	return d.db.Update(func(tx *bolt.Tx) error {
+	var updatedSettings Settings
+	err := d.db.Update(func(tx *bolt.Tx) error {
 		// Get all users and count pooled movies
 		usersB := tx.Bucket([]byte(buckets.users))
 		var users []User
@@ -344,8 +395,20 @@ func (d *Data) advanceNextPicker() error {
 		if err != nil {
 			return err
 		}
+
+		updatedSettings = settings
 		return settingsB.Put([]byte("global"), encoded)
 	})
+	if err != nil {
+		return err
+	}
+
+	d.broker.Broadcast(Event{
+		Type: "settings:next-picker-changed",
+		Data: updatedSettings,
+	})
+
+	return nil
 }
 
 func (d *Data) handleGetUsers(c *fiber.Ctx) error {
@@ -427,6 +490,11 @@ func (d *Data) handleCreateUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
+	d.broker.Broadcast(Event{
+		Type: "user:created",
+		Data: user,
+	})
+
 	/*return c.Status(fiber.StatusCreated).JSON(Response{
 		Success: true,
 		Data:    user,
@@ -474,6 +542,11 @@ func (d *Data) handleDeleteUser(c *fiber.Ctx) error {
 		return c.Status(status).JSON(nil)
 	}
 
+	d.broker.Broadcast(Event{
+		Type: "user:deleted",
+		Data: fiber.Map{"userID": body.UserID},
+	})
+
 	/*return c.JSON(Response{
 		Success: true,
 		Data:    "User deleted",
@@ -510,6 +583,11 @@ func (d *Data) handleTogglePoolLock(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
+
+	d.broker.Broadcast(Event{
+		Type: "settings:pool-lock-changed",
+		Data: settings,
+	})
 
 	return c.Status(fiber.StatusOK).JSON(settings)
 }
@@ -628,6 +706,11 @@ func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 		})*/
 		return c.Status(status).JSON(nil)
 	}
+
+	d.broker.Broadcast(Event{
+		Type: "movie:added",
+		Data: movie,
+	})
 
 	/*return c.Status(fiber.StatusCreated).JSON(Response{
 		Success: true,
@@ -753,6 +836,14 @@ func (d *Data) handleDeleteMovie(c *fiber.Ctx) error {
 		})*/
 		return c.Status(status).JSON(nil)
 	}
+
+	d.broker.Broadcast(Event{
+		Type: "movie:deleted",
+		Data: fiber.Map{
+			"userID":  body.UserID,
+			"movieID": body.MovieID,
+		},
+	})
 
 	/*return c.JSON(Response{
 		Success: true,
@@ -900,6 +991,11 @@ func (d *Data) handleMove(c *fiber.Ctx) error {
 		return c.Status(status).JSON(nil)
 	}
 
+	d.broker.Broadcast(Event{
+		Type: "movie:moved",
+		Data: updatedUser,
+	})
+
 	/*return c.JSON(Response{
 		Success: true,
 		Data:    updatedUser,
@@ -1009,6 +1105,11 @@ func (d *Data) handleGetRandomMovie(c *fiber.Ctx) error {
 		log.Printf("Failed to advance next picker: %v", err)
 	}
 
+	d.broker.Broadcast(Event{
+		Type: "movie:picked",
+		Data: selectedMovie,
+	})
+
 	/*return c.JSON(Response{
 		Success: true,
 		Data:    "Found random movie to watch",
@@ -1084,6 +1185,11 @@ func (d *Data) handleWatchMovie(c *fiber.Ctx) error {
 		})*/
 		return c.Status(status).JSON(nil)
 	}
+
+	d.broker.Broadcast(Event{
+		Type: "movie:watched",
+		Data: watchedMovie,
+	})
 
 	/*return c.JSON(Response{
 		Success: true,
@@ -1184,6 +1290,46 @@ func (d *Data) handleTMDBSearch(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(searchResponse.Results)
 }
 
+func (d *Data) handleSSE(c *fiber.Ctx) error {
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	c.Set("X-Accel-Buffering", "no")
+
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		eventChannel := d.broker.Subscribe()
+		defer d.broker.Unsubscribe(eventChannel)
+
+		_, err := fmt.Fprintf(w, "event: connected\ndata: {\"type\":\"connected\"}\n\n")
+		if err != nil {
+			log.Printf("Error writing to client: %v", err)
+			return
+		}
+		if err := w.Flush(); err != nil {
+			log.Printf("Error flushing client: %v", err)
+			return
+		}
+
+		for event := range eventChannel {
+			eventData, err := json.Marshal(event)
+			if err != nil {
+				log.Printf("Error marshalling event: %v", err)
+				continue
+			}
+
+			_, err = fmt.Fprintf(w, "event: message\ndata: %s\n\n", eventData)
+			if err != nil {
+				return
+			}
+			if err := w.Flush(); err != nil {
+				return
+			}
+		}
+	})
+
+	return nil
+}
+
 func (d *Data) handleTMDBExternalIDs(c *fiber.Ctx) error {
 	movieID := c.Query("movieId")
 	if movieID == "" {
@@ -1262,16 +1408,6 @@ func main() {
 	}))
 	app.Use(cors.New())
 
-	// Serve the web build
-	webRoot, err := fs.Sub(webFS, "web/dist")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	app.Use("/", filesystem.New(filesystem.Config{
-		Root: http.FS(webRoot),
-	}))
-
 	data, err := New()
 	if err != nil {
 		log.Fatal(err)
@@ -1288,6 +1424,9 @@ func main() {
 	}()
 
 	api := app.Group("/api")
+
+	api.Get("/events", data.handleSSE)
+
 	usersAPI := api.Group("/users")
 	moviesAPI := api.Group("/movies")
 	settingsAPI := api.Group("/settings")
@@ -1314,6 +1453,15 @@ func main() {
 	tmdbAPI := api.Group("/tmdb")
 	tmdbAPI.Get("/search", data.handleTMDBSearch)
 	tmdbAPI.Get("/external-ids", data.handleTMDBExternalIDs)
+
+	webRoot, err := fs.Sub(webFS, "web/dist")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	app.Use("/", filesystem.New(filesystem.Config{
+		Root: http.FS(webRoot),
+	}))
 
 	log.Fatal(app.Listen(ServerPort))
 }

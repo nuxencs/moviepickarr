@@ -144,11 +144,11 @@ export const APIClient = {
             appClient.Post<User>("api/users/create", {
                 body: { name },
             }),
-        delete: (userID: string) =>
+        delete: (userID: number) =>
             appClient.Delete("api/users/delete", {
                 body: { userID },
             }),
-        addMovie: (userID: string, title: string, link: string) =>
+        addMovie: (userID: number, title: string, link: string) =>
             appClient.Post<Movie>("api/users/movie/add", {
                 body: {
                     userID,
@@ -156,25 +156,25 @@ export const APIClient = {
                     link,
                 },
             }),
-        deleteMovie: (userID: string, movieID: string) =>
+        deleteMovie: (userID: number, movieID: number) =>
             appClient.Delete("api/users/movie/delete", {
                 body: {
                     userID,
                     movieID,
                 },
             }),
-        moveMovie: (userID: string, movieID: string) =>
+        moveMovie: (userID: number, movieID: number) =>
             appClient.Post<Movie>("api/users/movie/move", {
                 body: {
                     userID,
                     movieID,
                 },
             }),
-        getPool: (userID: string) =>
+        getPool: (userID: number) =>
             appClient.Get<Movie[]>("api/users/pool", {
                 body: { userID },
             }),
-        getStash: (userID: string) =>
+        getStash: (userID: number) =>
             appClient.Get<Movie[]>("api/users/stash", {
                 body: { userID },
             }),
@@ -196,7 +196,7 @@ export const APIClient = {
         getLock: () =>
             appClient.Get<boolean>("api/settings/getlock"),
         getNextPicker: () =>
-            appClient.Get<{id: string, name: string}>("api/settings/nextpicker"),
+            appClient.Get<{id: number, name: string}>("api/settings/nextpicker"),
     },
     tmdb: {
         search: (query: string) =>

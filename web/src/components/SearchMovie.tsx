@@ -13,7 +13,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 interface SearchMovieProps {
-  userID: string;
+  userID: number;
 }
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';

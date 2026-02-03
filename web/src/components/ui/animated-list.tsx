@@ -8,7 +8,7 @@ interface AnimatedListProps {
 
 interface AnimatedListItemProps {
     children: React.ReactNode;
-    id: string;
+    id: string | number;
     className?: string;
 }
 

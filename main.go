@@ -2,31 +2,40 @@ package main
 
 import (
 	"bufio"
-	"cmp"
+	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"regexp"
-	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"moviepickarr/internal/db"
+	"moviepickarr/internal/domain"
+	"moviepickarr/internal/movie"
+	"moviepickarr/internal/nextpicker"
+	"moviepickarr/internal/repository"
+	"moviepickarr/internal/settings"
+	"moviepickarr/internal/user"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
-	bolt "go.etcd.io/bbolt"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed web/dist
@@ -41,22 +50,8 @@ const (
 
 var imdbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
 
-var buckets = struct {
-	users         string
-	watchedMovies string
-	nextToWatch   string
-	settings      string
-}{
-	users:         "users",
-	watchedMovies: "watched_movies",
-	nextToWatch:   "next_to_watch",
-	settings:      "settings",
-}
-
 type Settings struct {
-	PoolLocked     bool   `json:"poolLocked"`
-	NextPickerID   string `json:"nextPickerID"`
-	NextPickerName string `json:"nextPickerName"`
+	PoolLocked bool `json:"poolLocked"`
 }
 
 type Response struct {
@@ -66,13 +61,23 @@ type Response struct {
 }
 
 type Data struct {
-	db     *bolt.DB
-	broker *EventBroker
+	broker            *EventBroker
+	userService       user.Service
+	movieService      movie.Service
+	nextPickerService nextpicker.Service
+	settingsService   settings.Service
+}
+
+func (d *Data) Close() {
+	if d == nil || d.broker == nil {
+		return
+	}
+	d.broker.Close()
 }
 
 type Event struct {
-	Type string      `json:"type"`
-	Data interface{} `json:"data,omitempty"`
+	Type string `json:"type"`
+	Data any    `json:"data,omitempty"`
 }
 
 type EventBroker struct {
@@ -118,8 +123,18 @@ func (b *EventBroker) Broadcast(event Event) {
 	}
 }
 
+func (b *EventBroker) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for client := range b.clients {
+		close(client)
+		delete(b.clients, client)
+	}
+}
+
 type User struct {
-	ID          string           `json:"userID"`
+	ID          int              `json:"userID"`
 	Name        string           `json:"name"`
 	CurrentPool map[string]Movie `json:"currentPool"`
 	Stash       map[string]Movie `json:"stash"`
@@ -127,11 +142,11 @@ type User struct {
 }
 
 type Movie struct {
-	ID          string `json:"movieID"`
+	ID          int    `json:"movieID"`
 	Title       string `json:"title"`
 	Link        string `json:"link"`
 	AddedAt     string `json:"addedAt"`
-	AddedByID   string `json:"addedByID"`
+	AddedByID   int    `json:"addedByID"`
 	AddedByName string `json:"addedByName"`
 	WatchedAt   string `json:"watchedAt"`
 }
@@ -152,49 +167,19 @@ type TMDBExternalIDsResponse struct {
 	IMDbID string `json:"imdb_id"`
 }
 
-func New() (*Data, error) {
-	db, err := bolt.Open(DbFile, 0o600, &bolt.Options{Timeout: 1 * time.Second})
-	if err != nil {
-		return nil, err
-	}
-
-	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(buckets.users))
-		if err != nil {
-			return err
-		}
-		_, err = tx.CreateBucketIfNotExists([]byte(buckets.watchedMovies))
-		if err != nil {
-			return err
-		}
-		_, err = tx.CreateBucketIfNotExists([]byte(buckets.nextToWatch))
-		if err != nil {
-			return err
-		}
-		b, err := tx.CreateBucketIfNotExists([]byte(buckets.settings))
-		if err != nil {
-			return err
-		}
-
-		// Initialize settings if they don't exist
-		if b.Get([]byte("global")) == nil {
-			var settings Settings
-			encoded, err := json.Marshal(settings)
-			if err != nil {
-				return err
-			}
-			return b.Put([]byte("global"), encoded)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
+func NewData(dbConn *sql.DB) *Data {
+	userRepo := repository.NewSqliteUserRepository(dbConn)
+	movieRepo := repository.NewSqliteMoviesRepository(dbConn)
+	nextPickerRepo := repository.NewSqliteNextPickerRepository(dbConn)
+	settingsRepo := repository.NewSqliteSettingsRepository(dbConn)
 
 	return &Data{
-		db:     db,
-		broker: NewEventBroker(),
-	}, nil
+		broker:            NewEventBroker(),
+		userService:       user.NewService(userRepo, nextPickerRepo),
+		movieService:      movie.NewService(movieRepo, settingsRepo),
+		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
+		settingsService:   settings.NewService(settingsRepo),
+	}
 }
 
 func sanitizeInput(input string) string {
@@ -215,233 +200,194 @@ func sanitizeLink(link string) string {
 	return link
 }
 
-func (d *Data) getPooledMovies() ([]Movie, error) {
-	movies := make([]Movie, 0)
-
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-
-		return b.ForEach(func(k, v []byte) error {
-			var user User
-			if err := json.Unmarshal(v, &user); err != nil {
-				return err
-			}
-			for _, movie := range user.CurrentPool {
-				movies = append(movies, movie)
-			}
-			return nil
-		})
-	})
-
-	slices.SortFunc(movies, func(a, b Movie) int {
-		return strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
-	})
-
-	return movies, err
+func formatTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(TimeFormat)
 }
 
-func (d *Data) getUser(userID string) (User, error) {
-	var user User
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		data := b.Get([]byte(userID))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
-		return json.Unmarshal(data, &user)
-	})
-
-	return user, err
+func toAPIMovie(movie *domain.Movie) Movie {
+	return Movie{
+		ID:          movie.ID,
+		Title:       movie.Title,
+		Link:        movie.Link,
+		AddedAt:     formatTime(movie.AddedAt),
+		AddedByID:   movie.AddedByID,
+		AddedByName: movie.AddedByName,
+		WatchedAt:   formatTime(movie.WatchedAt),
+	}
 }
 
-func (d *Data) getSettings() (Settings, error) {
-	var settings Settings
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.settings))
-		data := b.Get([]byte("global"))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "Settings not found")
-		}
-		return json.Unmarshal(data, &settings)
-	})
-	return settings, err
+func toAPIMovies(movies []*domain.Movie) []Movie {
+	result := make([]Movie, 0, len(movies))
+	for _, movie := range movies {
+		result = append(result, toAPIMovie(movie))
+	}
+	return result
 }
 
-func (d *Data) initNextPicker() error {
-	return d.db.Update(func(tx *bolt.Tx) error {
-		// Get current settings
-		settingsB := tx.Bucket([]byte(buckets.settings))
-		settings, err := d.getSettings()
-		if err != nil {
-			return err
-		}
-
-		// Only initialize if NextPickerID is empty
-		if settings.NextPickerID != "" {
-			return nil
-		}
-
-		// Get all users
-		usersB := tx.Bucket([]byte(buckets.users))
-		var users []User
-		err = usersB.ForEach(func(k, v []byte) error {
-			var user User
-			if err := json.Unmarshal(v, &user); err != nil {
-				return err
-			}
-			users = append(users, user)
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-
-		if len(users) == 0 {
-			return nil
-		}
-
-		slices.SortFunc(users, func(a, b User) int {
-			return cmp.Compare(a.CreatedAt, b.CreatedAt)
-		})
-
-		// Initialize with first user
-		settings.NextPickerID = users[0].ID
-		settings.NextPickerName = users[0].Name
-
-		encoded, err := json.Marshal(settings)
-		if err != nil {
-			return err
-		}
-
-		return settingsB.Put([]byte("global"), encoded)
-	})
+func moviesToMap(movies []*domain.Movie) map[string]Movie {
+	result := make(map[string]Movie, len(movies))
+	for _, movie := range movies {
+		result[strconv.Itoa(movie.ID)] = toAPIMovie(movie)
+	}
+	return result
 }
 
-func (d *Data) advanceNextPicker() error {
-	var updatedSettings Settings
-	err := d.db.Update(func(tx *bolt.Tx) error {
-		// Get all users and count pooled movies
-		usersB := tx.Bucket([]byte(buckets.users))
-		var users []User
-		pooledMoviesCount := 0
+func toAPIUser(user *domain.User, poolMovies, stashMovies []*domain.Movie) User {
+	currentPool := moviesToMap(poolMovies)
+	stash := moviesToMap(stashMovies)
 
-		err := usersB.ForEach(func(k, v []byte) error {
-			var user User
-			if err := json.Unmarshal(v, &user); err != nil {
-				return err
-			}
+	return User{
+		ID:          user.ID,
+		Name:        user.Name,
+		CurrentPool: currentPool,
+		Stash:       stash,
+		CreatedAt:   formatTime(user.CreatedAt),
+	}
+}
 
-			users = append(users, user)
-			pooledMoviesCount += len(user.CurrentPool)
-
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-
-		if len(users) == 0 {
-			return nil
-		}
-
-		// Don't advance picker if no movies are left in the pool (last movie was just picked)
-		if pooledMoviesCount == 0 {
-			return nil
-		}
-
-		if len(users) == 1 {
-			return nil // Only one user, no need to advance
-		}
-
-		slices.SortFunc(users, func(a, b User) int {
-			return cmp.Compare(a.CreatedAt, b.CreatedAt)
-		})
-
-		// Get current settings
-		settingsB := tx.Bucket([]byte(buckets.settings))
-		var settings Settings
-		data := settingsB.Get([]byte("global"))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "Settings not found")
-		}
-
-		if err := json.Unmarshal(data, &settings); err != nil {
-			return err
-		}
-
-		// Find current picker and advance to next
-		currentIndex := -1
-		for i, user := range users {
-			if user.ID == settings.NextPickerID {
-				currentIndex = i
-				break
-			}
-		}
-
-		var nextIndex int
-		if currentIndex == -1 {
-			// Current picker not found, start from beginning
-			nextIndex = 0
-		} else {
-			// Advance to next user (wrap around if necessary)
-			nextIndex = (currentIndex + 1) % len(users)
-		}
-
-		// Update settings with next picker
-		settings.NextPickerID = users[nextIndex].ID
-		settings.NextPickerName = users[nextIndex].Name
-
-		encoded, err := json.Marshal(settings)
-		if err != nil {
-			return err
-		}
-
-		updatedSettings = settings
-		return settingsB.Put([]byte("global"), encoded)
-	})
+func (d *Data) getPooledMovies(ctx context.Context) ([]Movie, error) {
+	movies, err := d.movieService.Pooled(ctx)
 	if err != nil {
+		return nil, err
+	}
+	return toAPIMovies(movies), nil
+}
+
+func (d *Data) initNextPicker(ctx context.Context) error {
+	users, err := d.userService.List(ctx)
+	if err != nil {
+		return err
+	}
+	if len(users) == 0 {
+		return nil
+	}
+
+	return d.nextPickerService.Set(ctx, users[0].ID)
+}
+
+func (d *Data) advanceNextPicker(ctx context.Context) error {
+	users, err := d.userService.List(ctx)
+	if err != nil {
+		return err
+	}
+	if len(users) == 0 || len(users) == 1 {
+		return nil
+	}
+
+	pooled, err := d.movieService.Pooled(ctx)
+	if err != nil {
+		return err
+	}
+	if len(pooled) == 0 {
+		return nil
+	}
+
+	current, err := d.nextPickerService.Get(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			if err := d.initNextPicker(ctx); err != nil {
+				return err
+			}
+			current, err = d.nextPickerService.Get(ctx)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	currentIndex := -1
+	for i, user := range users {
+		if current != nil && user.ID == current.ID {
+			currentIndex = i
+			break
+		}
+	}
+
+	nextIndex := 0
+	if currentIndex >= 0 {
+		nextIndex = (currentIndex + 1) % len(users)
+	}
+
+	if err := d.nextPickerService.Set(ctx, users[nextIndex].ID); err != nil {
 		return err
 	}
 
 	d.broker.Broadcast(Event{
 		Type: "settings:next-picker-changed",
-		Data: updatedSettings,
+		Data: map[string]any{
+			"id":   users[nextIndex].ID,
+			"name": users[nextIndex].Name,
+		},
 	})
 
 	return nil
 }
 
 func (d *Data) handleGetUsers(c *fiber.Ctx) error {
-	users := make([]User, 0)
+	ctx := c.UserContext()
 
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		return b.ForEach(func(k, v []byte) error {
-			var user User
-			if err := json.Unmarshal(v, &user); err != nil {
-				return err
-			}
-			users = append(users, user)
-			return nil
-		})
-	})
+	users, err := d.userService.List(ctx)
 	if err != nil {
-		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	slices.SortFunc(users, func(a, b User) int {
-		return cmp.Compare(a.CreatedAt, b.CreatedAt)
-	})
+	movies, err := d.movieService.List(ctx)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
 
-	/*return c.Status(fiber.StatusOK).JSON(Response{
-		Success: true,
-		Data:    users,
-	})*/
-	return c.Status(fiber.StatusOK).JSON(users)
+	poolByUser := make(map[int]map[string]Movie)
+	stashByUser := make(map[int]map[string]Movie)
+
+	for _, movie := range movies {
+		if movie.Status != "pool" && movie.Status != "stash" {
+			continue
+		}
+
+		apiMovie := toAPIMovie(movie)
+		key := strconv.Itoa(movie.ID)
+
+		if movie.Status == "pool" {
+			if poolByUser[movie.AddedByID] == nil {
+				poolByUser[movie.AddedByID] = map[string]Movie{}
+			}
+			poolByUser[movie.AddedByID][key] = apiMovie
+			continue
+		}
+
+		if stashByUser[movie.AddedByID] == nil {
+			stashByUser[movie.AddedByID] = map[string]Movie{}
+		}
+		stashByUser[movie.AddedByID][key] = apiMovie
+	}
+
+	response := make([]User, 0, len(users))
+	for _, user := range users {
+		currentPool := poolByUser[user.ID]
+		if currentPool == nil {
+			currentPool = map[string]Movie{}
+		}
+		stash := stashByUser[user.ID]
+		if stash == nil {
+			stash = map[string]Movie{}
+		}
+
+		response = append(response, User{
+			ID:          user.ID,
+			Name:        user.Name,
+			CurrentPool: currentPool,
+			Stash:       stash,
+			CreatedAt:   formatTime(user.CreatedAt),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(response)
 }
 
 func (d *Data) handleCreateUser(c *fiber.Ctx) error {
@@ -466,28 +412,18 @@ func (d *Data) handleCreateUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	user := User{
-		ID:          uuid.New().String(),
-		Name:        sanitizeInput(body.Name),
-		CurrentPool: make(map[string]Movie),
-		Stash:       make(map[string]Movie),
-		CreatedAt:   time.Now().Format(TimeFormat),
+	ctx := c.UserContext()
+	createdUser, err := d.userService.Create(ctx, sanitizeInput(body.Name))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	err := d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		encoded, err := json.Marshal(user)
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte(user.ID), encoded)
-	})
-	if err != nil {
-		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	user := User{
+		ID:          createdUser.ID,
+		Name:        createdUser.Name,
+		CurrentPool: map[string]Movie{},
+		Stash:       map[string]Movie{},
+		CreatedAt:   formatTime(createdUser.CreatedAt),
 	}
 
 	d.broker.Broadcast(Event{
@@ -504,7 +440,7 @@ func (d *Data) handleCreateUser(c *fiber.Ctx) error {
 
 func (d *Data) handleDeleteUser(c *fiber.Ctx) error {
 	type request struct {
-		UserID string `json:"userID"`
+		UserID int `json:"userID"`
 	}
 	var body request
 	if err := c.BodyParser(&body); err != nil {
@@ -515,7 +451,7 @@ func (d *Data) handleDeleteUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	if body.UserID == "" {
+	if body.UserID == 0 {
 		/*return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Success: false,
 			Error:   "UserID is required",
@@ -523,22 +459,12 @@ func (d *Data) handleDeleteUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	err := d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		if b.Get([]byte(body.UserID)) == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
-		return b.Delete([]byte(body.UserID))
-	})
-	if err != nil {
+	ctx := c.UserContext()
+	if err := d.userService.Delete(ctx, body.UserID); err != nil {
 		status := fiber.StatusInternalServerError
-		if err.Error() == "User not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			status = fiber.StatusNotFound
 		}
-		/*return c.Status(status).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(status).JSON(nil)
 	}
 
@@ -563,26 +489,12 @@ func (d *Data) handleTogglePoolLock(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	settings, err := d.getSettings()
-	if err != nil {
+	ctx := c.UserContext()
+	if err := d.settingsService.SetPoolLock(ctx, body.Lock); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	err = d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.settings))
-
-		settings.PoolLocked = body.Lock
-
-		encoded, err := json.Marshal(settings)
-		if err != nil {
-			return err
-		}
-
-		return b.Put([]byte("global"), encoded)
-	})
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
+	settings := Settings{PoolLocked: body.Lock}
 
 	d.broker.Broadcast(Event{
 		Type: "settings:pool-lock-changed",
@@ -593,43 +505,46 @@ func (d *Data) handleTogglePoolLock(c *fiber.Ctx) error {
 }
 
 func (d *Data) handleGetPoolLock(c *fiber.Ctx) error {
-	settings, err := d.getSettings()
+	ctx := c.UserContext()
+	poolLocked, err := d.settingsService.GetPoolLock(ctx)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(settings.PoolLocked)
+	return c.Status(fiber.StatusOK).JSON(poolLocked)
 }
 
 func (d *Data) handleGetNextPicker(c *fiber.Ctx) error {
-	settings, err := d.getSettings()
+	ctx := c.UserContext()
+
+	nextPicker, err := d.nextPickerService.Get(ctx)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	// If no next picker is set, initialize it
-	if settings.NextPickerID == "" {
-		if err := d.initNextPicker(); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(nil)
+		if errors.Is(err, sql.ErrNoRows) {
+			if err := d.initNextPicker(ctx); err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(nil)
+			}
+			nextPicker, err = d.nextPickerService.Get(ctx)
+			if errors.Is(err, sql.ErrNoRows) {
+				return c.Status(fiber.StatusOK).JSON(fiber.Map{
+					"id":   0,
+					"name": "",
+				})
+			}
 		}
-
-		settings, err = d.getSettings()
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(nil)
 		}
 	}
 
-	nextPicker := map[string]string{
-		"id":   settings.NextPickerID,
-		"name": settings.NextPickerName,
-	}
-
-	return c.Status(fiber.StatusOK).JSON(nextPicker)
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"id":   nextPicker.ID,
+		"name": nextPicker.Name,
+	})
 }
 
 func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 	type request struct {
-		UserID string `json:"userID"`
+		UserID int    `json:"userID"`
 		Title  string `json:"title"`
 		Link   string `json:"link"`
 	}
@@ -642,7 +557,7 @@ func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	if body.UserID == "" || body.Title == "" || body.Link == "" {
+	if body.UserID == 0 || body.Title == "" || body.Link == "" {
 		/*return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Success: false,
 			Error:   "UserID, Title and link are required",
@@ -650,62 +565,29 @@ func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	user, err := d.getUser(body.UserID)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	movie := Movie{
-		ID:          uuid.New().String(),
-		Title:       sanitizeInput(body.Title),
-		Link:        sanitizeLink(body.Link),
-		AddedAt:     time.Now().Format(TimeFormat),
-		AddedByID:   body.UserID,
-		AddedByName: user.Name,
-	}
-
-	settings, err := d.getSettings()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	err = d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		data := b.Get([]byte(body.UserID))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
-
-		var user User
-		if err := json.Unmarshal(data, &user); err != nil {
-			return err
-		}
-
-		// If pool is locked or pool is full, add to stash
-		if settings.PoolLocked || len(user.CurrentPool) >= MaxPoolSize {
-			user.Stash[movie.ID] = movie
-		} else {
-			user.CurrentPool[movie.ID] = movie
-		}
-
-		encoded, err := json.Marshal(user)
-		if err != nil {
-			return err
-		}
-
-		return b.Put([]byte(user.ID), encoded)
-	})
-	if err != nil {
+	ctx := c.UserContext()
+	if _, err := d.userService.Get(ctx, body.UserID); err != nil {
 		status := fiber.StatusInternalServerError
-		if err.Error() == "User not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			status = fiber.StatusNotFound
 		}
-		/*return c.Status(status).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(status).JSON(nil)
 	}
+
+	title := sanitizeInput(body.Title)
+	link := sanitizeLink(body.Link)
+
+	movieRecord, err := d.movieService.AddToPool(ctx, title, link, body.UserID)
+	if err != nil {
+		if err.Error() == "pool limit reached" || err.Error() == "pool is locked" {
+			movieRecord, err = d.movieService.AddToStash(ctx, title, link, body.UserID)
+		}
+	}
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	movie := toAPIMovie(movieRecord)
 
 	d.broker.Broadcast(Event{
 		Type: "movie:added",
@@ -721,7 +603,7 @@ func (d *Data) handleAddMovie(c *fiber.Ctx) error {
 
 func (d *Data) handleGetPool(c *fiber.Ctx) error {
 	type request struct {
-		UserID string `json:"userID"`
+		UserID int `json:"userID"`
 	}
 	var body request
 	if err := c.BodyParser(&body); err != nil {
@@ -732,7 +614,7 @@ func (d *Data) handleGetPool(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	if body.UserID == "" {
+	if body.UserID == 0 {
 		/*return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Success: false,
 			Error:   "UserID is required",
@@ -740,45 +622,30 @@ func (d *Data) handleGetPool(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	var currentPool map[string]Movie
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		data := b.Get([]byte(body.UserID))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
-
-		var user User
-		if err := json.Unmarshal(data, &user); err != nil {
-			return err
-		}
-
-		currentPool = user.CurrentPool
-		return nil
-	})
-	if err != nil {
+	ctx := c.UserContext()
+	if _, err := d.userService.Get(ctx, body.UserID); err != nil {
 		status := fiber.StatusInternalServerError
-		if err.Error() == "User not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			status = fiber.StatusNotFound
 		}
-		/*return c.Status(status).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(status).JSON(nil)
+	}
+	movies, err := d.movieService.PooledByUserID(ctx, body.UserID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
 	/*return c.JSON(Response{
 		Success: true,
 		Data:    currentPool,
 	})*/
-	return c.Status(fiber.StatusOK).JSON(currentPool)
+	return c.Status(fiber.StatusOK).JSON(toAPIMovies(movies))
 }
 
 func (d *Data) handleDeleteMovie(c *fiber.Ctx) error {
 	type request struct {
-		UserID  string `json:"userID"`
-		MovieID string `json:"movieID"`
+		UserID  int `json:"userID"`
+		MovieID int `json:"movieID"`
 	}
 	var body request
 	if err := c.BodyParser(&body); err != nil {
@@ -789,7 +656,7 @@ func (d *Data) handleDeleteMovie(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	if body.UserID == "" || body.MovieID == "" {
+	if body.UserID == 0 || body.MovieID == 0 {
 		/*return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Success: false,
 			Error:   "UserID and MovieID are required",
@@ -797,43 +664,29 @@ func (d *Data) handleDeleteMovie(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	err := d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		data := b.Get([]byte(body.UserID))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
-
-		var user User
-		if err := json.Unmarshal(data, &user); err != nil {
-			return err
-		}
-
-		if len(user.CurrentPool) == 0 && len(user.Stash) == 0 {
-			return fiber.NewError(fiber.StatusBadRequest, "Pool and Stash are empty")
-		}
-
-		delete(user.CurrentPool, body.MovieID)
-		delete(user.Stash, body.MovieID)
-
-		encoded, err := json.Marshal(user)
-		if err != nil {
-			return err
-		}
-
-		return b.Put([]byte(user.ID), encoded)
-	})
+	ctx := c.UserContext()
+	movieRecord, err := d.movieService.Get(ctx, body.MovieID)
 	if err != nil {
 		status := fiber.StatusInternalServerError
-		if err.Error() == "User not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			status = fiber.StatusNotFound
-		} else if err.Error() == "Pool and Stash are empty" {
-			status = fiber.StatusBadRequest
 		}
-		/*return c.Status(status).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
+		return c.Status(status).JSON(nil)
+	}
+
+	if movieRecord.AddedByID != body.UserID {
+		return c.Status(fiber.StatusNotFound).JSON(nil)
+	}
+
+	if movieRecord.Status != "pool" && movieRecord.Status != "stash" {
+		return c.Status(fiber.StatusBadRequest).JSON(nil)
+	}
+
+	if err := d.movieService.Delete(ctx, body.MovieID); err != nil {
+		status := fiber.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = fiber.StatusNotFound
+		}
 		return c.Status(status).JSON(nil)
 	}
 
@@ -854,7 +707,7 @@ func (d *Data) handleDeleteMovie(c *fiber.Ctx) error {
 
 func (d *Data) handleGetStash(c *fiber.Ctx) error {
 	type request struct {
-		UserID string `json:"userID"`
+		UserID int `json:"userID"`
 	}
 	var body request
 	if err := c.BodyParser(&body); err != nil {
@@ -865,7 +718,7 @@ func (d *Data) handleGetStash(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	if body.UserID == "" {
+	if body.UserID == 0 {
 		/*return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Success: false,
 			Error:   "UserID is required",
@@ -873,54 +726,30 @@ func (d *Data) handleGetStash(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	var stash map[string]Movie
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		data := b.Get([]byte(body.UserID))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
-
-		var user User
-		if err := json.Unmarshal(data, &user); err != nil {
-			return err
-		}
-
-		stash = user.Stash
-		return nil
-	})
-	if err != nil {
+	ctx := c.UserContext()
+	if _, err := d.userService.Get(ctx, body.UserID); err != nil {
 		status := fiber.StatusInternalServerError
-		if err.Error() == "User not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			status = fiber.StatusNotFound
 		}
-		/*return c.Status(status).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(status).JSON(nil)
+	}
+	movies, err := d.movieService.StashedByUserID(ctx, body.UserID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
 	/*return c.JSON(Response{
 		Success: true,
 		Data:    stash,
 	})*/
-	return c.Status(fiber.StatusOK).JSON(stash)
+	return c.Status(fiber.StatusOK).JSON(toAPIMovies(movies))
 }
 
 func (d *Data) handleMove(c *fiber.Ctx) error {
-	settings, err := d.getSettings()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	if settings.PoolLocked {
-		return c.Status(fiber.StatusForbidden).JSON(nil)
-	}
-
 	type request struct {
-		UserID  string `json:"userID"`
-		MovieID string `json:"movieID"`
+		UserID  int `json:"userID"`
+		MovieID int `json:"movieID"`
 	}
 	var body request
 	if err := c.BodyParser(&body); err != nil {
@@ -931,7 +760,7 @@ func (d *Data) handleMove(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	if body.UserID == "" || body.MovieID == "" {
+	if body.UserID == 0 || body.MovieID == 0 {
 		/*return c.Status(fiber.StatusBadRequest).JSON(Response{
 			Success: false,
 			Error:   "UserID and MovieID are required",
@@ -939,57 +768,68 @@ func (d *Data) handleMove(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(nil)
 	}
 
-	var updatedUser User
-	err = d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.users))
-		data := b.Get([]byte(body.UserID))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
+	ctx := c.UserContext()
 
-		var user User
-		if err := json.Unmarshal(data, &user); err != nil {
-			return err
-		}
+	poolLocked, err := d.settingsService.GetPoolLock(ctx)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+	if poolLocked {
+		return c.Status(fiber.StatusForbidden).JSON(nil)
+	}
 
-		movie, isStashed := user.Stash[body.MovieID]
-		if !isStashed {
-			movie, ok := user.CurrentPool[body.MovieID]
-			if !ok {
-				return fiber.NewError(fiber.StatusNotFound, "Movie not found")
-			}
-			delete(user.CurrentPool, body.MovieID)
-			user.Stash[body.MovieID] = movie
-		} else {
-			if len(user.CurrentPool) >= MaxPoolSize {
-				return fiber.NewError(fiber.StatusBadRequest, "Pool is already full")
-			}
-			delete(user.Stash, body.MovieID)
-			user.CurrentPool[body.MovieID] = movie
-		}
-
-		encoded, err := json.Marshal(user)
-		if err != nil {
-			return err
-		}
-
-		updatedUser = user
-		return b.Put([]byte(user.ID), encoded)
-	})
+	userRecord, err := d.userService.Get(ctx, body.UserID)
 	if err != nil {
 		status := fiber.StatusInternalServerError
-		switch err.Error() {
-		case "User not found", "Movie not found":
+		if errors.Is(err, sql.ErrNoRows) {
 			status = fiber.StatusNotFound
-		case "Pool is already full":
-			status = fiber.StatusBadRequest
 		}
-		/*return c.Status(status).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(status).JSON(nil)
 	}
+
+	movieRecord, err := d.movieService.Get(ctx, body.MovieID)
+	if err != nil {
+		status := fiber.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = fiber.StatusNotFound
+		}
+		return c.Status(status).JSON(nil)
+	}
+
+	if movieRecord.AddedByID != body.UserID {
+		return c.Status(fiber.StatusNotFound).JSON(nil)
+	}
+
+	switch movieRecord.Status {
+	case "stash":
+		pooled, err := d.movieService.PooledByUserID(ctx, body.UserID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(nil)
+		}
+		if len(pooled) >= MaxPoolSize {
+			return c.Status(fiber.StatusBadRequest).JSON(nil)
+		}
+		if err := d.movieService.MoveToPool(ctx, body.MovieID); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(nil)
+		}
+	case "pool":
+		if err := d.movieService.MoveToStash(ctx, body.MovieID); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(nil)
+		}
+	default:
+		return c.Status(fiber.StatusNotFound).JSON(nil)
+	}
+
+	updatedPool, err := d.movieService.PooledByUserID(ctx, body.UserID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+	updatedStash, err := d.movieService.StashedByUserID(ctx, body.UserID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	updatedUser := toAPIUser(userRecord, updatedPool, updatedStash)
 
 	d.broker.Broadcast(Event{
 		Type: "movie:moved",
@@ -1004,7 +844,8 @@ func (d *Data) handleMove(c *fiber.Ctx) error {
 }
 
 func (d *Data) handleGetPooledMovies(c *fiber.Ctx) error {
-	movies, err := d.getPooledMovies()
+	ctx := c.UserContext()
+	movies, err := d.getPooledMovies(ctx)
 	if err != nil {
 		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
 			Success: false,
@@ -1021,213 +862,71 @@ func (d *Data) handleGetPooledMovies(c *fiber.Ctx) error {
 }
 
 func (d *Data) handleGetRandomMovie(c *fiber.Ctx) error {
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.nextToWatch))
-		data := b.Get([]byte("current"))
-		if data != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "There is already a movie in next to watch")
-		}
-		return nil
-	})
+	ctx := c.UserContext()
+
+	selectedMovie, err := d.movieService.PickRandom(ctx)
 	if err != nil {
-		/*return c.Status(fiber.StatusBadRequest).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	pooledMovies, err := d.getPooledMovies()
-	if err != nil {
-		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	if len(pooledMovies) == 0 {
-		/*return c.JSON(Response{
-			Success: false,
-			Error:   "There are no movies to watch",
-		})*/
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	randomIndex := rand.Intn(len(pooledMovies))
-	selectedMovie := pooledMovies[randomIndex]
-
-	err = d.db.Update(func(tx *bolt.Tx) error {
-		// Remove from user's pool
-		b := tx.Bucket([]byte(buckets.users))
-		data := b.Get([]byte(selectedMovie.AddedByID))
-		if data == nil {
-			return fiber.NewError(fiber.StatusNotFound, "User not found")
-		}
-
-		var user User
-		if err := json.Unmarshal(data, &user); err != nil {
-			return err
-		}
-
-		delete(user.CurrentPool, selectedMovie.ID)
-
-		encoded, err := json.Marshal(user)
-		if err != nil {
-			return err
-		}
-
-		err = b.Put([]byte(user.ID), encoded)
-		if err != nil {
-			return err
-		}
-
-		// Set as current movie
-		b = tx.Bucket([]byte(buckets.nextToWatch))
-		encoded, err = json.Marshal(selectedMovie)
-		if err != nil {
-			return err
-		}
-
-		return b.Put([]byte("current"), encoded)
-	})
-	if err != nil {
-		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	// Advance to next picker after successfully picking a movie
-	if err := d.advanceNextPicker(); err != nil {
-		// Log error but don't fail the request since movie was already picked
+	if err := d.advanceNextPicker(ctx); err != nil {
 		log.Printf("Failed to advance next picker: %v", err)
 	}
 
+	movie := toAPIMovie(selectedMovie)
+
 	d.broker.Broadcast(Event{
 		Type: "movie:picked",
-		Data: selectedMovie,
+		Data: movie,
 	})
 
-	/*return c.JSON(Response{
-		Success: true,
-		Data:    "Found random movie to watch",
-	})*/
-	return c.Status(fiber.StatusOK).JSON(selectedMovie)
-}
-
-func (d *Data) handleGetCurrentMovie(c *fiber.Ctx) error {
-	var movie *Movie
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.nextToWatch))
-		data := b.Get([]byte("current"))
-		if data == nil {
-			movie = nil
-			return nil
-		}
-		return json.Unmarshal(data, &movie)
-	})
-	if err != nil {
-		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
-		return c.Status(fiber.StatusInternalServerError).JSON(nil)
-	}
-
-	/*return c.JSON(Response{
-		Success: true,
-		Data:    &movie,
-	})*/
 	return c.Status(fiber.StatusOK).JSON(movie)
 }
 
+func (d *Data) handleGetCurrentMovie(c *fiber.Ctx) error {
+	ctx := c.UserContext()
+
+	movieRecord, err := d.movieService.Current(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return c.Status(fiber.StatusOK).JSON(nil)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(nil)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(toAPIMovie(movieRecord))
+}
+
 func (d *Data) handleWatchMovie(c *fiber.Ctx) error {
-	var watchedMovie Movie
-	err := d.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.nextToWatch))
-		data := b.Get([]byte("current"))
-		if data == nil {
-			return fiber.NewError(fiber.StatusBadRequest, "There is no movie to watch")
-		}
+	ctx := c.UserContext()
 
-		if err := json.Unmarshal(data, &watchedMovie); err != nil {
-			return err
-		}
-
-		watchedMovie.WatchedAt = time.Now().Format(TimeFormat)
-
-		// Add to watched movies
-		b = tx.Bucket([]byte(buckets.watchedMovies))
-		encoded, err := json.Marshal(watchedMovie)
-		if err != nil {
-			return err
-		}
-
-		err = b.Put([]byte(watchedMovie.ID), encoded)
-		if err != nil {
-			return err
-		}
-
-		// Clear current movie
-		b = tx.Bucket([]byte(buckets.nextToWatch))
-		return b.Delete([]byte("current"))
-	})
+	watched, err := d.movieService.MarkCurrentAsWatched(ctx)
 	if err != nil {
 		status := fiber.StatusInternalServerError
-		if err.Error() == "There is no movie to watch" {
+		if err.Error() == "no current movie" || errors.Is(err, sql.ErrNoRows) {
 			status = fiber.StatusBadRequest
 		}
-		/*return c.Status(status).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(status).JSON(nil)
 	}
+
+	watchedMovie := toAPIMovie(watched)
 
 	d.broker.Broadcast(Event{
 		Type: "movie:watched",
 		Data: watchedMovie,
 	})
 
-	/*return c.JSON(Response{
-		Success: true,
-		Data:    "Movie watched",
-	})*/
 	return c.Status(fiber.StatusOK).JSON(watchedMovie)
 }
 
 func (d *Data) handleGetWatchedMovies(c *fiber.Ctx) error {
-	movies := make([]Movie, 0)
-	err := d.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(buckets.watchedMovies))
-		return b.ForEach(func(k, v []byte) error {
-			var movie Movie
-			if err := json.Unmarshal(v, &movie); err != nil {
-				return err
-			}
-			movies = append(movies, movie)
-			return nil
-		})
-	})
+	ctx := c.UserContext()
+	movies, err := d.movieService.Watched(ctx)
 	if err != nil {
-		/*return c.Status(fiber.StatusInternalServerError).JSON(Response{
-			Success: false,
-			Error:   err.Error(),
-		})*/
 		return c.Status(fiber.StatusInternalServerError).JSON(nil)
 	}
 
-	slices.SortFunc(movies, func(a, b Movie) int {
-		return cmp.Compare(b.WatchedAt, a.WatchedAt)
-	})
-
-	/*return c.JSON(Response{
-		Success: true,
-		Data:    movies,
-	})*/
-	return c.Status(fiber.StatusOK).JSON(movies)
+	return c.Status(fiber.StatusOK).JSON(toAPIMovies(movies))
 }
 
 func (d *Data) handleTMDBSearch(c *fiber.Ctx) error {
@@ -1397,7 +1096,22 @@ func (d *Data) handleTMDBExternalIDs(c *fiber.Ctx) error {
 }
 
 func main() {
+	ctx := context.Background()
+
 	_ = godotenv.Load()
+
+	if _, err := db.MigrateBoltToSQLite(ctx, DbFile, DbFile); err != nil {
+		log.Fatal(err)
+	}
+
+	dbConn, err := db.OpenSQLite(DbFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := db.RunMigrations(ctx, dbConn); err != nil {
+		log.Fatal(err)
+	}
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -1408,19 +1122,31 @@ func main() {
 	}))
 	app.Use(cors.New())
 
-	data, err := New()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer data.db.Close()
+	data := NewData(dbConn)
 
 	// Setup graceful shutdown
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+
+	var shutdownOnce sync.Once
+	shutdown := func() {
+		shutdownOnce.Do(func() {
+			log.Println("Gracefully shutting down...")
+			ctxTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			if err := app.ShutdownWithContext(ctxTimeout); err != nil {
+				log.Printf("shutdown error: %v", err)
+			}
+			data.Close()
+			if err := dbConn.Close(); err != nil {
+				log.Printf("db close error: %v", err)
+			}
+		})
+	}
 	go func() {
 		<-c
-		log.Println("Gracefully shutting down...")
-		_ = app.Shutdown()
+		shutdown()
 	}()
 
 	api := app.Group("/api")
@@ -1463,5 +1189,9 @@ func main() {
 		Root: http.FS(webRoot),
 	}))
 
-	log.Fatal(app.Listen(ServerPort))
+	if err := app.Listen(ServerPort); err != nil {
+		log.Printf("listen error: %v", err)
+	}
+
+	shutdown()
 }

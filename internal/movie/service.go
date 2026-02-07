@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -47,7 +46,7 @@ func (s *service) AddToPool(ctx context.Context, title, link string, userID int)
 	}
 
 	if pooled >= 3 {
-		return nil, fmt.Errorf("pool limit reached")
+		return nil, domain.ErrPoolLimitReached
 	}
 
 	poolLocked, err := s.settingsRepo.FindByKey(ctx, "pool_locked")
@@ -61,7 +60,7 @@ func (s *service) AddToPool(ctx context.Context, title, link string, userID int)
 	}
 
 	if parseBool {
-		return nil, fmt.Errorf("pool is locked")
+		return nil, domain.ErrPoolLocked
 	}
 
 	return s.movieRepo.Add(ctx, title, link, "pool", userID)
@@ -78,7 +77,7 @@ func (s *service) MoveToPool(ctx context.Context, id int) error {
 	}
 
 	if movie.Status != "stash" {
-		return fmt.Errorf("movie is not in stash")
+		return domain.ErrInvalidState
 	}
 
 	if err = s.movieRepo.UpdateStatus(ctx, id, "pool"); err != nil {
@@ -95,7 +94,7 @@ func (s *service) MoveToStash(ctx context.Context, id int) error {
 	}
 
 	if movie.Status != "pool" {
-		return fmt.Errorf("movie is not in pool")
+		return domain.ErrInvalidState
 	}
 
 	if err = s.movieRepo.UpdateStatus(ctx, id, "stash"); err != nil {
@@ -112,7 +111,7 @@ func (s *service) Delete(ctx context.Context, id int) error {
 	}
 
 	if movie.Status != "pool" && movie.Status != "stash" {
-		return fmt.Errorf("movie is not in pool or stash")
+		return domain.ErrInvalidState
 	}
 
 	if err = s.movieRepo.Delete(ctx, id); err != nil {
@@ -167,7 +166,7 @@ func (s *service) PickRandom(ctx context.Context) (*domain.Movie, error) {
 	}
 
 	if len(pooled) == 0 {
-		return nil, fmt.Errorf("no movies in pool")
+		return nil, domain.ErrNotFound
 	}
 
 	current, err := s.movieRepo.GetCurrent(ctx)
@@ -176,7 +175,7 @@ func (s *service) PickRandom(ctx context.Context) (*domain.Movie, error) {
 	}
 
 	if current != nil {
-		return nil, fmt.Errorf("current movie is not nil")
+		return nil, domain.ErrCurrentMovieExist
 	}
 
 	movie, err := s.movieRepo.GetRandomPooled(ctx)
@@ -198,7 +197,7 @@ func (s *service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 	}
 
 	if current == nil {
-		return nil, fmt.Errorf("no current movie")
+		return nil, domain.ErrNoCurrentMovie
 	}
 
 	watchedAt := time.Now().UTC()

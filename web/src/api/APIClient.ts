@@ -125,6 +125,11 @@ const appClient = {
             ...config,
             method: "GET",
         }),
+    Put: <T = void>(endpoint: string, config: HttpConfig = {}) =>
+        HttpClient<T>(endpoint, {
+            ...config,
+            method: "PUT",
+        }),
     Post: <T = void>(endpoint: string, config: HttpConfig = {}) =>
         HttpClient<T>(endpoint, {
             ...config,
@@ -139,74 +144,57 @@ const appClient = {
 
 export const APIClient = {
     users: {
-        getAll: () => appClient.Get<User[]>("api/users/list"),
+        getAll: () => appClient.Get<User[]>("api/v1/users"),
         create: (name: string) =>
-            appClient.Post<User>("api/users/create", {
+            appClient.Post<User>("api/v1/users", {
                 body: { name },
             }),
         delete: (userID: number) =>
-            appClient.Delete("api/users/delete", {
-                body: { userID },
-            }),
+            appClient.Delete(`api/v1/users/${userID}`),
         addMovie: (userID: number, title: string, link: string) =>
-            appClient.Post<Movie>("api/users/movie/add", {
+            appClient.Post<Movie>(`api/v1/users/${userID}/movies`, {
                 body: {
-                    userID,
                     title,
                     link,
                 },
             }),
         deleteMovie: (userID: number, movieID: number) =>
-            appClient.Delete("api/users/movie/delete", {
-                body: {
-                    userID,
-                    movieID,
-                },
-            }),
+            appClient.Delete(`api/v1/users/${userID}/movies/${movieID}`),
         moveMovie: (userID: number, movieID: number) =>
-            appClient.Post<Movie>("api/users/movie/move", {
-                body: {
-                    userID,
-                    movieID,
-                },
-            }),
+            appClient.Post<Movie>(`api/v1/users/${userID}/movies/${movieID}/move`),
         getPool: (userID: number) =>
-            appClient.Get<Movie[]>("api/users/pool", {
-                body: { userID },
-            }),
+            appClient.Get<Movie[]>(`api/v1/users/${userID}/pool`),
         getStash: (userID: number) =>
-            appClient.Get<Movie[]>("api/users/stash", {
-                body: { userID },
-            }),
+            appClient.Get<Movie[]>(`api/v1/users/${userID}/stash`),
     },
     movies: {
-        getPooled: () => appClient.Get<Movie[]>("api/movies/listpool"),
-        getRandom: () => appClient.Post<Movie>("api/movies/random"),
-        getCurrent: () => appClient.Get<Movie>("api/movies/current"),
+        getPooled: () => appClient.Get<Movie[]>("api/v1/movies/pool"),
+        getRandom: () => appClient.Post<Movie>("api/v1/movies/random"),
+        getCurrent: () => appClient.Get<Movie>("api/v1/movies/current"),
         getWatched: () =>
-            appClient.Get<Movie[]>("api/movies/listwatched"),
+            appClient.Get<Movie[]>("api/v1/movies/watched"),
         markWatched: () =>
-            appClient.Post<Movie[]>("api/movies/markwatched"),
+            appClient.Post<Movie[]>("api/v1/movies/current/watch"),
     },
     settings: {
         toggleLock: (lock: boolean) =>
-            appClient.Post<Settings>("api/settings/togglelock", {
-                body: { lock },
+            appClient.Put<Settings>("api/v1/settings/pool-lock", {
+                body: { poolLocked: lock },
             }),
         getLock: () =>
-            appClient.Get<boolean>("api/settings/getlock"),
+            appClient.Get<boolean>("api/v1/settings/pool-lock"),
         getNextPicker: () =>
-            appClient.Get<{id: number, name: string}>("api/settings/nextpicker"),
+            appClient.Get<{id: number, name: string}>("api/v1/settings/next-picker"),
     },
     tmdb: {
         search: (query: string) =>
             appClient.Get<TMDBMovie[]>(
-                "api/tmdb/search",
+                "api/v1/tmdb/search",
                 { queryString: { query } }
             ),
         getExternalIds: (movieId: number) =>
             appClient.Get<TMDBExternalIDs>(
-                "api/tmdb/external-ids",
+                "api/v1/tmdb/external-ids",
                 { queryString: { movieId: String(movieId) } }
             ),
     }

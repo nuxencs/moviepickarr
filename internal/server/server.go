@@ -123,6 +123,8 @@ func newHandler(dbConn *sql.DB) *handler {
 		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
 		settingsService:   settings.NewService(settingsRepo),
 		tmdb:              newTMDBClient(),
+		statsCache:        make(map[string]statsCacheEntry),
+		statsCacheTTL:     time.Minute,
 	}
 }
 
@@ -148,6 +150,7 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/movies/current", h.handleGetCurrentMovie)
 	v1.Get("/movies/watched", h.handleGetWatchedMovies)
 	v1.Post("/movies/current/watch", h.handleWatchMovie)
+	v1.Get("/stats", h.handleGetStats)
 
 	v1.Get("/settings/pool-lock", h.handleGetPoolLock)
 	v1.Put("/settings/pool-lock", h.handleSetPoolLock)

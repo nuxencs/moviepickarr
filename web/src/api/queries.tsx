@@ -1,7 +1,9 @@
-import { APIClient } from "@/api/APIClient";
-import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
-
 import { queryOptions } from "@tanstack/react-query";
+
+import { APIClient } from "@/api/APIClient";
+import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+
+import type { StatsWindow } from "@/types/Response";
 
 export const UsersGetAllQueryOptions = () =>
   queryOptions({
@@ -57,4 +59,18 @@ export const SettingsGetNextPickerQueryOptions = () =>
     queryKey: SettingsKeys.nextPicker(),
     queryFn: () => APIClient.settings.getNextPicker(),
     refetchOnWindowFocus: false
+  })
+
+export const StatsGetQueryOptions = (
+  window: StatsWindow,
+  timezone: string,
+  start?: string,
+  end?: string,
+) =>
+  queryOptions({
+    queryKey: StatsKeys.byWindow(window, timezone, start, end),
+    queryFn: () => APIClient.stats.get({ window, timezone, start, end }),
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+    gcTime: 600_000,
   })

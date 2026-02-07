@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"moviepickarr/internal/domain"
 	"moviepickarr/internal/movie"
@@ -24,6 +26,9 @@ type handler struct {
 	nextPickerService nextpicker.Service
 	settingsService   settings.Service
 	tmdb              *tmdbClient
+	statsCacheMu      sync.RWMutex
+	statsCache        map[string]statsCacheEntry
+	statsCacheTTL     time.Duration
 }
 
 func (h *handler) Close() {

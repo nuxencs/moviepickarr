@@ -1,9 +1,9 @@
-import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
-
-import { SSEEvent } from "@/types/SSEEvent";
-
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+
+import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+
+import type { SSEEvent } from "@/types/SSEEvent";
 
 function baseURL(): string {
   if (import.meta.env.DEV) {
@@ -35,6 +35,7 @@ export function useSSE() {
           case "user:created":
           case "user:deleted":
             void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+            void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
             break;
 
           case "movie:added":
@@ -54,6 +55,7 @@ export function useSSE() {
           case "movie:watched":
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+            void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
             break;
 
           case "settings:pool-lock-changed":

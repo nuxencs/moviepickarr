@@ -7,19 +7,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
 
 type boltUser struct {
-	ID          string                 `json:"userID"`
-	Name        string                 `json:"name"`
-	CurrentPool map[string]boltMovie   `json:"currentPool"`
-	Stash       map[string]boltMovie   `json:"stash"`
-	CreatedAt   string                 `json:"createdAt"`
-	Metadata    map[string]interface{} `json:"-"`
+	ID          string               `json:"userID"`
+	Name        string               `json:"name"`
+	CurrentPool map[string]boltMovie `json:"currentPool"`
+	Stash       map[string]boltMovie `json:"stash"`
+	CreatedAt   string               `json:"createdAt"`
+	Metadata    map[string]any       `json:"-"`
 }
 
 type boltMovie struct {
@@ -91,8 +91,15 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 			return err
 		}
 
-		sort.Slice(users, func(i, j int) bool {
-			return users[i].CreatedAt < users[j].CreatedAt
+		slices.SortFunc(users, func(a, b boltUser) int {
+			switch {
+			case a.CreatedAt < b.CreatedAt:
+				return -1
+			case a.CreatedAt > b.CreatedAt:
+				return 1
+			default:
+				return 0
+			}
 		})
 
 		userIDMap := make(map[string]int, len(users))

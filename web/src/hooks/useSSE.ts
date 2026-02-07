@@ -18,7 +18,7 @@ export function useSSE() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    const eventSource = new EventSource(`${baseURL()}/api/events`);
+    const eventSource = new EventSource(`${baseURL()}/api/v1/events`);
     eventSourceRef.current = eventSource;
 
     eventSource.addEventListener("connected", () => {

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 const (

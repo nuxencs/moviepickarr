@@ -73,7 +73,10 @@ func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.Us
 
 	user, err := scanUser(d.db.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("user not found with id: %d", id)
+		return nil, fmt.Errorf("%w: user id %d", domain.ErrNotFound, id)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return user, nil
@@ -161,7 +164,10 @@ func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.
 
 	movie, err := scanMovie(d.db.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("no movie found with id: %d", id)
+		return nil, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, id)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return movie, nil
@@ -538,7 +544,10 @@ func (d *SqliteSettingsRepository) FindByKey(ctx context.Context, key string) (s
 	var value string
 	err := d.db.QueryRowContext(ctx, query, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", fmt.Errorf("no setting found for key: %s", key)
+		return "", fmt.Errorf("%w: setting %s", domain.ErrNotFound, key)
+	}
+	if err != nil {
+		return "", err
 	}
 
 	return value, nil

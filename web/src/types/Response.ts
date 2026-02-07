@@ -1,15 +1,15 @@
 export interface Movie {
-    movieID: string;
+    movieID: number;
     title: string;
     link: string;
     addedAt: string;
-    addedByID: string;
+    addedByID: number;
     addedByName: string;
     watchedAt?: string;
 }
 
 export interface User {
-    userID: string;
+    userID: number;
     name: string;
     currentPool: Record<string, Movie>;
     stash: Record<string, Movie>;

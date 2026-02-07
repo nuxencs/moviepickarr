@@ -20,7 +20,7 @@ export interface UserCreatedEvent extends SSEEvent<User> {
   type: "user:created";
 }
 
-export interface UserDeletedEvent extends SSEEvent<{ userID: string }> {
+export interface UserDeletedEvent extends SSEEvent<{ userID: number }> {
   type: "user:deleted";
 }
 
@@ -28,7 +28,7 @@ export interface MovieAddedEvent extends SSEEvent<Movie> {
   type: "movie:added";
 }
 
-export interface MovieDeletedEvent extends SSEEvent<{ userID: string; movieID: string }> {
+export interface MovieDeletedEvent extends SSEEvent<{ userID: number; movieID: number }> {
   type: "movie:deleted";
 }
 

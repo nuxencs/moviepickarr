@@ -10,14 +10,14 @@ export const UsersGetAllQueryOptions = () =>
     refetchOnWindowFocus: false
   })
 
-export const UsersGetPoolQueryOptions = (userID: string) =>
+export const UsersGetPoolQueryOptions = (userID: number) =>
   queryOptions({
     queryKey: UsersKeys.pool(),
     queryFn: () => APIClient.users.getPool(userID),
     refetchOnWindowFocus: false
   })
 
-export const UsersGetStashQueryOptions = (userID: string) =>
+export const UsersGetStashQueryOptions = (userID: number) =>
   queryOptions({
     queryKey: UsersKeys.stash(),
     queryFn: () => APIClient.users.getStash(userID),

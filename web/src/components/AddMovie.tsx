@@ -9,7 +9,7 @@ import { PlusIcon } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 interface AddMovieProps {
-  userID: string;
+  userID: number;
 }
 
 export function AddMovie({ userID }: AddMovieProps) {

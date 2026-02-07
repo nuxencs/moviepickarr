@@ -23,7 +23,7 @@ function UserItem({ user }: UserItemProps) {
   const [deleteModalIsOpen, toggleDeleteModal] = useToggle(false);
 
   const deleteMutation = useMutation({
-    mutationFn: (userID: string) => APIClient.users.delete(userID),
+    mutationFn: (userID: number) => APIClient.users.delete(userID),
     onSuccess: () => {
       toast.success(`User ${user.name} deleted successfully!`);
     },

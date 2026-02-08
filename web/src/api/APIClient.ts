@@ -1,7 +1,14 @@
-import { Movie, Settings, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
+import { Movie, Settings, StatsResponse, StatsWindow, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
+
+interface StatsQuery {
+    window: StatsWindow;
+    timezone: string;
+    start?: string;
+    end?: string;
+}
 
 interface HttpConfig {
     method?: string;
@@ -185,6 +192,17 @@ export const APIClient = {
             appClient.Get<boolean>("api/v1/settings/pool-lock"),
         getNextPicker: () =>
             appClient.Get<{id: number, name: string}>("api/v1/settings/next-picker"),
+    },
+    stats: {
+        get: ({ window, timezone, start, end }: StatsQuery) =>
+            appClient.Get<StatsResponse>("api/v1/stats", {
+                queryString: {
+                    window,
+                    tz: timezone,
+                    start,
+                    end,
+                },
+            }),
     },
     tmdb: {
         search: (query: string) =>

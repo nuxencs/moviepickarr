@@ -113,6 +113,8 @@ func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	h.invalidateStatsCache()
+
 	h.broker.Broadcast(event{Type: "user:deleted", Data: fiber.Map{"userID": userID}})
 
 	return c.SendStatus(fiber.StatusNoContent)

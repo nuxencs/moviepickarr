@@ -11,6 +11,7 @@
 - `internal/server/users_handlers.go`: users bounded context handlers.
 - `internal/server/movies_handlers.go`: movies bounded context handlers.
 - `internal/server/settings_handlers.go`: settings bounded context handlers.
+- `internal/server/stats_handlers.go`: stats bounded context handlers.
 - `internal/server/tmdb_handlers.go`: TMDB bounded context handlers.
 - `internal/server/events_handlers.go`: SSE/events bounded context handlers.
 - `internal/server/errors.go`: centralized domain-to-HTTP error mapping.

@@ -17,3 +17,9 @@ export const SettingsKeys = {
     poolLock: () => [...SettingsKeys.all, "poolLock"] as const,
     nextPicker: () => [...SettingsKeys.all, "nextPicker"] as const,
 }
+
+export const StatsKeys = {
+    all: ["stats"] as const,
+    byWindow: (window: string, timezone: string, start?: string, end?: string) =>
+      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? ""] as const,
+}

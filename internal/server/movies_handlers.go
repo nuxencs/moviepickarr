@@ -299,6 +299,8 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	h.invalidateStatsCache()
+
 	payload := toAPIMovie(watched)
 	h.broker.Broadcast(event{Type: "movie:watched", Data: payload})
 

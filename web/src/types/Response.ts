@@ -31,3 +31,34 @@ export interface TMDBMovie {
 export interface TMDBExternalIDs {
     link: string;
 }
+
+export type StatsWindow = "24h" | "7d" | "30d" | "90d" | "1y" | "all-time" | "custom";
+
+export interface StatsWindowCount {
+    window: StatsWindow;
+    count: number;
+}
+
+export interface StatsNamedCount {
+    name: string;
+    count: number;
+}
+
+export interface StatsHourCount {
+    hour: number;
+    label: string;
+    count: number;
+}
+
+export interface StatsResponse {
+    selectedWindow: StatsWindow;
+    selectedWindowCount: number;
+    timezone: string;
+    totalWatched: number;
+    countsByWindow: StatsWindowCount[];
+    watchedByUser: StatsNamedCount[];
+    weekdayActivity: StatsNamedCount[];
+    hourActivity: StatsHourCount[];
+    customRangeStart?: string;
+    customRangeEnd?: string;
+}

@@ -8,6 +8,7 @@ export type SSEEventType =
   | "movie:moved"
   | "movie:picked"
   | "movie:watched"
+  | "movie:updated"
   | "settings:pool-lock-changed"
   | "settings:next-picker-changed";
 
@@ -42,6 +43,10 @@ export interface MoviePickedEvent extends SSEEvent<Movie> {
 
 export interface MovieWatchedEvent extends SSEEvent<Movie> {
   type: "movie:watched";
+}
+
+export interface MovieUpdatedEvent extends SSEEvent<Movie> {
+  type: "movie:updated";
 }
 
 export interface PoolLockChangedEvent extends SSEEvent<Settings> {

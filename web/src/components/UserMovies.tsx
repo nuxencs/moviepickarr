@@ -1,20 +1,22 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { EllipsisIcon, FilmIcon, LinkIcon, MoveDownIcon, MoveUpIcon, PencilIcon, SearchIcon, Trash2Icon } from 'lucide-react';
+import { ReactNode, useMemo, useState } from 'react';
+
 import { APIClient } from "@/api/APIClient";
 import { SettingsGetPoolLockQueryOptions } from "@/api/queries";
 
+import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { SearchMovie } from "@/components/SearchMovie.tsx";
 import { AnimatedList, AnimatedListItem } from '@/components/ui/animated-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from '@/components/ui/input';
 import { toast } from "@/components/ui/toast";
 
 import { useToggle } from "@/hooks/hooks";
 import { Movie, User } from "@/types/Response";
-
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { FilmIcon, LinkIcon, MoveDownIcon, MoveUpIcon, SearchIcon, Trash2Icon } from 'lucide-react';
-import { ReactNode, useMemo, useState } from 'react';
 
 interface UserMoviesProps {
   user: User;
@@ -78,7 +80,7 @@ export function UserMovies({ user }: UserMoviesProps) {
                     Empty slot
                   </span>
                 </div>
-                <div className="size-8 flex-shrink-0"></div>
+                <div className="w-[5.75rem] flex-shrink-0"></div>
               </div>
             ))}
           </AnimatedList>
@@ -127,6 +129,7 @@ export function UserMovies({ user }: UserMoviesProps) {
 
 function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieItemProps) {
   const [deleteModalIsOpen, toggleDeleteModal] = useToggle(false);
+  const [editModalIsOpen, toggleEditModal] = useToggle(false);
 
   const deleteMutation = useMutation({
     mutationFn: () => APIClient.users.deleteMovie(user.userID, movie.movieID),
@@ -145,8 +148,31 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
     }
   })
 
+  const editMutation = useMutation({
+    mutationFn: (payload: { title: string; link: string }) =>
+      APIClient.users.updateMovie(user.userID, movie.movieID, payload.title, payload.link),
+    onSuccess: () => {
+      toast.success(`Movie ${movie.title} updated!`);
+      toggleEditModal();
+    },
+    onError: () => {
+      toast.error("Error updating movie");
+    }
+  })
+
   return (
     <>
+      <EditMovieDialog
+        isOpen={editModalIsOpen}
+        onClose={toggleEditModal}
+        initialTitle={movie.title}
+        initialLink={movie.link}
+        isSaving={editMutation.isPending}
+        onSubmit={(payload) =>
+          editMutation.mutate({ title: payload.title, link: payload.link })
+        }
+      />
+
       <DeletionDialog
         isOpen={deleteModalIsOpen}
         onClose={toggleDeleteModal}
@@ -157,16 +183,16 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
         cancelText="Cancel"
       />
 
-      <div className="flex items-center justify-between py-1">
-        <div className="flex items-center gap-2 overflow-auto">
+      <div className="flex items-center justify-between py-1 gap-2">
+        <div className="min-w-0 flex items-center gap-2 overflow-hidden">
           <FilmIcon className="size-4 shrink-0"/>
           <span className="truncate">{movie.title}</span>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex w-[5.75rem] items-center justify-end gap-0.5 shrink-0">
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-7"
             asChild
           >
             <a href={movie.link} target="_blank" rel="noopener noreferrer">
@@ -176,21 +202,39 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-7"
             onClick={() => moveMutation.mutate()}
             disabled={disableMove}
           >
             {moveIcon}
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 hover:bg-destructive"
-            onClick={toggleDeleteModal}
-            disabled={disableDelete}
-          >
-            <Trash2Icon/>
-          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label="More actions"
+              >
+                <EllipsisIcon/>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={toggleEditModal}>
+                <PencilIcon/>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={toggleDeleteModal}
+                disabled={disableDelete}
+                className="bg-destructive/10 text-destructive font-semibold data-[highlighted]:bg-destructive/20 data-[highlighted]:text-destructive"
+              >
+                <Trash2Icon/>
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </>

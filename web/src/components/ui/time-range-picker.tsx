@@ -172,7 +172,7 @@ export function TimeRangePicker({ value, onChange, className }: TimeRangePickerP
                 type="button"
                 onClick={() => onSelectPreset(preset.value)}
                 className={cn(
-                  "inline-flex h-11 shrink-0 items-center rounded-xl px-4 text-2xl font-semibold tracking-tight transition-colors",
+                  "inline-flex h-10 shrink-0 items-center rounded-xl px-4 text-xl font-semibold tracking-tight transition-colors",
                   isActive
                     ? "bg-background text-foreground shadow"
                     : "text-muted-foreground hover:text-foreground",
@@ -188,7 +188,7 @@ export function TimeRangePicker({ value, onChange, className }: TimeRangePickerP
               type="button"
               onClick={onOpenCustomPicker}
               className={cn(
-                "inline-flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-2xl font-semibold tracking-tight transition-colors",
+                "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-xl font-semibold tracking-tight transition-colors",
                 value.period === "custom"
                   ? "bg-background text-foreground shadow"
                   : "text-muted-foreground hover:text-foreground",

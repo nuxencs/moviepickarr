@@ -165,7 +165,7 @@ export function StatsTab() {
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-2">
                   <UsersIcon className="size-4"/>
-                  Most Active User
+                  Most Picked User
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -203,7 +203,7 @@ export function StatsTab() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Watched By User</CardTitle>
+              <CardTitle>Picked By User</CardTitle>
               <CardDescription>For selected window ({selectedWindowLabel})</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">

@@ -14,6 +14,8 @@ type MovieRepo interface {
 	CountByStatus(ctx context.Context, status string) (int, error)
 	CountByUserIDAndStatus(ctx context.Context, userID int, status string) (int, error)
 	Add(ctx context.Context, title, link, status string, userID int) (*Movie, error)
+	UpdateTitleAndLink(ctx context.Context, id int, title, link string) error
+	UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error
 	UpdateStatus(ctx context.Context, id int, status string) error
 	MarkAsWatched(ctx context.Context, id int, time time.Time) error
 	GetRandomPooled(ctx context.Context) (*Movie, error)

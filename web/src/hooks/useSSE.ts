@@ -45,6 +45,14 @@ export function useSSE() {
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
             break;
 
+          case "movie:updated":
+            void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+            void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
+            break;
+
           case "movie:picked":
             void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });

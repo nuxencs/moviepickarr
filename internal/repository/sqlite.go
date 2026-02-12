@@ -424,6 +424,44 @@ func (d *SqliteMoviesRepository) Add(ctx context.Context, title, link, status st
 	return d.FindByID(ctx, int(id))
 }
 
+func (d *SqliteMoviesRepository) UpdateTitleAndLink(ctx context.Context, id int, title, link string) error {
+	query := "UPDATE movies SET title = ?, link = ? WHERE id = ?"
+
+	result, err := d.db.ExecContext(ctx, query, title, link, id)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (d *SqliteMoviesRepository) UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error {
+	query := "UPDATE movies SET watched_at = ? WHERE id = ?"
+
+	result, err := d.db.ExecContext(ctx, query, watchedAt, id)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
 func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, status string) error {
 	query := "UPDATE movies SET status = ? WHERE id = ?"
 

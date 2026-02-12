@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"moviepickarr/internal/domain"
 
@@ -137,6 +138,67 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(toAPIMovies(movies))
+}
+
+func (h *handler) handleEditMovie(c *fiber.Ctx) error {
+	userID, movieID, err := h.resolveUserAndMovieID(c)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	var body struct {
+		Title     string  `json:"title"`
+		Link      string  `json:"link"`
+		WatchedAt *string `json:"watchedAt"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
+	}
+
+	title := sanitizeInput(body.Title)
+	link := sanitizeLink(body.Link)
+	if title == "" || link == "" {
+		return writeError(c, fmt.Errorf("%w: title and link are required", domain.ErrInvalidInput))
+	}
+
+	var watchedAt *time.Time
+	if body.WatchedAt != nil {
+		raw := sanitizeInput(*body.WatchedAt)
+		if raw == "" {
+			return writeError(c, fmt.Errorf("%w: watchedAt must be a valid RFC3339 timestamp", domain.ErrInvalidInput))
+		}
+
+		parsed, err := time.Parse(timeFormat, raw)
+		if err != nil {
+			return writeError(c, fmt.Errorf("%w: watchedAt must be a valid RFC3339 timestamp", domain.ErrInvalidInput))
+		}
+
+		parsedUTC := parsed.UTC()
+		watchedAt = &parsedUTC
+	}
+
+	ctx := c.UserContext()
+	movieRecord, err := h.movieService.Get(ctx, movieID)
+	if err != nil {
+		return writeError(c, err)
+	}
+	if movieRecord.AddedByID != userID {
+		return writeError(c, domain.ErrNotFound)
+	}
+
+	updatedMovie, err := h.movieService.Update(ctx, movieID, title, link, watchedAt)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	if watchedAt != nil {
+		h.invalidateStatsCache()
+	}
+
+	payload := toAPIMovie(updatedMovie)
+	h.broker.Broadcast(event{Type: "movie:updated", Data: payload})
+
+	return c.Status(fiber.StatusOK).JSON(payload)
 }
 
 func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {

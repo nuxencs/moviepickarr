@@ -167,6 +167,14 @@ export const APIClient = {
             }),
         deleteMovie: (userID: number, movieID: number) =>
             appClient.Delete(`api/v1/users/${userID}/movies/${movieID}`),
+        updateMovie: (userID: number, movieID: number, title: string, link: string, watchedAt?: string) =>
+            appClient.Put<Movie>(`api/v1/users/${userID}/movies/${movieID}`, {
+                body: {
+                    title,
+                    link,
+                    watchedAt,
+                },
+            }),
         moveMovie: (userID: number, movieID: number) =>
             appClient.Post<Movie>(`api/v1/users/${userID}/movies/${movieID}/move`),
         getPool: (userID: number) =>

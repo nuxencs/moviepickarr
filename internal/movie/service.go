@@ -16,6 +16,7 @@ type Service interface {
 	MoveToPool(ctx context.Context, id int) error
 	MoveToStash(ctx context.Context, id int) error
 	Delete(ctx context.Context, id int) error
+	Update(ctx context.Context, id int, title, link string, watchedAt *time.Time) (*domain.Movie, error)
 	Get(ctx context.Context, id int) (*domain.Movie, error)
 	List(ctx context.Context) ([]*domain.Movie, error)
 	Pooled(ctx context.Context) ([]*domain.Movie, error)
@@ -119,6 +120,29 @@ func (s *service) Delete(ctx context.Context, id int) error {
 	}
 
 	return nil
+}
+
+func (s *service) Update(ctx context.Context, id int, title, link string, watchedAt *time.Time) (*domain.Movie, error) {
+	movie, err := s.movieRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if movie.Status != string(domain.MovieStatusWatched) && watchedAt != nil {
+		return nil, domain.ErrInvalidInput
+	}
+
+	if err = s.movieRepo.UpdateTitleAndLink(ctx, id, title, link); err != nil {
+		return nil, err
+	}
+
+	if watchedAt != nil {
+		if err = s.movieRepo.UpdateWatchedAt(ctx, id, watchedAt.UTC()); err != nil {
+			return nil, err
+		}
+	}
+
+	return s.movieRepo.FindByID(ctx, id)
 }
 
 func (s *service) Get(ctx context.Context, id int) (*domain.Movie, error) {

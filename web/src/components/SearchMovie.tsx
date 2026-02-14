@@ -14,11 +14,12 @@ import { createPortal } from 'react-dom';
 
 interface SearchMovieProps {
   userID: number;
+  disabled?: boolean;
 }
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
-export function SearchMovie({ userID }: SearchMovieProps) {
+export function SearchMovie({ userID, disabled = false }: SearchMovieProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -101,7 +102,7 @@ export function SearchMovie({ userID }: SearchMovieProps) {
   return (
     <>
       {/* Search button trigger */}
-      <Button onClick={() => setIsModalOpen(true)} className="w-full">
+      <Button onClick={() => setIsModalOpen(true)} className="w-full" disabled={disabled}>
         <Search className="h-4 w-4"/>
         Search Movie
       </Button>

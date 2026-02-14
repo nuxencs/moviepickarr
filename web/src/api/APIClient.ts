@@ -1,4 +1,4 @@
-import { Movie, Settings, StatsResponse, StatsWindow, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
+import { AuthUser, Movie, Settings, StatsResponse, StatsWindow, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
@@ -25,7 +25,7 @@ function encodeRFC3986URIComponent(str: string): string {
 
 function baseURL(): string {
     if (import.meta.env.DEV) {
-        return "http://localhost:3030";
+        return "";
     }
 
     return window.location.origin;
@@ -99,6 +99,8 @@ export async function HttpClient<T = unknown>(
         switch (response.status) {
             case 400:
                 return Promise.reject(new Error("Bad request"));
+            case 401:
+                return Promise.reject(new Error("Unauthorized"));
             case 404:
                 return Promise.reject(new Error("Not Found"));
             case 500:
@@ -150,11 +152,37 @@ const appClient = {
 };
 
 export const APIClient = {
+    auth: {
+        login: (username: string, password: string) =>
+            appClient.Post<AuthUser>("api/v1/auth/login", {
+                body: {
+                    username,
+                    password,
+                },
+            }),
+        me: () =>
+            appClient.Get<AuthUser>("api/v1/auth/me"),
+        logout: () =>
+            appClient.Post<void>("api/v1/auth/logout"),
+    },
     users: {
         getAll: () => appClient.Get<User[]>("api/v1/users"),
-        create: (name: string) =>
+        create: (name: string, username: string, password: string, role: "member" | "admin" = "member") =>
             appClient.Post<User>("api/v1/users", {
-                body: { name },
+                body: {
+                    name,
+                    username,
+                    password,
+                    role,
+                },
+            }),
+        upsertAccount: (userID: number, username: string, password: string, role: "member" | "admin" = "member") =>
+            appClient.Post<User>(`api/v1/users/${userID}/account`, {
+                body: {
+                    username,
+                    password,
+                    role,
+                },
             }),
         delete: (userID: number) =>
             appClient.Delete(`api/v1/users/${userID}`),

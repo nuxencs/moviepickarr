@@ -15,9 +15,10 @@ import { useToggle } from "@/hooks/hooks";
 interface MovieItemProps {
   movie: Movie;
   watched?: boolean;
+  canEdit?: boolean;
 }
 
-export function MovieItem({ movie, watched = false }: MovieItemProps) {
+export function MovieItem({ movie, watched = false, canEdit = true }: MovieItemProps) {
   const [editModalIsOpen, toggleEditModal] = useToggle(false);
 
   const editMutation = useMutation({
@@ -81,6 +82,7 @@ export function MovieItem({ movie, watched = false }: MovieItemProps) {
             size="icon"
             className="size-8"
             onClick={toggleEditModal}
+            disabled={!canEdit}
           >
             <PencilIcon/>
           </Button>

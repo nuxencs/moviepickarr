@@ -1,4 +1,4 @@
-import { Movie, Settings, StatsResponse, StatsWindow, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
+import { AuthUser, Movie, Settings, StatsResponse, StatsWindow, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
@@ -25,10 +25,18 @@ function encodeRFC3986URIComponent(str: string): string {
 
 function baseURL(): string {
     if (import.meta.env.DEV) {
-        return "http://localhost:3030";
+        return "";
     }
 
     return window.location.origin;
+}
+
+function isJSONContentType(value: string | null): boolean {
+    if (!value) {
+        return false;
+    }
+
+    return value.includes("application/json") || value.includes("application/problem+json");
 }
 
 export async function HttpClient<T = unknown>(
@@ -81,9 +89,7 @@ export async function HttpClient<T = unknown>(
     }
 
     const response = await window.fetch(`${baseURL()}/${endpoint}`, init);
-    const isJSON = response.headers
-        .get("Content-Type")
-        ?.includes("application/json");
+    const isJSON = isJSONContentType(response.headers.get("Content-Type"));
 
     if (response.status >= 200 && response.status < 300) {
         if (response.status === 204) {
@@ -95,35 +101,47 @@ export async function HttpClient<T = unknown>(
         } else {
             return Promise.resolve<T>(response as T);
         }
-    } else {
+    }
+
+    let details = "";
+    if (isJSON) {
+        try {
+            const json = (await response.json()) as Record<string, unknown>;
+            if (typeof json.detail === "string" && json.detail.length > 0) {
+                details = json.detail;
+            } else if (typeof json.message === "string" && json.message.length > 0) {
+                details = json.message;
+            } else if (typeof json.title === "string" && json.title.length > 0) {
+                details = json.title;
+            }
+        } catch {
+            // ignore parse errors and fallback below
+        }
+    }
+    if (!details) {
         switch (response.status) {
             case 400:
-                return Promise.reject(new Error("Bad request"));
+                details = "Bad request";
+                break;
+            case 401:
+                details = "Unauthorized";
+                break;
             case 404:
-                return Promise.reject(new Error("Not Found"));
+                details = "Not Found";
+                break;
             case 500:
-                return Promise.reject(new Error("Internal Server Error"));
+                details = "Internal Server Error";
+                break;
             default:
+                details = response.statusText;
                 break;
         }
-
-        let reason = response.statusText;
-        if (isJSON) {
-            const json = await response.json();
-            if ("message" in json) {
-                reason = json.message as string;
-            }
-        }
-
-        if (reason.length) {
-            reason = ` (${reason})`;
-        }
-
-        const defaultError = new Error(
-            `HTTP request to ${endpoint} failed with code ${response.status}${reason}`,
-        );
-        return Promise.reject(defaultError);
     }
+    if (!details) {
+        details = `HTTP request to ${endpoint} failed with code ${response.status}`;
+    }
+
+    return Promise.reject(new Error(details));
 }
 
 const appClient = {
@@ -150,11 +168,37 @@ const appClient = {
 };
 
 export const APIClient = {
+    auth: {
+        login: (username: string, password: string) =>
+            appClient.Post<AuthUser>("api/v1/auth/login", {
+                body: {
+                    username,
+                    password,
+                },
+            }),
+        me: () =>
+            appClient.Get<AuthUser>("api/v1/auth/me"),
+        logout: () =>
+            appClient.Post<void>("api/v1/auth/logout"),
+    },
     users: {
         getAll: () => appClient.Get<User[]>("api/v1/users"),
-        create: (name: string) =>
+        create: (name: string, username: string, password: string, role: "member" | "admin" = "member") =>
             appClient.Post<User>("api/v1/users", {
-                body: { name },
+                body: {
+                    name,
+                    username,
+                    password,
+                    role,
+                },
+            }),
+        upsertAccount: (userID: number, username: string, password: string, role: "member" | "admin" = "member") =>
+            appClient.Post<User>(`api/v1/users/${userID}/account`, {
+                body: {
+                    username,
+                    password,
+                    role,
+                },
             }),
         delete: (userID: number) =>
             appClient.Delete(`api/v1/users/${userID}`),

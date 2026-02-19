@@ -5,6 +5,11 @@ export const UsersKeys = {
     stash: () => [...UsersKeys.all, "stash"] as const,
 }
 
+export const AuthKeys = {
+    all: ["auth"] as const,
+    me: () => [...AuthKeys.all, "me"] as const,
+}
+
 export const MoviesKeys = {
     all: ["movies"] as const,
     listpool: () => [...MoviesKeys.all, "listpool"] as const,

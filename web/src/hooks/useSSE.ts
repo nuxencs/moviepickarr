@@ -7,7 +7,7 @@ import type { SSEEvent } from "@/types/SSEEvent";
 
 function baseURL(): string {
   if (import.meta.env.DEV) {
-    return "http://localhost:3030";
+    return "";
   }
 
   return window.location.origin;
@@ -18,7 +18,7 @@ export function useSSE() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    const eventSource = new EventSource(`${baseURL()}/api/v1/events`);
+    const eventSource = new EventSource(`${baseURL()}/api/v1/events`, { withCredentials: true });
     eventSourceRef.current = eventSource;
 
     eventSource.addEventListener("connected", () => {

@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"moviepickarr/internal/auth"
 	"moviepickarr/internal/db"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextpicker"
@@ -62,6 +64,11 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	h := newHandler(dbConn)
+	if err := h.ensureInitialAdmin(ctx); err != nil {
+		h.Close()
+		_ = dbConn.Close()
+		return err
+	}
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 
 	app.Use(logger.New(logger.Config{
@@ -74,7 +81,13 @@ func Run(ctx context.Context, cfg Config) error {
 
 	registerRoutes(app, h)
 
-	app.Use("/", filesystem.New(filesystem.Config{Root: cfg.WebRoot}))
+	app.Use("/", filesystem.New(filesystem.Config{
+		Next: func(c *fiber.Ctx) bool {
+			return strings.HasPrefix(c.Path(), "/api/")
+		},
+		Root:         cfg.WebRoot,
+		NotFoundFile: "index.html",
+	}))
 
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
@@ -115,6 +128,8 @@ func newHandler(dbConn *sql.DB) *handler {
 	movieRepo := repository.NewSqliteMoviesRepository(dbConn)
 	nextPickerRepo := repository.NewSqliteNextPickerRepository(dbConn)
 	settingsRepo := repository.NewSqliteSettingsRepository(dbConn)
+	authRepo := repository.NewSqliteAuthRepository(dbConn)
+	authEnvCfg := authConfigFromEnv()
 
 	return &handler{
 		broker:            newEventBroker(),
@@ -122,6 +137,14 @@ func newHandler(dbConn *sql.DB) *handler {
 		movieService:      movie.NewService(movieRepo, settingsRepo),
 		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
 		settingsService:   settings.NewService(settingsRepo),
+		authService: auth.NewService(authRepo, auth.Config{
+			SessionTTL: authEnvCfg.SessionTTL,
+		}),
+		authCookieName:    authEnvCfg.CookieName,
+		authCookieSecure:  authEnvCfg.CookieSecure,
+		authAdminName:     authEnvCfg.AdminName,
+		authAdminUsername: authEnvCfg.AdminUser,
+		authAdminPassword: authEnvCfg.AdminPass,
 		tmdb:              newTMDBClient(),
 		statsCache:        make(map[string]statsCacheEntry),
 		statsCacheTTL:     time.Minute,
@@ -134,10 +157,17 @@ func registerRoutes(app *fiber.App, h *handler) {
 }
 
 func registerV1Routes(v1 fiber.Router, h *handler) {
+	v1.Post("/auth/login", h.handleAuthLogin)
+	v1.Post("/auth/logout", h.handleAuthLogout)
+	v1.Get("/auth/me", h.requireAuth, h.handleAuthMe)
+
+	v1.Use(h.requireAuth)
+
 	v1.Get("/events", h.handleSSE)
 
 	v1.Get("/users", h.handleGetUsers)
 	v1.Post("/users", h.handleCreateUser)
+	v1.Post("/users/:userID/account", h.handleUpsertUserAccount)
 	v1.Delete("/users/:userID", h.handleDeleteUser)
 	v1.Post("/users/:userID/movies", h.handleAddMovie)
 	v1.Put("/users/:userID/movies/:movieID", h.handleEditMovie)

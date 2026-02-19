@@ -31,6 +31,14 @@ function baseURL(): string {
     return window.location.origin;
 }
 
+function isJSONContentType(value: string | null): boolean {
+    if (!value) {
+        return false;
+    }
+
+    return value.includes("application/json") || value.includes("application/problem+json");
+}
+
 export async function HttpClient<T = unknown>(
     endpoint: string,
     config: HttpConfig = {},
@@ -81,9 +89,7 @@ export async function HttpClient<T = unknown>(
     }
 
     const response = await window.fetch(`${baseURL()}/${endpoint}`, init);
-    const isJSON = response.headers
-        .get("Content-Type")
-        ?.includes("application/json");
+    const isJSON = isJSONContentType(response.headers.get("Content-Type"));
 
     if (response.status >= 200 && response.status < 300) {
         if (response.status === 204) {
@@ -95,37 +101,47 @@ export async function HttpClient<T = unknown>(
         } else {
             return Promise.resolve<T>(response as T);
         }
-    } else {
+    }
+
+    let details = "";
+    if (isJSON) {
+        try {
+            const json = (await response.json()) as Record<string, unknown>;
+            if (typeof json.detail === "string" && json.detail.length > 0) {
+                details = json.detail;
+            } else if (typeof json.message === "string" && json.message.length > 0) {
+                details = json.message;
+            } else if (typeof json.title === "string" && json.title.length > 0) {
+                details = json.title;
+            }
+        } catch {
+            // ignore parse errors and fallback below
+        }
+    }
+    if (!details) {
         switch (response.status) {
             case 400:
-                return Promise.reject(new Error("Bad request"));
+                details = "Bad request";
+                break;
             case 401:
-                return Promise.reject(new Error("Unauthorized"));
+                details = "Unauthorized";
+                break;
             case 404:
-                return Promise.reject(new Error("Not Found"));
+                details = "Not Found";
+                break;
             case 500:
-                return Promise.reject(new Error("Internal Server Error"));
+                details = "Internal Server Error";
+                break;
             default:
+                details = response.statusText;
                 break;
         }
-
-        let reason = response.statusText;
-        if (isJSON) {
-            const json = await response.json();
-            if ("message" in json) {
-                reason = json.message as string;
-            }
-        }
-
-        if (reason.length) {
-            reason = ` (${reason})`;
-        }
-
-        const defaultError = new Error(
-            `HTTP request to ${endpoint} failed with code ${response.status}${reason}`,
-        );
-        return Promise.reject(defaultError);
     }
+    if (!details) {
+        details = `HTTP request to ${endpoint} failed with code ${response.status}`;
+    }
+
+    return Promise.reject(new Error(details));
 }
 
 const appClient = {

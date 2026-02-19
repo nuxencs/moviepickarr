@@ -43,6 +43,7 @@ type Service interface {
 	Authenticate(ctx context.Context, rawToken string) (*domain.AuthPrincipal, error)
 	Logout(ctx context.Context, rawToken string) error
 	HasAnyAccount(ctx context.Context) (bool, error)
+	CanDeleteAccount(ctx context.Context, userID int) error
 	UpsertAccount(ctx context.Context, userID int, username, password string, role domain.UserRole) (*domain.LocalAccount, error)
 }
 
@@ -190,6 +191,33 @@ func (s *service) HasAnyAccount(ctx context.Context) (bool, error) {
 	return count > 0, nil
 }
 
+func (s *service) CanDeleteAccount(ctx context.Context, userID int) error {
+	if userID <= 0 {
+		return fmt.Errorf("%w: user id is required", domain.ErrInvalidInput)
+	}
+
+	account, err := s.repo.FindAccountByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if account.Role != domain.RoleAdmin {
+		return nil
+	}
+
+	adminCount, err := s.repo.CountAdmins(ctx)
+	if err != nil {
+		return err
+	}
+	if adminCount <= 1 {
+		return fmt.Errorf("%w: cannot delete the last admin account", domain.ErrForbidden)
+	}
+
+	return nil
+}
+
 func (s *service) UpsertAccount(ctx context.Context, userID int, username, password string, role domain.UserRole) (*domain.LocalAccount, error) {
 	if userID <= 0 {
 		return nil, fmt.Errorf("%w: user id is required", domain.ErrInvalidInput)
@@ -206,6 +234,21 @@ func (s *service) UpsertAccount(ctx context.Context, userID int, username, passw
 
 	if role != domain.RoleAdmin && role != domain.RoleMember {
 		return nil, fmt.Errorf("%w: role must be member or admin", domain.ErrInvalidInput)
+	}
+	if role == domain.RoleMember {
+		existingAccount, err := s.repo.FindAccountByUserID(ctx, userID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil && existingAccount.Role == domain.RoleAdmin {
+			adminCount, countErr := s.repo.CountAdmins(ctx)
+			if countErr != nil {
+				return nil, countErr
+			}
+			if adminCount <= 1 {
+				return nil, fmt.Errorf("%w: cannot demote the last admin account", domain.ErrForbidden)
+			}
+		}
 	}
 
 	passwordHash, err := hashPassword(password)

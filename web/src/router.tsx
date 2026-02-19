@@ -30,14 +30,10 @@ interface RouterContext {
 }
 
 async function resolveAuthUser(client: QueryClient): Promise<AuthUser | null> {
-  const cached = client.getQueryData<AuthUser>(AuthKeys.me());
-  if (cached) {
-    return cached;
-  }
-
   try {
     return await client.fetchQuery(AuthMeQueryOptions());
   } catch {
+    client.removeQueries({ queryKey: AuthKeys.me(), exact: true });
     return null;
   }
 }

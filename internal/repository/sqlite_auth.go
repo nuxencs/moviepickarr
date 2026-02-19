@@ -57,6 +57,19 @@ func (d *SqliteAuthRepository) CountAccounts(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+func (d *SqliteAuthRepository) CountAdmins(ctx context.Context) (int, error) {
+	var count int
+	if err := d.db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM local_accounts WHERE role = ?",
+		string(domain.RoleAdmin),
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
 func (d *SqliteAuthRepository) FindAccountByUsername(ctx context.Context, username string) (*domain.LocalAccount, *domain.User, error) {
 	query := `
 		SELECT

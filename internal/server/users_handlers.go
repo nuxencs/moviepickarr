@@ -148,6 +148,9 @@ func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
+	if err := h.authService.CanDeleteAccount(ctx, userID); err != nil {
+		return writeError(c, err)
+	}
 	if err := h.userService.Delete(ctx, userID); err != nil {
 		return writeError(c, err)
 	}

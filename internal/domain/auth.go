@@ -48,6 +48,7 @@ func (p AuthPrincipal) IsAdmin() bool {
 
 type AuthRepo interface {
 	CountAccounts(ctx context.Context) (int, error)
+	CountAdmins(ctx context.Context) (int, error)
 	FindAccountByUsername(ctx context.Context, username string) (*LocalAccount, *User, error)
 	FindAccountByUserID(ctx context.Context, userID int) (*LocalAccount, error)
 	UpsertAccount(ctx context.Context, userID int, username, passwordHash string, role UserRole) (*LocalAccount, error)

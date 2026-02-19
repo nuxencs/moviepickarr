@@ -164,3 +164,86 @@ func TestNonAdminCannotMutateOtherUserMovie(t *testing.T) {
 		t.Fatalf("expected status 403, got %d", updateResp.StatusCode)
 	}
 }
+
+func TestDeleteUserRejectsLastAdmin(t *testing.T) {
+	t.Parallel()
+
+	h, app, userRepo, _ := setupAuthTestApp(t)
+	ctx := context.Background()
+
+	admin, err := userRepo.Create(ctx, "Admin")
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	if _, err := h.authService.UpsertAccount(ctx, admin.ID, "admin", "very-secure-password", domain.RoleAdmin); err != nil {
+		t.Fatalf("upsert admin account: %v", err)
+	}
+
+	cookie := loginAuthTestUser(t, app, "admin", "very-secure-password")
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/users/%d", admin.ID), nil)
+	req.Header.Set("Cookie", cookie)
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpsertUserAccountRejectsDemotingLastAdmin(t *testing.T) {
+	t.Parallel()
+
+	h, app, userRepo, _ := setupAuthTestApp(t)
+	ctx := context.Background()
+
+	admin, err := userRepo.Create(ctx, "Admin")
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	if _, err := h.authService.UpsertAccount(ctx, admin.ID, "admin", "very-secure-password", domain.RoleAdmin); err != nil {
+		t.Fatalf("upsert admin account: %v", err)
+	}
+
+	cookie := loginAuthTestUser(t, app, "admin", "very-secure-password")
+	body := `{"username":"admin","password":"another-very-secure-password","role":"member"}`
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/users/%d/account", admin.ID),
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", cookie)
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("upsert request: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", resp.StatusCode)
+	}
+}
+
+func loginAuthTestUser(t *testing.T, app *fiber.App, username, password string) string {
+	t.Helper()
+
+	body := fmt.Sprintf(`{"username":"%s","password":"%s"}`, username, password)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("login request: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected login status 200, got %d", resp.StatusCode)
+	}
+
+	cookie := resp.Header.Get("Set-Cookie")
+	if cookie == "" {
+		t.Fatalf("missing auth cookie")
+	}
+
+	return cookie
+}

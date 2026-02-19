@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDownIcon, ChevronUpIcon, PencilIcon, Trash2Icon, UserIcon } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronDownIcon, PencilIcon, Trash2Icon, UserIcon } from "lucide-react";
 import { useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
@@ -122,29 +123,53 @@ export function UsersGrid({ authUser }: UsersGridProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const { data: users } = useQuery(UsersGetAllQueryOptions());
   const visibleUsers = users ?? [];
+  const toggleCreateOpen = () => setCreateOpen((current) => !current);
 
   return (
     <div className="p-4 pt-0">
       {authUser.role === "admin" && (
         <Card className="w-full">
-          <CardHeader>
+          <CardHeader
+            onClick={toggleCreateOpen}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                toggleCreateOpen();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-expanded={createOpen}
+            className="cursor-pointer select-none"
+          >
             <CardTitle className="flex items-center justify-between">
-              User Management
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCreateOpen((current) => !current)}
+              Create User
+              <motion.span
+                animate={{ rotate: createOpen ? 180 : 0 }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+                className="inline-flex"
+                aria-hidden="true"
               >
-                {createOpen ? <ChevronUpIcon className="size-4"/> : <ChevronDownIcon className="size-4"/>}
-                {createOpen ? "Hide" : "Add User"}
-              </Button>
+                <ChevronDownIcon className="size-4"/>
+              </motion.span>
             </CardTitle>
           </CardHeader>
-          {createOpen ? (
-            <CardContent>
-              <CreateUser onCreated={() => setCreateOpen(false)}/>
-            </CardContent>
-          ) : null}
+          <AnimatePresence initial={false}>
+            {createOpen ? (
+              <motion.div
+                key="create-user-panel"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <CardContent>
+                  <CreateUser onCreated={() => setCreateOpen(false)}/>
+                </CardContent>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </Card>
       )}
 

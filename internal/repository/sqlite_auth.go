@@ -88,7 +88,7 @@ func (d *SqliteAuthRepository) FindAccountByUsername(ctx context.Context, userna
 			u.updated_at
 		FROM local_accounts la
 		JOIN users u ON u.id = la.user_id
-		WHERE LOWER(la.username) = LOWER(?)
+		WHERE la.username = ? COLLATE NOCASE
 	`
 
 	row := d.db.QueryRowContext(ctx, query, username)

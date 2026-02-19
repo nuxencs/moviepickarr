@@ -17,10 +17,18 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	movies, err := h.movieService.List(ctx)
+	pooledMovies, err := h.movieService.Pooled(ctx)
 	if err != nil {
 		return writeError(c, err)
 	}
+	stashedMovies, err := h.movieService.Stashed(ctx)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	movies := make([]*domain.Movie, 0, len(pooledMovies)+len(stashedMovies))
+	movies = append(movies, pooledMovies...)
+	movies = append(movies, stashedMovies...)
 
 	poolByUser := make(map[int]map[string]movieResponse)
 	stashByUser := make(map[int]map[string]movieResponse)

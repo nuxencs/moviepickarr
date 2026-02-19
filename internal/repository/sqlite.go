@@ -399,8 +399,12 @@ func (d *SqliteMoviesRepository) GetRandomPooled(ctx context.Context) (*domain.M
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		WHERE m.status = 'pool'
-		ORDER BY RANDOM()
 		LIMIT 1
+		OFFSET (
+			ABS(RANDOM()) % (
+				SELECT COUNT(*) FROM movies WHERE status = 'pool'
+			)
+		)
 	`
 
 	row := d.db.QueryRowContext(ctx, query)

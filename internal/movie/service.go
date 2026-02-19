@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -20,6 +21,7 @@ type Service interface {
 	Get(ctx context.Context, id int) (*domain.Movie, error)
 	List(ctx context.Context) ([]*domain.Movie, error)
 	Pooled(ctx context.Context) ([]*domain.Movie, error)
+	Stashed(ctx context.Context) ([]*domain.Movie, error)
 	Watched(ctx context.Context) ([]*domain.Movie, error)
 	Current(ctx context.Context) (*domain.Movie, error)
 	PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
@@ -157,6 +159,10 @@ func (s *service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.FindByStatus(ctx, "pool")
 }
 
+func (s *service) Stashed(ctx context.Context) ([]*domain.Movie, error) {
+	return s.movieRepo.FindByStatus(ctx, "stash")
+}
+
 func (s *service) Watched(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.FindByStatus(ctx, "watched")
 }
@@ -184,12 +190,12 @@ func (s *service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 }
 
 func (s *service) PickRandom(ctx context.Context) (*domain.Movie, error) {
-	pooled, err := s.movieRepo.FindByStatus(ctx, "pool")
+	pooledCount, err := s.movieRepo.CountByStatus(ctx, "pool")
 	if err != nil {
 		return nil, err
 	}
 
-	if len(pooled) == 0 {
+	if pooledCount == 0 {
 		return nil, domain.ErrNotFound
 	}
 
@@ -208,6 +214,9 @@ func (s *service) PickRandom(ctx context.Context) (*domain.Movie, error) {
 	}
 
 	if err = s.movieRepo.UpdateStatus(ctx, movie.ID, "current"); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique constraint failed: movies.status") {
+			return nil, domain.ErrCurrentMovieExist
+		}
 		return nil, err
 	}
 

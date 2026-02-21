@@ -25,48 +25,48 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 	poolByUser := make(map[int]map[string]movieResponse)
 	stashByUser := make(map[int]map[string]movieResponse)
 
-	for _, m := range movies {
-		if m.Status != "pool" && m.Status != "stash" {
+	for i := range movies {
+		if movies[i].Status != "pool" && movies[i].Status != "stash" {
 			continue
 		}
 
-		apiMovie := toAPIMovie(m)
-		key := strconv.Itoa(m.ID)
+		apiMovie := toAPIMovie(movies[i])
+		key := strconv.Itoa(movies[i].ID)
 
-		if m.Status == "pool" {
-			if poolByUser[m.AddedByID] == nil {
-				poolByUser[m.AddedByID] = map[string]movieResponse{}
+		if movies[i].Status == "pool" {
+			if poolByUser[movies[i].AddedByID] == nil {
+				poolByUser[movies[i].AddedByID] = map[string]movieResponse{}
 			}
-			poolByUser[m.AddedByID][key] = apiMovie
+			poolByUser[movies[i].AddedByID][key] = apiMovie
 			continue
 		}
 
-		if stashByUser[m.AddedByID] == nil {
-			stashByUser[m.AddedByID] = map[string]movieResponse{}
+		if stashByUser[movies[i].AddedByID] == nil {
+			stashByUser[movies[i].AddedByID] = map[string]movieResponse{}
 		}
-		stashByUser[m.AddedByID][key] = apiMovie
+		stashByUser[movies[i].AddedByID][key] = apiMovie
 	}
 
 	response := make([]userResponse, 0, len(users))
-	for _, u := range users {
-		currentPool := poolByUser[u.ID]
+	for i := range users {
+		currentPool := poolByUser[users[i].ID]
 		if currentPool == nil {
 			currentPool = map[string]movieResponse{}
 		}
-		stash := stashByUser[u.ID]
+		stash := stashByUser[users[i].ID]
 		if stash == nil {
 			stash = map[string]movieResponse{}
 		}
 
 		response = append(response, userResponse{
-			ID:          u.ID,
-			Name:        u.Name,
-			Username:    u.Username,
-			Role:        string(u.Role),
-			HasAccount:  u.HasAccount,
+			ID:          users[i].ID,
+			Name:        users[i].Name,
+			Username:    users[i].Username,
+			Role:        string(users[i].Role),
+			HasAccount:  users[i].HasAccount,
 			CurrentPool: currentPool,
 			Stash:       stash,
-			CreatedAt:   formatTime(u.CreatedAt),
+			CreatedAt:   formatTime(users[i].CreatedAt),
 		})
 	}
 

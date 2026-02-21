@@ -58,16 +58,16 @@ func toAPIMovie(movie *domain.Movie) movieResponse {
 
 func toAPIMovies(movies []*domain.Movie) []movieResponse {
 	result := make([]movieResponse, 0, len(movies))
-	for _, movie := range movies {
-		result = append(result, toAPIMovie(movie))
+	for i := range movies {
+		result = append(result, toAPIMovie(movies[i]))
 	}
 	return result
 }
 
 func moviesToMap(movies []*domain.Movie) map[string]movieResponse {
 	result := make(map[string]movieResponse, len(movies))
-	for _, movie := range movies {
-		result[strconv.Itoa(movie.ID)] = toAPIMovie(movie)
+	for i := range movies {
+		result[strconv.Itoa(movies[i].ID)] = toAPIMovie(movies[i])
 	}
 	return result
 }

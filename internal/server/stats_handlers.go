@@ -265,15 +265,15 @@ func buildStatsResponse(
 	selectedRange := rangeForSelectedWindow(selectedWindow, now, customRange)
 	selectedWindowCount := 0
 
-	for _, movie := range watched {
-		if movie.WatchedAt == nil {
+	for i := range watched {
+		if watched[i].WatchedAt == nil {
 			continue
 		}
 
-		watchedAt := movie.WatchedAt.UTC()
-		for _, window := range statsWindowOrder {
-			if containsTimeRange(watchedAt, now, rangeForPresetWindow(window, now)) {
-				countsByWindow[window]++
+		watchedAt := watched[i].WatchedAt.UTC()
+		for j := range statsWindowOrder {
+			if containsTimeRange(watchedAt, now, rangeForPresetWindow(statsWindowOrder[j], now)) {
+				countsByWindow[statsWindowOrder[j]]++
 			}
 		}
 
@@ -286,7 +286,7 @@ func buildStatsResponse(
 		weekdayCounts[localWatchedAt.Weekday()]++
 		hourCounts[localWatchedAt.Hour()]++
 
-		name := movie.AddedByName
+		name := watched[i].AddedByName
 		if strings.TrimSpace(name) == "" {
 			name = "Unknown"
 		}
@@ -323,10 +323,10 @@ func customRangeEnd(customRange *customDateRange) string {
 
 func buildWindowCounts(counts map[statsWindow]int) []statsWindowCount {
 	output := make([]statsWindowCount, 0, len(statsWindowOrder))
-	for _, window := range statsWindowOrder {
+	for i := range statsWindowOrder {
 		output = append(output, statsWindowCount{
-			Window: string(window),
-			Count:  counts[window],
+			Window: string(statsWindowOrder[i]),
+			Count:  counts[statsWindowOrder[i]],
 		})
 	}
 	return output
@@ -370,10 +370,10 @@ func buildWeekdayCounts(counts map[time.Weekday]int) []statsNamedCount {
 	}
 
 	output := make([]statsNamedCount, 0, len(orderedWeekdays))
-	for _, entry := range orderedWeekdays {
+	for i := range orderedWeekdays {
 		output = append(output, statsNamedCount{
-			Name:  entry.label,
-			Count: counts[entry.day],
+			Name:  orderedWeekdays[i].label,
+			Count: counts[orderedWeekdays[i].day],
 		})
 	}
 	return output

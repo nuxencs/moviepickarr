@@ -1,5 +1,5 @@
 # build app
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine3.22 AS app-builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine3.23 AS app-builder
 RUN apk add --no-cache git tzdata
 
 ENV SERVICE=moviepickarr
@@ -20,13 +20,13 @@ ARG TARGETARCH
 ARG TARGETVARIANT
 
 RUN --network=none --mount=target=. \
-export GOOS=$TARGETOS; \
-export GOARCH=$TARGETARCH; \
-[[ "$GOARCH" == "amd64" ]] && export GOAMD64=$TARGETVARIANT; \
-[[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v6" ]] && export GOARM=6; \
-[[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v7" ]] && export GOARM=7; \
-echo $GOARCH $GOOS $GOARM$GOAMD64; \
-go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o /out/bin/moviepickarr main.go
+    export GOOS=$TARGETOS; \
+    export GOARCH=$TARGETARCH; \
+    [[ "$GOARCH" == "amd64" ]] && export GOAMD64=$TARGETVARIANT; \
+    [[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v6" ]] && export GOARM=6; \
+    [[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v7" ]] && export GOARM=7; \
+    echo $GOARCH $GOOS $GOARM$GOAMD64; \
+    go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o /out/bin/moviepickarr main.go
 
 # build runner
 FROM alpine:latest AS runner

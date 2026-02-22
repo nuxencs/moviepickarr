@@ -54,15 +54,15 @@ func TestBuildStatsResponse_WindowCountsAndSelectedBreakdown(t *testing.T) {
 	location := time.UTC
 
 	movies := []*domain.Movie{
-		{AddedByName: "Alice", WatchedAt: ptrTime(now.Add(-2 * time.Hour))},
-		{AddedByName: "Bob", WatchedAt: ptrTime(now.Add(-25 * time.Hour))},
-		{AddedByName: "Alice", WatchedAt: ptrTime(now.AddDate(0, 0, -8))},
-		{AddedByName: "Cara", WatchedAt: ptrTime(now.AddDate(0, 0, -31))},
-		{AddedByName: "Bob", WatchedAt: ptrTime(now.AddDate(0, 0, -95))},
-		{AddedByName: "Alice", WatchedAt: ptrTime(now.AddDate(0, 0, -200))},
-		{AddedByName: "Alice", WatchedAt: ptrTime(now.AddDate(0, 0, -370))},
+		{AddedByName: "Alice", WatchedAt: new(now.Add(-2 * time.Hour))},
+		{AddedByName: "Bob", WatchedAt: new(now.Add(-25 * time.Hour))},
+		{AddedByName: "Alice", WatchedAt: new(now.AddDate(0, 0, -8))},
+		{AddedByName: "Cara", WatchedAt: new(now.AddDate(0, 0, -31))},
+		{AddedByName: "Bob", WatchedAt: new(now.AddDate(0, 0, -95))},
+		{AddedByName: "Alice", WatchedAt: new(now.AddDate(0, 0, -200))},
+		{AddedByName: "Alice", WatchedAt: new(now.AddDate(0, 0, -370))},
 		{AddedByName: "Nobody", WatchedAt: nil},
-		{AddedByName: "Future", WatchedAt: ptrTime(now.Add(1 * time.Hour))},
+		{AddedByName: "Future", WatchedAt: new(now.Add(1 * time.Hour))},
 	}
 
 	got := buildStatsResponse(movies, statsWindow30d, nil, location, "UTC", now)
@@ -242,9 +242,9 @@ func TestBuildStatsResponse_CustomRange(t *testing.T) {
 	}
 
 	movies := []*domain.Movie{
-		{AddedByName: "Alice", WatchedAt: ptrTime(time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC))},
-		{AddedByName: "Bob", WatchedAt: ptrTime(time.Date(2026, 2, 3, 23, 59, 59, 0, time.UTC))},
-		{AddedByName: "Cara", WatchedAt: ptrTime(time.Date(2026, 2, 4, 0, 0, 0, 0, time.UTC))},
+		{AddedByName: "Alice", WatchedAt: new(time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC))},
+		{AddedByName: "Bob", WatchedAt: new(time.Date(2026, 2, 3, 23, 59, 59, 0, time.UTC))},
+		{AddedByName: "Cara", WatchedAt: new(time.Date(2026, 2, 4, 0, 0, 0, 0, time.UTC))},
 	}
 
 	got := buildStatsResponse(movies, statsWindowCustom, custom, location, "UTC", now)
@@ -257,10 +257,6 @@ func TestBuildStatsResponse_CustomRange(t *testing.T) {
 	if got.CustomRangeStart != "2026-02-01" || got.CustomRangeEnd != "2026-02-03" {
 		t.Fatalf("unexpected custom range fields: %s to %s", got.CustomRangeStart, got.CustomRangeEnd)
 	}
-}
-
-func ptrTime(v time.Time) *time.Time {
-	return &v
 }
 
 func findCountByName(t *testing.T, counts []statsNamedCount, name string) int {

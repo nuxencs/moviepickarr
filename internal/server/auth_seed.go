@@ -52,9 +52,9 @@ func (h *handler) resolveInitialAdminUser(ctx context.Context, name string) (int
 		return 0, false, err
 	}
 
-	for _, candidate := range users {
-		if strings.EqualFold(strings.TrimSpace(candidate.Name), name) {
-			return candidate.ID, false, nil
+	for i := range users {
+		if strings.EqualFold(strings.TrimSpace(users[i].Name), name) {
+			return users[i].ID, false, nil
 		}
 	}
 

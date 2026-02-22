@@ -55,8 +55,8 @@ func (h *handler) advanceNextPicker(ctx context.Context) error {
 	}
 
 	currentIndex := -1
-	for i, u := range users {
-		if current != nil && u.ID == current.ID {
+	for i := range users {
+		if current != nil && users[i].ID == current.ID {
 			currentIndex = i
 			break
 		}

@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
 import { APIClient } from "@/api/APIClient";
-import { AuthKeys, MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
 import type { StatsWindow } from "@/types/Response";
 
@@ -10,14 +10,6 @@ export const UsersGetAllQueryOptions = () =>
     queryKey: UsersKeys.list(),
     queryFn: () => APIClient.users.getAll(),
     refetchOnWindowFocus: false
-  })
-
-export const AuthMeQueryOptions = () =>
-  queryOptions({
-    queryKey: AuthKeys.me(),
-    queryFn: () => APIClient.auth.me(),
-    refetchOnWindowFocus: false,
-    retry: false,
   })
 
 export const UsersGetPoolQueryOptions = (userID: number) =>

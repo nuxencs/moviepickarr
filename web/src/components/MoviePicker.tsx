@@ -15,17 +15,11 @@ import { toast } from "@/components/ui/toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { LockIcon, LockOpenIcon, SearchIcon, } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { AuthUser } from "@/types/Response";
 
-interface MoviePickerProps {
-  authUser: AuthUser;
-}
-
-export function MoviePicker({ authUser }: MoviePickerProps) {
+export function MoviePicker() {
   const { data: pooledMovies } = useQuery(MoviesGetPoolQueryOptions());
   const { data: watchedMovies } = useQuery(MoviesGetWatchedQueryOptions());
   const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions());
-  const canManagePool = authUser.role === "admin";
 
   const lockMutation = useMutation({
     mutationFn: () => {
@@ -54,7 +48,7 @@ export function MoviePicker({ authUser }: MoviePickerProps) {
             <span className="shrink-0">Pooled Movies ({pooledMovies?.length})</span>
             <Button
               onClick={() => lockMutation.mutate()}
-              disabled={lockMutation.isPending || !canManagePool}
+              disabled={lockMutation.isPending}
               className="w-full sm:w-auto"
             >
               {isPoolLocked ? <LockOpenIcon/> : <LockIcon/>}
@@ -71,11 +65,7 @@ export function MoviePicker({ authUser }: MoviePickerProps) {
                   id={movie.movieID}
                   className="truncate"
                 >
-                  <MovieItem
-                    key={movie.movieID}
-                    movie={movie}
-                    canEdit={!isPoolLocked && (authUser.role === "admin" || authUser.userID === movie.addedByID)}
-                  />
+                  <MovieItem key={movie.movieID} movie={movie}/>
                 </AnimatedListItem>
               ))}
             </AnimatedList>
@@ -114,11 +104,7 @@ export function MoviePicker({ authUser }: MoviePickerProps) {
               {filteredWatchedMovies &&
                 filteredWatchedMovies.map((movie) => (
                   <AnimatedListItem key={movie.movieID} id={movie.movieID} className="truncate">
-                    <MovieItem
-                      movie={movie}
-                      watched={true}
-                      canEdit={authUser.role === "admin" || authUser.userID === movie.addedByID}
-                    />
+                    <MovieItem movie={movie} watched={true}/>
                   </AnimatedListItem>
                 ))}
             </AnimatedList>

@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"moviepickarr/internal/auth"
 	"moviepickarr/internal/domain"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextpicker"
@@ -26,12 +25,6 @@ type handler struct {
 	movieService      movie.Service
 	nextPickerService nextpicker.Service
 	settingsService   settings.Service
-	authService       auth.Service
-	authCookieName    string
-	authCookieSecure  bool
-	authAdminName     string
-	authAdminUsername string
-	authAdminPassword string
 	tmdb              *tmdbClient
 	statsCacheMu      sync.RWMutex
 	statsCache        map[string]statsCacheEntry
@@ -75,9 +68,6 @@ func parseInt(raw string) (int, bool) {
 
 func (h *handler) resolveUserID(c *fiber.Ctx) (int, error) {
 	if v, ok := parseInt(c.Params("userID")); ok {
-		if principal, ok := h.currentPrincipal(c); ok && !principal.IsAdmin() && principal.UserID != v {
-			return 0, domain.ErrForbidden
-		}
 		return v, nil
 	}
 
@@ -88,30 +78,8 @@ func (h *handler) resolveUserAndMovieID(c *fiber.Ctx) (int, int, error) {
 	userID, userOK := parseInt(c.Params("userID"))
 	movieID, movieOK := parseInt(c.Params("movieID"))
 	if userOK && movieOK {
-		if principal, ok := h.currentPrincipal(c); ok && !principal.IsAdmin() && principal.UserID != userID {
-			return 0, 0, domain.ErrForbidden
-		}
 		return userID, movieID, nil
 	}
 
 	return 0, 0, fmt.Errorf("%w: userID and movieID path parameters are required", domain.ErrInvalidInput)
-}
-
-func (h *handler) currentPrincipal(c *fiber.Ctx) (*domain.AuthPrincipal, bool) {
-	raw := c.Locals(authPrincipalContextKey)
-	if raw == nil {
-		return nil, false
-	}
-
-	principal, ok := raw.(*domain.AuthPrincipal)
-	if !ok || principal == nil {
-		return nil, false
-	}
-
-	return principal, true
-}
-
-func (h *handler) isCurrentUserAdmin(c *fiber.Ctx) bool {
-	principal, ok := h.currentPrincipal(c)
-	return ok && principal.IsAdmin()
 }

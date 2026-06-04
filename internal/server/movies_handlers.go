@@ -185,15 +185,6 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 	if movieRecord.AddedByID != userID {
 		return writeError(c, domain.ErrNotFound)
 	}
-	if movieRecord.Status == "pool" {
-		poolLocked, err := h.settingsService.GetPoolLock(ctx)
-		if err != nil {
-			return writeError(c, err)
-		}
-		if poolLocked {
-			return writeError(c, domain.ErrPoolLocked)
-		}
-	}
 
 	updatedMovie, err := h.movieService.Update(ctx, movieID, title, link, watchedAt)
 	if err != nil {
@@ -224,15 +215,6 @@ func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
 
 	if movieRecord.AddedByID != userID {
 		return writeError(c, domain.ErrNotFound)
-	}
-	if movieRecord.Status == "pool" {
-		poolLocked, err := h.settingsService.GetPoolLock(ctx)
-		if err != nil {
-			return writeError(c, err)
-		}
-		if poolLocked {
-			return writeError(c, domain.ErrPoolLocked)
-		}
 	}
 	if movieRecord.Status != "pool" && movieRecord.Status != "stash" {
 		return writeError(c, domain.ErrInvalidState)
@@ -344,9 +326,6 @@ func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
-	if err := h.requireNextPickerActor(c, "pick a random movie"); err != nil {
-		return writeError(c, err)
-	}
 	ctx := c.UserContext()
 
 	selectedMovie, err := h.movieService.PickRandom(ctx)
@@ -377,10 +356,6 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
-	if err := h.requireNextPickerActor(c, "mark the current movie as watched"); err != nil {
-		return writeError(c, err)
-	}
-
 	watched, err := h.movieService.MarkCurrentAsWatched(c.UserContext())
 	if err != nil {
 		return writeError(c, err)
@@ -392,35 +367,6 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 	h.broker.Broadcast(event{Type: "movie:watched", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
-}
-
-func (h *handler) requireNextPickerActor(c *fiber.Ctx, action string) error {
-	ctx := c.UserContext()
-	principal, ok := h.currentPrincipal(c)
-	if !ok {
-		return domain.ErrUnauthenticated
-	}
-
-	nextPicker, err := h.nextPickerService.Get(ctx)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			if initErr := h.initNextPicker(ctx); initErr != nil {
-				return initErr
-			}
-			nextPicker, err = h.nextPickerService.Get(ctx)
-			if errors.Is(err, sql.ErrNoRows) || nextPicker == nil {
-				return fmt.Errorf("%w: no next picker available", domain.ErrForbidden)
-			}
-		}
-		if err != nil {
-			return err
-		}
-	}
-	if nextPicker == nil || principal.UserID != nextPicker.ID {
-		return fmt.Errorf("%w: only the next picker can %s", domain.ErrForbidden, action)
-	}
-
-	return nil
 }
 
 func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {

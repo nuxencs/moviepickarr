@@ -38,10 +38,6 @@ func writeError(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, domain.ErrInvalidInput):
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", err.Error())
-	case errors.Is(err, domain.ErrUnauthenticated):
-		return writeProblem(c, fiber.StatusUnauthorized, "unauthenticated", err.Error())
-	case errors.Is(err, domain.ErrUnauthorized):
-		return writeProblem(c, fiber.StatusUnauthorized, "unauthorized", err.Error())
 	case errors.Is(err, domain.ErrForbidden), errors.Is(err, domain.ErrPoolLocked):
 		return writeProblem(c, fiber.StatusForbidden, "forbidden", err.Error())
 	case errors.Is(err, domain.ErrNotFound), errors.Is(err, sql.ErrNoRows):

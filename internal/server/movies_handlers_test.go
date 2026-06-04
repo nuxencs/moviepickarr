@@ -53,7 +53,7 @@ func TestHandleEditMovie_RejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	movie, err := movieRepo.Add(ctx, "Before", "https://example.com/before", "pool", user.ID)
+	movie, err := movieRepo.Add(ctx, "Before", "pool", user.ID)
 	if err != nil {
 		t.Fatalf("create movie: %v", err)
 	}
@@ -81,9 +81,6 @@ func TestHandleEditMovie_RejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	if unchanged.Title != "Before" {
 		t.Fatalf("expected title unchanged, got %q", unchanged.Title)
 	}
-	if unchanged.Link != "https://example.com/before" {
-		t.Fatalf("expected link unchanged, got %q", unchanged.Link)
-	}
 }
 
 func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
@@ -96,7 +93,7 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	movie, err := movieRepo.Add(ctx, "Before", "https://example.com/before", "pool", user.ID)
+	movie, err := movieRepo.Add(ctx, "Before", "pool", user.ID)
 	if err != nil {
 		t.Fatalf("create movie: %v", err)
 	}
@@ -128,9 +125,6 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	}
 	if updated.Title != "After" {
 		t.Fatalf("expected title updated, got %q", updated.Title)
-	}
-	if updated.Link != "https://example.com/after" {
-		t.Fatalf("expected link updated, got %q", updated.Link)
 	}
 	if updated.WatchedAt == nil {
 		t.Fatalf("expected watchedAt to be set")

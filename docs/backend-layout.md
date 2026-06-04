@@ -41,17 +41,16 @@
 ## Movie identity & enrichment (TMDB)
 
 A movie's stable identity is its `tmdb_id` / `imdb_id` (columns on `movies`,
-added in migration `004`). The displayed link is **derived** from them
-(`models.go::movieLink`: IMDb URL → TMDB URL → the stored `link` as a
-legacy/manual fallback), so we never fabricate-and-store a link via an API call.
-The `movie_metadata` table (1:1, FK cascade) holds only enriched **display**
-fields (overview, poster/backdrop, runtime, genres-as-JSON-names, rating,
-tagline, `enriched_at`); existing movie read queries are unchanged except for
-the two id columns.
+added in migration `004`). There is **no stored link** — migration `005`
+backfilled `imdb_id` from legacy links and dropped the `movies.link` column. The
+link is **derived** on read (`models.go::movieLink`: IMDb URL → TMDB URL → `""`),
+and the API still exposes a `link` field. `movie_metadata` (1:1, FK cascade)
+holds only enriched **display** fields (overview, poster/backdrop, runtime,
+genres-as-JSON-names, rating, tagline, `enriched_at`).
 
-Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone) — the id
-is stored and the link derived. A manual/edit add carries an IMDb link we
-extract the id from.
+Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone). A
+manual/edit add still accepts a `link` in the request body, but only to extract
+the IMDb id from it — nothing is stored as a link.
 
 Enrichment (`EnrichOne`): if the movie already has a `tmdb_id` (search add /
 prior enrichment) it goes straight to `GET /3/movie/{tmdb_id}`; otherwise it

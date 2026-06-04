@@ -7,11 +7,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
+
+// boltIMDbIDRegex extracts the IMDb id from a legacy Bolt link. Duplicated here
+// (rather than importing the server package) to respect the db→server layering.
+var boltIMDbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
 
 type boltUser struct {
 	ID          string               `json:"userID"`
@@ -285,15 +290,22 @@ func upsertBoltMovie(
 	addedAt := parseTimeOrNow(movie.AddedAt)
 	watchedAt := parseTimePtr(movie.WatchedAt)
 
+	// The link column was dropped (migration 005); identity lives in imdb_id,
+	// derived from the legacy Bolt link. Enrichment fills the rest later.
+	var imdbID *string
+	if id := boltIMDbIDRegex.FindString(movie.Link); id != "" {
+		imdbID = &id
+	}
+
 	result, err := db.ExecContext(
 		ctx,
-		"INSERT INTO movies (title, link, status, added_at, added_by_id, watched_at) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO movies (title, status, added_at, added_by_id, watched_at, imdb_id) VALUES (?, ?, ?, ?, ?, ?)",
 		movie.Title,
-		movie.Link,
 		status,
 		addedAt,
 		addedByID,
 		watchedAt,
+		imdbID,
 	)
 	if err != nil {
 		return err

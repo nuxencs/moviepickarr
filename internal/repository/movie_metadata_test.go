@@ -35,13 +35,13 @@ func setupMetadataRepos(t *testing.T) (context.Context, *SqliteMovieMetadataRepo
 		NewSqliteUserRepository(dbConn)
 }
 
-func seedMovie(t *testing.T, ctx context.Context, users *SqliteUserRepository, movies *SqliteMoviesRepository, name, link string) int {
+func seedMovie(t *testing.T, ctx context.Context, users *SqliteUserRepository, movies *SqliteMoviesRepository, name string) int {
 	t.Helper()
 	user, err := users.Create(ctx, name)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	movie, err := movies.Add(ctx, name+" movie", link, "pool", user.ID)
+	movie, err := movies.Add(ctx, name+" movie", "pool", user.ID)
 	if err != nil {
 		t.Fatalf("add movie: %v", err)
 	}
@@ -51,7 +51,7 @@ func seedMovie(t *testing.T, ctx context.Context, users *SqliteUserRepository, m
 func TestUpsertAndGetMetadata_RoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
-	movieID := seedMovie(t, ctx, users, movies, "Alice", "https://www.imdb.com/title/tt0133093/")
+	movieID := seedMovie(t, ctx, users, movies, "Alice")
 
 	in := domain.MovieMetadata{
 		MovieID:      movieID,
@@ -97,7 +97,7 @@ func TestUpsertAndGetMetadata_RoundTrip(t *testing.T) {
 func TestUpsertMetadata_Idempotent(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
-	movieID := seedMovie(t, ctx, users, movies, "Bob", "https://www.imdb.com/title/tt0111161/")
+	movieID := seedMovie(t, ctx, users, movies, "Bob")
 
 	first := domain.MovieMetadata{MovieID: movieID, Runtime: 142, Genres: []string{"Drama"}}
 	if err := meta.UpsertMetadata(ctx, first); err != nil {
@@ -135,7 +135,7 @@ func TestUpsertMetadata_Idempotent(t *testing.T) {
 func TestUpsertMetadata_NilGenresStoredAsEmptyArray(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
-	movieID := seedMovie(t, ctx, users, movies, "Carol", "https://www.imdb.com/title/tt0468569/")
+	movieID := seedMovie(t, ctx, users, movies, "Carol")
 
 	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: movieID}); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -163,7 +163,7 @@ func TestGetMetadata_NotFound(t *testing.T) {
 func TestSetExternalIDs_RoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx, _, movies, users := setupMetadataRepos(t)
-	movieID := seedMovie(t, ctx, users, movies, "Zed", "https://www.imdb.com/title/tt0133093/")
+	movieID := seedMovie(t, ctx, users, movies, "Zed")
 
 	// Fresh movie has no ids.
 	m, err := movies.FindByID(ctx, movieID)
@@ -204,8 +204,8 @@ func TestSetExternalIDs_RoundTrip(t *testing.T) {
 func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
-	idA := seedMovie(t, ctx, users, movies, "Dave", "https://www.imdb.com/title/tt0109830/")
-	idB := seedMovie(t, ctx, users, movies, "Erin", "https://www.imdb.com/title/tt0110912/")
+	idA := seedMovie(t, ctx, users, movies, "Dave")
+	idB := seedMovie(t, ctx, users, movies, "Erin")
 
 	// Backfill (zero time): both un-enriched movies are candidates.
 	backfill, err := meta.NeedsEnrichment(ctx, time.Time{}, 100)
@@ -258,9 +258,9 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 func TestNeedsEnrichment_RespectsLimit(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
-	seedMovie(t, ctx, users, movies, "Fay", "https://www.imdb.com/title/tt0000001/")
-	seedMovie(t, ctx, users, movies, "Gus", "https://www.imdb.com/title/tt0000002/")
-	seedMovie(t, ctx, users, movies, "Ivy", "https://www.imdb.com/title/tt0000003/")
+	seedMovie(t, ctx, users, movies, "Fay")
+	seedMovie(t, ctx, users, movies, "Gus")
+	seedMovie(t, ctx, users, movies, "Ivy")
 
 	got, err := meta.NeedsEnrichment(ctx, time.Time{}, 2)
 	if err != nil {
@@ -274,7 +274,7 @@ func TestNeedsEnrichment_RespectsLimit(t *testing.T) {
 func TestFindByStatus_WatchedScansAllColumns(t *testing.T) {
 	t.Parallel()
 	ctx, _, movies, users := setupMetadataRepos(t)
-	movieID := seedMovie(t, ctx, users, movies, "Wendy", "https://www.imdb.com/title/tt0133093/")
+	movieID := seedMovie(t, ctx, users, movies, "Wendy")
 	if err := movies.MarkAsWatched(ctx, movieID, time.Now().UTC()); err != nil {
 		t.Fatalf("mark watched: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestFindByStatus_WatchedScansAllColumns(t *testing.T) {
 func TestMetadata_CascadeDeleteWithMovie(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
-	movieID := seedMovie(t, ctx, users, movies, "Hank", "https://www.imdb.com/title/tt0137523/")
+	movieID := seedMovie(t, ctx, users, movies, "Hank")
 
 	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: movieID}); err != nil {
 		t.Fatalf("upsert: %v", err)

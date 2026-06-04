@@ -70,7 +70,7 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 	if !ok {
 		imdbID := movieIMDbID(m)
 		if imdbID == "" {
-			return enrichResult{}, fmt.Errorf("%w (%q)", ErrEnrichNoIMDbID, m.Link)
+			return enrichResult{}, fmt.Errorf("%w (movie %d %q)", ErrEnrichNoIMDbID, m.ID, m.Title)
 		}
 		found, err := s.tmdb.FindByIMDb(ctx, imdbID)
 		if err != nil {
@@ -119,13 +119,12 @@ func movieTMDBID(m *domain.Movie) (int, bool) {
 	return 0, false
 }
 
-// movieIMDbID returns the stored IMDb id, falling back to extracting it from
-// the link (legacy/manual movies that predate the id columns).
+// movieIMDbID returns the stored IMDb id, if any.
 func movieIMDbID(m *domain.Movie) string {
 	if m.IMDbID != nil && *m.IMDbID != "" {
 		return *m.IMDbID
 	}
-	return extractIMDbID(m.Link)
+	return ""
 }
 
 func mapDetailsToMetadata(movieID int, d tmdbMovieDetails) domain.MovieMetadata {

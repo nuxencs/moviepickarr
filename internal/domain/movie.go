@@ -13,9 +13,9 @@ type MovieRepo interface {
 	FindByUserIDAndStatus(ctx context.Context, userID int, status string) ([]*Movie, error)
 	CountByStatus(ctx context.Context, status string) (int, error)
 	CountByUserIDAndStatus(ctx context.Context, userID int, status string) (int, error)
-	Add(ctx context.Context, title, link, status string, userID int) (*Movie, error)
+	Add(ctx context.Context, title, status string, userID int) (*Movie, error)
 	SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error
-	UpdateTitleAndLink(ctx context.Context, id int, title, link string) error
+	UpdateTitle(ctx context.Context, id int, title string) error
 	UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error
 	UpdateStatus(ctx context.Context, id int, status string) error
 	MarkAsWatched(ctx context.Context, id int, time time.Time) error
@@ -36,7 +36,6 @@ const (
 type Movie struct {
 	ID          int
 	Title       string
-	Link        string // fallback URL; the effective link is derived from TMDBID/IMDbID
 	Status      string
 	AddedAt     *time.Time
 	AddedByID   int

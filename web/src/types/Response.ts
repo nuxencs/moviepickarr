@@ -11,21 +11,9 @@ export interface Movie {
 export interface User {
     userID: number;
     name: string;
-    username: string;
-    role: "member" | "admin";
-    hasAccount: boolean;
     currentPool: Record<string, Movie>;
     stash: Record<string, Movie>;
     createdAt: string;
-}
-
-export interface AuthUser {
-    userID: number;
-    name: string;
-    username: string;
-    role: "member" | "admin";
-    loggedIn: boolean;
-    expiresAt?: string;
 }
 
 export interface Settings {

@@ -14,12 +14,11 @@ import { TMDBMovie } from "@/types/Response";
 
 interface SearchMovieProps {
   userID: number;
-  disabled?: boolean;
 }
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
-export function SearchMovie({ userID, disabled = false }: SearchMovieProps) {
+export function SearchMovie({ userID }: SearchMovieProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -123,7 +122,7 @@ export function SearchMovie({ userID, disabled = false }: SearchMovieProps) {
 
   return (
     <>
-      <Button onClick={() => setIsModalOpen(true)} className="w-full" disabled={disabled}>
+      <Button onClick={() => setIsModalOpen(true)} className="w-full">
         <Search className="h-4 w-4"/>
         Search Movie
       </Button>

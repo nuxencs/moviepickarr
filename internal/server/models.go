@@ -19,9 +19,6 @@ type settingsResponse struct {
 type userResponse struct {
 	ID          int                      `json:"userID"`
 	Name        string                   `json:"name"`
-	Username    string                   `json:"username"`
-	Role        string                   `json:"role"`
-	HasAccount  bool                     `json:"hasAccount"`
 	CurrentPool map[string]movieResponse `json:"currentPool"`
 	Stash       map[string]movieResponse `json:"stash"`
 	CreatedAt   string                   `json:"createdAt"`
@@ -76,9 +73,6 @@ func toAPIUser(user *domain.User, poolMovies, stashMovies []*domain.Movie) userR
 	return userResponse{
 		ID:          user.ID,
 		Name:        user.Name,
-		Username:    user.Username,
-		Role:        string(user.Role),
-		HasAccount:  user.HasAccount,
 		CurrentPool: moviesToMap(poolMovies),
 		Stash:       moviesToMap(stashMovies),
 		CreatedAt:   formatTime(user.CreatedAt),

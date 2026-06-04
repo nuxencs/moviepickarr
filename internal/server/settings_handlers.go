@@ -24,10 +24,6 @@ func (h *handler) initNextPicker(ctx context.Context) error {
 }
 
 func (h *handler) handleSetPoolLock(c *fiber.Ctx) error {
-	if !h.isCurrentUserAdmin(c) {
-		return writeError(c, domain.ErrForbidden)
-	}
-
 	var body struct {
 		PoolLocked *bool `json:"poolLocked"`
 	}
@@ -72,9 +68,6 @@ func (h *handler) handleGetNextPicker(c *fiber.Ctx) error {
 		if err != nil {
 			return writeError(c, err)
 		}
-	}
-	if nextPicker == nil {
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{"id": 0, "name": ""})
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{

@@ -10,19 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 
-import type { AuthUser } from "@/types/Response";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { EyeIcon, FilmIcon, ShuffleIcon, UserIcon } from "lucide-react";
 
-interface NextPickerProps {
-  authUser: AuthUser;
-}
-
-export function NextPicker({ authUser }: NextPickerProps) {
+export function NextPicker() {
   const { data: nextPicker, isLoading: nextPickerLoading } = useQuery(SettingsGetNextPickerQueryOptions());
   const { data: currentMovie } = useQuery(MoviesGetCurrentQueryOptions());
   const { data: pooledMovies } = useQuery(MoviesGetPoolQueryOptions());
-  const canControlTurn = !!nextPicker && nextPicker.id === authUser.userID;
 
   const pickMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
@@ -83,8 +77,7 @@ export function NextPicker({ authUser }: NextPickerProps) {
               disabled={
                 pickMutation.isPending ||
                 pooledMovies?.length === 0 ||
-                currentMovie !== null ||
-                !canControlTurn
+                currentMovie !== null
               }
               className="w-full sm:w-auto"
             >
@@ -94,7 +87,7 @@ export function NextPicker({ authUser }: NextPickerProps) {
             <Button
               variant="default"
               onClick={() => watchMutation.mutate()}
-              disabled={watchMutation.isPending || !currentMovie || !canControlTurn}
+              disabled={watchMutation.isPending || !currentMovie}
               className="w-full sm:w-auto"
             >
               <EyeIcon className="mr-2 size-4"/>
@@ -106,10 +99,7 @@ export function NextPicker({ authUser }: NextPickerProps) {
       <CardContent>
         <div className="space-y-4">
           {currentMovie ? (
-            <MovieItem
-              movie={currentMovie}
-              canEdit={authUser.role === "admin" || authUser.userID === currentMovie.addedByID}
-            />
+            <MovieItem movie={currentMovie}/>
           ) : (
             // p-2.5 (10px) instead of p-3 (12px) to compensate for the dashed border with a width of 2px
             <div className="flex items-center justify-between p-2.5 bg-gray-50 dark:bg-gray-800/50 rounded border-2 border-dashed border-gray-300 dark:border-gray-600">

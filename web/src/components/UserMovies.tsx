@@ -16,10 +16,9 @@ import { Input } from '@/components/ui/input';
 import { toast } from "@/components/ui/toast";
 
 import { useToggle } from "@/hooks/hooks";
-import { AuthUser, Movie, User } from "@/types/Response";
+import { Movie, User } from "@/types/Response";
 
 interface UserMoviesProps {
-  authUser: AuthUser;
   user: User;
 }
 
@@ -31,10 +30,9 @@ interface MovieItemProps {
   disableDelete?: boolean;
 }
 
-export function UserMovies({ authUser, user }: UserMoviesProps) {
+export function UserMovies({ user }: UserMoviesProps) {
   const { data: isPoolLocked } = useQuery(SettingsGetPoolLockQueryOptions())
   const [stashSearchTerm, setStashSearchTerm] = useState("");
-  const canManageUserMovies = authUser.role === "admin" || authUser.userID === user.userID;
 
   const isPoolFull = Object.keys(user.currentPool).length >= 3;
   const userPool = useMemo(() => {
@@ -50,7 +48,7 @@ export function UserMovies({ authUser, user }: UserMoviesProps) {
 
   return (
     <div className="space-y-4">
-      <SearchMovie userID={user.userID} disabled={!canManageUserMovies}/>
+      <SearchMovie userID={user.userID}/>
 
       <Card>
         <CardHeader className="pb-2">
@@ -66,8 +64,8 @@ export function UserMovies({ authUser, user }: UserMoviesProps) {
                   user={user}
                   movie={movie}
                   moveIcon={<MoveDownIcon/>}
-                  disableMove={isPoolLocked || !canManageUserMovies}
-                  disableDelete={isPoolLocked || !canManageUserMovies}
+                  disableMove={isPoolLocked}
+                  disableDelete={isPoolLocked}
                 />
               </AnimatedListItem>
             ))}
@@ -113,8 +111,7 @@ export function UserMovies({ authUser, user }: UserMoviesProps) {
                     user={user}
                     movie={movie}
                     moveIcon={<MoveUpIcon/>}
-                    disableMove={isPoolLocked || isPoolFull || !canManageUserMovies}
-                    disableDelete={!canManageUserMovies}
+                    disableMove={isPoolLocked || isPoolFull}
                   />
                 </AnimatedListItem>
               ))}
@@ -207,7 +204,7 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
             size="icon"
             className="size-7"
             onClick={() => moveMutation.mutate()}
-            disabled={disableMove || moveMutation.isPending}
+            disabled={disableMove}
           >
             {moveIcon}
           </Button>
@@ -224,7 +221,7 @@ function MovieItem({ user, movie, moveIcon, disableMove, disableDelete }: MovieI
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={toggleEditModal} disabled={!!disableDelete}>
+              <DropdownMenuItem onSelect={toggleEditModal}>
                 <PencilIcon/>
                 Edit
               </DropdownMenuItem>

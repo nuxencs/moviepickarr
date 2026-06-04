@@ -25,22 +25,11 @@ func scanUser(scanner rowScanner) (*domain.User, error) {
 	user := &domain.User{}
 	var createdAt sql.NullTime
 	var updatedAt sql.NullTime
-	var username sql.NullString
-	var role sql.NullString
 
-	if err := scanner.Scan(&user.ID, &user.Name, &createdAt, &updatedAt, &username, &role); err != nil {
+	if err := scanner.Scan(&user.ID, &user.Name, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 
-	user.HasAccount = username.Valid
-	if username.Valid {
-		user.Username = username.String
-	}
-	if role.Valid {
-		user.Role = domain.UserRole(role.String)
-	} else {
-		user.Role = domain.RoleMember
-	}
 	user.CreatedAt = nullTimePtr(createdAt)
 	user.UpdatedAt = nullTimePtr(updatedAt)
 
@@ -80,18 +69,7 @@ func NewSqliteUserRepository(db *sql.DB) *SqliteUserRepository {
 }
 
 func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.User, error) {
-	query := `
-		SELECT
-			u.id,
-			u.name,
-			u.created_at,
-			u.updated_at,
-			la.username,
-			la.role
-		FROM users u
-		LEFT JOIN local_accounts la ON la.user_id = u.id
-		WHERE u.id = ?
-	`
+	query := "SELECT id, name, created_at, updated_at FROM users WHERE id = ?"
 
 	user, err := scanUser(d.db.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -105,18 +83,7 @@ func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.Us
 }
 
 func (d *SqliteUserRepository) List(ctx context.Context) ([]*domain.User, error) {
-	query := `
-		SELECT
-			u.id,
-			u.name,
-			u.created_at,
-			u.updated_at,
-			la.username,
-			la.role
-		FROM users u
-		LEFT JOIN local_accounts la ON la.user_id = u.id
-		ORDER BY u.created_at ASC
-	`
+	query := "SELECT id, name, created_at, updated_at FROM users ORDER BY created_at ASC"
 
 	rows, err := d.db.QueryContext(ctx, query)
 	if err != nil {
@@ -550,12 +517,9 @@ func (d *SqliteNextPickerRepository) Get(ctx context.Context) (*domain.User, err
 		    u.id,
 			u.name,
 			u.created_at,
-			u.updated_at,
-			la.username,
-			la.role
+			u.updated_at
 		FROM next_picker n
 		JOIN users u ON n.user_id = u.id
-		LEFT JOIN local_accounts la ON la.user_id = u.id
 		WHERE n.id = 1
 		LIMIT 1
 	`

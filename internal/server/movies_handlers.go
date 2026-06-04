@@ -99,22 +99,17 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 
 	title := sanitizeInput(body.Title)
 
-	// Identity-first: a search add carries the TMDB id (no link fetch needed);
-	// the link is derived. A manual add carries an IMDb link we extract from.
-	var link string
+	// Identity-first: a search add carries the TMDB id; a manual add carries an
+	// IMDb link we extract the id from. No link is stored — it's derived.
 	var tmdbID *int
 	var imdbID *string
 	if body.TMDBID != nil && *body.TMDBID > 0 {
 		tmdbID = body.TMDBID
-		link = fmt.Sprintf("https://www.themoviedb.org/movie/%d", *body.TMDBID)
-	} else {
-		link = sanitizeLink(body.Link)
-		if id := extractIMDbID(link); id != "" {
-			imdbID = &id
-		}
+	} else if id := extractIMDbID(sanitizeLink(body.Link)); id != "" {
+		imdbID = &id
 	}
-	if title == "" || link == "" {
-		return writeError(c, fmt.Errorf("%w: title and a tmdbId or link are required", domain.ErrInvalidInput))
+	if title == "" || (tmdbID == nil && imdbID == nil) {
+		return writeError(c, fmt.Errorf("%w: title and a tmdbId or imdb link are required", domain.ErrInvalidInput))
 	}
 
 	ctx := c.UserContext()
@@ -122,9 +117,9 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	movieRecord, err := h.movieService.AddToPool(ctx, title, link, userID)
+	movieRecord, err := h.movieService.AddToPool(ctx, title, userID)
 	if err != nil && (errors.Is(err, domain.ErrPoolLimitReached) || errors.Is(err, domain.ErrPoolLocked)) {
-		movieRecord, err = h.movieService.AddToStash(ctx, title, link, userID)
+		movieRecord, err = h.movieService.AddToStash(ctx, title, userID)
 	}
 	if err != nil {
 		return writeError(c, err)
@@ -211,7 +206,7 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 		return writeError(c, domain.ErrNotFound)
 	}
 
-	updatedMovie, err := h.movieService.Update(ctx, movieID, title, link, watchedAt)
+	updatedMovie, err := h.movieService.Update(ctx, movieID, title, watchedAt)
 	if err != nil {
 		return writeError(c, err)
 	}

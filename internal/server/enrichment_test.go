@@ -64,10 +64,10 @@ func (r *fakeMovieRepo) CountByStatus(context.Context, string) (int, error) { pa
 func (r *fakeMovieRepo) CountByUserIDAndStatus(context.Context, int, string) (int, error) {
 	panic("unexpected call")
 }
-func (r *fakeMovieRepo) Add(context.Context, string, string, string, int) (*domain.Movie, error) {
+func (r *fakeMovieRepo) Add(context.Context, string, string, int) (*domain.Movie, error) {
 	panic("unexpected call")
 }
-func (r *fakeMovieRepo) UpdateTitleAndLink(context.Context, int, string, string) error {
+func (r *fakeMovieRepo) UpdateTitle(context.Context, int, string) error {
 	panic("unexpected call")
 }
 func (r *fakeMovieRepo) UpdateWatchedAt(context.Context, int, time.Time) error {
@@ -114,7 +114,7 @@ func newTestEnricher(m *domain.Movie, tmdb tmdbAPI) (*enrichmentService, *fakeMe
 
 func TestEnrichOne_HappyPath(t *testing.T) {
 	t.Parallel()
-	m := &domain.Movie{ID: 7, Link: "https://www.imdb.com/title/tt0133093/"}
+	m := &domain.Movie{ID: 7, IMDbID: new("tt0133093")}
 	runtime := 136
 	backdrop := "/bd.jpg"
 	tmdb := &fakeTMDB{
@@ -185,7 +185,7 @@ func TestEnrichOne_HappyPath(t *testing.T) {
 func TestEnrichOne_SkipsFindWhenTMDBIDKnown(t *testing.T) {
 	t.Parallel()
 	tmdbID := 603
-	m := &domain.Movie{ID: 8, Link: "https://www.themoviedb.org/movie/603", TMDBID: &tmdbID}
+	m := &domain.Movie{ID: 8, TMDBID: &tmdbID}
 	tmdb := &fakeTMDB{
 		findFn: func(context.Context, string) (tmdbMovie, error) {
 			t.Fatal("FindByIMDb must not be called when the TMDB id is known")
@@ -212,7 +212,7 @@ func TestEnrichOne_SkipsFindWhenTMDBIDKnown(t *testing.T) {
 
 func TestEnrichOne_NoIMDbID(t *testing.T) {
 	t.Parallel()
-	m := &domain.Movie{ID: 1, Link: "https://example.com/no-id"}
+	m := &domain.Movie{ID: 1} // no identity at all
 	called := false
 	tmdb := &fakeTMDB{
 		findFn:    func(context.Context, string) (tmdbMovie, error) { called = true; return tmdbMovie{}, nil },
@@ -234,7 +234,7 @@ func TestEnrichOne_NoIMDbID(t *testing.T) {
 
 func TestEnrichOne_FindNotFound(t *testing.T) {
 	t.Parallel()
-	m := &domain.Movie{ID: 2, Link: "https://www.imdb.com/title/tt9999999/"}
+	m := &domain.Movie{ID: 2, IMDbID: new("tt9999999")}
 	tmdb := &fakeTMDB{
 		findFn: func(context.Context, string) (tmdbMovie, error) { return tmdbMovie{}, errTMDBNotFound },
 		detailsFn: func(context.Context, int) (tmdbMovieDetails, error) {
@@ -255,7 +255,7 @@ func TestEnrichOne_FindNotFound(t *testing.T) {
 
 func TestEnrichOne_DetailsNotFound(t *testing.T) {
 	t.Parallel()
-	m := &domain.Movie{ID: 5, Link: "https://www.imdb.com/title/tt0133093/"}
+	m := &domain.Movie{ID: 5, IMDbID: new("tt0133093")}
 	tmdb := &fakeTMDB{
 		findFn:    func(context.Context, string) (tmdbMovie, error) { return tmdbMovie{ID: 603}, nil },
 		detailsFn: func(context.Context, int) (tmdbMovieDetails, error) { return tmdbMovieDetails{}, errTMDBNotFound },
@@ -272,7 +272,7 @@ func TestEnrichOne_DetailsNotFound(t *testing.T) {
 
 func TestEnrichOne_RateLimitBubbles(t *testing.T) {
 	t.Parallel()
-	m := &domain.Movie{ID: 3, Link: "https://www.imdb.com/title/tt0133093/"}
+	m := &domain.Movie{ID: 3, IMDbID: new("tt0133093")}
 	rlErr := &tmdbRateLimitError{RetryAfter: 5 * time.Second}
 	tmdb := &fakeTMDB{
 		findFn:    func(context.Context, string) (tmdbMovie, error) { return tmdbMovie{}, rlErr },
@@ -292,7 +292,7 @@ func TestEnrichOne_RateLimitBubbles(t *testing.T) {
 
 func TestEnrichOne_NilRuntimeAndEmptyGenres(t *testing.T) {
 	t.Parallel()
-	m := &domain.Movie{ID: 4, Link: "https://www.imdb.com/title/tt0133093/"}
+	m := &domain.Movie{ID: 4, IMDbID: new("tt0133093")}
 	tmdb := &fakeTMDB{
 		findFn: func(context.Context, string) (tmdbMovie, error) { return tmdbMovie{ID: 1}, nil },
 		detailsFn: func(context.Context, int) (tmdbMovieDetails, error) {

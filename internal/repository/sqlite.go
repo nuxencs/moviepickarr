@@ -46,7 +46,6 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 	if err := scanner.Scan(
 		&movie.ID,
 		&movie.Title,
-		&movie.Link,
 		&movie.Status,
 		&addedAt,
 		&movie.AddedByID,
@@ -162,7 +161,6 @@ func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.
 		SELECT
 			m.id,
 			m.title,
-			m.link,
 			m.status,
 			m.added_at,
 			m.added_by_id,
@@ -191,7 +189,6 @@ func (d *SqliteMoviesRepository) List(ctx context.Context) ([]*domain.Movie, err
 		SELECT
 			m.id,
 			m.title,
-			m.link,
 			m.status,
 			m.added_at,
 			m.added_by_id,
@@ -226,7 +223,6 @@ func (d *SqliteMoviesRepository) FindByUserID(ctx context.Context, userID int) (
 		SELECT
 			m.id,
 			m.title,
-			m.link,
 			m.status,
 			m.added_at,
 			m.added_by_id,
@@ -263,7 +259,6 @@ func (d *SqliteMoviesRepository) FindByStatus(ctx context.Context, status string
 		SELECT
 			m.id,
 			m.title,
-			m.link,
 			m.status,
 			m.added_at,
 			m.added_by_id,
@@ -281,7 +276,6 @@ func (d *SqliteMoviesRepository) FindByStatus(ctx context.Context, status string
 			SELECT
 				m.id,
 				m.title,
-				m.link,
 				m.status,
 				m.added_at,
 				m.added_by_id,
@@ -319,7 +313,6 @@ func (d *SqliteMoviesRepository) FindByUserIDAndStatus(ctx context.Context, user
 		SELECT
 			m.id,
 			m.title,
-			m.link,
 			m.status,
 			m.added_at,
 			m.added_by_id,
@@ -380,7 +373,6 @@ func (d *SqliteMoviesRepository) GetRandomPooled(ctx context.Context) (*domain.M
 		SELECT
 			m.id,
 			m.title,
-			m.link,
 			m.status,
 			m.added_at,
 			m.added_by_id,
@@ -409,7 +401,6 @@ func (d *SqliteMoviesRepository) GetCurrent(ctx context.Context) (*domain.Movie,
 		SELECT
 			m.id,
 			m.title,
-			m.link,
 			m.status,
 			m.added_at,
 			m.added_by_id,
@@ -432,13 +423,13 @@ func (d *SqliteMoviesRepository) GetCurrent(ctx context.Context) (*domain.Movie,
 	return movie, nil
 }
 
-func (d *SqliteMoviesRepository) Add(ctx context.Context, title, link, status string, userID int) (*domain.Movie, error) {
+func (d *SqliteMoviesRepository) Add(ctx context.Context, title, status string, userID int) (*domain.Movie, error) {
 	query := `
-		INSERT INTO movies (title, link, status, added_by_id) 
-		VALUES (?, ?, ?, ?)
+		INSERT INTO movies (title, status, added_by_id)
+		VALUES (?, ?, ?)
 	`
 
-	result, err := d.db.ExecContext(ctx, query, title, link, status, userID)
+	result, err := d.db.ExecContext(ctx, query, title, status, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -470,10 +461,10 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 	return nil
 }
 
-func (d *SqliteMoviesRepository) UpdateTitleAndLink(ctx context.Context, id int, title, link string) error {
-	query := "UPDATE movies SET title = ?, link = ? WHERE id = ?"
+func (d *SqliteMoviesRepository) UpdateTitle(ctx context.Context, id int, title string) error {
+	query := "UPDATE movies SET title = ? WHERE id = ?"
 
-	result, err := d.db.ExecContext(ctx, query, title, link, id)
+	result, err := d.db.ExecContext(ctx, query, title, id)
 	if err != nil {
 		return err
 	}

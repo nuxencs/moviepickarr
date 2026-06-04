@@ -11,13 +11,13 @@ import (
 )
 
 type Service interface {
-	AddToPool(ctx context.Context, title, link string, userID int) (*domain.Movie, error)
-	AddToStash(ctx context.Context, title, link string, userID int) (*domain.Movie, error)
+	AddToPool(ctx context.Context, title string, userID int) (*domain.Movie, error)
+	AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error)
 	MoveToPool(ctx context.Context, id int) error
 	MoveToStash(ctx context.Context, id int) error
 	Delete(ctx context.Context, id int) error
 	SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error
-	Update(ctx context.Context, id int, title, link string, watchedAt *time.Time) (*domain.Movie, error)
+	Update(ctx context.Context, id int, title string, watchedAt *time.Time) (*domain.Movie, error)
 	Get(ctx context.Context, id int) (*domain.Movie, error)
 	List(ctx context.Context) ([]*domain.Movie, error)
 	Pooled(ctx context.Context) ([]*domain.Movie, error)
@@ -41,7 +41,7 @@ func NewService(movieRepo domain.MovieRepo, settingsRepo domain.SettingsRepo) Se
 	}
 }
 
-func (s *service) AddToPool(ctx context.Context, title, link string, userID int) (*domain.Movie, error) {
+func (s *service) AddToPool(ctx context.Context, title string, userID int) (*domain.Movie, error) {
 	pooled, err := s.movieRepo.CountByUserIDAndStatus(ctx, userID, "pool")
 	if err != nil {
 		return nil, err
@@ -65,11 +65,11 @@ func (s *service) AddToPool(ctx context.Context, title, link string, userID int)
 		return nil, domain.ErrPoolLocked
 	}
 
-	return s.movieRepo.Add(ctx, title, link, "pool", userID)
+	return s.movieRepo.Add(ctx, title, "pool", userID)
 }
 
-func (s *service) AddToStash(ctx context.Context, title, link string, userID int) (*domain.Movie, error) {
-	return s.movieRepo.Add(ctx, title, link, "stash", userID)
+func (s *service) AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error) {
+	return s.movieRepo.Add(ctx, title, "stash", userID)
 }
 
 func (s *service) MoveToPool(ctx context.Context, id int) error {
@@ -127,7 +127,7 @@ func (s *service) Delete(ctx context.Context, id int) error {
 	return nil
 }
 
-func (s *service) Update(ctx context.Context, id int, title, link string, watchedAt *time.Time) (*domain.Movie, error) {
+func (s *service) Update(ctx context.Context, id int, title string, watchedAt *time.Time) (*domain.Movie, error) {
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (s *service) Update(ctx context.Context, id int, title, link string, watche
 		return nil, domain.ErrInvalidInput
 	}
 
-	if err = s.movieRepo.UpdateTitleAndLink(ctx, id, title, link); err != nil {
+	if err = s.movieRepo.UpdateTitle(ctx, id, title); err != nil {
 		return nil, err
 	}
 

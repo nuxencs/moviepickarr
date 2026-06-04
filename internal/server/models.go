@@ -43,8 +43,8 @@ func formatTime(value *time.Time) string {
 }
 
 // movieLink derives the effective link from the movie's stable identity,
-// preferring IMDb, then TMDB, and falling back to the stored link (legacy
-// rows / arbitrary manual URLs).
+// preferring IMDb, then TMDB. Returns "" if the movie has no identity (every
+// row carries an id post-enrichment, so this is effectively unreachable).
 func movieLink(movie *domain.Movie) string {
 	if movie.IMDbID != nil && *movie.IMDbID != "" {
 		return "https://www.imdb.com/title/" + *movie.IMDbID + "/"
@@ -52,7 +52,7 @@ func movieLink(movie *domain.Movie) string {
 	if movie.TMDBID != nil {
 		return fmt.Sprintf("https://www.themoviedb.org/movie/%d", *movie.TMDBID)
 	}
-	return movie.Link
+	return ""
 }
 
 func toAPIMovie(movie *domain.Movie) movieResponse {

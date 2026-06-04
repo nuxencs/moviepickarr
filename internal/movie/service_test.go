@@ -11,9 +11,9 @@ import (
 )
 
 type testMovieRepo struct {
-	movies                map[int]*domain.Movie
-	updateTitleAndLinkHit int
-	updateWatchedAtHit    int
+	movies             map[int]*domain.Movie
+	updateTitleHit     int
+	updateWatchedAtHit int
 }
 
 func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, error) {
@@ -26,14 +26,13 @@ func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, erro
 	return &copyMovie, nil
 }
 
-func (r *testMovieRepo) UpdateTitleAndLink(_ context.Context, id int, title, link string) error {
+func (r *testMovieRepo) UpdateTitle(_ context.Context, id int, title string) error {
 	movie, ok := r.movies[id]
 	if !ok {
 		return sql.ErrNoRows
 	}
 	movie.Title = title
-	movie.Link = link
-	r.updateTitleAndLinkHit++
+	r.updateTitleHit++
 	return nil
 }
 
@@ -61,7 +60,7 @@ func (r *testMovieRepo) CountByStatus(context.Context, string) (int, error) { pa
 func (r *testMovieRepo) CountByUserIDAndStatus(context.Context, int, string) (int, error) {
 	panic("unexpected call")
 }
-func (r *testMovieRepo) Add(context.Context, string, string, string, int) (*domain.Movie, error) {
+func (r *testMovieRepo) Add(context.Context, string, string, int) (*domain.Movie, error) {
 	panic("unexpected call")
 }
 func (r *testMovieRepo) SetExternalIDs(context.Context, int, *int, *string) error {
@@ -95,7 +94,6 @@ func TestUpdateRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 			42: {
 				ID:     42,
 				Title:  "Before",
-				Link:   "https://example.com/before",
 				Status: string(domain.MovieStatusPool),
 			},
 		},
@@ -103,13 +101,13 @@ func TestUpdateRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	svc := NewService(repo, &testSettingsRepo{})
 	watchedAt := time.Date(2026, 2, 8, 10, 30, 0, 0, time.UTC)
 
-	_, err := svc.Update(context.Background(), 42, "After", "https://example.com/after", &watchedAt)
+	_, err := svc.Update(context.Background(), 42, "After", &watchedAt)
 	if !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 
-	if repo.updateTitleAndLinkHit != 0 {
-		t.Fatalf("expected title/link update not to run, got %d calls", repo.updateTitleAndLinkHit)
+	if repo.updateTitleHit != 0 {
+		t.Fatalf("expected title update not to run, got %d calls", repo.updateTitleHit)
 	}
 	if repo.updateWatchedAtHit != 0 {
 		t.Fatalf("expected watchedAt update not to run, got %d calls", repo.updateWatchedAtHit)
@@ -124,7 +122,6 @@ func TestUpdateWatchedMovieAllowsWatchedAt(t *testing.T) {
 			7: {
 				ID:     7,
 				Title:  "Before",
-				Link:   "https://example.com/before",
 				Status: string(domain.MovieStatusWatched),
 			},
 		},
@@ -132,7 +129,7 @@ func TestUpdateWatchedMovieAllowsWatchedAt(t *testing.T) {
 	svc := NewService(repo, &testSettingsRepo{})
 	watchedAt := time.Date(2026, 2, 8, 18, 45, 0, 0, time.UTC)
 
-	updated, err := svc.Update(context.Background(), 7, "After", "https://example.com/after", &watchedAt)
+	updated, err := svc.Update(context.Background(), 7, "After", &watchedAt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,15 +137,12 @@ func TestUpdateWatchedMovieAllowsWatchedAt(t *testing.T) {
 	if updated.Title != "After" {
 		t.Fatalf("expected title updated, got %q", updated.Title)
 	}
-	if updated.Link != "https://example.com/after" {
-		t.Fatalf("expected link updated, got %q", updated.Link)
-	}
 	if updated.WatchedAt == nil || !updated.WatchedAt.Equal(watchedAt) {
 		t.Fatalf("expected watchedAt %v, got %v", watchedAt, updated.WatchedAt)
 	}
 
-	if repo.updateTitleAndLinkHit != 1 {
-		t.Fatalf("expected title/link update once, got %d", repo.updateTitleAndLinkHit)
+	if repo.updateTitleHit != 1 {
+		t.Fatalf("expected title update once, got %d", repo.updateTitleHit)
 	}
 	if repo.updateWatchedAtHit != 1 {
 		t.Fatalf("expected watchedAt update once, got %d", repo.updateWatchedAtHit)

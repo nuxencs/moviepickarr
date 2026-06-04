@@ -15,7 +15,9 @@
 - `internal/server/tmdb_handlers.go`: TMDB bounded context handlers.
 - `internal/server/events_handlers.go`: SSE/events bounded context handlers.
 - `internal/server/errors.go`: centralized domain-to-HTTP error mapping.
-- `internal/server/tmdb.go`: external API client adapter.
+- `internal/server/tmdb.go`: TMDB API client adapter (search, reverse lookup + details with rate-limit/retry).
+- `internal/server/enrichment.go`: TMDB enrichment use case (`EnrichOne`: link → IMDb id → reverse lookup → details → upsert).
+- `internal/server/enrich_worker.go`: background enrichment worker (queue, rate limiter, backfill/refresh drain, config).
 - `internal/server/events.go`: SSE broker.
 - `internal/server/models.go`: API DTO mapping.
 
@@ -27,6 +29,7 @@
 ## Infrastructure
 
 - `internal/repository/sqlite.go`: SQLite repository implementations.
+- `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / needs-enrichment).
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ## API
@@ -34,3 +37,37 @@
 - API served under `/api/v1/*` only.
 - Resource ID operations use path params only (no query/body ID fallbacks).
 - Error responses use `application/problem+json`.
+
+## Movie identity & enrichment (TMDB)
+
+A movie's stable identity is its `tmdb_id` / `imdb_id` (columns on `movies`,
+added in migration `004`). The displayed link is **derived** from them
+(`models.go::movieLink`: IMDb URL → TMDB URL → the stored `link` as a
+legacy/manual fallback), so we never fabricate-and-store a link via an API call.
+The `movie_metadata` table (1:1, FK cascade) holds only enriched **display**
+fields (overview, poster/backdrop, runtime, genres-as-JSON-names, rating,
+tagline, `enriched_at`); existing movie read queries are unchanged except for
+the two id columns.
+
+Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone) — the id
+is stored and the link derived. A manual/edit add carries an IMDb link we
+extract the id from.
+
+Enrichment (`EnrichOne`): if the movie already has a `tmdb_id` (search add /
+prior enrichment) it goes straight to `GET /3/movie/{tmdb_id}`; otherwise it
+reverse-looks-up `GET /3/find/{imdb_id}?external_source=imdb_id` first. Either
+way it persists `tmdb_id`/`imdb_id` back onto the movie and upserts the display
+metadata — so the costly `/find` runs at most once per movie, never on refresh.
+
+A single background worker (`enrichRunner`) drives it: a startup backfill of
+un-enriched rows, fire-and-forget enqueue when a movie is added or its link is
+edited, and a periodic "drain" that re-enriches rows older than the TTL. TMDB
+requests are paced by a min-interval rate limiter and retried (429 `Retry-After`,
+exponential backoff + jitter on 5xx/network). Successful upserts broadcast a
+`movie:enriched` SSE event. Enrichment is skipped entirely when `TMDB_API_KEY`
+is unset.
+
+Env knobs (all optional; sensible defaults): `TMDB_ENRICH_MIN_INTERVAL_MS`
+(250), `TMDB_ENRICH_MAX_RETRIES` (4), `TMDB_ENRICH_BACKOFF_MS` (500),
+`TMDB_ENRICH_QUEUE_SIZE` (256), `TMDB_ENRICH_BATCH_LIMIT` (200),
+`TMDB_ENRICH_REFRESH_INTERVAL` (`1h`, `0` disables), `TMDB_ENRICH_TTL` (`720h`).

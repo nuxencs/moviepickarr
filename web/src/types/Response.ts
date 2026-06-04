@@ -28,10 +28,6 @@ export interface TMDBMovie {
     overview: string;
 }
 
-export interface TMDBExternalIDs {
-    link: string;
-}
-
 export type StatsWindow = "24h" | "7d" | "30d" | "90d" | "1y" | "all-time" | "custom";
 
 export interface StatsWindowCount {

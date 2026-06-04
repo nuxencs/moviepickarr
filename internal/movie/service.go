@@ -16,6 +16,7 @@ type Service interface {
 	MoveToPool(ctx context.Context, id int) error
 	MoveToStash(ctx context.Context, id int) error
 	Delete(ctx context.Context, id int) error
+	SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error
 	Update(ctx context.Context, id int, title, link string, watchedAt *time.Time) (*domain.Movie, error)
 	Get(ctx context.Context, id int) (*domain.Movie, error)
 	List(ctx context.Context) ([]*domain.Movie, error)
@@ -103,6 +104,10 @@ func (s *service) MoveToStash(ctx context.Context, id int) error {
 	}
 
 	return nil
+}
+
+func (s *service) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
+	return s.movieRepo.SetExternalIDs(ctx, id, tmdbID, imdbID)
 }
 
 func (s *service) Delete(ctx context.Context, id int) error {

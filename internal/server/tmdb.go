@@ -3,10 +3,14 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -22,18 +26,22 @@ type tmdbSearchResponse struct {
 	Results []tmdbMovie `json:"results"`
 }
 
-type tmdbExternalIDsResponse struct {
-	IMDbID string `json:"imdb_id"`
-}
-
 type tmdbClient struct {
-	apiKey string
-	http   *http.Client
+	apiKey      string
+	http        *http.Client
+	baseURL     string        // default "https://api.themoviedb.org/3"; overridable in tests
+	limiter     *rateLimiter  // paces every enrichment request; nil-safe
+	maxRetries  int           // retry attempts for the enrichment methods
+	backoffBase time.Duration // base delay for exponential backoff
 }
 
-func newTMDBClient() *tmdbClient {
+func newTMDBClient(cfg enrichConfig, limiter *rateLimiter) *tmdbClient {
 	return &tmdbClient{
-		apiKey: os.Getenv("TMDB_API_KEY"),
+		apiKey:      os.Getenv("TMDB_API_KEY"),
+		baseURL:     "https://api.themoviedb.org/3",
+		limiter:     limiter,
+		maxRetries:  cfg.MaxRetries,
+		backoffBase: cfg.BackoffBase,
 		http: &http.Client{
 			Timeout: 8 * time.Second,
 		},
@@ -73,39 +81,200 @@ func (c *tmdbClient) Search(ctx context.Context, query string) ([]tmdbMovie, err
 	return payload.Results, nil
 }
 
-func (c *tmdbClient) ExternalLink(ctx context.Context, movieID string) (string, error) {
+// --- Enrichment: reverse lookup + full details -----------------------------
+
+var (
+	errTMDBNotFound      = errors.New("tmdb: not found")
+	errTMDBNotConfigured = errors.New("tmdb: api key not configured")
+)
+
+// tmdbRateLimitError is returned when retries are exhausted on HTTP 429.
+type tmdbRateLimitError struct {
+	RetryAfter time.Duration
+}
+
+func (e *tmdbRateLimitError) Error() string {
+	return fmt.Sprintf("tmdb: rate limited, retry after %s", e.RetryAfter)
+}
+
+// tmdbTransientError is returned when retries are exhausted on a 5xx/network error.
+type tmdbTransientError struct {
+	StatusCode int
+	Err        error
+}
+
+func (e *tmdbTransientError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("tmdb: transient error: %v", e.Err)
+	}
+	return fmt.Sprintf("tmdb: transient error: status %d", e.StatusCode)
+}
+
+func (e *tmdbTransientError) Unwrap() error { return e.Err }
+
+type tmdbFindResponse struct {
+	MovieResults []tmdbMovie `json:"movie_results"`
+}
+
+type tmdbGenre struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type tmdbMovieDetails struct {
+	ID           int         `json:"id"`
+	IMDbID       string      `json:"imdb_id"`
+	Overview     string      `json:"overview"`
+	PosterPath   *string     `json:"poster_path"`
+	BackdropPath *string     `json:"backdrop_path"`
+	ReleaseDate  string      `json:"release_date"`
+	Runtime      *int        `json:"runtime"` // null for some titles
+	Genres       []tmdbGenre `json:"genres"`
+	VoteAverage  float64     `json:"vote_average"`
+	VoteCount    int         `json:"vote_count"`
+	Tagline      string      `json:"tagline"`
+}
+
+// FindByIMDb performs the TMDB reverse lookup: IMDb id -> TMDB movie.
+func (c *tmdbClient) FindByIMDb(ctx context.Context, imdbID string) (tmdbMovie, error) {
+	u := fmt.Sprintf("%s/find/%s?external_source=imdb_id", c.baseURL, url.PathEscape(imdbID))
+
+	var payload tmdbFindResponse
+	if err := c.doRequest(ctx, u, &payload); err != nil {
+		return tmdbMovie{}, err
+	}
+
+	if len(payload.MovieResults) == 0 {
+		return tmdbMovie{}, errTMDBNotFound
+	}
+
+	return payload.MovieResults[0], nil
+}
+
+// MovieDetails fetches the full detail record for a TMDB movie id.
+func (c *tmdbClient) MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDetails, error) {
+	u := fmt.Sprintf("%s/movie/%d", c.baseURL, tmdbID)
+
+	var payload tmdbMovieDetails
+	if err := c.doRequest(ctx, u, &payload); err != nil {
+		return tmdbMovieDetails{}, err
+	}
+
+	return payload, nil
+}
+
+// doRequest is the shared GET helper for the enrichment endpoints. It paces
+// every request through the rate limiter, maps status codes to the error
+// taxonomy, honors 429 Retry-After, and retries 5xx/network errors with
+// exponential backoff + jitter until maxRetries is reached or ctx is done.
+func (c *tmdbClient) doRequest(ctx context.Context, requestURL string, out any) error {
 	if c.apiKey == "" {
-		return "", fmt.Errorf("tmdb api key not configured")
+		return errTMDBNotConfigured
 	}
 
-	u := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s/external_ids", movieID)
+	var lastErr error
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if c.limiter != nil {
+			if err := c.limiter.wait(ctx); err != nil {
+				return err
+			}
+		}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return "", err
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil { // network / timeout / ctx cancellation
+			lastErr = &tmdbTransientError{Err: err}
+			if attempt < c.maxRetries && !sleepBackoff(ctx, attempt, c.backoffBase) {
+				return ctx.Err()
+			}
+			continue
+		}
+
+		switch {
+		case resp.StatusCode == http.StatusOK:
+			err := json.NewDecoder(resp.Body).Decode(out)
+			_ = resp.Body.Close()
+			return err
+		case resp.StatusCode == http.StatusNotFound:
+			_ = resp.Body.Close()
+			return errTMDBNotFound
+		case resp.StatusCode == http.StatusTooManyRequests:
+			d := parseRetryAfter(resp.Header.Get("Retry-After"), c.backoffBase)
+			_ = resp.Body.Close()
+			lastErr = &tmdbRateLimitError{RetryAfter: d}
+			if attempt < c.maxRetries && !sleepFor(ctx, d) {
+				return ctx.Err()
+			}
+			continue
+		case resp.StatusCode >= 500:
+			_ = resp.Body.Close()
+			lastErr = &tmdbTransientError{StatusCode: resp.StatusCode}
+			if attempt < c.maxRetries && !sleepBackoff(ctx, attempt, c.backoffBase) {
+				return ctx.Err()
+			}
+			continue
+		default: // other 4xx (401 bad key, etc.) -> permanent
+			_ = resp.Body.Close()
+			return fmt.Errorf("tmdb api request failed: status %d", resp.StatusCode)
+		}
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-	req.Header.Set("Accept", "application/json")
+	return lastErr
+}
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", err
+// sleepBackoff waits base*2^attempt (capped at 30s) plus up to base of jitter,
+// returning false if ctx is cancelled during the wait.
+func sleepBackoff(ctx context.Context, attempt int, base time.Duration) bool {
+	const maxBackoff = 30 * time.Second
+	d := base << attempt
+	if d <= 0 || d > maxBackoff {
+		d = maxBackoff
 	}
-	defer resp.Body.Close()
+	d += time.Duration(rand.Int63n(int64(base) + 1))
+	return sleepFor(ctx, d)
+}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("tmdb api request failed: status %d", resp.StatusCode)
+// sleepFor blocks for d, returning false if ctx is cancelled first.
+func sleepFor(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
 	}
-
-	var payload tmdbExternalIDsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", err
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
+}
 
-	if payload.IMDbID == "" {
-		return fmt.Sprintf("https://www.themoviedb.org/movie/%s", movieID), nil
+// parseRetryAfter interprets a Retry-After header (delta-seconds or HTTP-date),
+// falling back to the given duration when absent or unparseable.
+func parseRetryAfter(header string, fallback time.Duration) time.Duration {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return fallback
 	}
-
-	return fmt.Sprintf("https://www.imdb.com/title/%s/", payload.IMDbID), nil
+	if secs, err := strconv.Atoi(header); err == nil {
+		if secs < 0 {
+			return fallback
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(header); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return fallback
 }

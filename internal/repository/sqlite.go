@@ -40,6 +40,8 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 	movie := &domain.Movie{}
 	var addedAt sql.NullTime
 	var watchedAt sql.NullTime
+	var tmdbID sql.NullInt64
+	var imdbID sql.NullString
 
 	if err := scanner.Scan(
 		&movie.ID,
@@ -50,12 +52,21 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 		&movie.AddedByID,
 		&movie.AddedByName,
 		&watchedAt,
+		&tmdbID,
+		&imdbID,
 	); err != nil {
 		return nil, err
 	}
 
 	movie.AddedAt = nullTimePtr(addedAt)
 	movie.WatchedAt = nullTimePtr(watchedAt)
+	if tmdbID.Valid {
+		v := int(tmdbID.Int64)
+		movie.TMDBID = &v
+	}
+	if imdbID.Valid {
+		movie.IMDbID = &imdbID.String
+	}
 
 	return movie, nil
 }
@@ -156,7 +167,9 @@ func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.
 			m.added_at,
 			m.added_by_id,
 			u.name,
-			m.watched_at
+			m.watched_at,
+			m.tmdb_id,
+			m.imdb_id
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		WHERE m.id = ?
@@ -183,7 +196,9 @@ func (d *SqliteMoviesRepository) List(ctx context.Context) ([]*domain.Movie, err
 			m.added_at,
 			m.added_by_id,
 			u.name,
-			m.watched_at
+			m.watched_at,
+			m.tmdb_id,
+			m.imdb_id
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		ORDER BY title DESC
@@ -216,7 +231,9 @@ func (d *SqliteMoviesRepository) FindByUserID(ctx context.Context, userID int) (
 			m.added_at,
 			m.added_by_id,
 			u.name,
-			m.watched_at
+			m.watched_at,
+			m.tmdb_id,
+			m.imdb_id
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		WHERE m.added_by_id = ?
@@ -251,7 +268,9 @@ func (d *SqliteMoviesRepository) FindByStatus(ctx context.Context, status string
 			m.added_at,
 			m.added_by_id,
 			u.name,
-			m.watched_at
+			m.watched_at,
+			m.tmdb_id,
+			m.imdb_id
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		WHERE m.status = ?
@@ -267,7 +286,9 @@ func (d *SqliteMoviesRepository) FindByStatus(ctx context.Context, status string
 				m.added_at,
 				m.added_by_id,
 				u.name,
-				m.watched_at
+				m.watched_at,
+				m.tmdb_id,
+				m.imdb_id
 			FROM movies m
 			JOIN users u ON m.added_by_id = u.id
 			WHERE m.status = ?
@@ -303,7 +324,9 @@ func (d *SqliteMoviesRepository) FindByUserIDAndStatus(ctx context.Context, user
 			m.added_at,
 			m.added_by_id,
 			u.name,
-			m.watched_at
+			m.watched_at,
+			m.tmdb_id,
+			m.imdb_id
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		WHERE m.added_by_id = ? AND m.status = ?
@@ -362,7 +385,9 @@ func (d *SqliteMoviesRepository) GetRandomPooled(ctx context.Context) (*domain.M
 			m.added_at,
 			m.added_by_id,
 			u.name,
-			m.watched_at
+			m.watched_at,
+			m.tmdb_id,
+			m.imdb_id
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		WHERE m.status = 'pool'
@@ -389,7 +414,9 @@ func (d *SqliteMoviesRepository) GetCurrent(ctx context.Context) (*domain.Movie,
 			m.added_at,
 			m.added_by_id,
 			u.name,
-			m.watched_at
+			m.watched_at,
+			m.tmdb_id,
+			m.imdb_id
 		FROM movies m
 		JOIN users u ON m.added_by_id = u.id
 		WHERE m.status = 'current'
@@ -422,6 +449,25 @@ func (d *SqliteMoviesRepository) Add(ctx context.Context, title, link, status st
 	}
 
 	return d.FindByID(ctx, int(id))
+}
+
+func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
+	query := "UPDATE movies SET tmdb_id = ?, imdb_id = ? WHERE id = ?"
+
+	result, err := d.db.ExecContext(ctx, query, tmdbID, imdbID, id)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }
 
 func (d *SqliteMoviesRepository) UpdateTitleAndLink(ctx context.Context, id int, title, link string) error {

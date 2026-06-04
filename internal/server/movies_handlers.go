@@ -89,17 +89,32 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 	}
 
 	var body struct {
-		Title string `json:"title"`
-		Link  string `json:"link"`
+		Title  string `json:"title"`
+		Link   string `json:"link"`
+		TMDBID *int   `json:"tmdbId"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
 	}
 
 	title := sanitizeInput(body.Title)
-	link := sanitizeLink(body.Link)
+
+	// Identity-first: a search add carries the TMDB id (no link fetch needed);
+	// the link is derived. A manual add carries an IMDb link we extract from.
+	var link string
+	var tmdbID *int
+	var imdbID *string
+	if body.TMDBID != nil && *body.TMDBID > 0 {
+		tmdbID = body.TMDBID
+		link = fmt.Sprintf("https://www.themoviedb.org/movie/%d", *body.TMDBID)
+	} else {
+		link = sanitizeLink(body.Link)
+		if id := extractIMDbID(link); id != "" {
+			imdbID = &id
+		}
+	}
 	if title == "" || link == "" {
-		return writeError(c, fmt.Errorf("%w: title and link are required", domain.ErrInvalidInput))
+		return writeError(c, fmt.Errorf("%w: title and a tmdbId or link are required", domain.ErrInvalidInput))
 	}
 
 	ctx := c.UserContext()
@@ -115,8 +130,18 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	if err := h.movieService.SetExternalIDs(ctx, movieRecord.ID, tmdbID, imdbID); err != nil {
+		return writeError(c, err)
+	}
+	movieRecord.TMDBID = tmdbID
+	movieRecord.IMDbID = imdbID
+
 	payload := toAPIMovie(movieRecord)
 	h.broker.Broadcast(event{Type: "movie:added", Data: payload})
+
+	if h.enrichRunner != nil {
+		h.enrichRunner.Enqueue(movieRecord.ID) // fire-and-forget background enrichment
+	}
 
 	return c.Status(fiber.StatusCreated).JSON(payload)
 }
@@ -193,6 +218,29 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 
 	if watchedAt != nil {
 		h.invalidateStatsCache()
+	}
+
+	// If the link's IMDb identity changed, reset the ids (forcing a fresh
+	// reverse lookup) and re-enrich. Comparing extracted ids — not raw link
+	// strings — avoids re-enriching when an unchanged derived link is resubmitted.
+	newIMDb := extractIMDbID(link)
+	curIMDb := ""
+	if movieRecord.IMDbID != nil {
+		curIMDb = *movieRecord.IMDbID
+	}
+	if newIMDb != curIMDb {
+		var imdbPtr *string
+		if newIMDb != "" {
+			imdbPtr = &newIMDb
+		}
+		if err := h.movieService.SetExternalIDs(ctx, movieID, nil, imdbPtr); err != nil {
+			return writeError(c, err)
+		}
+		updatedMovie.TMDBID = nil
+		updatedMovie.IMDbID = imdbPtr
+		if h.enrichRunner != nil {
+			h.enrichRunner.Enqueue(movieID)
+		}
 	}
 
 	payload := toAPIMovie(updatedMovie)

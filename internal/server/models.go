@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -41,11 +42,24 @@ func formatTime(value *time.Time) string {
 	return value.UTC().Format(timeFormat)
 }
 
+// movieLink derives the effective link from the movie's stable identity,
+// preferring IMDb, then TMDB, and falling back to the stored link (legacy
+// rows / arbitrary manual URLs).
+func movieLink(movie *domain.Movie) string {
+	if movie.IMDbID != nil && *movie.IMDbID != "" {
+		return "https://www.imdb.com/title/" + *movie.IMDbID + "/"
+	}
+	if movie.TMDBID != nil {
+		return fmt.Sprintf("https://www.themoviedb.org/movie/%d", *movie.TMDBID)
+	}
+	return movie.Link
+}
+
 func toAPIMovie(movie *domain.Movie) movieResponse {
 	return movieResponse{
 		ID:          movie.ID,
 		Title:       movie.Title,
-		Link:        movie.Link,
+		Link:        movieLink(movie),
 		AddedAt:     formatTime(movie.AddedAt),
 		AddedByID:   movie.AddedByID,
 		AddedByName: movie.AddedByName,

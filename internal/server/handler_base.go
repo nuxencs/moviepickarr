@@ -26,6 +26,7 @@ type handler struct {
 	nextPickerService nextpicker.Service
 	settingsService   settings.Service
 	tmdb              *tmdbClient
+	enrichRunner      *enrichRunner
 	statsCacheMu      sync.RWMutex
 	statsCache        map[string]statsCacheEntry
 	statsCacheTTL     time.Duration

@@ -72,8 +72,8 @@ export function SearchMovie({ userID }: SearchMovieProps) {
   }, []);
 
   const addMutation = useMutation({
-    mutationFn: ({ title, link }: { title: string; link: string }) => {
-      return APIClient.users.addMovie(userID, title, link);
+    mutationFn: ({ title, tmdbId }: { title: string; tmdbId: number }) => {
+      return APIClient.users.addMovie(userID, title, tmdbId);
     },
     onSuccess: (_, variables) => {
       toast.success(`${variables.title} added successfully!`);
@@ -104,10 +104,9 @@ export function SearchMovie({ userID }: SearchMovieProps) {
 
     setPendingMovieId(movie.id);
     try {
-      const { link } = await APIClient.tmdb.getExternalIds(movie.id);
       await addMutation.mutateAsync({
         title: movie.title,
-        link: link
+        tmdbId: movie.id
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Failed to add ${movie.title}`);

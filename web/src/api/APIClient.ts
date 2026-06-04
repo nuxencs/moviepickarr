@@ -1,4 +1,4 @@
-import { Movie, Settings, StatsResponse, StatsWindow, TMDBExternalIDs, TMDBMovie, User } from "@/types/Response";
+import { Movie, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
@@ -158,11 +158,11 @@ export const APIClient = {
             }),
         delete: (userID: number) =>
             appClient.Delete(`api/v1/users/${userID}`),
-        addMovie: (userID: number, title: string, link: string) =>
+        addMovie: (userID: number, title: string, tmdbId: number) =>
             appClient.Post<Movie>(`api/v1/users/${userID}/movies`, {
                 body: {
                     title,
-                    link,
+                    tmdbId,
                 },
             }),
         deleteMovie: (userID: number, movieID: number) =>
@@ -217,11 +217,6 @@ export const APIClient = {
             appClient.Get<TMDBMovie[]>(
                 "api/v1/tmdb/search",
                 { queryString: { query } }
-            ),
-        getExternalIds: (movieId: number) =>
-            appClient.Get<TMDBExternalIDs>(
-                "api/v1/tmdb/external-ids",
-                { queryString: { movieId: String(movieId) } }
             ),
     }
 };

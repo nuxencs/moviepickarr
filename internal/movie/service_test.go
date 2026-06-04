@@ -64,6 +64,9 @@ func (r *testMovieRepo) CountByUserIDAndStatus(context.Context, int, string) (in
 func (r *testMovieRepo) Add(context.Context, string, string, string, int) (*domain.Movie, error) {
 	panic("unexpected call")
 }
+func (r *testMovieRepo) SetExternalIDs(context.Context, int, *int, *string) error {
+	panic("unexpected call")
+}
 func (r *testMovieRepo) UpdateStatus(context.Context, int, string) error { panic("unexpected call") }
 func (r *testMovieRepo) MarkAsWatched(context.Context, int, time.Time) error {
 	panic("unexpected call")

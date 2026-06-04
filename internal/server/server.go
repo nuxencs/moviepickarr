@@ -62,6 +62,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	h := newHandler(dbConn)
+	if h.enrichRunner != nil {
+		h.enrichRunner.Start(ctx)
+	} else {
+		log.Println("enrichment disabled: TMDB_API_KEY not set")
+	}
+
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 
 	app.Use(logger.New(logger.Config{
@@ -89,6 +95,11 @@ func Run(ctx context.Context, cfg Config) error {
 			if err := app.ShutdownWithContext(ctxTimeout); err != nil {
 				log.Printf("shutdown error: %v", err)
 			}
+			// Stop the worker after Fiber has drained (no handler can enqueue)
+			// but before the DB closes (in-flight enrichment still reads it).
+			if h.enrichRunner != nil {
+				h.enrichRunner.Stop()
+			}
 			h.Close()
 			if err := dbConn.Close(); err != nil {
 				log.Printf("db close error: %v", err)
@@ -115,14 +126,29 @@ func newHandler(dbConn *sql.DB) *handler {
 	movieRepo := repository.NewSqliteMoviesRepository(dbConn)
 	nextPickerRepo := repository.NewSqliteNextPickerRepository(dbConn)
 	settingsRepo := repository.NewSqliteSettingsRepository(dbConn)
+	movieMetadataRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
+
+	enrichCfg := loadEnrichConfig()
+	limiter := newRateLimiter(enrichCfg.MinInterval)
+	tmdbCli := newTMDBClient(enrichCfg, limiter)
+	broker := newEventBroker()
+
+	// The enrichment runner is only created when TMDB is configured; otherwise
+	// it stays nil and all enqueue/start/stop sites no-op (handlers guard on nil).
+	var runner *enrichRunner
+	if tmdbCli.apiKey != "" {
+		enrichmentSvc := newEnrichmentService(movieRepo, movieMetadataRepo, tmdbCli)
+		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg)
+	}
 
 	return &handler{
-		broker:            newEventBroker(),
+		broker:            broker,
 		userService:       user.NewService(userRepo, nextPickerRepo),
 		movieService:      movie.NewService(movieRepo, settingsRepo),
 		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
 		settingsService:   settings.NewService(settingsRepo),
-		tmdb:              newTMDBClient(),
+		tmdb:              tmdbCli,
+		enrichRunner:      runner,
 		statsCache:        make(map[string]statsCacheEntry),
 		statsCacheTTL:     time.Minute,
 	}
@@ -158,5 +184,4 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/settings/next-picker", h.handleGetNextPicker)
 
 	v1.Get("/tmdb/search", h.handleTMDBSearch)
-	v1.Get("/tmdb/external-ids", h.handleTMDBExternalIDs)
 }

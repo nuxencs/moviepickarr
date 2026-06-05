@@ -6,8 +6,10 @@ import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys
 import type { SSEEvent } from "@/types/SSEEvent";
 
 function baseURL(): string {
+  // Empty in dev so the EventSource connects same-origin via the Vite proxy
+  // (see vite.config.ts), matching APIClient.
   if (import.meta.env.DEV) {
-    return "http://localhost:3030";
+    return "";
   }
 
   return window.location.origin;

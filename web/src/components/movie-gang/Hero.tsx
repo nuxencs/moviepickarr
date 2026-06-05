@@ -57,7 +57,6 @@ export function Hero() {
 
         <div className="hero__body">
           <div className="hero__eyebrow eyebrow">
-            <span className="live" />
             {current
               ? `Current pick · chosen by ${current.addedByName}`
               : "No movie selected"}

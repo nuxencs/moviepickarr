@@ -148,9 +148,9 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   reappearing. It re-measures on resize and on `document.fonts.ready` (font swap
   changes label width). The reduced-motion guard collapses the slide to an instant
   jump for free.
-- **`prefers-reduced-motion`**: a global block neutralizes all animations/transitions
-  and the infinite hero "live" pulse. Any new keyframe must survive this (it already
-  does via the universal rule). Reduced motion is not optional.
+- **`prefers-reduced-motion`**: a global block neutralizes all animations/transitions.
+  Any new keyframe must survive this (it already does via the universal rule). Reduced
+  motion is not optional.
 - **Focus:** global `:focus-visible` is a 2px gold outline. Every focusable element
   must render a box (do NOT use `display: contents` on a focusable trigger — it leaves
   the outline nothing to draw on).

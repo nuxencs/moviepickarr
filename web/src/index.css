@@ -417,8 +417,8 @@
   .poolbox__label .l { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
   .pool-slots { display: flex; gap: 9px; }
   .pslot { flex: 1; aspect-ratio: 2/3; border: 1.5px solid transparent; border-radius: var(--r-md); position: relative; overflow: hidden; }
-  .pslot--empty { border-style: dashed; border-color: var(--line-2); display: grid; place-items: center; color: var(--ink-3); cursor: pointer; }
-  .pslot--empty:hover { border-color: var(--accent-line); color: var(--ink-2); }
+  /* Non-interactive placeholder — the pool is filled by promoting from the stash. */
+  .pslot--empty { border-style: dashed; border-color: var(--line-2); }
   .pslot--filled .poster { width: 100%; }
   /* full-poster demote overlay with a centered move-down (mirrors the empty-slot plus) */
   .pslot__demote {

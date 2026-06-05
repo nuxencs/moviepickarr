@@ -186,15 +186,10 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
                 )}
               </div>
             ) : (
-              <button
-                type="button"
-                className="pslot pslot--empty"
-                key={`empty-${i}`}
-                onClick={onOpenSearch}
-                aria-label="Add to pool"
-              >
-                <PlusIcon size={16} />
-              </button>
+              // Empty slots are non-interactive placeholders. Movies reach the pool
+              // by being promoted from the stash, not added directly here — a clickable
+              // "+" misleadingly implied a direct pool add (it opened the stash search).
+              <div className="pslot pslot--empty" key={`empty-${i}`} aria-hidden="true" />
             );
           })}
         </div>

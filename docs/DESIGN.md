@@ -227,7 +227,10 @@ All "nothing here" / placeholder copy uses the single `.empty` class (centered,
 
 ## 10. Iconography (lucide)
 
-- `PlusIcon` = "add / open the add flow" (board add button, empty pool slot).
+- `PlusIcon` = "add / open the add flow" (board "Add to stash" button, "Add User").
+  Note: empty **pool** slots are non-interactive placeholders (no `+`) — movies enter
+  the pool only by being promoted from the stash, so a `+` there would falsely imply a
+  direct pool add.
 - `SearchIcon` = actual search/filter input fields only.
 - `MoveUpIcon` = promote to pool, `MoveDownIcon` = demote to stash.
 - Keep one icon per concept across the surface.

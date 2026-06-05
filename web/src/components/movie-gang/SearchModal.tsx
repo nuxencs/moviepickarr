@@ -113,19 +113,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
                     const busy = pendingId === movie.id;
                     const year = yearOf(movie.release_date);
                     return (
-                      <div
-                        className="result"
-                        key={movie.id}
-                        onClick={() => handleAdd(movie, close)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            handleAdd(movie, close);
-                          }
-                        }}
-                      >
+                      <div className="result" key={movie.id}>
                         <div className="result__media">
                           <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.poster_path ?? undefined} />
                           <div className="r-overlay" data-busy={busy}>
@@ -134,10 +122,15 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
                               <div className="r-overlay__year">{year ?? "—"}</div>
                               <p className="r-overlay__desc">{movie.overview || "No overview available."}</p>
                             </div>
-                            <span className="btn btn--accent btn--sm">
+                            <button
+                              type="button"
+                              className="btn btn--accent btn--sm"
+                              onClick={() => handleAdd(movie, close)}
+                              disabled={busy}
+                            >
                               {busy ? <Loader2Icon className="animate-spin" /> : <PlusIcon />}
                               {busy ? "Adding…" : "Add"}
-                            </span>
+                            </button>
                           </div>
                         </div>
                         <div className="r-info">

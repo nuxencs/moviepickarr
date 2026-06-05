@@ -22,6 +22,7 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	meta := h.metaFor(ctx, movies)
 	poolByUser := make(map[int]map[string]movieResponse)
 	stashByUser := make(map[int]map[string]movieResponse)
 
@@ -30,7 +31,7 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 			continue
 		}
 
-		apiMovie := toAPIMovie(movies[i])
+		apiMovie := toAPIMovieMeta(movies[i], meta[movies[i].ID])
 		key := strconv.Itoa(movies[i].ID)
 
 		if movies[i].Status == "pool" {

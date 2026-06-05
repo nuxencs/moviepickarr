@@ -260,6 +260,7 @@ func buildStatsResponse(
 ) statsResponse {
 	countsByWindow := make(map[statsWindow]int, len(statsWindowOrder))
 	watchedByUser := make(map[string]int)
+	allTimeByUser := make(map[string]int)
 	weekdayCounts := make(map[time.Weekday]int)
 	hourCounts := make([]int, 24)
 	selectedRange := rangeForSelectedWindow(selectedWindow, now, customRange)
@@ -271,9 +272,20 @@ func buildStatsResponse(
 		}
 
 		watchedAt := watched[i].WatchedAt.UTC()
+
+		name := watched[i].AddedByName
+		if strings.TrimSpace(name) == "" {
+			name = "Unknown"
+		}
+
 		for j := range statsWindowOrder {
 			if containsTimeRange(watchedAt, now, rangeForPresetWindow(statsWindowOrder[j], now)) {
 				countsByWindow[statsWindowOrder[j]]++
+				// All-time total per member — used purely for a stable row order
+				// so the member list doesn't jump when switching windows.
+				if statsWindowOrder[j] == statsWindowAllTime {
+					allTimeByUser[name]++
+				}
 			}
 		}
 
@@ -286,11 +298,15 @@ func buildStatsResponse(
 		weekdayCounts[localWatchedAt.Weekday()]++
 		hourCounts[localWatchedAt.Hour()]++
 
-		name := watched[i].AddedByName
-		if strings.TrimSpace(name) == "" {
-			name = "Unknown"
-		}
 		watchedByUser[name]++
+	}
+
+	// Seed every all-time picker into the window map (0 when they didn't pick in
+	// this window) so rows never appear/disappear between ranges.
+	for name := range allTimeByUser {
+		if _, ok := watchedByUser[name]; !ok {
+			watchedByUser[name] = 0
+		}
 	}
 
 	return statsResponse{
@@ -299,7 +315,7 @@ func buildStatsResponse(
 		Timezone:            timezone,
 		TotalWatched:        countsByWindow[statsWindowAllTime],
 		CountsByWindow:      buildWindowCounts(countsByWindow),
-		WatchedByUser:       buildSortedNamedCounts(watchedByUser),
+		WatchedByUser:       buildMemberCounts(watchedByUser, allTimeByUser),
 		WeekdayActivity:     buildWeekdayCounts(weekdayCounts),
 		HourActivity:        buildHourCounts(hourCounts),
 		CustomRangeStart:    customRangeStart(customRange),
@@ -332,15 +348,19 @@ func buildWindowCounts(counts map[statsWindow]int) []statsWindowCount {
 	return output
 }
 
-func buildSortedNamedCounts(counts map[string]int) []statsNamedCount {
-	output := make([]statsNamedCount, 0, len(counts))
-	for name, count := range counts {
+// buildMemberCounts returns one row per member with their in-window count,
+// ordered by all-time total (descending) then name. Ordering by the stable
+// all-time total — not the window count — keeps rows in the same positions as
+// the user switches ranges, so the list no longer jumps around.
+func buildMemberCounts(windowCounts, allTime map[string]int) []statsNamedCount {
+	output := make([]statsNamedCount, 0, len(windowCounts))
+	for name, count := range windowCounts {
 		output = append(output, statsNamedCount{Name: name, Count: count})
 	}
 
 	slices.SortFunc(output, func(a, b statsNamedCount) int {
-		if a.Count != b.Count {
-			return b.Count - a.Count
+		if allTime[a.Name] != allTime[b.Name] {
+			return allTime[b.Name] - allTime[a.Name]
 		}
 		switch {
 		case a.Name < b.Name:

@@ -3,8 +3,9 @@ package settings
 import (
 	"context"
 	"fmt"
-	"moviepickarr/internal/domain"
 	"strconv"
+
+	"moviepickarr/internal/domain"
 )
 
 type Service interface {

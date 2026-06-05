@@ -25,6 +25,7 @@ type handler struct {
 	movieService      movie.Service
 	nextPickerService nextpicker.Service
 	settingsService   settings.Service
+	movieMetadata     domain.MovieMetadataRepo
 	tmdb              *tmdbClient
 	enrichRunner      *enrichRunner
 	statsCacheMu      sync.RWMutex

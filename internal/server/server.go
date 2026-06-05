@@ -147,6 +147,7 @@ func newHandler(dbConn *sql.DB) *handler {
 		movieService:      movie.NewService(movieRepo, settingsRepo),
 		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
 		settingsService:   settings.NewService(settingsRepo),
+		movieMetadata:     movieMetadataRepo,
 		tmdb:              tmdbCli,
 		enrichRunner:      runner,
 		statsCache:        make(map[string]statsCacheEntry),

@@ -13,12 +13,31 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// metaFor batch-loads enriched metadata for the given movies. A lookup failure
+// is non-fatal — it logs and returns an empty map so responses still render
+// (without enriched fields) rather than failing the whole request.
+func (h *handler) metaFor(ctx context.Context, movies []*domain.Movie) metaByID {
+	if h.movieMetadata == nil || len(movies) == 0 {
+		return metaByID{}
+	}
+	ids := make([]int, len(movies))
+	for i := range movies {
+		ids[i] = movies[i].ID
+	}
+	meta, err := h.movieMetadata.GetMetadataByMovieIDs(ctx, ids)
+	if err != nil {
+		log.Printf("failed to load movie metadata: %v", err)
+		return metaByID{}
+	}
+	return meta
+}
+
 func (h *handler) getPooledMovies(ctx context.Context) ([]movieResponse, error) {
 	movies, err := h.movieService.Pooled(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return toAPIMovies(movies), nil
+	return toAPIMoviesMeta(movies, h.metaFor(ctx, movies)), nil
 }
 
 func (h *handler) advanceNextPicker(ctx context.Context) error {
@@ -157,7 +176,7 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMovies(movies))
+	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies)))
 }
 
 func (h *handler) handleEditMovie(c *fiber.Ctx) error {
@@ -291,7 +310,7 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMovies(movies))
+	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies)))
 }
 
 func (h *handler) handleMove(c *fiber.Ctx) error {
@@ -353,7 +372,8 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	updatedUser := toAPIUser(userRecord, updatedPool, updatedStash)
+	meta := h.metaFor(ctx, append(append([]*domain.Movie{}, updatedPool...), updatedStash...))
+	updatedUser := toAPIUserMeta(userRecord, updatedPool, updatedStash, meta)
 	h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
 
 	return c.Status(fiber.StatusOK).JSON(updatedUser)
@@ -387,7 +407,8 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
-	movieRecord, err := h.movieService.Current(c.UserContext())
+	ctx := c.UserContext()
+	movieRecord, err := h.movieService.Current(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return c.Status(fiber.StatusOK).JSON(nil)
@@ -395,7 +416,8 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMovie(movieRecord))
+	meta := h.metaFor(ctx, []*domain.Movie{movieRecord})
+	return c.Status(fiber.StatusOK).JSON(toAPIMovieMeta(movieRecord, meta[movieRecord.ID]))
 }
 
 func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
@@ -413,10 +435,11 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
-	movies, err := h.movieService.Watched(c.UserContext())
+	ctx := c.UserContext()
+	movies, err := h.movieService.Watched(ctx)
 	if err != nil {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMovies(movies))
+	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies)))
 }

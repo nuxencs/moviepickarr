@@ -95,14 +95,22 @@ func TestBuildStatsResponse_WindowCountsAndSelectedBreakdown(t *testing.T) {
 		}
 	}
 
-	if len(got.WatchedByUser) != 2 {
-		t.Fatalf("expected 2 users in selected window, got %d", len(got.WatchedByUser))
+	// Every all-time picker is present every window (Cara watched 31d ago, so
+	// she's 0 in the 30d window but still listed), ordered by stable all-time
+	// total (Alice 4, Bob 2, Cara 1) — not the window count — so rows don't jump
+	// when switching ranges. "Future" (future-dated) and "Nobody" (unwatched)
+	// are excluded.
+	if len(got.WatchedByUser) != 3 {
+		t.Fatalf("expected 3 members, got %d (%+v)", len(got.WatchedByUser), got.WatchedByUser)
 	}
 	if got.WatchedByUser[0].Name != "Alice" || got.WatchedByUser[0].Count != 2 {
-		t.Fatalf("unexpected top user %+v", got.WatchedByUser[0])
+		t.Fatalf("unexpected member[0] %+v", got.WatchedByUser[0])
 	}
 	if got.WatchedByUser[1].Name != "Bob" || got.WatchedByUser[1].Count != 1 {
-		t.Fatalf("unexpected second user %+v", got.WatchedByUser[1])
+		t.Fatalf("unexpected member[1] %+v", got.WatchedByUser[1])
+	}
+	if got.WatchedByUser[2].Name != "Cara" || got.WatchedByUser[2].Count != 0 {
+		t.Fatalf("unexpected member[2] %+v", got.WatchedByUser[2])
 	}
 
 	friday := findCountByName(t, got.WeekdayActivity, "Fri")

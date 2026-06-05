@@ -140,6 +140,12 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
 ## 6. Motion & accessibility
 
 - Durations 150–280ms, ease-out, no bounce. Motion conveys state, not decoration.
+- **Tab underline** is one shared `.tab__ink` (not one element per tab): `NavBar.tsx`
+  measures the active button and drives the indicator's `left`/`width`, and CSS
+  transitions the slide so it glides between tabs instead of disappearing and
+  reappearing. It re-measures on resize and on `document.fonts.ready` (font swap
+  changes label width). The reduced-motion guard collapses the slide to an instant
+  jump for free.
 - **`prefers-reduced-motion`**: a global block neutralizes all animations/transitions
   and the infinite hero "live" pulse. Any new keyframe must survive this (it already
   does via the universal rule). Reduced motion is not optional.

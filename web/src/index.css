@@ -313,7 +313,7 @@
   .wordmark .mark { width: 30px; height: 30px; border-radius: var(--r-lg); flex: none; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); }
   .wordmark .mark svg { width: 17px; height: 17px; }
   .wordmark h1 { margin: 0; font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
-  .nav__tabs { display: flex; gap: 2px; align-items: stretch; height: 100%; margin-left: 8px; }
+  .nav__tabs { position: relative; display: flex; gap: 2px; align-items: stretch; height: 100%; margin-left: 8px; }
 
   .tab {
     position: relative; background: none; border: none; cursor: pointer;
@@ -324,7 +324,9 @@
   .tab svg { width: 16px; height: 16px; }
   .tab:hover { color: var(--ink-2); }
   .tab[data-active="true"] { color: var(--ink); }
-  .tab__ink { position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px; background: var(--accent); animation: mg-growW 0.3s var(--ease) both; }
+  /* Single shared underline; left/width are set inline per active tab (NavBar.tsx)
+     and the slide between tabs is the transition below. */
+  .tab__ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); transition: left var(--dur) var(--ease), width var(--dur) var(--ease); }
   .nav .iconbtn { margin-left: auto; border: 1px solid var(--line); }
 
   /* ---- Hero ---- */

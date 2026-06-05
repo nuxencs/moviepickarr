@@ -160,6 +160,13 @@ banner. How it's built (`Hero.tsx` + `.hero__*` in `index.css`):
 
 - `.hero__body` is a fixed-height flex column (`min-height: 18.5rem`), sized for the
   worst case so the banner never resizes.
+- **Poster** column width is `calc(18.5rem * 2 / 3)` — derived from the body height
+  and the 2/3 poster ratio so the poster's bottom edge lines up exactly with the
+  pinned action button. It is a deliberate dependency on the `18.5rem` contract: if
+  that height changes, the poster width tracks it automatically.
+- The hero poster **omits the rating badge** (it passes no `voteAverage`): the rating
+  already appears in the meta row, so the badge would be redundant. The badge still
+  renders on tile-grid posters, where the meta row carries no rating.
 - **Top group** (eyebrow + title) is anchored to the top. The title is clamped to 2
   lines; a long title gains a second line that grows *downward* into the negative
   space without moving anything else.

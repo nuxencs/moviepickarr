@@ -337,7 +337,9 @@
       linear-gradient(0deg, var(--bg), transparent 60%);
   }
   .hero__inner { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; display: flex; gap: 34px; padding: 44px 32px 48px; align-items: flex-start; }
-  .hero__poster { width: 172px; flex: none; }
+  /* Width derived from the body's 18.5rem static height (§7) and the 2/3 poster
+     ratio, so the poster's bottom edge lines up with the pinned action button. */
+  .hero__poster { width: calc(18.5rem * 2 / 3); flex: none; }
   .hero__poster .poster { box-shadow: 0 34px 64px -26px rgba(0,0,0,0.85); }
   /* Fixed-height column: top group (eyebrow + title) stays anchored at the top,
      the tagline/meta/actions group is pushed to the bottom via margin-top:auto.

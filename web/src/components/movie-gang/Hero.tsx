@@ -51,7 +51,6 @@ export function Hero() {
             title={current?.title ?? "No pick yet"}
             hue={hue}
             posterPath={current?.posterPath}
-            voteAverage={current?.voteAverage}
             showTitle={!current?.posterPath}
           />
         </div>

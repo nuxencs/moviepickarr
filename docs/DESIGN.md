@@ -81,7 +81,9 @@ old shadcn primitives.
 
 - **Buttons:** `.btn` + `.btn--accent` (primary gold), `.btn--ghost` (secondary,
   translucent surface-3 fill), `.btn--danger` (destructive), `.btn--sm` (small).
-  Hover lifts (`translateY(-1px)` + brightness); `:active` presses. Verb+object labels.
+  Hover brightens (`filter: brightness(1.06)`, no lift); `:active` presses
+  (`translateY(1px) scale(0.99)`). Verb+object labels. Buttons deliberately do **not**
+  lift on hover — the press on `:active` is the only positional feedback.
 - **Inputs:** `.field` — a 42px filled wrapper with a leading icon and gold
   focus-within border. All text inputs use this; there is no bare/hollow input style.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
@@ -164,6 +166,9 @@ The Movies-tab hero must be **dimensionally static**: changing the pick, its met
 the title length, or the tagline length must not move any component or resize the
 banner. How it's built (`Hero.tsx` + `.hero__*` in `index.css`):
 
+- `.hero__inner` carries generous vertical padding (`56px` top / `60px` bottom) for a
+  cinematic, roomy banner. Horizontal padding stays `32px`. The body height (below) is
+  unchanged — the extra room is breathing space around the content, not added to it.
 - `.hero__body` is a fixed-height flex column (`min-height: 18.5rem`), sized for the
   worst case so the banner never resizes.
 - **Poster** column width is `calc(18.5rem * 2 / 3)` — derived from the body height

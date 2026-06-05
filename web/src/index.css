@@ -246,11 +246,11 @@
   .btn:active { transform: translateY(1px) scale(0.99); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn--accent { background: var(--accent); color: var(--accent-ink); }
-  .btn--accent:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+  .btn--accent:hover:not(:disabled) { filter: brightness(1.06); }
   .btn--ghost { background: color-mix(in oklab, var(--surface-3) 70%, transparent); color: var(--ink); border-color: var(--line); }
   .btn--ghost:hover:not(:disabled) { background: var(--surface-3); border-color: var(--line-2); }
   .btn--danger { background: var(--danger); color: var(--danger-ink); }
-  .btn--danger:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+  .btn--danger:hover:not(:disabled) { filter: brightness(1.06); }
   .btn--sm { padding: 8px 13px; font-size: 13px; }
   .btn--sm svg { width: 15px; height: 15px; }
 
@@ -338,7 +338,7 @@
       linear-gradient(95deg, rgba(8,9,14,0.94) 0%, rgba(8,9,14,0.78) 40%, rgba(8,9,14,0.34) 74%, rgba(8,9,14,0.6) 100%),
       linear-gradient(0deg, var(--bg), transparent 60%);
   }
-  .hero__inner { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; display: flex; gap: 34px; padding: 44px 32px 48px; align-items: flex-start; }
+  .hero__inner { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; display: flex; gap: 34px; padding: 56px 32px 60px; align-items: flex-start; }
   /* Width derived from the body's 18.5rem static height (§7) and the 2/3 poster
      ratio, so the poster's bottom edge lines up with the pinned action button. */
   .hero__poster { width: calc(18.5rem * 2 / 3); flex: none; }

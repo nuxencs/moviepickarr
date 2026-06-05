@@ -92,7 +92,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
               </label>
               <button type="submit" className="btn btn--accent" disabled={!query.trim() || isSearching}>
                 {isSearching ? <Loader2Icon className="animate-spin" /> : <SearchIcon />}
-                {isSearching ? "Searching" : "Search"}
+                {isSearching ? "Searching…" : "Search"}
               </button>
             </form>
           </div>
@@ -106,7 +106,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
               </div>
 
               {!isSearching && results.length === 0 ? (
-                <p className="py-6 text-center text-ink-3">No matches found. Try a broader title.</p>
+                <p className="empty">No matches found. Try a broader title.</p>
               ) : (
                 <div className="result-grid">
                   {results.map((movie) => {
@@ -136,7 +136,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
                             </div>
                             <span className="btn btn--accent btn--sm">
                               {busy ? <Loader2Icon className="animate-spin" /> : <PlusIcon />}
-                              {busy ? "Adding" : "Add"}
+                              {busy ? "Adding…" : "Add"}
                             </span>
                           </div>
                         </div>

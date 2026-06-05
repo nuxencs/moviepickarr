@@ -1,8 +1,7 @@
+import { CalendarClockIcon, FilmIcon, LinkIcon, Loader2Icon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/movie-gang/Modal";
 
 interface EditMovieDialogSubmit {
   title: string;
@@ -83,49 +82,75 @@ export function EditMovieDialog({
   const isInvalidWatchedAt = allowWatchedAtEdit && watchedAtLocal.trim().length > 0 && !watchedAtISO;
   const isSubmitDisabled = isSaving || !titleValue || !linkValue || isInvalidWatchedAt;
 
+  if (!isOpen) {
+    return null;
+  }
+
   return (
-    <AlertDialog open={isOpen} onOpenChange={onClose}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Edit Movie</AlertDialogTitle>
-          <AlertDialogDescription>Update movie details.</AlertDialogDescription>
-        </AlertDialogHeader>
+    <Modal onClose={onClose} className="modal--form">
+      {(close) => (
+        <>
+          <div className="modal__head">
+            <div className="top">
+              <div>
+                <h3>Edit movie</h3>
+                <p>Update the title, link{allowWatchedAtEdit ? ", and watched date" : ""}.</p>
+              </div>
+              <button type="button" className="iconbtn" onClick={close} aria-label="Close">
+                <XIcon />
+              </button>
+            </div>
+          </div>
 
-        <div className="space-y-3">
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Movie title"
-            disabled={isSaving}
-          />
-          <Input
-            type="url"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            placeholder="Movie link"
-            disabled={isSaving}
-          />
+          <div className="modal__body">
+            <label className="field">
+              <FilmIcon />
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Movie title"
+                disabled={isSaving}
+              />
+            </label>
+            <label className="field">
+              <LinkIcon />
+              <input
+                type="url"
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                placeholder="Movie link"
+                disabled={isSaving}
+              />
+            </label>
+            {allowWatchedAtEdit && (
+              <label className="field">
+                <CalendarClockIcon />
+                <input
+                  type="datetime-local"
+                  value={watchedAtLocal}
+                  onChange={(e) => setWatchedAtLocal(e.target.value)}
+                  disabled={isSaving}
+                />
+              </label>
+            )}
+          </div>
 
-          {allowWatchedAtEdit ? (
-            <Input
-              type="datetime-local"
-              value={watchedAtLocal}
-              onChange={(e) => setWatchedAtLocal(e.target.value)}
-              disabled={isSaving}
-            />
-          ) : null}
-        </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
-          <Button
-            disabled={isSubmitDisabled}
-            onClick={() => onSubmit({ title: titleValue, link: linkValue, watchedAt: watchedAtISO })}
-          >
-            Save
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          <div className="modal__foot">
+            <button type="button" className="btn btn--ghost" onClick={close} disabled={isSaving}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn--accent"
+              disabled={isSubmitDisabled}
+              onClick={() => onSubmit({ title: titleValue, link: linkValue, watchedAt: watchedAtISO })}
+            >
+              {isSaving && <Loader2Icon className="animate-spin" />}
+              {isSaving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }

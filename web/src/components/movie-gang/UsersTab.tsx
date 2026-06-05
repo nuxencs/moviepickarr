@@ -17,7 +17,7 @@ import { SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar } from "@/components/movie-gang/Bits";
-import { hueOf } from "@/components/movie-gang/lib";
+import { hueOf, plural } from "@/components/movie-gang/lib";
 import { Poster } from "@/components/movie-gang/Poster";
 import { SearchModal } from "@/components/movie-gang/SearchModal";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
@@ -50,7 +50,7 @@ export function UsersTab() {
       setName("");
     },
     onError: () => {
-      toast.error("Error creating user");
+      toast.error("Failed to create user");
       setName("");
     },
   });
@@ -61,7 +61,7 @@ export function UsersTab() {
         <div className="sec-head">
           <div className="sec-title">
             <h2>Members</h2>
-            <span className="sec-count">{users?.length ?? 0} people</span>
+            <span className="sec-count">{plural(users?.length ?? 0, "person", "people")}</span>
           </div>
           <form className="user-add" onSubmit={createMutation.mutate}>
             <label className="field" style={{ width: 240 }}>
@@ -119,13 +119,13 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
   const deleteUserMutation = useMutation({
     mutationFn: () => APIClient.users.delete(user.userID),
     onSuccess: () => toast.success(`User ${user.name} deleted`),
-    onError: () => toast.error("Error deleting user"),
+    onError: () => toast.error("Failed to delete user"),
   });
 
   // Demote a pooled movie back to the stash (moveMovie toggles pool <-> stash).
   const demoteMutation = useMutation({
     mutationFn: (movieID: number) => APIClient.users.moveMovie(user.userID, movieID),
-    onError: () => toast.error("Error moving movie"),
+    onError: () => toast.error("Failed to move movie"),
   });
 
   return (
@@ -155,7 +155,7 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
       </div>
 
       <button type="button" className="btn btn--ghost board__search" onClick={onOpenSearch}>
-        <SearchIcon />
+        <PlusIcon />
         Add to {firstName}'s stash
       </button>
 
@@ -212,7 +212,7 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
         </div>
         <div className="stash__list">
           {filteredStash.length === 0 ? (
-            <div className="px-1 py-5 text-[13px] text-ink-3">
+            <div className="empty">
               {filter ? `Nothing matches "${filter}"` : "Stash is empty"}
             </div>
           ) : (
@@ -242,12 +242,12 @@ function StashRow({
 
   const moveMutation = useMutation({
     mutationFn: () => APIClient.users.moveMovie(user.userID, movie.movieID),
-    onError: () => toast.error("Error moving movie"),
+    onError: () => toast.error("Failed to move movie"),
   });
   const deleteMutation = useMutation({
     mutationFn: () => APIClient.users.deleteMovie(user.userID, movie.movieID),
     onSuccess: () => toast.success(`${movie.title} deleted`),
-    onError: () => toast.error("Error deleting movie"),
+    onError: () => toast.error("Failed to delete movie"),
   });
   const editMutation = useMutation({
     mutationFn: (payload: { title: string; link: string }) =>
@@ -256,7 +256,7 @@ function StashRow({
       toast.success(`${movie.title} updated`);
       toggleEdit();
     },
-    onError: () => toast.error("Error updating movie"),
+    onError: () => toast.error("Failed to update movie"),
   });
 
   return (

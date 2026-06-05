@@ -1,6 +1,6 @@
 /* ============================================================
    Movie Gang — shared helpers: TMDB image URLs, procedural
-   poster/backdrop/ambient art, deterministic hues, formatting.
+   poster/backdrop art, deterministic hues, formatting.
    ============================================================ */
 
 import type { Movie } from "@/types/Response";
@@ -44,10 +44,9 @@ export function backdropBg(hue: number): string {
   ].join(", ");
 }
 
-/** Ambient page-background bleed from a hue. */
-export function ambientBg(hue: number): string {
-  return `radial-gradient(60% 50% at 78% -6%, hsl(${hue} 60% 42% / 0.7), transparent 60%),
-          radial-gradient(50% 40% at 14% -4%, hsl(${(hue + 40) % 360} 55% 36% / 0.5), transparent 60%)`;
+/** "1 movie" / "3 movies" — count plus a count-aware noun (default plural adds "s"). */
+export function plural(count: number, noun: string, pluralForm?: string): string {
+  return `${count} ${count === 1 ? noun : pluralForm ?? `${noun}s`}`;
 }
 
 /** Up-to-two-letter initials from a name, e.g. "Hauptmann Schubert" -> "HS". */

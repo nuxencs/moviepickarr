@@ -25,7 +25,7 @@ export function Hero() {
 
   const pickMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
-    onSuccess: () => toast.success("Movie picked!"),
+    onSuccess: () => toast.success("Movie picked"),
     onError: () => toast.error("Failed to pick a random movie"),
   });
 
@@ -66,23 +66,19 @@ export function Hero() {
 
           <h2 className="hero__title">{current?.title ?? "Pick tonight's movie"}</h2>
 
-          {current?.tagline ? (
-            <p className="hero__tag">"{current.tagline}"</p>
-          ) : (
-            !current && (
-              <p className="hero__tag">
-                {(pooled?.length ?? 0) > 0
-                  ? "The pool is stocked — spin for a random pick."
+          {/* Tagline + meta slots are always rendered (reserved height in CSS) so
+              the banner never re-lays-out as the pick / its metadata changes. */}
+          <p className="hero__tag">
+            {current?.tagline
+              ? `"${current.tagline}"`
+              : current
+                ? null
+                : (pooled?.length ?? 0) > 0
+                  ? "The pool is stocked. Spin for a random pick."
                   : "Add movies to the pool to get started."}
-              </p>
-            )
-          )}
+          </p>
 
-          {current && (
-            <div className="hero__meta">
-              <MetaChips movie={current} />
-            </div>
-          )}
+          <div className="hero__meta">{current && <MetaChips movie={current} />}</div>
 
           <div className="hero__actions">
             {current ? (

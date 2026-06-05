@@ -6,7 +6,7 @@ import { StatsGetQueryOptions } from "@/api/queries";
 
 import { Avatar } from "@/components/movie-gang/Bits";
 import { DateRangePopover, shortRange, type DayRange } from "@/components/movie-gang/DateRange";
-import { hueOf } from "@/components/movie-gang/lib";
+import { plural } from "@/components/movie-gang/lib";
 
 import type { StatsHourCount, StatsNamedCount, StatsWindow } from "@/types/Response";
 
@@ -103,16 +103,16 @@ export function StatsTab() {
       </div>
 
       {isError ? (
-        <p className="py-10 text-center text-destructive">Failed to load stats.</p>
+        <p className="empty text-destructive">Failed to load stats.</p>
       ) : isLoading || !stats ? (
-        <p className="py-10 text-center text-ink-3">Loading stats…</p>
+        <p className="empty">Loading stats…</p>
       ) : (
         <>
           <div className="stat-strip">
             <StatItem icon={<FilmIcon size={15} />} label="In window" value={count} sub="movies watched" mono />
-            <StatItem icon={<TrophyIcon size={15} />} label="Top picker" value={topUser?.name ?? "—"} sub={`${topUser?.count ?? 0} movies`} />
-            <StatItem icon={<CalendarDaysIcon size={15} />} label="Busiest day" value={topDay?.name ?? "—"} sub={`${topDay?.count ?? 0} movies`} />
-            <StatItem icon={<Clock3Icon size={15} />} label="Prime time" value={primeHour?.label ?? "—"} sub={`${primeHour?.count ?? 0} movies`} mono />
+            <StatItem icon={<TrophyIcon size={15} />} label="Top picker" value={topUser?.name ?? "—"} sub={plural(topUser?.count ?? 0, "movie")} />
+            <StatItem icon={<CalendarDaysIcon size={15} />} label="Busiest day" value={topDay?.name ?? "—"} sub={plural(topDay?.count ?? 0, "movie")} />
+            <StatItem icon={<Clock3Icon size={15} />} label="Prime time" value={primeHour?.label ?? "—"} sub={plural(primeHour?.count ?? 0, "movie")} mono />
           </div>
 
           <PickedByMember rows={stats.watchedByUser} />
@@ -158,31 +158,29 @@ function PickedByMember({ rows }: { rows: StatsNamedCount[] }) {
     <section className="statsec">
       <h3 className="statsec__title">Picked by member</h3>
       {rows.length === 0 ? (
-        <p className="text-ink-3">No watched movies in this window.</p>
+        <p className="empty">No watched movies in this window.</p>
       ) : (
         <div className="bar-rows">
-          {rows.map((r, i) => {
-            const hue = hueOf(r.name);
-            return (
-              <div className="barrow" key={r.name}>
-                <div className="b-name">
-                  <Avatar name={r.name} size={22} />
-                  <span>{r.name}</span>
-                </div>
-                <div className="b-track">
-                  <div
-                    className="b-fill"
-                    style={{
-                      width: `${(r.count / max) * 100}%`,
-                      animationDelay: `${i * 0.08}s`,
-                      background: `linear-gradient(90deg, hsl(${hue} 55% 42%), hsl(${hue} 60% 56%))`,
-                    }}
-                  />
-                </div>
-                <div className="b-val">{r.count}</div>
+          {rows.map((r, i) => (
+            <div className="barrow" key={r.name}>
+              <div className="b-name">
+                <Avatar name={r.name} size={22} />
+                <span>{r.name}</span>
               </div>
-            );
-          })}
+              <div className="b-track">
+                <div
+                  className="b-fill"
+                  style={{
+                    width: `${(r.count / max) * 100}%`,
+                    animationDelay: `${i * 0.08}s`,
+                    background: "var(--accent)",
+                    opacity: r.count === 0 ? 0.15 : 1,
+                  }}
+                />
+              </div>
+              <div className="b-val">{r.count}</div>
+            </div>
+          ))}
         </div>
       )}
     </section>

@@ -11,7 +11,7 @@ import {
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar, PickerTag, Rating } from "@/components/movie-gang/Bits";
-import { dateTimeParts, hueOf, relativeDate, runtimeLabel, yearOf } from "@/components/movie-gang/lib";
+import { dateTimeParts, hueOf, plural, relativeDate, runtimeLabel, yearOf } from "@/components/movie-gang/lib";
 import { MovieModal } from "@/components/movie-gang/MovieModal";
 import { Poster } from "@/components/movie-gang/Poster";
 import { toast } from "@/components/ui/toast";
@@ -99,7 +99,7 @@ export function MoviesTab() {
             ))}
           </div>
         ) : (
-          <p className="py-6 text-center text-ink-3">No movies in the pool</p>
+          <p className="empty">No movies in the pool</p>
         )}
       </section>
 
@@ -111,7 +111,7 @@ export function MoviesTab() {
           <div className="sec-title">
             <h2>Watched</h2>
             <span className="sec-count">
-              {search ? `${filteredWatched.length}/${watched?.length ?? 0}` : watched?.length ?? 0} films
+              {search ? `${filteredWatched.length}/${watched?.length ?? 0} films` : plural(watched?.length ?? 0, "film")}
             </span>
           </div>
           <div className="flex items-stretch gap-3">
@@ -135,7 +135,7 @@ export function MoviesTab() {
         </div>
 
         {filteredWatched.length === 0 ? (
-          <p className="py-6 text-center text-ink-3">
+          <p className="empty">
             {search ? "No films match your search" : "No movies watched yet"}
           </p>
         ) : view === "grid" ? (
@@ -185,7 +185,7 @@ function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
       toast.success(`${movie.title} updated`);
       toggleEdit();
     },
-    onError: () => toast.error("Error updating movie"),
+    onError: () => toast.error("Failed to update movie"),
   });
 
   const year = yearOf(movie.releaseDate);
@@ -206,7 +206,7 @@ function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
       />
 
       <div className="wrow">
-        <button type="button" className="contents cursor-pointer text-left" onClick={onOpen} aria-label={`Details for ${movie.title}`}>
+        <button type="button" className="wr-open" onClick={onOpen} aria-label={`Details for ${movie.title}`}>
           <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
           <div className="wr-main">
             <span className="wr-title">

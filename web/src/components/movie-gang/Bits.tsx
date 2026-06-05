@@ -45,16 +45,25 @@ export function PickerTag({ name, size = 20 }: { name: string; size?: number }) 
 }
 
 /**
- * year · runtime · rating · up-to-3 genre chips, in mono. Each piece is
- * omitted when the underlying metadata is absent.
+ * year · runtime · rating | genre chips | external links, in mono. Each piece
+ * is omitted when the underlying metadata is absent. A vertical rule divides
+ * the rating facts from the genres, and the genres from the optional links.
+ * `links` is opt-in (the hero passes them; the modal renders its own block).
  */
-export function MetaChips({ movie }: { movie: Movie }) {
+export function MetaChips({
+  movie,
+  links = [],
+}: {
+  movie: Movie;
+  links?: { label: string; href: string }[];
+}) {
   const year = yearOf(movie.releaseDate);
   const runtime = runtimeLabel(movie.runtime);
   const rating = ratingLabel(movie.voteAverage);
   const genres = (movie.genres ?? []).slice(0, 3);
 
-  const hasAny = year || runtime || rating || genres.length > 0;
+  const hasFacts = Boolean(year || runtime || rating);
+  const hasAny = hasFacts || genres.length > 0 || links.length > 0;
   if (!hasAny) return null;
 
   let dotted = false;
@@ -73,10 +82,27 @@ export function MetaChips({ movie }: { movie: Movie }) {
           <Rating voteAverage={movie.voteAverage} />
         </span>
       )}
+
+      {genres.length > 0 && hasFacts && <span className="metasep" aria-hidden="true" />}
       {genres.map((g) => (
         <span key={g} className="genrechip">
           {g}
         </span>
+      ))}
+
+      {links.length > 0 && (hasFacts || genres.length > 0) && (
+        <span className="metasep" aria-hidden="true" />
+      )}
+      {links.map((link) => (
+        <a
+          key={link.label}
+          className="metalink"
+          href={link.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {link.label}
+        </a>
       ))}
     </div>
   );

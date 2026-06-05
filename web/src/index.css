@@ -222,6 +222,9 @@
   .metachip { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 5px; }
   .metachip--dot::before { content: ""; width: 3px; height: 3px; border-radius: 99px; background: var(--ink-3); margin-right: 8px; }
   .genrechip { font-size: 12px; padding: 3px 9px; border-radius: var(--r-sm); border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap; }
+  .metasep { width: 1px; height: 13px; border-radius: 99px; background: var(--line-2); margin: 0 2px; }
+  .metalink { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); text-decoration: none; white-space: nowrap; transition: color 0.15s ease; }
+  .metalink:hover { color: var(--accent); }
 
   /* ---- Avatar ---- */
   .avatar {
@@ -350,6 +353,9 @@
   .hero__meta { margin-top: 14px; min-height: 26px; }
   .hero__meta .metachip, .hero__meta .rating { color: rgba(255,255,255,0.84); }
   .hero__meta .genrechip { color: rgba(255,255,255,0.84); border-color: rgba(255,255,255,0.28); }
+  .hero__meta .metasep { background: rgba(255,255,255,0.28); }
+  .hero__meta .metalink { color: rgba(255,255,255,0.84); }
+  .hero__meta .metalink:hover { color: #fff; }
   .hero__actions { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .hero__nextpick { display: flex; align-items: center; gap: 11px; margin-left: 10px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,0.2); color: #fff; }
   .hero__nextpick .lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.6); }

@@ -9,7 +9,7 @@ import {
 } from "@/api/queries";
 
 import { Avatar, MetaChips } from "@/components/movie-gang/Bits";
-import { backdropBg, backdropUrl, hueOf } from "@/components/movie-gang/lib";
+import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/movie-gang/lib";
 import { Poster } from "@/components/movie-gang/Poster";
 import { toast } from "@/components/ui/toast";
 
@@ -78,7 +78,9 @@ export function Hero() {
                   : "Add movies to the pool to get started."}
           </p>
 
-          <div className="hero__meta">{current && <MetaChips movie={current} />}</div>
+          <div className="hero__meta">
+            {current && <MetaChips movie={current} links={externalLinks(current)} />}
+          </div>
 
           <div className="hero__actions">
             {current ? (

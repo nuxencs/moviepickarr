@@ -88,6 +88,14 @@ old shadcn primitives.
 - **Segmented control:** `.seg` (+ `.seg--accent` for the active-gold variant).
 - **Poster:** `.poster` — the one container; real TMDB art or a deterministic
   procedural duotone (`lib.ts`), with a rating badge.
+- **Meta chips:** `.metachips` — a wrapping row reading `year · runtime · ★rating`
+  (mono, dot-separated) `│` genre chips `│` external links. A `.metasep` vertical
+  rule divides the rating facts from the genres, and the genres from the links.
+  `.metalink` items are mono external links (IMDb / TMDB / Letterboxd) derived from a
+  movie's stable ids via `externalLinks()` (`lib.ts`). Rendered by `MetaChips`
+  (`Bits.tsx`), shared by the hero and the movie modal — the **hero passes `links`**
+  so they sit inline after the genres; the **modal omits them** and renders its own
+  `.moviemodal__links` button block instead (no duplication).
 - **Modal:** the bespoke `Modal` component (§5).
 
 ### Decision: no shadcn primitives
@@ -162,6 +170,9 @@ banner. How it's built (`Hero.tsx` + `.hero__*` in `index.css`):
   2` + `overflow: hidden`). Data showed ~80% of taglines are 1 line, ~16% 2 lines,
   ~3% 3+ lines. A 1-line tagline reserves the second line (whitespace is acceptable);
   a **3+ line tagline truncates to 2 lines with an ellipsis and moves nothing.**
+- **Meta slot** carries the `.metachips` row (§4): facts `│` genres `│` external
+  links, in white-on-backdrop. Links derive from ids present on every enriched pick,
+  so the row's presence is consistent pick-to-pick and does not break the contract.
 - The hero stays a **dark "island"** in light theme by design (cinematic scrim over a
   backdrop). Its scrim/text are intentionally dark/white in both themes; only fix the
   genuinely-broken light overlays, not the hero's darkness.

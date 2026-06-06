@@ -3,7 +3,7 @@ module moviepickarr
 go 1.26.0
 
 require (
-	github.com/gofiber/fiber/v2 v2.52.6
+	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/joho/godotenv v1.5.1
 	go.etcd.io/bbolt v1.3.11
 	modernc.org/sqlite v1.44.2

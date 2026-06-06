@@ -108,6 +108,10 @@ export function Hero() {
   }, [isLoading, current]);
 
   const pick = shown;
+  // False until the first pick (or confirmed-empty) has committed after its
+  // backdrop decoded. While loading we render a quiet banner shell — no
+  // placeholder copy ("Pick tonight's movie") flashing before the real pick.
+  const ready = revealId > 0;
   const hue = hueOf(pick?.title ?? "Movie Gang");
   const bg = pick?.backdropPath ? `url(${backdropUrl(pick.backdropPath)})` : backdropBg(hue);
   const canPick = !pick && (pooled?.length ?? 0) > 0;
@@ -121,59 +125,62 @@ export function Hero() {
             title={pick?.title ?? "No pick yet"}
             hue={hue}
             posterPath={pick?.posterPath}
-            showTitle={!pick?.posterPath}
+            showTitle={ready && !pick?.posterPath}
           />
         </div>
 
         <div className="hero__body" key={`b-${revealId}`}>
           <div className="hero__eyebrow eyebrow" style={ri(1)}>
-            {pick ? `Current pick · chosen by ${pick.addedByName}` : "No movie selected"}
+            {!ready ? "" : pick ? `Current pick · chosen by ${pick.addedByName}` : "No movie selected"}
           </div>
 
           <h2 className="hero__title" style={ri(2)}>
-            {pick?.title ?? "Pick tonight's movie"}
+            {!ready ? "" : (pick?.title ?? "Pick tonight's movie")}
           </h2>
 
           {/* Tagline + meta slots are always rendered (reserved height in CSS) so
               the banner never re-lays-out as the pick / its metadata changes. */}
           <p className="hero__tag" style={ri(3)}>
-            {pick?.tagline
-              ? `"${pick.tagline}"`
-              : pick
-                ? null
-                : (pooled?.length ?? 0) > 0
-                  ? "The pool is stocked. Spin for a random pick."
-                  : "Add movies to the pool to get started."}
+            {!ready
+              ? null
+              : pick?.tagline
+                ? `"${pick.tagline}"`
+                : pick
+                  ? null
+                  : (pooled?.length ?? 0) > 0
+                    ? "The pool is stocked. Spin for a random pick."
+                    : "Add movies to the pool to get started."}
           </p>
 
           <div className="hero__meta" style={ri(4)}>
-            {pick && <MetaChips movie={pick} links={externalLinks(pick)} />}
+            {ready && pick && <MetaChips movie={pick} links={externalLinks(pick)} />}
           </div>
 
           <div className="hero__actions" style={ri(5)}>
-            {pick ? (
-              <button
-                type="button"
-                className="btn btn--accent"
-                onClick={() => watchMutation.mutate()}
-                disabled={watchMutation.isPending}
-              >
-                {watchMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <EyeIcon />}
-                {watchMutation.isPending ? "Marking…" : "Mark as Watched"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn--accent"
-                onClick={() => pickMutation.mutate()}
-                disabled={!canPick || pickMutation.isPending}
-              >
-                {pickMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <ShuffleIcon />}
-                {pickMutation.isPending ? "Picking…" : "Pick Random Movie"}
-              </button>
-            )}
+            {ready &&
+              (pick ? (
+                <button
+                  type="button"
+                  className="btn btn--accent"
+                  onClick={() => watchMutation.mutate()}
+                  disabled={watchMutation.isPending}
+                >
+                  {watchMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <EyeIcon />}
+                  {watchMutation.isPending ? "Marking…" : "Mark as Watched"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn--accent"
+                  onClick={() => pickMutation.mutate()}
+                  disabled={!canPick || pickMutation.isPending}
+                >
+                  {pickMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <ShuffleIcon />}
+                  {pickMutation.isPending ? "Picking…" : "Pick Random Movie"}
+                </button>
+              ))}
 
-            {nextPicker?.name && (
+            {ready && nextPicker?.name && (
               <div className="hero__nextpick">
                 <Avatar name={nextPicker.name} size={30} />
                 <div>

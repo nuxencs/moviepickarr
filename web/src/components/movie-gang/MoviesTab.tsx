@@ -23,8 +23,8 @@ import { useToggle } from "@/hooks/hooks";
 type WatchedView = "grid" | "list";
 
 export function MoviesTab() {
-  const { data: pooled } = useQuery(MoviesGetPoolQueryOptions());
-  const { data: watched } = useQuery(MoviesGetWatchedQueryOptions());
+  const { data: pooled, isPending: poolPending, isError: poolError } = useQuery(MoviesGetPoolQueryOptions());
+  const { data: watched, isPending: watchedPending, isError: watchedError } = useQuery(MoviesGetWatchedQueryOptions());
   const { data: isLocked } = useQuery(SettingsGetPoolLockQueryOptions());
 
   const [search, setSearch] = useState("");
@@ -79,7 +79,11 @@ export function MoviesTab() {
           </button>
         </div>
 
-        {pooled && pooled.length > 0 ? (
+        {poolError ? (
+          <p className="empty text-destructive">Failed to load the pool.</p>
+        ) : poolPending ? (
+          <p className="empty">Loading pool…</p>
+        ) : pooled && pooled.length > 0 ? (
           <div className="tile-grid tile-grid--pool">
             {pooled.map((movie) => (
               <article className="tile" key={movie.movieID} {...tileProps(movie)}>
@@ -134,7 +138,11 @@ export function MoviesTab() {
           </div>
         </div>
 
-        {filteredWatched.length === 0 ? (
+        {watchedError ? (
+          <p className="empty text-destructive">Failed to load watched movies.</p>
+        ) : watchedPending ? (
+          <p className="empty">Loading watched…</p>
+        ) : filteredWatched.length === 0 ? (
           <p className="empty">
             {search ? "No films match your search" : "No movies watched yet"}
           </p>

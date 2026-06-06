@@ -1,5 +1,5 @@
 import { StarIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { posterBg, posterUrl, ratingLabel } from "@/components/movie-gang/lib";
 
@@ -21,6 +21,10 @@ interface PosterProps {
  */
 export function Poster({ title, hue, posterPath, showTitle = true, voteAverage, className }: PosterProps) {
   const [imgFailed, setImgFailed] = useState(false);
+  // A Poster instance persists across prop updates (list items are keyed by movie
+  // id), so reset the failure flag when the source changes — otherwise a newly
+  // arrived or retried poster path stays stuck on the procedural fallback.
+  useEffect(() => setImgFailed(false), [posterPath]);
   const url = imgFailed ? null : posterUrl(posterPath);
   const rating = ratingLabel(voteAverage);
 

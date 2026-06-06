@@ -569,9 +569,10 @@
 
   /* ---- Search modal ---- */
   .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: grid; place-items: start center; padding: 56px 20px; overflow-y: auto; animation: mg-fadeIn var(--dur-base) var(--ease); }
-  .modal-veil--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; }
+  .modal-veil--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
   .modal { width: min(960px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
-  .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; }
+  /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
+  .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
   .modal--movie { width: min(560px, 100%); }
   .modal--form { width: min(460px, 100%); }
   .modal__body { padding: 22px 26px 0; display: flex; flex-direction: column; gap: 14px; }

@@ -106,11 +106,6 @@ export function ratingLabel(voteAverage?: number): string | undefined {
   return voteAverage.toFixed(1);
 }
 
-/** Convenience: the hue for a movie (prefers title for stable art). */
-export function movieHue(movie: Pick<Movie, "title">): number {
-  return hueOf(movie.title);
-}
-
 /**
  * External links for a movie, derived from its stable ids. Letterboxd resolves
  * via /tmdb/{id} (preferred) or /imdb/{id}. Only links with a backing id are

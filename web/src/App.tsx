@@ -34,6 +34,7 @@ function AppContent() {
   }, []);
 
   const changeTab = (next: Tab) => {
+    if (next === tab) return; // don't push a duplicate history entry for the active tab
     const url = new URL(window.location.href);
     url.searchParams.set("tab", next);
     window.history.pushState({}, "", url);

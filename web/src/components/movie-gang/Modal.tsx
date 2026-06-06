@@ -5,6 +5,12 @@ interface ModalProps {
   onClose: () => void;
   /** Extra class on the `.modal` surface (e.g. `modal--movie` for a narrower width). */
   className?: string;
+  /**
+   * When false, Esc / veil-click / the render-prop `close` are inert. Used to pin
+   * a dialog open mid-save so a dismiss can't race the success-close (which would
+   * otherwise toggle the dialog back open). Defaults to true.
+   */
+  dismissible?: boolean;
   /** Render-prop receiving a `close` that plays the exit animation before unmounting. */
   children: (close: () => void) => ReactNode;
 }
@@ -29,13 +35,18 @@ function exitDelayMs(): number {
   return Math.round(secs * 1000) + 20;
 }
 
-export function Modal({ onClose, className, children }: ModalProps) {
+export function Modal({ onClose, className, dismissible = true, children }: ModalProps) {
   const [closing, setClosing] = useState(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const dismissibleRef = useRef(dismissible);
+  dismissibleRef.current = dismissible;
   const surfaceRef = useRef<HTMLDivElement>(null);
 
-  const requestClose = useCallback(() => setClosing(true), []);
+  const requestClose = useCallback(() => {
+    if (!dismissibleRef.current) return;
+    setClosing(true);
+  }, []);
 
   useEffect(() => {
     if (!closing) return;

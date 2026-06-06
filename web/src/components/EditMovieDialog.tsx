@@ -87,7 +87,7 @@ export function EditMovieDialog({
   }
 
   return (
-    <Modal onClose={onClose} className="modal--form">
+    <Modal onClose={onClose} className="modal--form" dismissible={!isSaving}>
       {(close) => (
         <>
           <div className="modal__head">
@@ -96,7 +96,7 @@ export function EditMovieDialog({
                 <h3>Edit movie</h3>
                 <p>Update the title, link{allowWatchedAtEdit ? ", and watched date" : ""}.</p>
               </div>
-              <button type="button" className="iconbtn" onClick={close} aria-label="Close">
+              <button type="button" className="iconbtn" onClick={close} aria-label="Close" disabled={isSaving}>
                 <XIcon />
               </button>
             </div>

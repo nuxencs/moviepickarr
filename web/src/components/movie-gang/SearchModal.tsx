@@ -1,4 +1,3 @@
-import { useMutation } from "@tanstack/react-query";
 import { Loader2Icon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
@@ -20,6 +19,7 @@ interface SearchModalProps {
 /** Flat, editorial TMDB search modal. Real posters; hover reveals overview + add. */
 export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
   const [query, setQuery] = useState("");
+  const [searchedTerm, setSearchedTerm] = useState("");
   const [results, setResults] = useState<TMDBMovie[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -31,18 +31,15 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
     return () => window.clearTimeout(t);
   }, []);
 
-  const addMutation = useMutation({
-    mutationFn: ({ title, tmdbId }: { title: string; tmdbId: number }) =>
-      APIClient.users.addMovie(userID, title, tmdbId),
-  });
-
   const handleSearch = async (e: FormEvent) => {
     e.preventDefault();
-    if (!query.trim() || isSearching) return;
+    const term = query.trim();
+    if (!term || isSearching) return;
     setIsSearching(true);
     setHasSearched(true);
+    setSearchedTerm(term);
     try {
-      setResults(await APIClient.tmdb.search(query.trim()));
+      setResults(await APIClient.tmdb.search(term));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to search movies");
       setResults([]);
@@ -51,11 +48,13 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
     }
   };
 
+  // A single shared add request is in flight at a time, scoped to one result
+  // card by id; SSE refreshes the affected caches, so no mutation wrapper needed.
   const handleAdd = async (movie: TMDBMovie, close: () => void) => {
     if (pendingId !== null) return;
     setPendingId(movie.id);
     try {
-      await addMutation.mutateAsync({ title: movie.title, tmdbId: movie.id });
+      await APIClient.users.addMovie(userID, movie.title, movie.id);
       toast.success(`${movie.title} added to ${userName}'s stash`);
       close();
     } catch (err) {
@@ -102,7 +101,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
               <div className="modal__count">
                 {isSearching
                   ? "Looking up matches…"
-                  : `${results.length} result${results.length === 1 ? "" : "s"}${query.trim() ? ` for "${query.trim()}"` : ""}`}
+                  : `${results.length} result${results.length === 1 ? "" : "s"}${searchedTerm ? ` for "${searchedTerm}"` : ""}`}
               </div>
 
               {!isSearching && results.length === 0 ? (

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"moviepickarr/internal/domain"
@@ -28,6 +30,23 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 		t.Fatalf("expected empty imdbId, got %q", bare.IMDbID)
 	}
 
+	// The omitempty contract the frontend (web/src/types/Response.ts) relies on:
+	// enriched keys are absent from the wire format when the movie isn't enriched,
+	// while the stable tmdbId is present. Assert against the marshaled bytes so a
+	// dropped omitempty tag or renamed json tag is caught here, not at runtime.
+	bareJSON, err := json.Marshal(bare)
+	if err != nil {
+		t.Fatalf("marshal bare: %v", err)
+	}
+	for _, key := range []string{"posterPath", "backdropPath", "releaseDate", "runtime", "genres", "voteAverage", "tagline", "overview", "imdbId"} {
+		if strings.Contains(string(bareJSON), `"`+key+`"`) {
+			t.Fatalf("expected %q omitted for unenriched movie, got %s", key, bareJSON)
+		}
+	}
+	if !strings.Contains(string(bareJSON), `"tmdbId":603`) {
+		t.Fatalf("expected tmdbId present, got %s", bareJSON)
+	}
+
 	poster := "/p.jpg"
 	md := &domain.MovieMetadata{
 		MovieID:     7,
@@ -48,6 +67,24 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 	}
 	if len(got.Genres) != 2 || got.Tagline != "Free your mind." {
 		t.Fatalf("genres/tagline fold mismatch: %+v", got)
+	}
+
+	// Enriched movies serialize the exact json tags the TS contract expects.
+	gotJSON, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal got: %v", err)
+	}
+	for _, want := range []string{
+		`"posterPath":"/p.jpg"`,
+		`"releaseDate":"1999-03-30"`,
+		`"runtime":136`,
+		`"genres":["Action","Sci-Fi"]`,
+		`"voteAverage":8.2`,
+		`"tagline":"Free your mind."`,
+	} {
+		if !strings.Contains(string(gotJSON), want) {
+			t.Fatalf("expected %s in %s", want, gotJSON)
+		}
 	}
 }
 

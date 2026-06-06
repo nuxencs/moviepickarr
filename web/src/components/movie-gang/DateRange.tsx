@@ -1,5 +1,5 @@
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = [
@@ -62,7 +62,9 @@ function MonthView({
 }) {
   const y = base.getFullYear();
   const m = base.getMonth();
-  const cells = monthGrid(y, m);
+  // The 42-cell grid only depends on the visible month — keep it off the
+  // hover path so dragging a range doesn't rebuild ~84 Date objects per move.
+  const cells = useMemo(() => monthGrid(y, m), [y, m]);
   const end = range.end || hover;
   const lo = range.start && end ? Math.min(dayKey(range.start), dayKey(end)) : null;
   const hi = range.start && end ? Math.max(dayKey(range.start), dayKey(end)) : null;

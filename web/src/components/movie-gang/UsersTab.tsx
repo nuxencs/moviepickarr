@@ -36,15 +36,12 @@ import { useToggle } from "@/hooks/hooks";
 const POOL_SIZE = 3;
 
 export function UsersTab() {
-  const { data: users } = useQuery(UsersGetAllQueryOptions());
+  const { data: users, isPending: usersPending, isError: usersError } = useQuery(UsersGetAllQueryOptions());
   const [name, setName] = useState("");
   const [searchUser, setSearchUser] = useState<User | null>(null);
 
   const createMutation = useMutation({
-    mutationFn: (e: FormEvent) => {
-      e.preventDefault();
-      return APIClient.users.create(name.trim());
-    },
+    mutationFn: () => APIClient.users.create(name.trim()),
     onSuccess: () => {
       toast.success(`User ${name.trim()} created`);
       setName("");
@@ -55,6 +52,12 @@ export function UsersTab() {
     },
   });
 
+  const handleCreate = (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || createMutation.isPending) return;
+    createMutation.mutate();
+  };
+
   return (
     <>
       <div className="block">
@@ -63,7 +66,7 @@ export function UsersTab() {
             <h2>Members</h2>
             <span className="sec-count">{plural(users?.length ?? 0, "person", "people")}</span>
           </div>
-          <form className="user-add" onSubmit={createMutation.mutate}>
+          <form className="user-add" onSubmit={handleCreate}>
             <label className="field user-add__field">
               <UsersIcon />
               <input
@@ -81,9 +84,17 @@ export function UsersTab() {
         </div>
 
         <div className="boards">
-          {users?.map((user) => (
-            <Board key={user.userID} user={user} onOpenSearch={() => setSearchUser(user)} />
-          ))}
+          {usersError ? (
+            <p className="empty text-destructive">Failed to load members.</p>
+          ) : usersPending ? (
+            <p className="empty">Loading members…</p>
+          ) : users && users.length > 0 ? (
+            users.map((user) => (
+              <Board key={user.userID} user={user} onOpenSearch={() => setSearchUser(user)} />
+            ))
+          ) : (
+            <p className="empty">No members yet</p>
+          )}
         </div>
       </div>
 

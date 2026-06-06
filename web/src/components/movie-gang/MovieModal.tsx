@@ -1,7 +1,7 @@
 import { ExternalLinkIcon, XIcon } from "lucide-react";
 
 import { MetaChips } from "@/components/movie-gang/Bits";
-import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/movie-gang/lib";
+import { backdropBg, backdropUrl, externalLinks, hueOf, posterUrl } from "@/components/movie-gang/lib";
 import { Modal } from "@/components/movie-gang/Modal";
 import { Poster } from "@/components/movie-gang/Poster";
 
@@ -14,7 +14,7 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
   const heroBg = movie.backdropPath
     ? `url(${backdropUrl(movie.backdropPath)})`
     : movie.posterPath
-      ? `url(${backdropUrl(movie.posterPath)})`
+      ? `url(${posterUrl(movie.posterPath, "w500")})`
       : backdropBg(hue);
 
   const watchedLabel = movie.watchedAt

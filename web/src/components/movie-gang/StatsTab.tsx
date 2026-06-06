@@ -224,8 +224,6 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
         <div className="hourchart__bars">
           {hours.map((entry) => {
             const hh = String(entry.hour).padStart(2, "0");
-            // Visual proportion, capped at 88% to leave headroom for the count label.
-            const vp = Math.max(entry.count / max, 0.014) * 0.88;
             return (
               <div
                 className="hcol"
@@ -234,13 +232,12 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
                 // active hours only — revealing all 24 would be a row of zeros.
                 data-empty={entry.count === 0 ? "" : undefined}
                 title={`${entry.count} at ${hh}:00`}
-                style={{ "--vp": vp } as CSSProperties}
               >
                 <span className="hcol__n">{entry.count}</span>
-                {/* bar shows --vp via scaleY; the count rides its tip (absolute) */}
+                {/* bar height is calc(--p * 88%); grows/tweens via index.css */}
                 <div
                   className="hcol__bar"
-                  style={{ opacity: entry.count === 0 ? 0.18 : 1 }}
+                  style={{ "--p": entry.count / max, opacity: entry.count === 0 ? 0.18 : 1 } as CSSProperties}
                 />
               </div>
             );

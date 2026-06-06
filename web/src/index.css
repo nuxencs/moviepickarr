@@ -174,11 +174,11 @@
 @keyframes mg-scaleIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
 @keyframes mg-scaleOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.97); } }
 /* Stat bars grow from baseline to the value the element already encodes (the implicit
-   keyframe `to` is the element's resting transform / height). REQUIRES `backwards` on
+   keyframe `to` is the element's resting width / height). REQUIRES `backwards` on
    any consumer with a positive animation-delay, else the pre-delay frame shows the
    resting (full) value instead of the empty start. */
-@keyframes mg-growBar { from { transform: scaleX(0); } }
-@keyframes mg-growCol { from { transform: scaleY(0); } }
+@keyframes mg-growBfill { from { width: 0; } }
+@keyframes mg-growHcol { from { height: 0; } }
 /* Pick-reveal: the incoming backdrop fades up with a slow settle-scale; each
    content slot fades + lifts into place. Transform/opacity only (no reflow). */
 @keyframes mg-bgReveal { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
@@ -539,7 +539,10 @@
   .barrow--dow { grid-template-columns: 48px 1fr 24px; }
   .barrow--dow .b-name { font-family: var(--font-mono); }
   .barrow .b-track { height: 8px; border-radius: var(--r-sm); background: var(--surface-3); overflow: hidden; }
-  .barrow .b-fill { height: 100%; border-radius: var(--r-sm); transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform var(--dur-base) var(--ease); animation: mg-growBar var(--dur-slow) var(--ease) backwards; }
+  /* Real width (not transform: scaleX) for the same reason as the hourly bars:
+     scaling a rounded box squishes its border-radius on short bars and browsers
+     rasterize it differently. Timeframe toggles tween via `transition: width`. */
+  .barrow .b-fill { width: calc(var(--p, 0) * 100%); height: 100%; border-radius: var(--r-sm); transition: width var(--dur-base) var(--ease); animation: mg-growBfill var(--dur-slow) var(--ease) backwards; }
   .barrow .b-val { font-family: var(--font-mono); font-size: 13px; color: var(--ink-2); text-align: right; }
 
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }
@@ -549,14 +552,17 @@
      line-box height can never nudge an individual bar's baseline. */
   .hourchart { display: flex; flex-direction: column; gap: 7px; }
   .hourchart__bars { display: flex; align-items: flex-end; gap: 3px; height: 150px; }
-  /* The bar fills the column (absolute) and shows its value via scaleY (origin
-     bottom), so switching timeframes tweens between heights via `transition:
-     transform` — not a jump, not from 0. mg-growCol is the from-0 entrance on
-     mount only. The count rides just above the scaled tip (absolute, --vp). */
-  .hcol { flex: 1; height: 100%; position: relative; cursor: default; }
-  .hcol__n { position: absolute; left: 0; right: 0; z-index: 1; text-align: center; bottom: calc(var(--vp, 0) * 100% + 3px); font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: var(--ink-2); line-height: 1; opacity: 0; transition: opacity var(--dur-fast) var(--ease), bottom var(--dur-base) var(--ease); }
+  /* Real-height bars, NOT transform: scaleY. Scaling a rounded box squishes its
+     border-radius on short bars (2px x scaleY), and Chrome/Firefox rasterize the
+     squished corners differently — so short columns look a different style in FF.
+     Real height draws the radius at true size in every browser. The timeframe
+     toggle tweens between heights via `transition: height`; mg-growHcol is the
+     from-0 entrance on mount. The count rides just above the bar tip (flex column,
+     bottom-aligned), so it hugs even as the bar grows. */
+  .hcol { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; cursor: default; }
+  .hcol__n { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: var(--ink-2); line-height: 1; opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
   .hcol:hover .hcol__n { opacity: 1; }
-  .hcol__bar { position: absolute; inset: 0; border-radius: 2px 2px 0 0; background: var(--accent); transform-origin: bottom; transform: scaleY(var(--vp, 0)); transition: transform var(--dur-base) var(--ease), filter var(--dur-fast) var(--ease); animation: mg-growCol var(--dur-slow) var(--ease) backwards; }
+  .hcol__bar { width: 100%; height: calc(max(var(--p, 0), 0.014) * 88%); min-height: 0; border-radius: 2px 2px 0 0; background: var(--accent); transition: height var(--dur-base) var(--ease), filter var(--dur-fast) var(--ease); animation: mg-growHcol var(--dur-slow) var(--ease) backwards; }
   .hcol:hover .hcol__bar { filter: brightness(1.15); }
   .hourchart__axis { display: flex; gap: 3px; }
   .hourchart__axis span { flex: 1; text-align: center; font-family: var(--font-mono); font-size: 9.5px; line-height: 12px; color: var(--ink-3); }

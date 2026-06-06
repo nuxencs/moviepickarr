@@ -154,12 +154,15 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   reach for the scale.
 - **CSS-only.** No JS animation library; everything is CSS keyframes (prefixed `mg-`) +
   transitions. Do not add framer-motion / gsap / etc.
-- **Stat bars** animate with `transform` (`.b-fill` scaleX via `--p`; `.hcol__bar`
-  scaleY via `--vp`, the hourly value capped to leave count-label headroom), never
-  `width`/`height`. A timeframe toggle (7d/30d/All) **tweens each bar between its old
-  and new height** via `transition: transform`; the `mg-growBar`/`mg-growCol` `from`-only
-  keyframes are the from-0 entrance on mount only. The hourly count label is absolutely
-  positioned to ride its bar's scaled tip.
+- **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
+  member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use
+  `height: calc(--p * 88%)`. Scaling a rounded box squishes its `border-radius` on short
+  bars (`2px × scale`), and Chrome/Firefox rasterize the squished corners differently
+  (short bars looked a different style in Firefox); real width/height draws the radius at
+  true size everywhere. A timeframe toggle tweens each bar between its old and new size
+  (`transition: width` / `transition: height`); the `mg-growBfill`/`mg-growHcol`
+  `from`-only keyframes are the from-0 entrance on mount only. The hourly count label sits
+  just above its bar (flex column, bottom-aligned) so it hugs the tip.
 - **Floating surfaces** (the `Modal` and the Radix dropdown via `.mg-pop`) share one
   enter/exit: `mg-scaleIn` (base) / `mg-scaleOut` (fast, `--ease-exit`). The `Modal`
   JS unmount delay reads `--dur-fast` (and drops to 0 under reduced motion) so CSS and

@@ -114,8 +114,8 @@ export function MoviesTab() {
               {search ? `${filteredWatched.length}/${watched?.length ?? 0} films` : plural(watched?.length ?? 0, "film")}
             </span>
           </div>
-          <div className="flex items-stretch gap-3">
-            <label className="field" style={{ width: 230 }}>
+          <div className="watched-controls">
+            <label className="field watched-controls__search">
               <SearchIcon />
               <input
                 placeholder="Search by title or picker…"

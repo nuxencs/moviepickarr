@@ -64,7 +64,7 @@ export function UsersTab() {
             <span className="sec-count">{plural(users?.length ?? 0, "person", "people")}</span>
           </div>
           <form className="user-add" onSubmit={createMutation.mutate}>
-            <label className="field" style={{ width: 240 }}>
+            <label className="field user-add__field">
               <UsersIcon />
               <input
                 placeholder="Add someone…"

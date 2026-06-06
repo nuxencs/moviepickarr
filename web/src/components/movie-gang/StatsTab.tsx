@@ -225,7 +225,14 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
           {hours.map((entry) => {
             const hh = String(entry.hour).padStart(2, "0");
             return (
-              <div className="hcol" key={entry.hour} title={`${entry.count} at ${hh}:00`}>
+              <div
+                className="hcol"
+                key={entry.hour}
+                // Marks empty hours so touch (hover:none) reveals counts for
+                // active hours only — revealing all 24 would be a row of zeros.
+                data-empty={entry.count === 0 ? "" : undefined}
+                title={`${entry.count} at ${hh}:00`}
+              >
                 <span className="hcol__n">{entry.count}</span>
                 {/* capped at 88% to leave headroom for the hover count */}
                 <div

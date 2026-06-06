@@ -12,7 +12,8 @@ overview, external links).
 
 ## Audience
 A handful of friends who know each other. Private, authenticated-by-obscurity,
-not a public or marketing surface. Desktop-first; mobile polish is a later pass.
+not a public or marketing surface. Desktop-first, with a dedicated mobile/touch pass
+on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
 
 ## Primary surfaces (tabs)
 - **Movies** — the cinematic hero (current pick + actions + next picker), the pool

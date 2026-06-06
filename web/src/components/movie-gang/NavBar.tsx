@@ -43,7 +43,10 @@ export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
 
   const measure = useCallback(() => {
     const btn = btnRefs.current[active];
-    if (!btn) return;
+    // Skip when the top-bar tabs are hidden (mobile bottom-bar layout): a
+    // display:none button reports offsetWidth 0, which would park the slider
+    // at a bogus negative width. It re-measures on resize back to desktop.
+    if (!btn || btn.offsetParent === null) return;
     setInk({ left: btn.offsetLeft + INK_INSET, width: btn.offsetWidth - INK_INSET * 2 });
   }, [active]);
 
@@ -57,47 +60,73 @@ export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
     return () => window.removeEventListener("resize", measure);
   }, [measure]);
 
+  const toggleTheme = () => setTheme(isDark ? "light" : "dark");
+
   return (
-    <nav className="nav">
-      <div className="nav__inner">
-        <div className="wordmark">
-          <span className="mark">
-            <FilmIcon />
-          </span>
-          <h1>Movie Gang</h1>
-        </div>
+    <>
+      <nav className="nav">
+        <div className="nav__inner">
+          <div className="wordmark">
+            <span className="mark">
+              <FilmIcon />
+            </span>
+            <h1>Movie Gang</h1>
+          </div>
 
-        <div className="nav__tabs">
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              ref={(el) => {
-                btnRefs.current[id] = el;
-              }}
-              type="button"
-              className="tab"
-              data-active={active === id}
-              onClick={() => onChange(id)}
-            >
-              <Icon />
-              {label}
-            </button>
-          ))}
-          {ink && (
-            <span className="tab__ink" style={{ left: ink.left, width: ink.width }} />
-          )}
-        </div>
+          {/* Top-bar tabs with the sliding underline (desktop / tablet). Hidden on
+              phones, where navigation moves to the fixed bottom bar below. */}
+          <div className="nav__tabs">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                ref={(el) => {
+                  btnRefs.current[id] = el;
+                }}
+                type="button"
+                className="tab"
+                data-active={active === id}
+                aria-current={active === id ? "page" : undefined}
+                onClick={() => onChange(id)}
+              >
+                <Icon />
+                {label}
+              </button>
+            ))}
+            {ink && (
+              <span className="tab__ink" style={{ left: ink.left, width: ink.width }} />
+            )}
+          </div>
 
-        <button
-          type="button"
-          className="iconbtn"
-          onClick={() => setTheme(isDark ? "light" : "dark")}
-          aria-label="Toggle theme"
-          title={isDark ? "Switch to light" : "Switch to dark"}
-        >
-          {isDark ? <SunIcon /> : <MoonIcon />}
-        </button>
-      </div>
-    </nav>
+          <button
+            type="button"
+            className="iconbtn"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+            title={isDark ? "Switch to light" : "Switch to dark"}
+          >
+            {isDark ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </div>
+      </nav>
+
+      {/* Fixed bottom tab bar (phones only). Thumb-reach navigation; the active
+          tab is gold-tinted instead of carrying the desktop underline slider.
+          Hidden at the same breakpoint where the top-bar tabs reappear. */}
+      <nav className="navbar-bottom" aria-label="Primary">
+        {TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            className="navbar-bottom__tab"
+            data-active={active === id}
+            aria-current={active === id ? "page" : undefined}
+            onClick={() => onChange(id)}
+          >
+            <Icon />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+    </>
   );
 }

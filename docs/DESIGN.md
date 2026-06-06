@@ -198,8 +198,9 @@ banner. How it's built (`Hero.tsx` + `.hero__*` in `index.css`):
 Verified static: empty vs populated and a 173-char injected tagline all leave
 `eyebrowTop`, `meta top`, `actions top`, and hero height identical.
 
-Mobile is intentionally exempt from the fixed height (handled in the `max-width: 700px`
-block); responsive polish is a separate pass.
+On phones (≤700px) the hero drops the fixed height and stacks: a 120px poster above
+the eyebrow → title → tagline → meta → actions, full width. The static-layout contract
+governs the desktop banner only. The rest of the responsive system lives in §13.
 
 ---
 
@@ -264,7 +265,45 @@ use tokens so they follow the theme.
 
 ---
 
-## 13. Guardrails (the short list)
+## 13. Responsive & touch
+
+Desktop-first, with a dedicated phone/touch pass layered on top. Breakpoints are
+content-driven but drawn from one tidy scale — **560 / 640 / 700 / 760 / 900** —
+documented inline in `index.css` (the "Responsive — phone & touch adaptations" block).
+What each does:
+
+- **560** — the movie modal's internal poster + info split stacks.
+- **640** — the *phone* breakpoint. Navigation moves to a fixed **bottom tab bar**
+  (below); section headers (`.sec-head`) stack to a title row + full-width controls;
+  user boards go single-column; the stats window control spans the row and the
+  picked-by-member bars shrink their name column (`188px → 112px`) so the track keeps
+  width; poster grids become denser thumbnail grids; modal chrome tightens.
+- **700** — the hero stacks (poster above text) and page / top-nav padding tightens.
+- **760** — the stat strip drops 4 columns → 2.
+- **900** — the stats two-column (weekday | hourly) collapses to one.
+
+**Bottom tab bar.** Below 640px the top-bar tabs (`.nav__tabs`) hide and a fixed
+`.navbar-bottom` renders the 3 tabs in thumb reach; the wordmark + theme toggle stay in
+the top bar. The active tab is gold-tinted — there is no sliding underline there (the
+`.tab__ink` slider is desktop-only, and `NavBar`'s `measure()` skips when the top tabs
+are `display:none`). The bar carries `padding-bottom: env(safe-area-inset-bottom)`, the
+`.shell` reserves clearance for it, and `index.html` sets `viewport-fit=cover`; the
+bottom-right toaster is lifted above the bar on phones.
+
+**Touch (`@media (hover: none)`).** Every hover-revealed control must be reachable
+without a pointer. On touch: watched/stash row actions (`.wr-actions`, `.sr-actions`)
+are always visible; the pool **demote** control becomes a small persistent bottom-right
+button instead of the full-cover hover scrim (poster art stays visible); and search
+results show a persistent **Add** button (the hover overlay's caption is dropped, since
+the `.r-info` caption already sits below the poster). The desktop hover-reveal is
+unchanged.
+
+**Tap targets (`@media (pointer: coarse)`).** `.iconbtn`, `.btn--sm`, and segmented
+buttons grow toward the 44px touch minimum.
+
+---
+
+## 14. Guardrails (the short list)
 
 1. One design language. No shadcn `Button`/`Input`/`AlertDialog`; extend `.btn`/
    `.field`/`.modal`.
@@ -275,3 +314,6 @@ use tokens so they follow the theme.
 5. The hero stays dimensionally static (§7); 3+ line taglines truncate.
 6. Copy: verb+object buttons, "Failed to X" errors, `plural()` for counts, no em dashes.
 7. Gold = action/selection/state only. Danger = the single `--danger` ramp.
+8. Responsiveness is structural (bottom nav + single-column reflows at the 640 phone
+   breakpoint), not fluid type. Every hover-revealed action needs a `hover: none`
+   fallback so touch users can reach it (§13).

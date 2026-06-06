@@ -299,7 +299,7 @@
      Layout: nav · hero · tabs
      ============================================================ */
   .shell { max-width: 1240px; margin: 0 auto; padding: 40px 32px 110px; }
-  @media (max-width: 720px) { .shell { padding: 28px 18px 90px; } }
+  @media (max-width: 700px) { .shell { padding: 28px 18px 90px; } }
 
   .nav {
     position: sticky; top: 0; z-index: 40;
@@ -308,7 +308,7 @@
     border-bottom: 1px solid var(--line);
   }
   .nav__inner { max-width: 1240px; margin: 0 auto; padding: 0 32px; height: 62px; display: flex; align-items: center; gap: 30px; }
-  @media (max-width: 720px) { .nav__inner { padding: 0 18px; gap: 16px; } }
+  @media (max-width: 700px) { .nav__inner { padding: 0 18px; gap: 16px; } }
   .wordmark { display: flex; align-items: center; gap: 11px; flex: none; }
   .wordmark .mark { width: 30px; height: 30px; border-radius: var(--r-lg); flex: none; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); }
   .wordmark .mark svg { width: 17px; height: 17px; }
@@ -376,6 +376,10 @@
   .empty { padding: 32px 0; text-align: center; color: var(--ink-2); font-size: 14px; }
 
   /* ---- Movies tab ---- */
+  /* Watched search + view-toggle row. The search keeps a fixed desktop width;
+     on phones it fills the stacked header (see the 640px block below). */
+  .watched-controls { display: flex; align-items: stretch; gap: 12px; }
+  .watched-controls__search { width: 230px; }
   .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 28px 18px; }
   .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
   .tile { display: flex; flex-direction: column; gap: 12px; cursor: pointer; }
@@ -403,6 +407,9 @@
 
   /* ---- Users tab ---- */
   .user-add { display: flex; gap: 10px; align-items: center; }
+  /* Fixed desktop width; on phones it flexes to fill the stacked header
+     (see the 640px block below), mirroring .watched-controls__search. */
+  .user-add__field { width: 240px; }
   .boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 30px 44px; }
   .board { display: flex; flex-direction: column; }
   .board__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
@@ -466,7 +473,7 @@
   .daterange__foot { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
   .daterange__range { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); letter-spacing: 0.01em; }
   .daterange__btns { display: flex; gap: 8px; }
-  @media (max-width: 620px) {
+  @media (max-width: 640px) {
     .daterange { width: 320px; }
     .daterange__months { grid-template-columns: 1fr; gap: 18px; }
   }
@@ -503,7 +510,7 @@
   .barrow .b-val { font-family: var(--font-mono); font-size: 13px; color: var(--ink-2); text-align: right; }
 
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }
-  @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; gap: 0; } }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; gap: 0; } }
 
   /* hourly column chart — bars and axis labels are separate rows so a label's
      line-box height can never nudge an individual bar's baseline. */
@@ -579,6 +586,116 @@
     .moviemodal__body { flex-direction: column; gap: 14px; }
     .moviemodal__info { padding-top: 0; }
   }
+
+  /* ============================================================
+     Responsive — phone & touch adaptations
+     Breakpoint scale (content-driven): 560 (modal-internal stack),
+     640 (phone: bottom nav + single-column reflows), 700 (hero stack
+     + page padding), 760 (stat strip 4→2), 900 (stat two-col). Plus
+     capability queries — hover:none / pointer:coarse — so touch users
+     get every action without a hover, and tap targets grow.
+     ============================================================ */
+
+  /* Bottom tab bar: styled here, revealed only on phones (640 block). */
+  .navbar-bottom {
+    display: none;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    grid-auto-flow: column; grid-auto-columns: 1fr;
+    background: color-mix(in oklab, var(--bg) 88%, transparent);
+    backdrop-filter: blur(16px) saturate(1.2);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .navbar-bottom__tab {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+    min-height: 56px; padding: 9px 6px;
+    background: none; border: none; cursor: pointer;
+    font-family: var(--font-display); font-weight: 600; font-size: 10.5px;
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
+    transition: color var(--dur) var(--ease);
+  }
+  .navbar-bottom__tab svg { width: 21px; height: 21px; }
+  .navbar-bottom__tab[data-active="true"] { color: var(--accent); }
+  /* keyboard + pointer feedback for inactive tabs (the active one stays gold) */
+  .navbar-bottom__tab:not([data-active="true"]):hover,
+  .navbar-bottom__tab:not([data-active="true"]):focus-visible { color: var(--ink-2); }
+  .navbar-bottom__tab:active { background: var(--surface-2); }
+
+  /* ---- Phone: bottom nav + single-column reflows ---- */
+  @media (max-width: 640px) {
+    .nav__tabs { display: none; }
+    .navbar-bottom { display: grid; }
+    /* clear the fixed bottom bar (height + the iOS home-indicator inset) */
+    .shell { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+
+    /* stacked section headers: title row, then full-width controls */
+    .sec-head { flex-direction: column; align-items: stretch; gap: 14px; }
+    .sec-head .sec-title { justify-content: space-between; }
+    .watched-controls__search { flex: 1; }
+    .user-add { width: 100%; }
+    .user-add__field { flex: 1; width: auto; }
+
+    /* one user board per row — no 310px min to overflow a 320px screen */
+    .boards { grid-template-columns: 1fr; gap: 30px; }
+
+    /* stats: the window control owns its row; bars reclaim track width */
+    .stats-head .win-control { width: 100%; }
+    .stats-head .seg { display: flex; width: 100%; }
+    .stats-head .seg button { flex: 1; padding: 9px 4px; justify-content: center; }
+    .barrow { grid-template-columns: 112px 1fr 28px; gap: 12px; }
+    .barrow--dow { grid-template-columns: 38px 1fr 22px; }
+
+    /* poster grids become thumbnail grids, not one giant column */
+    .tile-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 20px 12px; }
+    .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+    .result-grid { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 18px 12px; }
+
+    /* modals: trim chrome so the narrow screen goes to content */
+    .modal__head { padding: 20px 18px 18px; }
+    .modal__body { padding: 18px 18px 0; }
+    .modal__foot { padding: 16px 18px 20px; }
+    .modal__results { padding: 18px 16px 24px; }
+  }
+
+  /* ---- Touch (no hover): every action must be reachable without a pointer ---- */
+  @media (hover: none) {
+    /* row actions are hover-revealed on desktop; show them on touch */
+    .wrow .wr-actions,
+    .srow .sr-actions { opacity: 1; }
+
+    /* pool demote: the full-cover hover scrim becomes a small persistent
+       bottom-right button so the poster art stays visible */
+    .pslot__demote {
+      opacity: 1;
+      inset: auto 6px 6px auto;
+      width: 40px; height: 40px;
+      border-radius: var(--r-md);
+      background: rgba(8,9,14,0.66); backdrop-filter: blur(4px);
+    }
+    .pslot__demote svg { width: 18px; height: 18px; }
+
+    /* search results: keep the poster visible, pin a persistent Add button.
+       The overlay's caption block is hidden (the .r-info caption below the
+       poster already carries title + year), leaving just the Add CTA. */
+    .result .r-overlay {
+      opacity: 1;
+      justify-content: flex-end;
+      background: linear-gradient(to top, rgba(8,9,14,0.9) 6%, transparent 48%);
+    }
+    .result .r-overlay > div { display: none; }
+
+    /* hourly chart: desktop reveals the count on column hover. On touch,
+       reveal the counts for active hours only (skipping empty hours keeps
+       the axis from becoming a row of zeros). */
+    .hcol:not([data-empty]) .hcol__n { opacity: 1; }
+  }
+
+  /* ---- Coarse pointer: grow tap targets toward 44px ---- */
+  @media (pointer: coarse) {
+    .iconbtn { width: 40px; height: 40px; }
+    .btn--sm { padding: 10px 14px; }
+    .seg button { padding: 10px 16px; }
+  }
 }
 
 /* Respect reduced-motion: neutralize entrances, transitions, and the live pulse. */
@@ -609,3 +726,11 @@
 .mg-toast[data-type="success"] .mg-toast__icon { color: var(--accent); }
 .mg-toast[data-type="error"] .mg-toast__icon { color: var(--danger); }
 .mg-toast[data-type="info"] .mg-toast__icon { color: var(--ink-2); }
+
+/* On phones the bottom-right toaster would land on the fixed bottom tab bar;
+   lift it above the bar (+ the iOS home-indicator inset). */
+@media (max-width: 640px) {
+  [data-sonner-toaster][data-y-position="bottom"] {
+    bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+  }
+}

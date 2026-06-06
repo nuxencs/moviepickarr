@@ -24,11 +24,12 @@ const FOCUSABLE =
  * inside, and returns to the opener on close) so it behaves like a real dialog.
  */
 /**
- * How long to keep a closing dialog mounted so its exit animation can finish,
- * read from the shared `--dur-fast` token so CSS and JS never desync. Reduced-
- * motion users skip the wait entirely (focus returns to the opener immediately).
+ * How long to keep a closing floating surface mounted so its exit animation can
+ * finish, read from the shared `--dur-fast` token so CSS and JS never desync.
+ * Reduced-motion users skip the wait entirely. Shared by the `Modal` and the
+ * bespoke `Menu` so every overlay's unmount delay stays in lockstep with the CSS.
  */
-function exitDelayMs(): number {
+export function exitDelayMs(): number {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return 0;
   const raw = getComputedStyle(document.documentElement).getPropertyValue("--dur-fast");
   const secs = parseFloat(raw) || 0.14;
@@ -88,10 +89,19 @@ export function Modal({ onClose, className, dismissible = true, children }: Moda
       }
     };
 
+    // Lock body scroll, compensating for the removed scrollbar so the page
+    // doesn't jump right. (No-op where scrollbars are overlay — width is 0.)
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
     document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
       document.removeEventListener("keydown", onKey);
       // Return focus to whatever opened the modal.
       opener?.focus?.();

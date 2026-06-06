@@ -629,12 +629,19 @@
     .moviemodal__info { padding-top: 0; }
   }
 
-  /* Radix dropdown — unified onto the MG overlay motion (mg-scaleIn/Out) so it
-     speaks the same language as the bespoke Modal instead of tailwindcss-animate.
-     Scales from the trigger via Radix's exposed transform-origin var. */
-  .mg-pop { transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-dropdown-menu-sub-content-transform-origin, var(--radix-popper-transform-origin, center))); }
-  .mg-pop[data-state="open"] { animation: mg-scaleIn var(--dur-base) var(--ease); }
-  .mg-pop[data-state="closed"] { animation: mg-scaleOut var(--dur-fast) var(--ease-exit); }
+  /* "More actions" menu — bespoke portalled floating surface (movie-gang/Menu.tsx)
+     on the shared overlay motion (mg-scaleIn/Out), scaling from the trigger corner
+     via an inline transform-origin. Replaces the former Radix dropdown. */
+  /* z-index 45 (matching .daterange): above the page + navbar (40), but below the
+     modal veil (50) so a select-opened dialog covers the menu as it animates out. */
+  .mg-menu { position: fixed; z-index: 45; min-width: 9rem; display: flex; flex-direction: column; padding: 5px; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); }
+  .mg-menu--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
+  .mg-menu__item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink); text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+  .mg-menu__item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .mg-menu__item:hover, .mg-menu__item:focus-visible { background: var(--surface-3); }
+  .mg-menu__item:disabled { opacity: 0.5; cursor: default; }
+  .mg-menu__item--danger { color: var(--danger); font-weight: 600; }
+  .mg-menu__item--danger:hover, .mg-menu__item--danger:focus-visible { background: color-mix(in oklab, var(--danger) 16%, transparent); }
 
   /* ============================================================
      Responsive — phone & touch adaptations

@@ -112,14 +112,17 @@ the moment of editing/deleting. We removed them:
 - `EditMovieDialog` and `DeletionDialog` were re-authored on the bespoke `Modal` with
   `.field` + `.btn`.
 - `web/src/components/ui/{alert-dialog,button,input}.tsx` were **deleted**.
-- The Radix dropdown (`ui/dropdown-menu.tsx`, used by the user "more actions" menu) is
-  kept for its a11y but restyled to MG (`border-line-2`, `[box-shadow:var(--shadow)]`).
-  Its open/close motion is the bespoke `.mg-pop` (`mg-scaleIn` / `mg-scaleOut` from the
-  trigger origin), not tailwindcss-animate (removed with the other dead deps).
+- The user "more actions" menu is the bespoke `Menu` (`movie-gang/Menu.tsx`): a
+  portalled floating surface (`.mg-menu`) on the shared `mg-scaleIn` / `mg-scaleOut`
+  motion, scaling from the trigger corner. It owns its focus behaviour — Esc/Tab
+  return focus to the trigger, but selecting an item does not (the action's `Modal`
+  takes focus), so the trigger can't sit focused behind a dialog where Enter would
+  reopen it. This replaced the last Radix primitive (`ui/dropdown-menu.tsx`, deleted)
+  and dropped `@radix-ui/react-dropdown-menu` — **no Radix remains**.
 
-`web/src/index.css` has an `@theme inline` block that remaps shadcn `--color-*` /
-`--radius-*` aliases onto MG tokens, so any remaining Radix primitive (the dropdown)
-inherits MG colors/radius automatically.
+`web/src/index.css` keeps an `@theme inline` block mapping shadcn-style `--color-*` /
+`--radius-*` aliases onto MG tokens; Tailwind colour utilities (e.g. `text-destructive`)
+still resolve through it, but no control system depends on it.
 
 **Guardrail:** do not reintroduce shadcn `Button`/`Input`/`AlertDialog` or any second
 control system. Extend `.btn`/`.field`/`.modal` instead.
@@ -163,10 +166,10 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   (`transition: width` / `transition: height`); the `mg-growBfill`/`mg-growHcol`
   `from`-only keyframes are the from-0 entrance on mount only. The hourly count label sits
   just above its bar (flex column, bottom-aligned) so it hugs the tip.
-- **Floating surfaces** (the `Modal` and the Radix dropdown via `.mg-pop`) share one
-  enter/exit: `mg-scaleIn` (base) / `mg-scaleOut` (fast, `--ease-exit`). The `Modal`
-  JS unmount delay reads `--dur-fast` (and drops to 0 under reduced motion) so CSS and
-  JS never desync.
+- **Floating surfaces** (the `Modal` and the `Menu` via `.mg-menu`) share one
+  enter/exit: `mg-scaleIn` (base) / `mg-scaleOut` (fast, `--ease-exit`). Both read the
+  same exported `exitDelayMs` for the JS unmount delay (`--dur-fast`, dropping to 0
+  under reduced motion) so CSS and JS never desync.
 - **Tab underline** is one shared `.tab__ink` (not one element per tab): `NavBar.tsx`
   measures the active button and drives the indicator's `left`/`width`, and CSS
   transitions the slide so it glides between tabs instead of disappearing and
@@ -286,8 +289,8 @@ use tokens so they follow the theme.
 
 ## 12. Stack & build notes
 
-- React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query, Radix
-  (dropdown only), Sonner, lucide. Package manager: **bun** (`web/`).
+- React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query, Sonner,
+  lucide. No Radix/shadcn. Package manager: **bun** (`web/`).
 - Tailwind v4 has no config file; theme/aliases live in `index.css` (`@theme inline`).
 - Gate before handoff: `bunx tsc -b` + `bun run lint` + `bunx vite build` (all from
   `web/`). The editor's inline TS diagnostics often fail to resolve the `@/*` path

@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  EllipsisIcon,
   LinkIcon,
   MoveDownIcon,
   MoveUpIcon,
@@ -18,15 +17,10 @@ import { SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/
 import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar } from "@/components/movie-gang/Bits";
 import { hueOf, plural } from "@/components/movie-gang/lib";
+import { Menu } from "@/components/movie-gang/Menu";
 import { Poster } from "@/components/movie-gang/Poster";
 import { SearchModal } from "@/components/movie-gang/SearchModal";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
 
 import type { Movie, User } from "@/types/Response";
@@ -303,26 +297,13 @@ function StashRow({
           >
             <MoveUpIcon />
           </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className="iconbtn" aria-label="More actions">
-                <EllipsisIcon />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={toggleEdit}>
-                <PencilIcon />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={toggleDelete}
-                className="bg-destructive/10 text-destructive font-semibold data-[highlighted]:bg-destructive/20 data-[highlighted]:text-destructive"
-              >
-                <Trash2Icon />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Menu
+            label="More actions"
+            actions={[
+              { icon: <PencilIcon />, label: "Edit", onSelect: toggleEdit },
+              { icon: <Trash2Icon />, label: "Delete", onSelect: toggleDelete, danger: true },
+            ]}
+          />
         </div>
       </div>
     </>

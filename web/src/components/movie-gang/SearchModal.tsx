@@ -91,7 +91,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
                 />
               </label>
               <button type="submit" className="btn btn--accent" disabled={!query.trim() || isSearching}>
-                {isSearching ? <Loader2Icon className="animate-spin" /> : <SearchIcon />}
+                {isSearching ? <Loader2Icon className="animate-spin mg-spin" /> : <SearchIcon />}
                 {isSearching ? "Searching…" : "Search"}
               </button>
             </form>
@@ -128,7 +128,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
                               onClick={() => handleAdd(movie, close)}
                               disabled={busy}
                             >
-                              {busy ? <Loader2Icon className="animate-spin" /> : <PlusIcon />}
+                              {busy ? <Loader2Icon className="animate-spin mg-spin" /> : <PlusIcon />}
                               {busy ? "Adding…" : "Add"}
                             </button>
                           </div>

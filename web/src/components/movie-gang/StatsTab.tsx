@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ActivityIcon, CalendarDaysIcon, Clock3Icon, FilmIcon, TrophyIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 
 import { StatsGetQueryOptions } from "@/api/queries";
 
@@ -171,11 +171,11 @@ function PickedByMember({ rows }: { rows: StatsNamedCount[] }) {
                 <div
                   className="b-fill"
                   style={{
-                    width: `${(r.count / max) * 100}%`,
+                    "--p": r.count / max,
                     animationDelay: `${i * 0.08}s`,
                     background: "var(--accent)",
                     opacity: r.count === 0 ? 0.15 : 1,
-                  }}
+                  } as CSSProperties}
                 />
               </div>
               <div className="b-val">{r.count}</div>
@@ -200,11 +200,11 @@ function WeekdayActivity({ rows }: { rows: StatsNamedCount[] }) {
               <div
                 className="b-fill"
                 style={{
-                  width: `${(r.count / max) * 100}%`,
+                  "--p": r.count / max,
                   animationDelay: `${i * 0.05}s`,
                   background: "var(--accent)",
                   opacity: r.count === 0 ? 0.15 : 1,
-                }}
+                } as CSSProperties}
               />
             </div>
             <div className="b-val">{r.count}</div>
@@ -224,6 +224,8 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
         <div className="hourchart__bars">
           {hours.map((entry) => {
             const hh = String(entry.hour).padStart(2, "0");
+            // Visual proportion, capped at 88% to leave headroom for the count label.
+            const vp = Math.max(entry.count / max, 0.014) * 0.88;
             return (
               <div
                 className="hcol"
@@ -232,12 +234,13 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
                 // active hours only — revealing all 24 would be a row of zeros.
                 data-empty={entry.count === 0 ? "" : undefined}
                 title={`${entry.count} at ${hh}:00`}
+                style={{ "--vp": vp } as CSSProperties}
               >
                 <span className="hcol__n">{entry.count}</span>
-                {/* capped at 88% to leave headroom for the hover count */}
+                {/* bar shows --vp via scaleY; the count rides its tip (absolute) */}
                 <div
                   className="hcol__bar"
-                  style={{ height: `${(entry.count / max) * 88}%`, opacity: entry.count === 0 ? 0.18 : 1 }}
+                  style={{ opacity: entry.count === 0 ? 0.18 : 1 }}
                 />
               </div>
             );

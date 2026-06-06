@@ -48,8 +48,12 @@ other reds.
 **Radii (tight, squared):** `--r-sm 2px`, `--r-md 3px`, `--r-lg 4px`, `--r-xl 6px`.
 Modals use `--r-xl`. Don't exceed the scale.
 
-**Motion:** `--ease: cubic-bezier(0.22, 0.61, 0.36, 1)` (ease-out, no bounce),
-`--dur: 0.28s`. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
+**Motion:** a 3-step duration scale — `--dur-fast 0.14s` (pointer feedback: hover,
+press, color), `--dur-base 0.22s` (state changes, crossfades), `--dur-slow 0.4s`
+(entrances) — plus `--dur-reveal 0.6s` (the hero pick-reveal). `--dur` remains as a
+legacy alias of `--dur-base`. Easing: `--ease` (decelerating ease-out, no bounce) for
+entrances, `--ease-exit` (accelerate-away) for exits, `--ease-reveal` (expo) for the
+pick-reveal. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
 
 ### Contrast (WCAG AA, non-negotiable)
 `--ink-3` is the floor for body/meta/placeholder text and is tuned to clear **4.5:1**:
@@ -110,6 +114,8 @@ the moment of editing/deleting. We removed them:
 - `web/src/components/ui/{alert-dialog,button,input}.tsx` were **deleted**.
 - The Radix dropdown (`ui/dropdown-menu.tsx`, used by the user "more actions" menu) is
   kept for its a11y but restyled to MG (`border-line-2`, `[box-shadow:var(--shadow)]`).
+  Its open/close motion is the bespoke `.mg-pop` (`mg-scaleIn` / `mg-scaleOut` from the
+  trigger origin), not tailwindcss-animate (removed with the other dead deps).
 
 `web/src/index.css` has an `@theme inline` block that remaps shadcn `--color-*` /
 `--radius-*` aliases onto MG tokens, so any remaining Radix primitive (the dropdown)
@@ -141,16 +147,34 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
 
 ## 6. Motion & accessibility
 
-- Durations 150–280ms, ease-out, no bounce. Motion conveys state, not decoration.
+- **Duration scale (tokens, §2):** feedback `--dur-fast`, state `--dur-base`, entrance
+  `--dur-slow`, the hero pick-reveal `--dur-reveal`. Pointer feedback uses the fast
+  token; exits use `--ease-exit` and run one step faster than their enter. No
+  bounce/elastic. Motion conveys state, not decoration. Hardcode no new durations —
+  reach for the scale.
+- **CSS-only.** No JS animation library; everything is CSS keyframes (prefixed `mg-`) +
+  transitions. Do not add framer-motion / gsap / etc.
+- **Stat bars** animate with `transform` (`.b-fill` scaleX via `--p`; `.hcol__bar`
+  scaleY via `--vp`, the hourly value capped to leave count-label headroom), never
+  `width`/`height`. A timeframe toggle (7d/30d/All) **tweens each bar between its old
+  and new height** via `transition: transform`; the `mg-growBar`/`mg-growCol` `from`-only
+  keyframes are the from-0 entrance on mount only. The hourly count label is absolutely
+  positioned to ride its bar's scaled tip.
+- **Floating surfaces** (the `Modal` and the Radix dropdown via `.mg-pop`) share one
+  enter/exit: `mg-scaleIn` (base) / `mg-scaleOut` (fast, `--ease-exit`). The `Modal`
+  JS unmount delay reads `--dur-fast` (and drops to 0 under reduced motion) so CSS and
+  JS never desync.
 - **Tab underline** is one shared `.tab__ink` (not one element per tab): `NavBar.tsx`
   measures the active button and drives the indicator's `left`/`width`, and CSS
   transitions the slide so it glides between tabs instead of disappearing and
   reappearing. It re-measures on resize and on `document.fonts.ready` (font swap
   changes label width). The reduced-motion guard collapses the slide to an instant
   jump for free.
-- **`prefers-reduced-motion`**: a global block neutralizes all animations/transitions.
-  Any new keyframe must survive this (it already does via the universal rule). Reduced
-  motion is not optional.
+- **`prefers-reduced-motion`**: the global block zeroes animation/transition *duration
+  AND delay* (so staggered reveals don't pop in) and collapses iteration counts.
+  Loaders are the one exception — `.mg-spin` keeps spinning (essential motion). Any new
+  motion must degrade to an instant state via this block; never gate visible content on
+  a keyframe RM kills. Reduced motion is not optional.
 - **Focus:** global `:focus-visible` is a 2px gold outline. Every focusable element
   must render a box (do NOT use `display: contents` on a focusable trigger — it leaves
   the outline nothing to draw on).
@@ -194,6 +218,15 @@ banner. How it's built (`Hero.tsx` + `.hero__*` in `index.css`):
 - The hero stays a **dark "island"** in light theme by design (cinematic scrim over a
   backdrop). Its scrim/text are intentionally dark/white in both themes; only fix the
   genuinely-broken light overlays, not the hero's darkness.
+
+**Pick-reveal (motion).** When the pick changes (or clears), the banner reveals the new
+state without breaking the static contract: a two-layer `.hero__bg-stack` crossfades the
+incoming backdrop (preloaded + `decode()`d in `Hero.tsx` so it never flashes blank) with
+a slow settle-scale (`mg-bgReveal`), and the poster + each text slot fade-settle in,
+lightly staggered via `--i` (`mg-revealPick`). It is **transform/opacity only** — the
+reserved slots keep their boxes, so nothing reflows. The content is keyed on the pick id
+so the reveal replays per pick; reduced-motion collapses it to an instant swap. The Pick
+/ Mark-Watched buttons show in-flight state (`Loader2Icon` + "Picking…" / "Marking…").
 
 Verified static: empty vs populated and a 173-char injected tagline all leave
 `eyebrowTop`, `meta top`, `actions top`, and hero height identical.

@@ -17,6 +17,18 @@ const FOCUSABLE =
  * dismissal, body-scroll lock, and a focus trap (focus moves in on open, cycles
  * inside, and returns to the opener on close) so it behaves like a real dialog.
  */
+/**
+ * How long to keep a closing dialog mounted so its exit animation can finish,
+ * read from the shared `--dur-fast` token so CSS and JS never desync. Reduced-
+ * motion users skip the wait entirely (focus returns to the opener immediately).
+ */
+function exitDelayMs(): number {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return 0;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--dur-fast");
+  const secs = parseFloat(raw) || 0.14;
+  return Math.round(secs * 1000) + 20;
+}
+
 export function Modal({ onClose, className, children }: ModalProps) {
   const [closing, setClosing] = useState(false);
   const onCloseRef = useRef(onClose);
@@ -27,7 +39,7 @@ export function Modal({ onClose, className, children }: ModalProps) {
 
   useEffect(() => {
     if (!closing) return;
-    const t = window.setTimeout(() => onCloseRef.current(), 200);
+    const t = window.setTimeout(() => onCloseRef.current(), exitDelayMs());
     return () => window.clearTimeout(t);
   }, [closing]);
 

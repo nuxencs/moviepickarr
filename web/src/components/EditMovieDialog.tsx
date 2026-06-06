@@ -145,7 +145,7 @@ export function EditMovieDialog({
               disabled={isSubmitDisabled}
               onClick={() => onSubmit({ title: titleValue, link: linkValue, watchedAt: watchedAtISO })}
             >
-              {isSaving && <Loader2Icon className="animate-spin" />}
+              {isSaving && <Loader2Icon className="animate-spin mg-spin" />}
               {isSaving ? "Saving…" : "Save changes"}
             </button>
           </div>

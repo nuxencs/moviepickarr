@@ -1,7 +1,5 @@
 @import 'tailwindcss';
 
-@plugin 'tailwindcss-animate';
-
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================
@@ -21,8 +19,19 @@
   --r-md: 3px;
   --r-lg: 4px;
   --r-xl: 6px;
+
+  /* easing — entrances decelerate, exits accelerate away, the pick-reveal is a confident expo */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --dur: 0.28s;
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* duration scale — fast = pointer feedback, base = state change + overlay entrances,
+     slow = page/section load + chart grow, reveal = the hero pick-reveal */
+  --dur-fast: 0.14s;
+  --dur-base: 0.22s;
+  --dur-slow: 0.4s;
+  --dur-reveal: 0.6s; /* the cinematic pick-reveal (backdrop crossfade + content settle) */
+  --dur: var(--dur-base); /* legacy alias — prefer the scale above */
 
   /* accent — gold (fixed) */
   --accent: oklch(0.82 0.13 84);
@@ -164,7 +173,16 @@
 @keyframes mg-fadeOut { from { opacity: 1; } to { opacity: 0; } }
 @keyframes mg-scaleIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
 @keyframes mg-scaleOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.97); } }
-@keyframes mg-growW { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* Stat bars grow from baseline to the value the element already encodes (the implicit
+   keyframe `to` is the element's resting transform / height). REQUIRES `backwards` on
+   any consumer with a positive animation-delay, else the pre-delay frame shows the
+   resting (full) value instead of the empty start. */
+@keyframes mg-growBar { from { transform: scaleX(0); } }
+@keyframes mg-growCol { from { transform: scaleY(0); } }
+/* Pick-reveal: the incoming backdrop fades up with a slow settle-scale; each
+   content slot fades + lifts into place. Transform/opacity only (no reflow). */
+@keyframes mg-bgReveal { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+@keyframes mg-revealPick { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================
    Movie Gang components (ported from the design prototype)
@@ -223,7 +241,7 @@
   .metachip--dot::before { content: "·"; margin-right: 8px; color: var(--ink-3); }
   .genrechip { font-size: 12px; padding: 3px 9px; border-radius: var(--r-sm); border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap; }
   .metasep { width: 1px; height: 13px; border-radius: 99px; background: var(--line-2); margin: 0 2px; }
-  .metalink { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); text-decoration: none; white-space: nowrap; transition: color 0.15s ease; }
+  .metalink { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); text-decoration: none; white-space: nowrap; transition: color var(--dur-fast) var(--ease); }
   .metalink:hover { color: var(--accent); }
 
   /* ---- Avatar ---- */
@@ -239,7 +257,7 @@
     display: inline-flex; align-items: center; justify-content: center; gap: 9px;
     font-family: var(--font-ui); font-weight: 550; font-size: 14px;
     padding: 11px 17px; border-radius: var(--r-md); border: 1px solid transparent;
-    cursor: pointer; transition: transform var(--dur) var(--ease), background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), filter var(--dur) var(--ease);
+    cursor: pointer; transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
     white-space: nowrap; line-height: 1;
   }
   .btn svg { width: 17px; height: 17px; }
@@ -258,11 +276,12 @@
     width: 34px; height: 34px; border-radius: var(--r-md); flex: none;
     display: inline-flex; align-items: center; justify-content: center;
     background: transparent; border: 1px solid transparent; color: var(--ink-3);
-    cursor: pointer; transition: all var(--dur) var(--ease);
+    cursor: pointer; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   }
   .iconbtn svg { width: 16px; height: 16px; }
   .iconbtn:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
   .iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .iconbtn:active:not(:disabled) { transform: scale(0.92); }
   .iconbtn--danger:hover:not(:disabled) { background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger); border-color: color-mix(in oklab, var(--danger) 42%, transparent); }
 
   /* ---- Section heading ---- */
@@ -288,10 +307,11 @@
   .seg button {
     border: none; background: transparent; color: var(--ink-3); cursor: pointer;
     font-family: var(--font-ui); font-weight: 550; font-size: 13.5px; padding: 8px 16px; border-radius: var(--r-sm);
-    display: inline-flex; align-items: center; gap: 8px; transition: all var(--dur) var(--ease);
+    display: inline-flex; align-items: center; gap: 8px; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   }
   .seg button svg { width: 16px; height: 16px; }
   .seg button:hover { color: var(--ink); }
+  .seg button:active:not(:disabled) { transform: scale(0.96); }
   .seg button[data-active="true"] { background: var(--surface-3); color: var(--ink); box-shadow: var(--shadow-sm); }
   .seg--accent button[data-active="true"] { background: var(--accent); color: var(--accent-ink); }
 
@@ -319,7 +339,7 @@
     position: relative; background: none; border: none; cursor: pointer;
     font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
     padding: 0 15px; display: inline-flex; align-items: center; gap: 8px;
-    transition: color var(--dur) var(--ease);
+    transition: color var(--dur-fast) var(--ease);
   }
   .tab svg { width: 16px; height: 16px; }
   .tab:hover { color: var(--ink-2); }
@@ -330,14 +350,19 @@
   .nav .iconbtn { margin-left: auto; border: 1px solid var(--line); }
 
   /* ---- Hero ---- */
-  .hero { position: relative; overflow: hidden; isolation: isolate; border-bottom: 1px solid var(--line); animation: mg-fadeIn 0.5s var(--ease); }
-  .hero__bg { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; }
-  .hero__bg::after {
-    content: ""; position: absolute; inset: 0;
+  .hero { position: relative; overflow: hidden; isolation: isolate; border-bottom: 1px solid var(--line); animation: mg-fadeIn var(--dur-slow) var(--ease); }
+  .hero__bg-stack { position: absolute; inset: 0; z-index: 0; }
+  /* One constant scrim sits above the crossfading image layers so a crossfade
+     never doubles the darkening. */
+  .hero__bg-stack::after {
+    content: ""; position: absolute; inset: 0; z-index: 1;
     background:
       linear-gradient(95deg, rgba(8,9,14,0.94) 0%, rgba(8,9,14,0.78) 40%, rgba(8,9,14,0.34) 74%, rgba(8,9,14,0.6) 100%),
       linear-gradient(0deg, var(--bg), transparent 60%);
   }
+  .hero__bgimg { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; }
+  /* The incoming backdrop layer; the initial layer carries no --enter and just paints. */
+  .hero__bgimg--enter { animation: mg-bgReveal var(--dur-reveal) var(--ease-reveal) both; }
   .hero__inner { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; display: flex; gap: 34px; padding: 56px 32px 60px; align-items: flex-start; }
   /* Width derived from the body's 18.5rem static height (§7) and the 2/3 poster
      ratio, so the poster's bottom edge lines up with the pinned action button. */
@@ -360,6 +385,13 @@
   .hero__meta .metalink { color: rgba(255,255,255,0.84); }
   .hero__meta .metalink:hover { color: #fff; }
   .hero__actions { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  /* Pick-reveal: poster + each text slot fade-settle into place, lightly
+     staggered, on the keyed remount when the pick changes (or clears). The §7
+     fixed box means nothing reflows; reduced-motion zeroes duration AND delay. */
+  .hero[data-ready] :is(.hero__poster, .hero__eyebrow, .hero__title, .hero__tag, .hero__meta, .hero__actions) {
+    animation: mg-revealPick var(--dur-reveal) var(--ease-reveal) both;
+    animation-delay: calc(var(--i, 0) * 55ms);
+  }
   .hero__nextpick { display: flex; align-items: center; gap: 11px; margin-left: 10px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,0.2); color: #fff; }
   .hero__nextpick .lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
   .hero__nextpick .nm { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
@@ -371,7 +403,7 @@
     .hero__nextpick { margin-left: 0; padding-left: 0; border-left: none; }
   }
 
-  .block { animation: mg-fadeUp 0.45s var(--ease); }
+  .block { animation: mg-fadeUp var(--dur-slow) var(--ease); }
   .rule { height: 1px; background: var(--line); margin: 36px 0; }
   .empty { padding: 32px 0; text-align: center; color: var(--ink-2); font-size: 14px; }
 
@@ -386,6 +418,7 @@
   .tile .poster { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
   .tile:hover .poster,
   .tile:focus-visible .poster { transform: translateY(-5px); box-shadow: 0 26px 44px -22px rgba(0,0,0,0.7); }
+  .tile:active .poster { transform: translateY(-2px) scale(0.99); }
   .tile .t-meta { display: flex; flex-direction: column; gap: 6px; }
   .tile .t-title { font-weight: 600; font-size: 14.5px; letter-spacing: -0.01em; line-height: 1.2; }
   .tile .t-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
@@ -457,14 +490,14 @@
   .stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
   .win-control { position: relative; }
 
-  .daterange { position: absolute; top: calc(100% + 10px); right: 0; z-index: 45; width: 540px; max-width: calc(100vw - 40px); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 16px; animation: mg-scaleIn 0.2s var(--ease); }
+  .daterange { position: absolute; top: calc(100% + 10px); right: 0; z-index: 45; width: 540px; max-width: calc(100vw - 40px); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 16px; animation: mg-scaleIn var(--dur-base) var(--ease); }
   .daterange__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .daterange__title { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
   .daterange__months { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
   .dr-month__label { text-align: center; font-family: var(--font-display); font-weight: 600; font-size: 13.5px; margin-bottom: 12px; }
   .dr-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
   .dr-dow { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); text-align: center; padding: 2px 0 6px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .dr-day { aspect-ratio: 1; display: grid; place-items: center; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); cursor: pointer; border-radius: var(--r-sm); transition: background 0.12s var(--ease); border: none; background: transparent; }
+  .dr-day { aspect-ratio: 1; display: grid; place-items: center; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); cursor: pointer; border-radius: var(--r-sm); transition: background var(--dur-fast) var(--ease); border: none; background: transparent; }
   .dr-day:hover { background: var(--surface-3); }
   .dr-day--muted { color: var(--ink-3); opacity: 0.45; }
   .dr-day--inrange { background: var(--accent-soft); border-radius: 0; color: var(--ink); }
@@ -506,7 +539,7 @@
   .barrow--dow { grid-template-columns: 48px 1fr 24px; }
   .barrow--dow .b-name { font-family: var(--font-mono); }
   .barrow .b-track { height: 8px; border-radius: var(--r-sm); background: var(--surface-3); overflow: hidden; }
-  .barrow .b-fill { height: 100%; border-radius: var(--r-sm); transform-origin: left; animation: mg-growW 0.7s var(--ease) both; transition: width 0.45s var(--ease); }
+  .barrow .b-fill { height: 100%; border-radius: var(--r-sm); transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform var(--dur-base) var(--ease); animation: mg-growBar var(--dur-slow) var(--ease) backwards; }
   .barrow .b-val { font-family: var(--font-mono); font-size: 13px; color: var(--ink-2); text-align: right; }
 
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }
@@ -516,22 +549,23 @@
      line-box height can never nudge an individual bar's baseline. */
   .hourchart { display: flex; flex-direction: column; gap: 7px; }
   .hourchart__bars { display: flex; align-items: flex-end; gap: 3px; height: 150px; }
-  /* count sits above the bar; bar is the bottom-most item so its baseline stays
-     fixed regardless of whether a count is shown. */
-  .hcol { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; cursor: default; }
-  /* reserved in layout always (keeps bar baselines fixed), revealed on hover */
-  .hcol__n { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: var(--ink-2); line-height: 1; opacity: 0; transition: opacity var(--dur) var(--ease); }
+  /* The bar fills the column (absolute) and shows its value via scaleY (origin
+     bottom), so switching timeframes tweens between heights via `transition:
+     transform` — not a jump, not from 0. mg-growCol is the from-0 entrance on
+     mount only. The count rides just above the scaled tip (absolute, --vp). */
+  .hcol { flex: 1; height: 100%; position: relative; cursor: default; }
+  .hcol__n { position: absolute; left: 0; right: 0; z-index: 1; text-align: center; bottom: calc(var(--vp, 0) * 100% + 3px); font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: var(--ink-2); line-height: 1; opacity: 0; transition: opacity var(--dur-fast) var(--ease), bottom var(--dur-base) var(--ease); }
   .hcol:hover .hcol__n { opacity: 1; }
-  .hcol__bar { width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); transition: height 0.5s var(--ease), filter var(--dur) var(--ease); }
+  .hcol__bar { position: absolute; inset: 0; border-radius: 2px 2px 0 0; background: var(--accent); transform-origin: bottom; transform: scaleY(var(--vp, 0)); transition: transform var(--dur-base) var(--ease), filter var(--dur-fast) var(--ease); animation: mg-growCol var(--dur-slow) var(--ease) backwards; }
   .hcol:hover .hcol__bar { filter: brightness(1.15); }
   .hourchart__axis { display: flex; gap: 3px; }
   .hourchart__axis span { flex: 1; text-align: center; font-family: var(--font-mono); font-size: 9.5px; line-height: 12px; color: var(--ink-3); }
 
   /* ---- Search modal ---- */
-  .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: grid; place-items: start center; padding: 56px 20px; overflow-y: auto; animation: mg-fadeIn 0.25s ease; }
-  .modal-veil--closing { animation: mg-fadeOut 0.2s ease forwards; }
-  .modal { width: min(960px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn 0.3s var(--ease); overflow: hidden; }
-  .modal--closing { animation: mg-scaleOut 0.2s var(--ease) forwards; }
+  .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: grid; place-items: start center; padding: 56px 20px; overflow-y: auto; animation: mg-fadeIn var(--dur-base) var(--ease); }
+  .modal-veil--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; }
+  .modal { width: min(960px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
+  .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; }
   .modal--movie { width: min(560px, 100%); }
   .modal--form { width: min(460px, 100%); }
   .modal__body { padding: 22px 26px 0; display: flex; flex-direction: column; gap: 14px; }
@@ -550,6 +584,7 @@
   .result__media { position: relative; border-radius: var(--r-md); transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
   .result:hover .result__media,
   .result:focus-visible .result__media { transform: translateY(-4px); box-shadow: var(--shadow); }
+  .result:active .result__media { transform: translateY(-2px) scale(0.99); }
   .r-overlay {
     position: absolute; inset: 0; z-index: 5; border-radius: var(--r-md);
     display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 13px;
@@ -566,7 +601,7 @@
   .result .r-year { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); }
 
   /* watched grid<->list crossfade */
-  .watch-body { animation: mg-fadeUp 0.28s var(--ease); }
+  .watch-body { animation: mg-fadeUp var(--dur-base) var(--ease); }
 
   /* movie detail modal */
   .moviemodal__hero { position: relative; height: 168px; background-size: cover; background-position: center; }
@@ -586,6 +621,13 @@
     .moviemodal__body { flex-direction: column; gap: 14px; }
     .moviemodal__info { padding-top: 0; }
   }
+
+  /* Radix dropdown — unified onto the MG overlay motion (mg-scaleIn/Out) so it
+     speaks the same language as the bespoke Modal instead of tailwindcss-animate.
+     Scales from the trigger via Radix's exposed transform-origin var. */
+  .mg-pop { transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-dropdown-menu-sub-content-transform-origin, var(--radix-popper-transform-origin, center))); }
+  .mg-pop[data-state="open"] { animation: mg-scaleIn var(--dur-base) var(--ease); }
+  .mg-pop[data-state="closed"] { animation: mg-scaleOut var(--dur-fast) var(--ease-exit); }
 
   /* ============================================================
      Responsive — phone & touch adaptations
@@ -612,7 +654,7 @@
     background: none; border: none; cursor: pointer;
     font-family: var(--font-display); font-weight: 600; font-size: 10.5px;
     letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
-    transition: color var(--dur) var(--ease);
+    transition: color var(--dur-fast) var(--ease);
   }
   .navbar-bottom__tab svg { width: 21px; height: 21px; }
   .navbar-bottom__tab[data-active="true"] { color: var(--accent); }
@@ -702,10 +744,14 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
+  /* Loaders convey ongoing work — essential motion. Keep them spinning. */
+  .mg-spin { animation-duration: 0.8s !important; animation-iteration-count: infinite !important; }
 }
 
 /* Toasts (Sonner) themed to the MG surfaces. Unlayered + !important so they

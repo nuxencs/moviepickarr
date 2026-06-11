@@ -50,9 +50,11 @@ func (r *testMovieRepo) List(context.Context) ([]*domain.Movie, error) { panic("
 func (r *testMovieRepo) FindByUserID(context.Context, int) ([]*domain.Movie, error) {
 	panic("unexpected call")
 }
+
 func (r *testMovieRepo) FindByStatus(context.Context, string) ([]*domain.Movie, error) {
 	panic("unexpected call")
 }
+
 func (r *testMovieRepo) FindByUserIDAndStatus(context.Context, int, string) ([]*domain.Movie, error) {
 	panic("unexpected call")
 }
@@ -60,9 +62,11 @@ func (r *testMovieRepo) CountByStatus(context.Context, string) (int, error) { pa
 func (r *testMovieRepo) CountByUserIDAndStatus(context.Context, int, string) (int, error) {
 	panic("unexpected call")
 }
+
 func (r *testMovieRepo) Add(context.Context, string, string, int) (*domain.Movie, error) {
 	panic("unexpected call")
 }
+
 func (r *testMovieRepo) SetExternalIDs(context.Context, int, *int, *string) error {
 	panic("unexpected call")
 }
@@ -70,6 +74,7 @@ func (r *testMovieRepo) UpdateStatus(context.Context, int, string) error { panic
 func (r *testMovieRepo) MarkAsWatched(context.Context, int, time.Time) error {
 	panic("unexpected call")
 }
+
 func (r *testMovieRepo) GetRandomPooled(context.Context) (*domain.Movie, error) {
 	panic("unexpected call")
 }
@@ -81,6 +86,7 @@ type testSettingsRepo struct{}
 func (r *testSettingsRepo) List(context.Context) ([]*domain.Settings, error) {
 	panic("unexpected call")
 }
+
 func (r *testSettingsRepo) FindByKey(context.Context, string) (string, error) {
 	panic("unexpected call")
 }

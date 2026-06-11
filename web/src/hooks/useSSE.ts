@@ -6,8 +6,10 @@ import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys
 import type { SSEEvent } from "@/types/SSEEvent";
 
 function baseURL(): string {
+  // Empty in dev so the EventSource connects same-origin via the Vite proxy
+  // (see vite.config.ts), matching APIClient.
   if (import.meta.env.DEV) {
-    return "http://localhost:3030";
+    return "";
   }
 
   return window.location.origin;
@@ -51,6 +53,17 @@ export function useSSE() {
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
             void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
+            break;
+
+          case "movie:enriched":
+            // Async TMDB enrichment landed for a movie; refresh every cache that
+            // embeds enriched fields (poster, runtime, rating, …) so it shows
+            // without waiting for an unrelated event or a reload. Stats carry no
+            // TMDB metadata, so they're intentionally left untouched.
+            void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
             break;
 
           case "movie:picked":

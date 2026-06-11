@@ -6,6 +6,21 @@ export interface Movie {
     addedByID: number;
     addedByName: string;
     watchedAt?: string;
+
+    // Stable external identities — used to build IMDb / TMDB / Letterboxd links.
+    tmdbId?: number;
+    imdbId?: string;
+
+    // Enriched TMDB metadata — all optional (a movie may not be enriched yet).
+    // posterPath/backdropPath are raw TMDB paths (e.g. "/abc.jpg").
+    posterPath?: string;
+    backdropPath?: string;
+    releaseDate?: string;
+    runtime?: number;
+    genres?: string[];
+    voteAverage?: number;
+    tagline?: string;
+    overview?: string;
 }
 
 export interface User {

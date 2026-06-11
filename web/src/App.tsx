@@ -1,56 +1,59 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ChartNoAxesColumnIcon, FilmIcon, UsersIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { queryClient } from "@/api/QueryClient";
 
-import { Header } from "@/components/Header";
-import { MoviePicker } from "@/components/MoviePicker";
-import { NextPicker } from "@/components/NextPicker";
-import { StatsTab } from "@/components/StatsTab";
+import { Hero } from "@/components/movie-gang/Hero";
+import { MoviesTab } from "@/components/movie-gang/MoviesTab";
+import { NavBar, type Tab } from "@/components/movie-gang/NavBar";
+import { StatsTab } from "@/components/movie-gang/StatsTab";
+import { UsersTab } from "@/components/movie-gang/UsersTab";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/toast";
-import { UsersGrid } from "@/components/UserManagement";
 
 import { useSSE } from "@/hooks/useSSE";
 
+const TABS: Tab[] = ["movies", "users", "stats"];
+
+/** Active tab lives in the URL (`?tab=`) so it's shareable, deep-linkable, and
+ *  works with browser back/forward — not hidden in localStorage. */
+function tabFromURL(): Tab {
+  const t = new URLSearchParams(window.location.search).get("tab");
+  return t && (TABS as string[]).includes(t) ? (t as Tab) : "movies";
+}
+
 function AppContent() {
   useSSE();
+  const [tab, setTab] = useState<Tab>(tabFromURL);
+
+  // Keep state in sync when the user navigates with back/forward.
+  useEffect(() => {
+    const onPop = () => setTab(tabFromURL());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const changeTab = (next: Tab) => {
+    if (next === tab) return; // don't push a duplicate history entry for the active tab
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", next);
+    window.history.pushState({}, "", url);
+    setTab(next);
+  };
 
   return (
-    <div className="App">
-      <Header/>
-      <div className="p-4">
-        <NextPicker/>
-      </div>
-      <Tabs defaultValue="movies" className="w-full">
-        <div className="px-4">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="movies" className="flex items-center gap-2">
-              <FilmIcon className="size-4"/>
-              Movies
-            </TabsTrigger>
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <UsersIcon className="size-4"/>
-              Users
-            </TabsTrigger>
-            <TabsTrigger value="stats" className="flex items-center gap-2">
-              <ChartNoAxesColumnIcon className="size-4"/>
-              Stats
-            </TabsTrigger>
-          </TabsList>
-        </div>
-        <TabsContent value="movies">
-          <MoviePicker/>
-        </TabsContent>
-        <TabsContent value="stats">
-          <StatsTab/>
-        </TabsContent>
-        <TabsContent value="users">
-          <UsersGrid/>
-        </TabsContent>
-      </Tabs>
-      <Toaster/>
+    <div className="app">
+      <NavBar active={tab} onChange={changeTab} />
+
+      {tab === "movies" && <Hero />}
+
+      <main className="shell" key={tab}>
+        {tab === "movies" && <MoviesTab />}
+        {tab === "users" && <UsersTab />}
+        {tab === "stats" && <StatsTab />}
+      </main>
+
+      <Toaster />
     </div>
   );
 }
@@ -59,10 +62,10 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-        <AppContent/>
+        <AppContent />
       </ThemeProvider>
     </QueryClientProvider>
-  )
+  );
 }
 
-export default App
+export default App;

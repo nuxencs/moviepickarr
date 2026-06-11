@@ -71,6 +71,10 @@ type EnrichmentCandidate struct {
 type MovieMetadataRepo interface {
 	UpsertMetadata(ctx context.Context, md MovieMetadata) error
 	GetMetadata(ctx context.Context, movieID int) (*MovieMetadata, error)
+	// GetMetadataByMovieIDs batch-loads metadata for the given movie ids,
+	// keyed by movie id. Ids without a metadata row are simply absent from the
+	// returned map (enrichment is async, so a movie may not be enriched yet).
+	GetMetadataByMovieIDs(ctx context.Context, ids []int) (map[int]*MovieMetadata, error)
 	// NeedsEnrichment returns candidates that either have no metadata row
 	// (backfill — pass the zero time) or whose enriched_at is older than
 	// staleBefore (periodic refresh). Results are capped at limit.

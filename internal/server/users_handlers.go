@@ -22,29 +22,36 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	// Only pool/stash movies are rendered on the users board. Scope metadata
+	// loading to just those so we don't batch-load (and discard) enriched data
+	// for the ever-growing watched history.
+	visible := make([]*domain.Movie, 0, len(movies))
+	for i := range movies {
+		if movies[i].Status == "pool" || movies[i].Status == "stash" {
+			visible = append(visible, movies[i])
+		}
+	}
+
+	meta := h.metaFor(ctx, visible)
 	poolByUser := make(map[int]map[string]movieResponse)
 	stashByUser := make(map[int]map[string]movieResponse)
 
-	for i := range movies {
-		if movies[i].Status != "pool" && movies[i].Status != "stash" {
-			continue
-		}
+	for i := range visible {
+		apiMovie := toAPIMovieMeta(visible[i], meta[visible[i].ID])
+		key := strconv.Itoa(visible[i].ID)
 
-		apiMovie := toAPIMovie(movies[i])
-		key := strconv.Itoa(movies[i].ID)
-
-		if movies[i].Status == "pool" {
-			if poolByUser[movies[i].AddedByID] == nil {
-				poolByUser[movies[i].AddedByID] = map[string]movieResponse{}
+		if visible[i].Status == "pool" {
+			if poolByUser[visible[i].AddedByID] == nil {
+				poolByUser[visible[i].AddedByID] = map[string]movieResponse{}
 			}
-			poolByUser[movies[i].AddedByID][key] = apiMovie
+			poolByUser[visible[i].AddedByID][key] = apiMovie
 			continue
 		}
 
-		if stashByUser[movies[i].AddedByID] == nil {
-			stashByUser[movies[i].AddedByID] = map[string]movieResponse{}
+		if stashByUser[visible[i].AddedByID] == nil {
+			stashByUser[visible[i].AddedByID] = map[string]movieResponse{}
 		}
-		stashByUser[movies[i].AddedByID][key] = apiMovie
+		stashByUser[visible[i].AddedByID][key] = apiMovie
 	}
 
 	response := make([]userResponse, 0, len(users))

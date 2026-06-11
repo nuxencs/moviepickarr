@@ -150,6 +150,53 @@ func TestUpsertMetadata_NilGenresStoredAsEmptyArray(t *testing.T) {
 	}
 }
 
+func TestGetMetadataByMovieIDs_BatchAndPartial(t *testing.T) {
+	t.Parallel()
+	ctx, meta, movies, users := setupMetadataRepos(t)
+	idA := seedMovie(t, ctx, users, movies, "Mara")
+	idB := seedMovie(t, ctx, users, movies, "Nils")
+	idC := seedMovie(t, ctx, users, movies, "Omar") // intentionally left un-enriched
+
+	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: idA, Runtime: 100, Genres: []string{"Action"}}); err != nil {
+		t.Fatalf("upsert A: %v", err)
+	}
+	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: idB, Runtime: 200, PosterPath: new("/b.jpg")}); err != nil {
+		t.Fatalf("upsert B: %v", err)
+	}
+
+	got, err := meta.GetMetadataByMovieIDs(ctx, []int{idA, idB, idC})
+	if err != nil {
+		t.Fatalf("batch get: %v", err)
+	}
+
+	// Enriched ids present; the un-enriched id is simply absent (async enrichment).
+	if len(got) != 2 {
+		t.Fatalf("expected 2 enriched rows, got %d", len(got))
+	}
+	if got[idA] == nil || got[idA].Runtime != 100 {
+		t.Fatalf("A mismatch: %+v", got[idA])
+	}
+	if got[idB] == nil || got[idB].PosterPath == nil || *got[idB].PosterPath != "/b.jpg" {
+		t.Fatalf("B mismatch: %+v", got[idB])
+	}
+	if _, ok := got[idC]; ok {
+		t.Fatalf("un-enriched movie %d must be absent from the map", idC)
+	}
+}
+
+func TestGetMetadataByMovieIDs_EmptyInput(t *testing.T) {
+	t.Parallel()
+	ctx, meta, _, _ := setupMetadataRepos(t)
+
+	got, err := meta.GetMetadataByMovieIDs(ctx, nil)
+	if err != nil {
+		t.Fatalf("batch get: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty map, got %v", got)
+	}
+}
+
 func TestGetMetadata_NotFound(t *testing.T) {
 	t.Parallel()
 	ctx, meta, _, _ := setupMetadataRepos(t)

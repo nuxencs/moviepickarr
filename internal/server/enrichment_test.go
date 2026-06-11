@@ -54,9 +54,11 @@ func (r *fakeMovieRepo) List(context.Context) ([]*domain.Movie, error) { panic("
 func (r *fakeMovieRepo) FindByUserID(context.Context, int) ([]*domain.Movie, error) {
 	panic("unexpected call")
 }
+
 func (r *fakeMovieRepo) FindByStatus(context.Context, string) ([]*domain.Movie, error) {
 	panic("unexpected call")
 }
+
 func (r *fakeMovieRepo) FindByUserIDAndStatus(context.Context, int, string) ([]*domain.Movie, error) {
 	panic("unexpected call")
 }
@@ -64,12 +66,15 @@ func (r *fakeMovieRepo) CountByStatus(context.Context, string) (int, error) { pa
 func (r *fakeMovieRepo) CountByUserIDAndStatus(context.Context, int, string) (int, error) {
 	panic("unexpected call")
 }
+
 func (r *fakeMovieRepo) Add(context.Context, string, string, int) (*domain.Movie, error) {
 	panic("unexpected call")
 }
+
 func (r *fakeMovieRepo) UpdateTitle(context.Context, int, string) error {
 	panic("unexpected call")
 }
+
 func (r *fakeMovieRepo) UpdateWatchedAt(context.Context, int, time.Time) error {
 	panic("unexpected call")
 }
@@ -77,6 +82,7 @@ func (r *fakeMovieRepo) UpdateStatus(context.Context, int, string) error { panic
 func (r *fakeMovieRepo) MarkAsWatched(context.Context, int, time.Time) error {
 	panic("unexpected call")
 }
+
 func (r *fakeMovieRepo) GetRandomPooled(context.Context) (*domain.Movie, error) {
 	panic("unexpected call")
 }
@@ -97,6 +103,10 @@ func (r *fakeMetaRepo) UpsertMetadata(_ context.Context, md domain.MovieMetadata
 }
 
 func (r *fakeMetaRepo) GetMetadata(context.Context, int) (*domain.MovieMetadata, error) {
+	panic("unexpected call")
+}
+
+func (r *fakeMetaRepo) GetMetadataByMovieIDs(context.Context, []int) (map[int]*domain.MovieMetadata, error) {
 	panic("unexpected call")
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -120,6 +121,53 @@ func (d *SqliteMovieMetadataRepository) GetMetadata(ctx context.Context, movieID
 	}
 
 	return md, nil
+}
+
+func (d *SqliteMovieMetadataRepository) GetMetadataByMovieIDs(ctx context.Context, ids []int) (map[int]*domain.MovieMetadata, error) {
+	result := make(map[int]*domain.MovieMetadata, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			movie_id,
+			overview,
+			poster_path,
+			backdrop_path,
+			release_date,
+			runtime,
+			genres,
+			vote_average,
+			vote_count,
+			tagline,
+			enriched_at
+		FROM movie_metadata
+		WHERE movie_id IN (%s)
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		md, err := scanMetadata(rows)
+		if err != nil {
+			return nil, err
+		}
+		result[md.MovieID] = md
+	}
+
+	return result, rows.Err()
 }
 
 func (d *SqliteMovieMetadataRepository) NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]domain.EnrichmentCandidate, error) {

@@ -29,7 +29,7 @@
 ## Infrastructure
 
 - `internal/repository/sqlite.go`: SQLite repository implementations.
-- `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / needs-enrichment).
+- `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ## API
@@ -47,6 +47,16 @@ link is **derived** on read (`models.go::movieLink`: IMDb URL → TMDB URL → `
 and the API still exposes a `link` field. `movie_metadata` (1:1, FK cascade)
 holds only enriched **display** fields (overview, poster/backdrop, runtime,
 genres-as-JSON-names, rating, tagline, `enriched_at`).
+
+Movie responses **fold in this display metadata**: every movie-returning GET
+(pool / watched / current / user pool / stash / `GET /users`) batch-loads
+`movie_metadata` via `MovieMetadataRepo.GetMetadataByMovieIDs` and emits the
+extra `omitempty` fields (`posterPath`, `backdropPath`, `releaseDate`, `runtime`,
+`genres`, `voteAverage`, `tagline`, `overview`) on `movieResponse`
+(`models.go::toAPIMovieMeta`). Paths are raw TMDB paths (e.g. `/abc.jpg`); the
+frontend builds the image URL. Fields are absent for not-yet-enriched movies, so
+the UI degrades to a procedural placeholder poster. SSE broadcast payloads stay
+metadata-free — the client refetches the enriched GETs on each event.
 
 Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone). A
 manual/edit add still accepts a `link` in the request body, but only to extract

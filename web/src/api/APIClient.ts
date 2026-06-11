@@ -24,8 +24,10 @@ function encodeRFC3986URIComponent(str: string): string {
 }
 
 function baseURL(): string {
+    // In dev, return "" so requests hit "/api/..." same-origin and ride the
+    // Vite proxy (see vite.config.ts). Same-origin requests never preflight.
     if (import.meta.env.DEV) {
-        return "http://localhost:3030";
+        return "";
     }
 
     return window.location.origin;
@@ -37,7 +39,7 @@ export async function HttpClient<T = unknown>(
 ): Promise<T> {
     const init: RequestInit = {
         method: config.method,
-        headers: { Accept: "*/*", "x-requested-with": "XMLHttpRequest" },
+        headers: { Accept: "*/*" },
         credentials: "include",
     };
 

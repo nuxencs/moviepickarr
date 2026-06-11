@@ -66,12 +66,20 @@ export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
     <>
       <nav className="nav">
         <div className="nav__inner">
-          <div className="wordmark">
-            <span className="mark">
-              <FilmIcon />
-            </span>
-            <h1>Movie Gang</h1>
-          </div>
+          <h1 className="wordmark">
+            <button
+              type="button"
+              className="wordmark__home"
+              onClick={() => onChange("movies")}
+              aria-current={active === "movies" ? "page" : undefined}
+              title="Go to Movies"
+            >
+              <span className="mark">
+                <FilmIcon />
+              </span>
+              Movie Gang
+            </button>
+          </h1>
 
           {/* Top-bar tabs with the sliding underline (desktop / tablet). Hidden on
               phones, where navigation moves to the fixed bottom bar below. */}

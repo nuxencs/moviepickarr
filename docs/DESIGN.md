@@ -71,7 +71,9 @@ Three families, by role:
 - `--font-display` **Hubot Sans** — display only: nav wordmark/tabs, section `h2`,
   hero title, stat/section headings. Never use the display font for dense UI labels.
 
-Rules: fixed rem/px scale (not fluid) for product UI; weight contrast for hierarchy;
+Rules: fixed rem/px scale (no per-element fluid type) for product UI — large screens step
+the whole UI up together via a discrete root `zoom` ramp (§13), never fluid `clamp` on
+type; weight contrast for hierarchy;
 sentence case for section/modal headings (nav tabs are the deliberate uppercase
 exception). The mono uppercase tracked "eyebrow" (`.eyebrow`) is a real label element
 (timezone, "Pool", "Next picker"), not a decorative kicker on every section.
@@ -192,19 +194,21 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
 
 ## 7. The Hero (static-layout contract)
 
-The Movies-tab hero must be **dimensionally static**: changing the pick, its metadata,
-the title length, or the tagline length must not move any component or resize the
-banner. How it's built (`Hero.tsx` + `.hero__*` in `index.css`):
+The Movies-tab hero must be **dimensionally static across picks**: changing the pick, its
+metadata, the title length, or the tagline length must not move any component or resize
+the banner. (Static across *picks*, not across *viewports* — the geometry steps by
+breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.tsx` +
+`.hero__*` in `index.css`):
 
 - `.hero__inner` carries generous vertical padding (`56px` top / `60px` bottom) for a
   cinematic, roomy banner. Horizontal padding stays `32px`. The body height (below) is
   unchanged — the extra room is breathing space around the content, not added to it.
-- `.hero__body` is a fixed-height flex column (`min-height: 18.5rem`), sized for the
-  worst case so the banner never resizes.
-- **Poster** column width is `calc(18.5rem * 2 / 3)` — derived from the body height
-  and the 2/3 poster ratio so the poster's bottom edge lines up exactly with the
-  pinned action button. It is a deliberate dependency on the `18.5rem` contract: if
-  that height changes, the poster width tracks it automatically.
+- `.hero__body` is a fixed-height flex column (`min-height: var(--hero-body-h)`, default
+  18.5rem), sized for the worst case so the banner never resizes.
+- **Poster** column width is `calc(var(--hero-body-h) * 2 / 3)` — derived from the body
+  height (`--hero-body-h`) and the 2/3 poster ratio so the poster's bottom edge lines up
+  exactly with the pinned action button. The dependency is real: the large-screen step
+  changes only `--hero-body-h` and the poster width tracks it automatically.
 - The hero poster **omits the rating badge** (it passes no `voteAverage`): the rating
   already appears in the meta row, so the badge would be redundant. The badge still
   renders on tile-grid posters, where the meta row carries no rating.
@@ -240,6 +244,13 @@ Verified static: empty vs populated and a 173-char injected tagline all leave
 On phones (≤700px) the hero drops the fixed height and stacks: a 120px poster above
 the eyebrow → title → tagline → meta → actions, full width. The static-layout contract
 governs the desktop banner only. The rest of the responsive system lives in §13.
+
+On large screens (≥1728px) the hero steps *up*: `--hero-body-h` grows (18.5rem → 21rem,
+and the poster width tracks it via the `calc()` above), `.hero__inner` padding opens up,
+and the title clamp ceiling rises (54 → 64px) — so the centerpiece feels grander, not
+merely bigger. Like the phone stack this is per-breakpoint geometry, not a break of the
+contract: within the breakpoint the banner stays dimensionally static as the pick changes.
+The whole hero also rides the global `zoom` ramp (§13) on top of this step.
 
 ---
 
@@ -306,9 +317,10 @@ use tokens so they follow the theme.
 
 ## 13. Responsive & touch
 
-Desktop-first, with a dedicated phone/touch pass layered on top. Breakpoints are
-content-driven but drawn from one tidy scale — **560 / 640 / 700 / 760 / 900** —
-documented inline in `index.css` (the "Responsive — phone & touch adaptations" block).
+Desktop-first, with a dedicated phone/touch pass below and a large-screen scale-up above.
+Breakpoints are content-driven but drawn from one tidy scale — **560 / 640 / 700 / 760 /
+900** down, **1728 / 2240 / 2560 / 3200 / 3840** up — documented inline in `index.css`
+(the "Responsive — phone & touch adaptations" and "Large-screen scale ramp" blocks).
 What each does:
 
 - **560** — the movie modal's internal poster + info split stacks.
@@ -321,9 +333,20 @@ What each does:
 - **760** — the stat strip drops 4 columns → 2.
 - **900** — the stats two-column (weekday | hourly) collapses to one.
 
+**Large screens.** A mirror of the phone pass, scaling *up*. Above the 1240px column the
+whole UI steps up through a discrete root `zoom` ramp (`:root { zoom }` at 1728 / 2240 /
+2560 / 3200 / 3840px) so type, posters, modals, menus, grids and the column all grow
+together — keeping the centered cinematic composition instead of leaving content adrift on
+a 2K/4K panel. It lives on `:root` (not `.app`) because modals, menus and toasts portal to
+`<body>`; only a root-level scale reaches them. The top steps carry a `min-height` guard
+so ultrawide-but-short panels (e.g. 3440×1440) don't over-scale. Stepped, not fluid
+`clamp` — the discrete-scale ethos (§3) holds. The **hero** takes an extra large-screen
+step on top of the zoom (taller `--hero-body-h`, roomier padding, a higher title ceiling)
+so the centerpiece feels grander, not merely bigger (§7).
+
 **Bottom tab bar.** Below 640px the top-bar tabs (`.nav__tabs`) hide and a fixed
-`.navbar-bottom` renders the 3 tabs in thumb reach; the wordmark + theme toggle stay in
-the top bar. The active tab is gold-tinted — there is no sliding underline there (the
+`.navbar-bottom` renders the 3 tabs in thumb reach; the wordmark (a home control: click it
+to return to the Movies tab from any tab) + theme toggle stay in the top bar. The active tab is gold-tinted — there is no sliding underline there (the
 `.tab__ink` slider is desktop-only, and `NavBar`'s `measure()` skips when the top tabs
 are `display:none`). The bar carries `padding-bottom: env(safe-area-inset-bottom)`, the
 `.shell` reserves clearance for it, and `index.html` sets `viewport-fit=cover`; the
@@ -353,6 +376,7 @@ buttons grow toward the 44px touch minimum.
 5. The hero stays dimensionally static (§7); 3+ line taglines truncate.
 6. Copy: verb+object buttons, "Failed to X" errors, `plural()` for counts, no em dashes.
 7. Gold = action/selection/state only. Danger = the single `--danger` ramp.
-8. Responsiveness is structural (bottom nav + single-column reflows at the 640 phone
-   breakpoint), not fluid type. Every hover-revealed action needs a `hover: none`
-   fallback so touch users can reach it (§13).
+8. Responsiveness is structural (bottom nav + single-column reflows below 640; a discrete
+   root `zoom` ramp scales the whole UI up on large screens — §13), never per-element fluid
+   type. Every hover-revealed action needs a `hover: none` fallback so touch users can
+   reach it (§13).

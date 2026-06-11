@@ -110,7 +110,7 @@ export function Hero() {
   const pick = shown;
   // False until the first pick (or confirmed-empty) has committed after its
   // backdrop decoded. While loading we render a quiet banner shell — no
-  // placeholder copy ("Pick tonight's movie") flashing before the real pick.
+  // placeholder copy ("Pick next movie") flashing before the real pick.
   const ready = revealId > 0;
   const hue = hueOf(pick?.title ?? "Movie Gang");
   const bg = pick?.backdropPath ? `url(${backdropUrl(pick.backdropPath)})` : backdropBg(hue);
@@ -135,7 +135,7 @@ export function Hero() {
           </div>
 
           <h2 className="hero__title" style={ri(2)}>
-            {!ready ? "" : (pick?.title ?? "Pick tonight's movie")}
+            {!ready ? "" : (pick?.title ?? "Pick next movie")}
           </h2>
 
           {/* Tagline + meta slots are always rendered (reserved height in CSS) so

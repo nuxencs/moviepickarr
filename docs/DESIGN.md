@@ -308,10 +308,12 @@ use tokens so they follow the theme.
   aliases and show false "cannot find module" errors; trust `tsc -b`, not them.
 - Backend: Go (Fiber) on `:3030`, serves the embedded `web/dist` and `/api/v1/*`.
   Run with `web/dist` built (`go run main.go` re-embeds the current dist at compile).
-- **Dev gotcha:** `APIClient.baseURL()` hardcodes `http://localhost:3030` in DEV, so
-  the Vite dev server (`:5173`) makes a cross-origin call that the browser blocks
-  (CORS) and renders empty. To see real data while developing, view on `:3030` (build
-  + run the Go server) or fix the dev base to use the Vite `/api` proxy.
+- **Dev data path:** `APIClient.baseURL()` and `useSSE`'s `baseURL()` return `""` in
+  DEV, so API + SSE calls hit `/api/...` **same-origin** and ride the Vite proxy
+  (`vite.config.ts`) → `:3030`. Same-origin means no preflight, no CORS — data loads
+  on `:5173` directly. (Fixed in `59f2f80`; the base used to hardcode `:3030`, which
+  the browser blocked as a cross-origin/CORS call.) Empty data on `:5173` ⇒ the Go
+  backend isn't up, the proxy `target` is wrong, or the DB is empty — not CORS.
 
 ---
 

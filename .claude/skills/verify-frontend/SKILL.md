@@ -66,13 +66,23 @@ VITE_URL=$(grep -oE 'http://localhost:[0-9]+' /tmp/mpa-vite.log | head -1)
 If `VITE_URL` isn't `:5173`, mention it in the report — a climbed port usually
 means a leftover dev server is still running, which is worth surfacing.
 
-**The known data gotcha.** Vite proxies `/api` → `:3030`, but
-`APIClient.baseURL()` hardcodes `http://localhost:3030` in DEV, bypassing the
-proxy. If the page renders but data is **empty** and the console/network shows a
-CORS failure or failed request to `:3030`, that's this gotcha — not your change.
-Fall back to the production-like path: `bun run --cwd ./web build` then
-`go run main.go`, and verify on **`:3030`** (Go serves the freshly built
-`dist`). Note in your report that you used the `:3030` path and why.
+**Data loads on `:5173` directly — no CORS detour.** In DEV both
+`APIClient.baseURL()` and `useSSE`'s `baseURL()` return `""`, so API + SSE
+requests hit `/api/...` **same-origin** and ride the Vite proxy → `:3030` (see
+`vite.config.ts`). Same-origin requests don't preflight, so there's no CORS step
+to fail. (Fixed in `59f2f80`; the base used to hardcode `http://localhost:3030`,
+which *did* trip CORS — that gotcha no longer applies.)
+
+So if the page renders but data is **empty**, it's almost never CORS. Check the
+network tab: the `/api/v1/*` requests should target your Vite origin (e.g.
+`:5173`) and return `200`. Empty data usually means the **backend isn't up** on
+`:3030`, the proxy `target` is wrong, or the DB has no rows — fix that, not an
+imagined CORS issue. A *genuine* CORS error on `:5173` means the proxy/`baseURL`
+wiring regressed (e.g. the DEV base went back to an absolute `:3030`) — flag it.
+
+To check the **production-like** path (Go serving the embedded build instead of
+Vite), run `bun run --cwd ./web build` then `go run main.go` and open **`:3030`**.
+That's an embedded-`dist` verification, not a CORS workaround — note it if used.
 
 ## Step 2 — Pick the browser tool
 
@@ -94,8 +104,9 @@ For each affected view, in this order:
 
 1. **Console + network clean.** Read console messages and failed requests
    *before* judging anything visual — a red console explains a broken render.
-   Quote any real errors verbatim. (Ignore the data-gotcha CORS line if you
-   already switched to the `:3030` path.)
+   Quote any real errors verbatim. (A CORS error is *not* expected on the
+   `:5173` proxy path — if one appears, the dev base/proxy wiring regressed;
+   treat it as a real finding, not noise.)
 2. **Visual vs. intent.** Screenshot the changed view at desktop width first.
    Compare against what the diff was *trying* to do, not just "does it look
    fine." Call out layout shift, overflow, misalignment, wrong spacing/color.

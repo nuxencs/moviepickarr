@@ -131,7 +131,15 @@ export function Hero() {
 
         <div className="hero__body" key={`b-${revealId}`}>
           <div className="hero__eyebrow eyebrow" style={ri(1)}>
-            {!ready ? "" : pick ? `Current pick · chosen by ${pick.addedByName}` : "No movie selected"}
+            {!ready ? (
+              ""
+            ) : pick ? (
+              <>
+                Current pick · chosen by <strong className="hero__by">{pick.addedByName}</strong>
+              </>
+            ) : (
+              "No movie selected"
+            )}
           </div>
 
           <h2 className="hero__title" style={ri(2)}>

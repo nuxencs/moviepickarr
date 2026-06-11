@@ -387,6 +387,9 @@
      banner never resizes and no row ever moves between picks. */
   .hero__body { flex: 1; min-width: 0; color: #fff; display: flex; flex-direction: column; min-height: var(--hero-body-h); }
   .hero__eyebrow { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,0.7); }
+  /* The picker's name carries the emphasis: brighter + heavier than the rest of
+     the eyebrow line, so attribution reads at a glance without new chrome. */
+  .hero__by { color: #fff; font-weight: 700; }
   .hero__title { margin: 13px 0 0; font-family: var(--font-display); font-size: clamp(32px, 4.6vw, 54px); font-weight: 700; line-height: 0.98; letter-spacing: -0.02em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   /* Pushed to the bottom (margin-top:auto) and locked to a 2-line slot so
      short and long taglines occupy identical height. */

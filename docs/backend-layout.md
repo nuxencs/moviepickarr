@@ -30,6 +30,7 @@
 
 - `internal/repository/sqlite.go`: SQLite repository implementations.
 - `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
+- `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ## API
@@ -58,6 +59,41 @@ frontend builds the image URL. Fields are absent for not-yet-enriched movies, so
 the UI degrades to a procedural placeholder poster. SSE broadcast payloads stay
 metadata-free — the client refetches the enriched GETs on each event.
 
+## Credits (people on movies)
+
+Credits are persisted **normalized + trimmed** (migration `006`): a `people`
+table keyed by TMDB person id (each person stored once, ever; name +
+`profile_path` refreshed on re-enrich) and a `movie_credits` join table with a
+`(movie_id, person_id, kind, job)` PK — so a person can be cast *and* crew on
+the same movie, or crew with several jobs. Both FKs cascade on movie/person
+delete.
+
+Ingest happens inside the same enrichment call: `MovieDetails` appends
+`?append_to_response=credits` (still a single TMDB request), and
+`enrichment.go::mapCredits` trims the payload before persisting:
+
+- **Cast**: sorted by billing order, deduped by person (dual roles merge their
+  characters with `" / "`), then trimmed to `CastLimit` (env
+  `TMDB_ENRICH_CAST_LIMIT`, default 15, `0` = full cast). Deepening the cast
+  later is just a config change + re-enrich — no schema/UI impact.
+- **Crew**: filtered to the job whitelist (Director, Writer, Screenplay,
+  Original Music Composer, Director of Photography), deduped per (person, job).
+
+`MovieCreditsRepo.ReplaceCredits` runs in one transaction: upsert people,
+delete the movie's credit rows, insert the new ones, and stamp
+`movie_metadata.credits_refreshed_at = CURRENT_TIMESTAMP`. It runs **after**
+`UpsertMetadata` (the stamp lives on the metadata row) and also when the
+mapped credits are empty, so credit-less titles get stamped instead of looping
+the drain. A NULL `credits_refreshed_at` makes a movie a `NeedsEnrichment`
+candidate — existing libraries **backfill credits automatically** on the first
+drain after the migration.
+
+Movie responses fold credits in alongside the metadata: the same GET endpoints
+batch-load credits via `GetCreditsByMovieIDs` and emit `cast` / `crew` arrays
+of `{id, name, profilePath?, character?|job?}` (`omitempty`; absent until
+ingested). `cast` is in billing order; `crew` carries whitelisted jobs only.
+SSE payloads stay credits-free, like metadata.
+
 Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone). A
 manual/edit add still accepts a `link` in the request body, but only to extract
 the IMDb id from it — nothing is stored as a link.
@@ -79,4 +115,44 @@ is unset.
 Env knobs (all optional; sensible defaults): `TMDB_ENRICH_MIN_INTERVAL_MS`
 (250), `TMDB_ENRICH_MAX_RETRIES` (4), `TMDB_ENRICH_BACKOFF_MS` (500),
 `TMDB_ENRICH_QUEUE_SIZE` (256), `TMDB_ENRICH_BATCH_LIMIT` (200),
+`TMDB_ENRICH_CAST_LIMIT` (15, `0` = full cast),
 `TMDB_ENRICH_REFRESH_INTERVAL` (`1h`, `0` disables), `TMDB_ENRICH_TTL` (`720h`).
+
+## Stats
+
+`GET /api/v1/stats` aggregates the watched history. Query params: `window`
+(`24h`/`7d`/`30d`/`90d`/`1y`/`all-time`/`custom` + `start`/`end`), `tz`, and
+the optional, combinable filters `genre` (case-insensitive name), `actorIds` /
+`crewIds` (comma-separated positive TMDB person ids, ≤25 each, deduped +
+sorted server-side; `actorIds` match cast credits, `crewIds` match crew
+credits — any whitelisted job, since crew rows are job-whitelisted at ingest)
+and either `releaseYear` (exact year, 1870–2100) or `decade` (its floor — a
+multiple of 10 in the same range, so `1990` ⇒ 1990–1999; mutually exclusive with
+`releaseYear`). People lists are **any-of within a list and
+AND-ed across filters**. Filters narrow **every** aggregate in the response —
+including the `watchedByUser` counts and `countsByWindow` — to the matching
+subset; movies that were never enriched fail any active filter (their
+genre/year/people are unknown). One exception by design: `watchedByUser`
+always carries a **row per roster member**, zeroed when nothing of theirs
+matches — members never vanish from the leaderboard under any window or
+filter. (Pickers no longer on the roster keep their historical rows only
+while their picks pass the active filters.) The roster comes from
+`userService.List`, so user create/delete both invalidate the stats cache.
+
+Besides the activity breakdowns (`countsByWindow`, `watchedByUser`,
+`weekdayActivity`, `hourActivity`), the response carries enrichment-derived
+aggregates for the selected window: `topGenres` (full list, count desc),
+`topDirectors` / `topActors` (`{personId, name, profilePath?, count}`, capped
+at 12, count desc then name), `releaseYears` (per-year histogram, ascending;
+decade bucketing is the frontend's concern), `runtime`
+(total/average/longest + title; zero runtimes are skipped), `averageRating`
+(zero votes skipped; `0` when nothing qualifies) and `filters` (echo of the
+active filters with `actors` / `crew` as `{personId, name}` arrays, names
+resolved from the credit rows).
+
+Responses are cached per `window|tz|start|end|genre|actorIds|crewIds|releaseYear|decade`
+key (genre lowercased; id lists in canonical sorted form, so request order
+can't split the cache) with a short TTL. The cache is invalidated when a movie is
+watched/edited/user-deleted **and** after every successful enrichment
+(`enrichRunner.onEnriched` → `invalidateStatsCache`), since stats now depend
+on metadata/credits; the frontend hears the matching `movie:enriched` SSE.

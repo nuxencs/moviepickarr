@@ -20,6 +20,8 @@ export const SettingsKeys = {
 
 export const StatsKeys = {
     all: ["stats"] as const,
-    byWindow: (window: string, timezone: string, start?: string, end?: string) =>
-      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? ""] as const,
+    // actorsKey/crewKey are the canonical comma-joined id lists (sorted in
+    // StatsGetQueryOptions), so selection order can't split the cache.
+    byWindow: (window: string, timezone: string, start?: string, end?: string, genre?: string, actorsKey?: string, crewKey?: string, releaseYear?: number, decade?: number) =>
+      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? "", "genre", genre ?? "", "actors", actorsKey ?? "", "crew", crewKey ?? "", "releaseYear", releaseYear ?? 0, "decade", decade ?? 0] as const,
 }

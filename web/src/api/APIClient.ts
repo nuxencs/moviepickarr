@@ -8,6 +8,15 @@ interface StatsQuery {
     timezone: string;
     start?: string;
     end?: string;
+    genre?: string;
+    // Comma-joined TMDB person id lists. The backend reads each as ONE query
+    // param, so they're pre-joined strings — an array here would serialize to
+    // repeated params and all but the first would be dropped server-side.
+    actorIds?: string;
+    crewIds?: string;
+    releaseYear?: number;
+    // Decade floor (1990 ⇒ 1990–1999); mutually exclusive with releaseYear.
+    decade?: number;
 }
 
 interface HttpConfig {
@@ -204,13 +213,18 @@ export const APIClient = {
             appClient.Get<{id: number, name: string}>("api/v1/settings/next-picker"),
     },
     stats: {
-        get: ({ window, timezone, start, end }: StatsQuery) =>
+        get: ({ window, timezone, start, end, genre, actorIds, crewIds, releaseYear, decade }: StatsQuery) =>
             appClient.Get<StatsResponse>("api/v1/stats", {
                 queryString: {
                     window,
                     tz: timezone,
                     start,
                     end,
+                    genre,
+                    actorIds,
+                    crewIds,
+                    releaseYear,
+                    decade,
                 },
             }),
     },

@@ -94,6 +94,65 @@ old shadcn primitives.
   focus-within border. All text inputs use this; there is no bare/hollow input style.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
 - **Segmented control:** `.seg` (+ `.seg--accent` for the active-gold variant).
+  Inside `.statsfilters` the seg is restyled to the chips' dialect (see Stats
+  filter row below).
+- **Filter bar:** `.filterbar` + `.filterchip` (`FilterBar.tsx`) — a wrapping row of
+  mono 12px chip-trigger selects (Genre / Actors / Crew / Release year, stats-only).
+  The chip wraps two real buttons — the trigger and, when active, a clear X — so both
+  stay keyboard-reachable without nesting buttons. The dropdown reuses the `.mg-menu`
+  surface and motion as a listbox (`.filtermenu` scopes its extras: an inline `.field`
+  search for long people lists and a scrollable option list). An active chip is
+  gold-tinted (`--accent-soft` fill, `--accent-line` border) — gold = state, not
+  decoration. Chip triggers grow toward the touch minimum under `pointer: coarse`
+  (§13). One shared internal base (`FilterChipMenu`) powers three wrappers:
+  single-select `FilterSelect` (pick closes; re-pick clears); multi-select
+  `FilterMultiSelect` (Actors/Crew people lists, sorted A→Z by name — picks toggle and
+  the menu stays open, selected rows get a fixed-slot `CheckIcon` (`.filtermenu__check`)
+  so selection is never gold alone, the chip reads `Actors · Keanu Reeves` for one
+  selection or `Actors · 2` beyond, and the clear X clears the whole group); and the
+  Release-year `ReleaseYearSelect` — a grouped single-select listing selectable decade
+  headers (`.filtermenu__item--decade`) with their years indented beneath
+  (`.filtermenu__item--year`), where a decade and an exact year are mutually exclusive
+  (picking one clears the other) and the chip reads `Release year · 1990s` or `· 1994`.
+- **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
+  quick-select, genre, actors, crew, release year) in a single wrapping row under the
+  stats header. The seg stays a seg (presets are mutually exclusive) but drops its
+  filled-container costume for the chips' dialect: transparent, `--line-2` outline,
+  `--r-sm`, mono 12px, 30px rhythm, hairline dividers between segments, and the
+  active preset wears the chips' gold tint (`--accent-soft` + inset `--accent-line`)
+  instead of solid gold — presets and filters read as one control family. The
+  `.filterbar` inside is flattened with `display: contents` (the wrapper is not
+  focusable — §6's rule targets focusable triggers) so chips wrap as row items beside
+  the seg instead of as one indivisible block.
+- **Avatar:** `.avatar` — the square, hue-derived initials block. An optional `src`
+  photo (TMDB headshot, `.avatar__img`) layers over the initials gradient and falls
+  back to the initials when missing or failing to load; the size contract is
+  identical either way.
+- **Cast strip:** `.castrow` + `.castcard` (movie modal) — a horizontally scrollable
+  row of 2:3 headshot cards: TMDB profile photo (the Avatar initials gradient,
+  stretched to fill the frame, as fallback) with mono 12px name + character below
+  (`.castcard__caption`). Each card is a link to the person's TMDB page (new tab);
+  hover/`:focus-visible` lifts the name to gold. The strip is hidden entirely when a
+  movie has no cast.
+- **People rail:** `.peoplerail` + `.peoplecard` (stats) — the castcard visuals as a
+  horizontally scrollable drill-down strip for most-watched directors/actors, with
+  the count on the caption line ("4 movies"). Two SIBLING interactive layers per
+  card, never nested: `.peoplecard__toggle` (a real button; `aria-pressed`) toggles
+  the person in the matching multi-select filter, and `.peoplecard__ext` — a small,
+  always-visible corner scrim chip (hover-only would strand touch) with its own tab
+  stop — opens their TMDB page without touching the filter. Active = gold ring on
+  the photo + gold name (gold is state).
+- **Genre donut:** `.genredonut` + `.donut` + `.donut-legend` (stats) — a pure-CSS
+  `conic-gradient` disc (hole cut with a `radial-gradient` mask, so any background
+  shows through) of the top genres + "Other". Segments use ONE hue: the accent at
+  stepped alphas (the `--donut-*` ramp on `.genredonut`), keeping §2's "one gold"
+  rule; the legend (swatch + name + mono count) is the accessible representation —
+  the disc is `aria-hidden`, so color is never the only channel. Conic geometry
+  can't tween, so the disc gets an `mg-fadeUp` entrance only.
+- **Decade chart:** `.hourchart--decades` (stats) — the hourly-chart pattern at
+  decade granularity: chronological left-aligned columns (capped width), skipped
+  decades render as zero columns (a gap is information), counts on non-empty
+  columns stay permanently visible, and the axis labels every column ("1990s").
 - **Poster:** `.poster` — the one container; real TMDB art or a deterministic
   procedural duotone (`lib.ts`), with a rating badge.
 - **Meta chips:** `.metachips` — a wrapping row reading `year · runtime · ★rating`
@@ -167,7 +226,10 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   true size everywhere. A timeframe toggle tweens each bar between its old and new size
   (`transition: width` / `transition: height`); the `mg-growBfill`/`mg-growHcol`
   `from`-only keyframes are the from-0 entrance on mount only. The hourly count label sits
-  just above its bar (flex column, bottom-aligned) so it hugs the tip.
+  just above its bar (flex column, bottom-aligned) so it hugs the tip. The release-decades
+  chart rides the same pattern (`.hourchart--decades`, §4). The genre donut is the one
+  non-bar visualization: a `conic-gradient` can't tween its stops cheaply, so it fades in
+  (`mg-fadeUp`) and re-renders on window changes instead of animating between them.
 - **Floating surfaces** (the `Modal` and the `Menu` via `.mg-menu`) share one
   enter/exit: `mg-scaleIn` (base) / `mg-scaleOut` (fast, `--ease-exit`). Both read the
   same exported `exitDelayMs` for the JS unmount delay (`--dur-fast`, dropping to 0
@@ -332,8 +394,9 @@ What each does:
   picked-by-member bars shrink their name column (`188px → 112px`) so the track keeps
   width; poster grids become denser thumbnail grids; modal chrome tightens.
 - **700** — the hero stacks (poster above text) and page / top-nav padding tightens.
-- **760** — the stat strip drops 4 columns → 2.
-- **900** — the stats two-column (weekday | hourly) collapses to one.
+- **760** — the stat strip drops 3 columns → 2.
+- **900** — the stat strip drops 6 columns → 3, and the stats two-column sections
+  (weekday | hourly, genres | decades) collapse to one.
 
 **Large screens.** A mirror of the phone pass, scaling *up*. Above the 1240px column the
 whole UI steps up through a discrete root `zoom` ramp (`:root { zoom }` at 1728 / 2240 /

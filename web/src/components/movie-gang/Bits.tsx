@@ -1,4 +1,5 @@
 import { StarIcon } from "lucide-react";
+import { useState } from "react";
 
 import {
   avatarBg,
@@ -11,12 +12,38 @@ import {
 
 import type { Movie } from "@/types/Response";
 
-/** Square, hue-derived initials avatar. Hue defaults to a hash of the name. */
-export function Avatar({ name, size = 28, hue }: { name: string; size?: number; hue?: number }) {
+/**
+ * Square, hue-derived initials avatar. Hue defaults to a hash of the name.
+ * An optional `src` photo (TMDB headshot) layers over the initials gradient,
+ * falling back to the initials when missing or failing to load — the size
+ * contract is identical either way.
+ */
+export function Avatar({
+  name,
+  size = 28,
+  hue,
+  src,
+}: {
+  name: string;
+  size?: number;
+  hue?: number;
+  src?: string | null;
+}) {
   const h = hue ?? hueOf(name);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const showImg = Boolean(src) && src !== failedSrc;
   return (
     <span className="avatar" style={{ ["--s" as string]: `${size}px`, backgroundImage: avatarBg(h) }}>
       {initialsOf(name)}
+      {showImg && (
+        <img
+          className="avatar__img"
+          src={src ?? undefined}
+          alt=""
+          loading="lazy"
+          onError={() => setFailedSrc(src ?? null)}
+        />
+      )}
     </span>
   );
 }

@@ -75,8 +75,15 @@ type MovieMetadataRepo interface {
 	// keyed by movie id. Ids without a metadata row are simply absent from the
 	// returned map (enrichment is async, so a movie may not be enriched yet).
 	GetMetadataByMovieIDs(ctx context.Context, ids []int) (map[int]*MovieMetadata, error)
-	// NeedsEnrichment returns candidates that either have no metadata row
-	// (backfill — pass the zero time) or whose enriched_at is older than
-	// staleBefore (periodic refresh). Results are capped at limit.
+	// NeedsEnrichment returns candidates that have no metadata row (backfill
+	// — pass the zero time), whose enriched_at is older than staleBefore
+	// (periodic refresh), or whose credits were never ingested (credits
+	// backfill). Results are capped at limit.
 	NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]EnrichmentCandidate, error)
+	// MarkEnrichmentStale clears the credits marker so NeedsEnrichment re-picks
+	// the movie on the next drain. Used when a movie's external identity
+	// changes: the enrich queue is in-memory, so without this backstop a lost
+	// enqueue would leave the previous film's metadata and credits in place
+	// until the periodic refresh TTL.
+	MarkEnrichmentStale(ctx context.Context, movieID int) error
 }

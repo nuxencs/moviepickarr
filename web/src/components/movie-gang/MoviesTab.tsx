@@ -11,7 +11,14 @@ import {
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar, PickerTag, Rating } from "@/components/movie-gang/Bits";
-import { dateTimeParts, hueOf, plural, relativeDate, runtimeLabel, yearOf } from "@/components/movie-gang/lib";
+import {
+  dateTimeParts,
+  hueOf,
+  plural,
+  relativeDate,
+  runtimeLabel,
+  yearOf,
+} from "@/components/movie-gang/lib";
 import { MovieModal } from "@/components/movie-gang/MovieModal";
 import { Poster } from "@/components/movie-gang/Poster";
 import { toast } from "@/components/ui/toast";
@@ -30,6 +37,18 @@ export function MoviesTab() {
   const [search, setSearch] = useState("");
   const [view, setView] = useState<WatchedView>("grid");
   const [selected, setSelected] = useState<Movie | null>(null);
+
+  // The modal renders from the live lists so SSE-driven refetches (enrichment
+  // lands seconds after an add) flow into an open modal; the stored object is
+  // only the fallback while the movie momentarily sits in neither list.
+  const selectedLive = useMemo(() => {
+    if (!selected) return null;
+    return (
+      (pooled ?? []).find((m) => m.movieID === selected.movieID) ??
+      (watched ?? []).find((m) => m.movieID === selected.movieID) ??
+      selected
+    );
+  }, [selected, pooled, watched]);
 
   const lockMutation = useMutation({
     mutationFn: () => APIClient.settings.toggleLock(!isLocked),
@@ -51,9 +70,8 @@ export function MoviesTab() {
 
   const filteredWatched = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return watched ?? [];
     return (watched ?? []).filter(
-      (m) => m.title.toLowerCase().includes(q) || m.addedByName.toLowerCase().includes(q),
+      (m) => !q || m.title.toLowerCase().includes(q) || m.addedByName.toLowerCase().includes(q),
     );
   }, [watched, search]);
 
@@ -65,27 +83,29 @@ export function MoviesTab() {
           <div className="sec-title">
             <h2>In the Pool</h2>
             <span className="sec-count">
-              {pooled?.length ?? 0} locked in · round {isLocked ? "closed" : "open"}
+              {`${pooled?.length ?? 0} locked in · round ${isLocked ? "closed" : "open"}`}
             </span>
           </div>
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => lockMutation.mutate()}
-            disabled={lockMutation.isPending}
-          >
-            {isLocked ? <LockOpenIcon /> : <LockIcon />}
-            {isLocked ? "Unlock Pool" : "Lock Pool"}
-          </button>
+          <div className="watched-controls">
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => lockMutation.mutate()}
+              disabled={lockMutation.isPending}
+            >
+              {isLocked ? <LockOpenIcon /> : <LockIcon />}
+              {isLocked ? "Unlock Pool" : "Lock Pool"}
+            </button>
+          </div>
         </div>
 
         {poolError ? (
           <p className="empty text-destructive">Failed to load the pool.</p>
         ) : poolPending ? (
           <p className="empty">Loading pool…</p>
-        ) : pooled && pooled.length > 0 ? (
+        ) : (pooled ?? []).length > 0 ? (
           <div className="tile-grid tile-grid--pool">
-            {pooled.map((movie) => (
+            {(pooled ?? []).map((movie) => (
               <article className="tile" key={movie.movieID} {...tileProps(movie)}>
                 <Poster
                   title={movie.title}
@@ -115,7 +135,9 @@ export function MoviesTab() {
           <div className="sec-title">
             <h2>Watched</h2>
             <span className="sec-count">
-              {search ? `${filteredWatched.length}/${watched?.length ?? 0} films` : plural(watched?.length ?? 0, "film")}
+              {search
+                ? `${filteredWatched.length}/${watched?.length ?? 0} films`
+                : plural(watched?.length ?? 0, "film")}
             </span>
           </div>
           <div className="watched-controls">
@@ -143,9 +165,7 @@ export function MoviesTab() {
         ) : watchedPending ? (
           <p className="empty">Loading watched…</p>
         ) : filteredWatched.length === 0 ? (
-          <p className="empty">
-            {search ? "No films match your search" : "No movies watched yet"}
-          </p>
+          <p className="empty">{search ? "No films match your search" : "No movies watched yet"}</p>
         ) : view === "grid" ? (
           <div className="watch-body tile-grid" key="grid">
             {filteredWatched.map((movie) => (
@@ -177,7 +197,7 @@ export function MoviesTab() {
         )}
       </section>
 
-      {selected && <MovieModal movie={selected} onClose={() => setSelected(null)} />}
+      {selectedLive && <MovieModal movie={selectedLive} onClose={() => setSelected(null)} />}
     </>
   );
 }

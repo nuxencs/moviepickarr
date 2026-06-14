@@ -55,13 +55,21 @@ func TestFindByIMDb_EmptyResultsIsNotFound(t *testing.T) {
 
 func TestMovieDetails_Decode(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Credits must arrive in the same single API call.
+		if got := r.URL.Query().Get("append_to_response"); got != "credits" {
+			t.Errorf("expected append_to_response=credits, got %q (url %s)", got, r.URL)
+		}
 		_, _ = w.Write([]byte(`{
 			"id":603,"imdb_id":"tt0133093","overview":"ov",
 			"poster_path":null,"backdrop_path":"/bd.jpg",
 			"release_date":"1999-03-30","runtime":136,
 			"genres":[{"id":28,"name":"Action"},{"id":878,"name":"Science Fiction"}],
-			"vote_average":8.2,"vote_count":100,"tagline":"tg"
+			"vote_average":8.2,"vote_count":100,"tagline":"tg",
+			"credits":{
+				"cast":[{"id":6384,"name":"Keanu Reeves","profile_path":"/kr.jpg","character":"Neo","order":0}],
+				"crew":[{"id":9340,"name":"Lana Wachowski","profile_path":null,"job":"Director","department":"Directing"}]
+			}
 		}`))
 	}))
 	defer srv.Close()
@@ -78,6 +86,27 @@ func TestMovieDetails_Decode(t *testing.T) {
 	}
 	if len(got.Genres) != 2 || got.Genres[1].Name != "Science Fiction" {
 		t.Fatalf("genres mismatch: %v", got.Genres)
+	}
+
+	if len(got.Credits.Cast) != 1 {
+		t.Fatalf("expected 1 cast member, got %d", len(got.Credits.Cast))
+	}
+	cast := got.Credits.Cast[0]
+	if cast.ID != 6384 || cast.Name != "Keanu Reeves" || cast.Character != "Neo" || cast.Order != 0 {
+		t.Fatalf("cast mismatch: %+v", cast)
+	}
+	if cast.ProfilePath == nil || *cast.ProfilePath != "/kr.jpg" {
+		t.Fatalf("cast profile mismatch: %v", cast.ProfilePath)
+	}
+	if len(got.Credits.Crew) != 1 {
+		t.Fatalf("expected 1 crew member, got %d", len(got.Credits.Crew))
+	}
+	crew := got.Credits.Crew[0]
+	if crew.ID != 9340 || crew.Job != "Director" || crew.Department != "Directing" {
+		t.Fatalf("crew mismatch: %+v", crew)
+	}
+	if crew.ProfilePath != nil {
+		t.Fatalf("expected null crew profile -> nil, got %v", *crew.ProfilePath)
 	}
 }
 

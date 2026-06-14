@@ -121,6 +121,27 @@ type tmdbGenre struct {
 	Name string `json:"name"`
 }
 
+type tmdbCastMember struct {
+	ID          int     `json:"id"`
+	Name        string  `json:"name"`
+	ProfilePath *string `json:"profile_path"`
+	Character   string  `json:"character"`
+	Order       int     `json:"order"` // billing order
+}
+
+type tmdbCrewMember struct {
+	ID          int     `json:"id"`
+	Name        string  `json:"name"`
+	ProfilePath *string `json:"profile_path"`
+	Job         string  `json:"job"`
+	Department  string  `json:"department"`
+}
+
+type tmdbCredits struct {
+	Cast []tmdbCastMember `json:"cast"`
+	Crew []tmdbCrewMember `json:"crew"`
+}
+
 type tmdbMovieDetails struct {
 	ID           int         `json:"id"`
 	IMDbID       string      `json:"imdb_id"`
@@ -133,6 +154,7 @@ type tmdbMovieDetails struct {
 	VoteAverage  float64     `json:"vote_average"`
 	VoteCount    int         `json:"vote_count"`
 	Tagline      string      `json:"tagline"`
+	Credits      tmdbCredits `json:"credits"` // populated via append_to_response=credits
 }
 
 // FindByIMDb performs the TMDB reverse lookup: IMDb id -> TMDB movie.
@@ -151,9 +173,10 @@ func (c *tmdbClient) FindByIMDb(ctx context.Context, imdbID string) (tmdbMovie, 
 	return payload.MovieResults[0], nil
 }
 
-// MovieDetails fetches the full detail record for a TMDB movie id.
+// MovieDetails fetches the full detail record for a TMDB movie id, with the
+// credits appended so it stays a single API call.
 func (c *tmdbClient) MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDetails, error) {
-	u := fmt.Sprintf("%s/movie/%d", c.baseURL, tmdbID)
+	u := fmt.Sprintf("%s/movie/%d?append_to_response=credits", c.baseURL, tmdbID)
 
 	var payload tmdbMovieDetails
 	if err := c.doRequest(ctx, u, &payload); err != nil {

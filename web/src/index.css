@@ -208,7 +208,7 @@
   .poster--loading .poster__img { opacity: 0; }
   .poster__shimmer {
     position: absolute; inset: 0; z-index: 2; pointer-events: none;
-    background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.10) 50%, transparent 60%);
+    background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.10) 50%, transparent 75%);
     animation: mg-shimmer 1.4s ease-in-out infinite;
   }
   /* translateX from fully off-left to fully off-right so the highlight band is
@@ -273,7 +273,7 @@
   .avatar--loading .avatar__img { opacity: 0; }
   .avatar__shimmer {
     position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.13) 50%, transparent 60%);
+    background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.13) 50%, transparent 75%);
     animation: mg-shimmer 1.4s ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) { .avatar__shimmer { animation: none; } }

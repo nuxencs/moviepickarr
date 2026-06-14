@@ -495,6 +495,10 @@ func buildStatsResponse(
 	releaseYearCounts := make(map[int]int)
 	selectedRange := rangeForSelectedWindow(selectedWindow, now, customRange)
 	selectedWindowCount := 0
+	// The concrete films behind selectedWindowCount, in watch-recency order (the
+	// watched list arrives most-recent-first) — the client renders them as a
+	// poster rail, so this stays the single source of truth for "what matched".
+	matchedIDs := make([]int, 0)
 	runtimeTotal, runtimeMovies, longestRuntime := 0, 0, 0
 	longestTitle := ""
 	ratingTotal, ratedMovies := 0.0, 0
@@ -534,6 +538,7 @@ func buildStatsResponse(
 			continue
 		}
 		selectedWindowCount++
+		matchedIDs = append(matchedIDs, watched[i].ID)
 
 		localWatchedAt := watchedAt.In(location)
 		weekdayCounts[localWatchedAt.Weekday()]++
@@ -606,6 +611,7 @@ func buildStatsResponse(
 	return statsResponse{
 		SelectedWindow:      string(selectedWindow),
 		SelectedWindowCount: selectedWindowCount,
+		MatchedMovieIDs:     matchedIDs,
 		Timezone:            timezone,
 		TotalWatched:        countsByWindow[statsWindowAllTime],
 		CountsByWindow:      buildWindowCounts(countsByWindow),

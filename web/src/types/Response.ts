@@ -114,6 +114,9 @@ export interface StatsFiltersEcho {
 export interface StatsResponse {
     selectedWindow: StatsWindow;
     selectedWindowCount: number;
+    // Movie ids behind selectedWindowCount, watch-recency order — the client
+    // joins these to the cached watched list to render the films-in-window rail.
+    matchedMovieIDs: number[];
     timezone: string;
     totalWatched: number;
     countsByWindow: StatsWindowCount[];

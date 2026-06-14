@@ -53,21 +53,23 @@ type statsFiltersEcho struct {
 }
 
 type statsResponse struct {
-	SelectedWindow      string             `json:"selectedWindow"`
-	SelectedWindowCount int                `json:"selectedWindowCount"`
-	Timezone            string             `json:"timezone"`
-	TotalWatched        int                `json:"totalWatched"`
-	CountsByWindow      []statsWindowCount `json:"countsByWindow"`
-	WatchedByUser       []statsNamedCount  `json:"watchedByUser"`
-	WeekdayActivity     []statsNamedCount  `json:"weekdayActivity"`
-	HourActivity        []statsHourCount   `json:"hourActivity"`
-	TopGenres           []statsNamedCount  `json:"topGenres"`
-	TopDirectors        []statsPersonCount `json:"topDirectors"`
-	TopActors           []statsPersonCount `json:"topActors"`
-	ReleaseYears        []statsYearCount   `json:"releaseYears"`
-	Runtime             statsRuntime       `json:"runtime"`
-	AverageRating       float64            `json:"averageRating"`
-	Filters             statsFiltersEcho   `json:"filters"`
-	CustomRangeStart    string             `json:"customRangeStart,omitempty"`
-	CustomRangeEnd      string             `json:"customRangeEnd,omitempty"`
+	SelectedWindow      string `json:"selectedWindow"`
+	SelectedWindowCount int    `json:"selectedWindowCount"`
+	MatchedMovieIDs     []int  `json:"matchedMovieIDs"` // films behind the count, watch-recency order
+
+	Timezone         string             `json:"timezone"`
+	TotalWatched     int                `json:"totalWatched"`
+	CountsByWindow   []statsWindowCount `json:"countsByWindow"`
+	WatchedByUser    []statsNamedCount  `json:"watchedByUser"`
+	WeekdayActivity  []statsNamedCount  `json:"weekdayActivity"`
+	HourActivity     []statsHourCount   `json:"hourActivity"`
+	TopGenres        []statsNamedCount  `json:"topGenres"`
+	TopDirectors     []statsPersonCount `json:"topDirectors"`
+	TopActors        []statsPersonCount `json:"topActors"`
+	ReleaseYears     []statsYearCount   `json:"releaseYears"`
+	Runtime          statsRuntime       `json:"runtime"`
+	AverageRating    float64            `json:"averageRating"`
+	Filters          statsFiltersEcho   `json:"filters"`
+	CustomRangeStart string             `json:"customRangeStart,omitempty"`
+	CustomRangeEnd   string             `json:"customRangeEnd,omitempty"`
 }

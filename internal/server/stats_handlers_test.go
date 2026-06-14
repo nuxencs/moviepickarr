@@ -671,6 +671,41 @@ func TestBuildStatsResponse_Filters(t *testing.T) {
 	}
 }
 
+func TestBuildStatsResponse_MatchedMovieIDs(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
+	movies, meta, credits := statsEnrichedFixture(now)
+	members := []string{"Alice", "Bob", "Cara", "Dana"}
+
+	// Fixture order is watch-recency: The Matrix (1999, id 1), Speed (1994,
+	// id 2), Mystery (unenriched, id 3).
+	cases := []struct {
+		name    string
+		filters statsFilters
+		want    []int
+	}{
+		{name: "unfiltered keeps watch-recency order", filters: statsFilters{}, want: []int{1, 2, 3}},
+		{name: "decade narrows to its films", filters: statsFilters{ReleaseDecade: 1990}, want: []int{1, 2}},
+		{name: "year narrows to one film", filters: statsFilters{ReleaseYear: 1994}, want: []int{2}},
+		{name: "zero match is empty not nil", filters: statsFilters{Genre: "Action", ReleaseYear: 2003}, want: []int{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildStatsResponse(movies, meta, credits, members, tc.filters, statsWindow30d, nil, time.UTC, "UTC", now)
+			if !reflect.DeepEqual(got.MatchedMovieIDs, tc.want) {
+				t.Fatalf("matchedMovieIDs = %v, want %v", got.MatchedMovieIDs, tc.want)
+			}
+			// The rail and the KPI are the same set — len must equal the count.
+			if len(got.MatchedMovieIDs) != got.SelectedWindowCount {
+				t.Fatalf("matchedMovieIDs len %d != selectedWindowCount %d", len(got.MatchedMovieIDs), got.SelectedWindowCount)
+			}
+		})
+	}
+}
+
 func TestBuildStatsResponse_MembersAlwaysListed(t *testing.T) {
 	t.Parallel()
 

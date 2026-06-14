@@ -628,6 +628,9 @@
   }
 
   .statsec { margin-top: 30px; padding-top: 28px; border-top: 1px solid var(--line); }
+  /* Hugs the element above it (e.g. the films rail under the KPI strip, which
+     already closes with its own bottom rule) — no second divider. */
+  .statsec--flush { margin-top: 24px; padding-top: 0; border-top: none; }
   .statsec__title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0 0 20px; letter-spacing: -0.005em; }
 
   .bar-rows { display: flex; flex-direction: column; gap: 16px; }
@@ -702,6 +705,28 @@
   }
   .peoplecard__ext:hover { background: rgba(8,9,14,0.8); }
   .peoplecard__ext svg { width: 13px; height: 13px; }
+
+  /* Films-in-window rail: poster tiles of the matched films. Same inline
+     padding + negative margin as .peoplerail so the first tile's hover/focus
+     ring isn't clipped by the scroll container. */
+  /* align-items:flex-start + min-width:0 keep every tile at the 118px basis —
+     without them a poster's aspect-ratio resolves a larger content min-width
+     under the default stretch, so tiles render at uneven sizes. */
+  .movierail { display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; padding: 4px 4px 8px; margin-inline: -4px; scroll-padding-inline: 4px; }
+  .movietile {
+    flex: 0 0 118px; min-width: 0; display: flex; flex-direction: column; gap: 9px;
+    background: none; border: none; padding: 0; font: inherit; color: inherit;
+    text-align: left; cursor: pointer; border-radius: var(--r-sm);
+  }
+  .movietile .poster { transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+  .movietile:hover .poster,
+  .movietile:focus-visible .poster { transform: translateY(-4px); box-shadow: inset 0 0 0 1px var(--poster-ring), 0 0 0 2px var(--line-2); }
+  .movietile:focus-visible { outline-offset: -2px; }
+  .movietile__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .movietile__title { font-size: 12.5px; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--dur-fast) var(--ease); }
+  .movietile__sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .movietile:hover .movietile__title,
+  .movietile:focus-visible .movietile__title { color: var(--accent); }
 
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }
   @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; gap: 0; } }

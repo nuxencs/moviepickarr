@@ -139,6 +139,12 @@ filter. (Pickers no longer on the roster keep their historical rows only
 while their picks pass the active filters.) The roster comes from
 `userService.List`, so user create/delete both invalidate the stats cache.
 
+The response also returns `matchedMovieIDs` — the ids of the films behind
+`selectedWindowCount`, in watch-recency order — so the client can render the
+exact matched set (the films-in-window rail) by joining against its cached
+watched list, with no second fetch and no risk of the rail count drifting from
+the KPI.
+
 Besides the activity breakdowns (`countsByWindow`, `watchedByUser`,
 `weekdayActivity`, `hourActivity`), the response carries enrichment-derived
 aggregates for the selected window: `topGenres` (full list, count desc),

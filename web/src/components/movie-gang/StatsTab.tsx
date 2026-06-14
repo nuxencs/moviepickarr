@@ -19,15 +19,20 @@ import { FilterBar, FilterSelect } from "@/components/movie-gang/FilterBar";
 import {
   filterOptionsFrom,
   hasActiveFilters,
+  hueOf,
   type MovieFilters,
   NO_FILTERS,
   plural,
   profileUrl,
   runtimeLabel,
   tmdbPersonUrl,
+  yearOf,
 } from "@/components/movie-gang/lib";
+import { MovieModal } from "@/components/movie-gang/MovieModal";
+import { Poster } from "@/components/movie-gang/Poster";
 
 import type {
+  Movie,
   StatsHourCount,
   StatsNamedCount,
   StatsPersonCount,
@@ -58,6 +63,7 @@ export function StatsTab() {
   const [showPicker, setShowPicker] = useState(false);
   const [customRange, setCustomRange] = useState<DayRange | null>(null);
   const [filters, setFilters] = useState<MovieFilters>(NO_FILTERS);
+  const [selected, setSelected] = useState<Movie | null>(null);
 
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
@@ -91,6 +97,24 @@ export function StatsTab() {
     }
     return [...years].sort((a, b) => b - a);
   }, [watched]);
+
+  // Join the matched ids the stats endpoint returns back to the cached watched
+  // movies, so the films-in-window rail renders posters without a second fetch
+  // and its count can never drift from the "In window" KPI.
+  const watchedById = useMemo(() => {
+    const map = new Map<number, Movie>();
+    for (const movie of watched ?? []) map.set(movie.movieID, movie);
+    return map;
+  }, [watched]);
+  const matchedMovies = useMemo(
+    () =>
+      (stats?.matchedMovieIDs ?? [])
+        .map((id) => watchedById.get(id))
+        .filter((m): m is Movie => m !== undefined),
+    [stats, watchedById],
+  );
+  // Render the open modal from the live list so an SSE refetch flows into it.
+  const selectedLive = selected ? watchedById.get(selected.movieID) ?? selected : null;
 
   // The watch-year quick-select is sugar over the custom window: it reads as
   // "selected" only while the active custom range is exactly Jan 1 – Dec 31.
@@ -238,6 +262,8 @@ export function StatsTab() {
             <StatItem icon={<Clock3Icon size={15} />} label="Prime time" value={primeHour?.label ?? "—"} sub={plural(primeHour?.count ?? 0, "movie")} mono />
           </div>
 
+          {count > 0 && <MatchedMoviesRail movies={matchedMovies} count={count} onSelect={setSelected} />}
+
           {count === 0 && filtered ? (
             <p className="empty">No watched movies match these filters.</p>
           ) : (
@@ -272,7 +298,60 @@ export function StatsTab() {
           )}
         </>
       )}
+
+      {selectedLive && <MovieModal movie={selectedLive} onClose={() => setSelected(null)} />}
     </div>
+  );
+}
+
+/**
+ * Horizontal rail of the films behind the current window/filters — the concrete
+ * answer to the "In window" KPI. Posters reuse the Movies-tab tile visuals;
+ * clicking one opens the detail modal. The heading count comes from the KPI
+ * (the authoritative server count), so the two always agree.
+ */
+function MatchedMoviesRail({
+  movies,
+  count,
+  onSelect,
+}: {
+  movies: Movie[];
+  count: number;
+  onSelect: (movie: Movie) => void;
+}) {
+  if (movies.length === 0) return null;
+  return (
+    // Flush under the KPI strip (which already closes with a bottom rule) — the
+    // rail is the expansion of the "In window" count, not a separate section.
+    <section className="statsec statsec--flush">
+      <h3 className="statsec__title">Films in this window · {count}</h3>
+      <div className="movierail">
+        {movies.map((movie) => {
+          const sub = [yearOf(movie.releaseDate), movie.addedByName].filter(Boolean).join(" · ");
+          return (
+            <button
+              type="button"
+              className="movietile"
+              key={movie.movieID}
+              onClick={() => onSelect(movie)}
+              title={movie.title}
+            >
+              <Poster
+                title={movie.title}
+                hue={hueOf(movie.title)}
+                posterPath={movie.posterPath}
+                voteAverage={movie.voteAverage}
+                showTitle={false}
+              />
+              <span className="movietile__meta">
+                <span className="movietile__title">{movie.title}</span>
+                <span className="movietile__sub">{sub}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

@@ -28,8 +28,9 @@ on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   always has a row, zero or not, whatever the window or filters — weekday and
   hourly activity, custom date range), plus a TMDB deep-dive over the watched
   subset: hours-watched / average-rating KPIs (with an average-runtime
-  sub-line), a top-genres donut, most-watched director and actor rails, and a
-  release-decades timeline. One filter system sits under the header: the
+  sub-line), a horizontally-scrolling rail of the actual films behind the count
+  (click a poster for its detail modal), a top-genres donut, most-watched
+  director and actor rails, and a release-decades timeline. One filter system sits under the header: the
   time presets, the watch-year quick-select (snaps the custom window to a
   calendar year), genre, release year **or** whole decade, and multi-select **Actors** / **Crew**
   people filters — any-of within a list, AND across filters; actors match cast

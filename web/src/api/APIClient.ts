@@ -14,6 +14,8 @@ interface StatsQuery {
     // repeated params and all but the first would be dropped server-side.
     actorIds?: string;
     crewIds?: string;
+    // Comma-joined user ids of the movie adders (pre-joined, like actorIds).
+    addedByIds?: string;
     releaseYear?: number;
     // Decade floor (1990 ⇒ 1990–1999); mutually exclusive with releaseYear.
     decade?: number;
@@ -213,7 +215,7 @@ export const APIClient = {
             appClient.Get<{id: number, name: string}>("api/v1/settings/next-picker"),
     },
     stats: {
-        get: ({ window, timezone, start, end, genre, actorIds, crewIds, releaseYear, decade }: StatsQuery) =>
+        get: ({ window, timezone, start, end, genre, actorIds, crewIds, addedByIds, releaseYear, decade }: StatsQuery) =>
             appClient.Get<StatsResponse>("api/v1/stats", {
                 queryString: {
                     window,
@@ -223,6 +225,7 @@ export const APIClient = {
                     genre,
                     actorIds,
                     crewIds,
+                    addedByIds,
                     releaseYear,
                     decade,
                 },

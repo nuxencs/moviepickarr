@@ -138,10 +138,19 @@ export interface MovieFilters {
   crew: PersonFilter[];
   year: number | null;
   decade: number | null;
+  /** Adders/pickers of the movie — any-of, matched against `addedByID`. */
+  pickers: PersonFilter[];
 }
 
 /** The everything-passes filter state — handy as `useState` initial value. */
-export const NO_FILTERS: MovieFilters = { genre: null, actors: [], crew: [], year: null, decade: null };
+export const NO_FILTERS: MovieFilters = {
+  genre: null,
+  actors: [],
+  crew: [],
+  year: null,
+  decade: null,
+  pickers: [],
+};
 
 /** Whether any filter is set (drives the stats empty copy). */
 export function hasActiveFilters(filters: MovieFilters): boolean {
@@ -150,7 +159,8 @@ export function hasActiveFilters(filters: MovieFilters): boolean {
     filters.actors.length > 0 ||
     filters.crew.length > 0 ||
     filters.year !== null ||
-    filters.decade !== null
+    filters.decade !== null ||
+    filters.pickers.length > 0
   );
 }
 
@@ -165,18 +175,21 @@ export interface FilterOptions {
   actors: PersonOption[];
   crew: PersonOption[];
   years: number[];
+  /** The members who added the movies, by id, sorted A→Z by name. */
+  pickers: PersonOption[];
 }
 
 /**
  * Filter options derived from an already-cached movie list (no endpoint):
  * unique genres sorted A→Z, cast and crew collected into separate lists (each
- * sorted A→Z by name) matching the actors/crew filter split, and unique release
- * years newest-first.
+ * sorted A→Z by name) matching the actors/crew filter split, the unique adders
+ * (pickers) A→Z, and unique release years newest-first.
  */
 export function filterOptionsFrom(movies: Movie[]): FilterOptions {
   const genres = new Set<string>();
   const actors = new Map<number, PersonOption>();
   const crew = new Map<number, PersonOption>();
+  const pickers = new Map<number, PersonOption>();
   const years = new Set<number>();
 
   // One filter entry per person per list — multiple credits (an actor in twin
@@ -191,6 +204,9 @@ export function filterOptionsFrom(movies: Movie[]): FilterOptions {
     for (const genre of movie.genres ?? []) genres.add(genre);
     collectInto(actors, movie.cast);
     collectInto(crew, movie.crew);
+    if (movie.addedByID && !pickers.has(movie.addedByID)) {
+      pickers.set(movie.addedByID, { id: movie.addedByID, name: movie.addedByName });
+    }
     const year = yearOf(movie.releaseDate);
     if (year !== undefined) years.add(year);
   }
@@ -198,6 +214,7 @@ export function filterOptionsFrom(movies: Movie[]): FilterOptions {
   const byName = (a: PersonOption, b: PersonOption) => a.name.localeCompare(b.name);
 
   return {
+    pickers: [...pickers.values()].sort(byName),
     genres: [...genres].sort((a, b) => a.localeCompare(b)),
     actors: [...actors.values()].sort(byName),
     crew: [...crew.values()].sort(byName),

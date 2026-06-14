@@ -97,7 +97,7 @@ old shadcn primitives.
   Inside `.statsfilters` the seg is restyled to the chips' dialect (see Stats
   filter row below).
 - **Filter bar:** `.filterbar` + `.filterchip` (`FilterBar.tsx`) — a wrapping row of
-  mono 12px chip-trigger selects (Genre / Actors / Crew / Release year, stats-only).
+  mono 12px chip-trigger selects (Genre / Actors / Crew / Picked by / Release year, stats-only).
   The chip wraps two real buttons — the trigger and, when active, a clear X — so both
   stay keyboard-reachable without nesting buttons. The dropdown reuses the `.mg-menu`
   surface and motion as a listbox (`.filtermenu` scopes its extras: an inline `.field`
@@ -115,7 +115,7 @@ old shadcn primitives.
   (`.filtermenu__item--year`), where a decade and an exact year are mutually exclusive
   (picking one clears the other) and the chip reads `Release year · 1990s` or `· 1994`.
 - **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
-  quick-select, genre, actors, crew, release year) in a single wrapping row under the
+  quick-select, genre, actors, crew, picked by, release year) in a single wrapping row under the
   stats header. The seg stays a seg (presets are mutually exclusive) but drops its
   filled-container costume for the chips' dialect: transparent, `--line-2` outline,
   `--r-sm`, mono 12px, 30px rhythm, hairline dividers between segments, and the

@@ -78,7 +78,7 @@ func (h *handler) handleGetStats(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	filters, err := parseStatsFilters(c.Query("genre"), c.Query("actorIds"), c.Query("crewIds"), c.Query("releaseYear"), c.Query("decade"))
+	filters, err := parseStatsFilters(c.Query("genre"), c.Query("actorIds"), c.Query("crewIds"), c.Query("releaseYear"), c.Query("decade"), c.Query("addedByIds"))
 	if err != nil {
 		return writeError(c, err)
 	}
@@ -139,9 +139,10 @@ func buildStatsCacheKey(selectedWindow statsWindow, timezone string, customRange
 	// Genre matching is case-insensitive, so the key lowercases it — "Action"
 	// and "action" hit the same entry. The people lists are sorted and deduped
 	// at parse time, so equivalent selections serialize to the same segment.
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%d|%d",
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%d|%d|%s",
 		selectedWindow, timezone, start, end,
-		strings.ToLower(filters.Genre), joinIDs(filters.ActorIDs), joinIDs(filters.CrewIDs), filters.ReleaseYear, filters.ReleaseDecade)
+		strings.ToLower(filters.Genre), joinIDs(filters.ActorIDs), joinIDs(filters.CrewIDs),
+		filters.ReleaseYear, filters.ReleaseDecade, joinIDs(filters.AddedByIDs))
 }
 
 func (h *handler) getCachedStats(key string, now time.Time) (statsResponse, bool) {
@@ -232,9 +233,10 @@ type statsFilters struct {
 	CrewIDs       []int  // TMDB person ids, sorted+deduped; matched against crew credits
 	ReleaseYear   int    // exact release year; mutually exclusive with ReleaseDecade
 	ReleaseDecade int    // decade floor (1990 ⇒ [1990, 1999]); mutually exclusive with ReleaseYear
+	AddedByIDs    []int  // user ids of the movie's adder/picker, sorted+deduped (any-of)
 }
 
-func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw string) (statsFilters, error) {
+func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw, addedByRaw string) (statsFilters, error) {
 	// Clone: the raw value is fiber's zero-copy view of the request buffer,
 	// but the genre echo outlives the handler inside the stats cache.
 	filters := statsFilters{Genre: strings.Clone(strings.TrimSpace(genreRaw))}
@@ -247,6 +249,9 @@ func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw string) 
 		return statsFilters{}, err
 	}
 	if filters.CrewIDs, err = parseIDList("crewIds", crewRaw); err != nil {
+		return statsFilters{}, err
+	}
+	if filters.AddedByIDs, err = parseIDList("addedByIds", addedByRaw); err != nil {
 		return statsFilters{}, err
 	}
 
@@ -513,6 +518,11 @@ func buildStatsResponse(
 		// Filters narrow EVERY aggregate — countsByWindow and the all-time
 		// member ordering included — to the matching subset.
 		if !movieMatchesStatsFilters(md, movieCredits, filters) {
+			continue
+		}
+		// Added-by is a movie-level filter (not metadata), so it gates here rather
+		// than in movieMatchesStatsFilters — any-of across the selected pickers.
+		if len(filters.AddedByIDs) > 0 && !slices.Contains(filters.AddedByIDs, watched[i].AddedByID) {
 			continue
 		}
 

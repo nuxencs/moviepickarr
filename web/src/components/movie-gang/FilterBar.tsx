@@ -553,6 +553,14 @@ export function FilterBar({
         choices={personChoices(options.crew)}
         onChange={(ids) => onChange({ ...value, crew: toPersonFilters(ids, options.crew, value.crew) })}
       />
+      <FilterMultiSelect
+        label="Picked by"
+        searchable={options.pickers.length >= SEARCHABLE_FROM}
+        values={value.pickers.map((p) => p.id)}
+        valueLabels={new Map(value.pickers.map((p) => [p.id, p.name]))}
+        choices={personChoices(options.pickers)}
+        onChange={(ids) => onChange({ ...value, pickers: toPersonFilters(ids, options.pickers, value.pickers) })}
+      />
       <ReleaseYearSelect
         label={yearLabel}
         years={options.years}

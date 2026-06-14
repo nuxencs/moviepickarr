@@ -125,7 +125,8 @@ Env knobs (all optional; sensible defaults): `TMDB_ENRICH_MIN_INTERVAL_MS`
 the optional, combinable filters `genre` (case-insensitive name), `actorIds` /
 `crewIds` (comma-separated positive TMDB person ids, ≤25 each, deduped +
 sorted server-side; `actorIds` match cast credits, `crewIds` match crew
-credits — any whitelisted job, since crew rows are job-whitelisted at ingest)
+credits — any whitelisted job, since crew rows are job-whitelisted at ingest),
+`addedByIds` (comma-separated user ids of the movie's adder/picker, any-of),
 and either `releaseYear` (exact year, 1870–2100) or `decade` (its floor — a
 multiple of 10 in the same range, so `1990` ⇒ 1990–1999; mutually exclusive with
 `releaseYear`). People lists are **any-of within a list and
@@ -156,7 +157,7 @@ decade bucketing is the frontend's concern), `runtime`
 active filters with `actors` / `crew` as `{personId, name}` arrays, names
 resolved from the credit rows).
 
-Responses are cached per `window|tz|start|end|genre|actorIds|crewIds|releaseYear|decade`
+Responses are cached per `window|tz|start|end|genre|actorIds|crewIds|releaseYear|decade|addedByIds`
 key (genre lowercased; id lists in canonical sorted form, so request order
 can't split the cache) with a short TTL. The cache is invalidated when a movie is
 watched/edited/user-deleted **and** after every successful enrichment

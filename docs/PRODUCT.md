@@ -32,7 +32,8 @@ on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   (click a poster for its detail modal), a top-genres donut, most-watched
   director and actor rails, and a release-decades timeline. One filter system sits under the header: the
   time presets, the watch-year quick-select (snaps the custom window to a
-  calendar year), genre, release year **or** whole decade, and multi-select **Actors** / **Crew**
+  calendar year), genre, release year **or** whole decade, **Picked by** (who added
+  the movie), and multi-select **Actors** / **Crew**
   people filters — any-of within a list, AND across filters; actors match cast
   credits, crew matches any whitelisted crew job (so filtering by a director
   also counts their writer credits). Clicking a person card on a rail toggles

@@ -81,6 +81,7 @@ export function StatsTab() {
       filters.genre ?? undefined,
       filters.actors.map((p) => p.id),
       filters.crew.map((p) => p.id),
+      filters.pickers.map((p) => p.id),
       filters.year ?? undefined,
       filters.decade ?? undefined,
     ),

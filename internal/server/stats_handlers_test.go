@@ -293,13 +293,13 @@ func TestBuildStatsCacheKey(t *testing.T) {
 	}
 
 	got := buildStatsCacheKey(statsWindowCustom, "Europe/Berlin", custom, statsFilters{})
-	want := "custom|Europe/Berlin|2026-01-01|2026-01-31||||0|0"
+	want := "custom|Europe/Berlin|2026-01-01|2026-01-31||||0|0|"
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 
 	gotPreset := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{})
-	wantPreset := "30d|UTC||||||0|0"
+	wantPreset := "30d|UTC||||||0|0|"
 	if gotPreset != wantPreset {
 		t.Fatalf("expected %q, got %q", wantPreset, gotPreset)
 	}
@@ -307,9 +307,9 @@ func TestBuildStatsCacheKey(t *testing.T) {
 	// Filters are part of the key — same window, different subsets must never
 	// collide — and the genre is lowercased to match the case-insensitive filter.
 	gotFiltered := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{
-		Genre: "Action", ActorIDs: []int{530, 6384}, CrewIDs: []int{9340}, ReleaseYear: 1999,
+		Genre: "Action", ActorIDs: []int{530, 6384}, CrewIDs: []int{9340}, ReleaseYear: 1999, AddedByIDs: []int{7},
 	})
-	wantFiltered := "30d|UTC|||action|530,6384|9340|1999|0"
+	wantFiltered := "30d|UTC|||action|530,6384|9340|1999|0|7"
 	if gotFiltered != wantFiltered {
 		t.Fatalf("expected %q, got %q", wantFiltered, gotFiltered)
 	}
@@ -320,7 +320,7 @@ func TestBuildStatsCacheKey(t *testing.T) {
 	// A decade filter occupies its own key segment, so it can never collide with
 	// the equivalent exact-year selection.
 	gotDecade := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{ReleaseDecade: 1990})
-	wantDecade := "30d|UTC||||||0|1990"
+	wantDecade := "30d|UTC||||||0|1990|"
 	if gotDecade != wantDecade {
 		t.Fatalf("expected %q, got %q", wantDecade, gotDecade)
 	}
@@ -328,13 +328,23 @@ func TestBuildStatsCacheKey(t *testing.T) {
 		t.Fatalf("decade key must differ from the same-numbered year key")
 	}
 
+	// The added-by (picker) filter is its own key segment too.
+	gotAddedBy := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{AddedByIDs: []int{10, 20}})
+	wantAddedBy := "30d|UTC||||||0|0|10,20"
+	if gotAddedBy != wantAddedBy {
+		t.Fatalf("expected %q, got %q", wantAddedBy, gotAddedBy)
+	}
+	if gotAddedBy == gotPreset {
+		t.Fatalf("added-by key must differ from the unfiltered key")
+	}
+
 	// The id lists are canonicalized at parse time, so the same selection in a
 	// different request order must land on the same cache entry.
-	first, err := parseStatsFilters("", "6384,530", "", "", "")
+	first, err := parseStatsFilters("", "6384,530", "", "", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	second, err := parseStatsFilters("", "530,6384", "", "", "")
+	second, err := parseStatsFilters("", "530,6384", "", "", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -706,6 +716,45 @@ func TestBuildStatsResponse_MatchedMovieIDs(t *testing.T) {
 	}
 }
 
+func TestBuildStatsResponse_AddedByFilter(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
+	// Distinct picker (added-by) ids; no metadata needed — added-by gates on the
+	// movie itself, independent of enrichment.
+	movies := []*domain.Movie{
+		{ID: 1, Title: "A", AddedByID: 10, AddedByName: "Alice", WatchedAt: new(now.Add(-1 * time.Hour))},
+		{ID: 2, Title: "B", AddedByID: 20, AddedByName: "Bob", WatchedAt: new(now.Add(-2 * time.Hour))},
+		{ID: 3, Title: "C", AddedByID: 10, AddedByName: "Alice", WatchedAt: new(now.Add(-3 * time.Hour))},
+	}
+	members := []string{"Alice", "Bob"}
+
+	cases := []struct {
+		name      string
+		filters   statsFilters
+		wantTotal int
+		wantIDs   []int
+	}{
+		{name: "no picker filter keeps all", filters: statsFilters{}, wantTotal: 3, wantIDs: []int{1, 2, 3}},
+		{name: "single picker (any-of)", filters: statsFilters{AddedByIDs: []int{10}}, wantTotal: 2, wantIDs: []int{1, 3}},
+		{name: "two pickers union", filters: statsFilters{AddedByIDs: []int{10, 20}}, wantTotal: 3, wantIDs: []int{1, 2, 3}},
+		{name: "picker with no picks", filters: statsFilters{AddedByIDs: []int{99}}, wantTotal: 0, wantIDs: []int{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := buildStatsResponse(movies, metaByID{}, creditsByID{}, members, tc.filters, statsWindow30d, nil, time.UTC, "UTC", now)
+			if got.SelectedWindowCount != tc.wantTotal {
+				t.Fatalf("count = %d, want %d", got.SelectedWindowCount, tc.wantTotal)
+			}
+			if !reflect.DeepEqual(got.MatchedMovieIDs, tc.wantIDs) {
+				t.Fatalf("matchedMovieIDs = %v, want %v", got.MatchedMovieIDs, tc.wantIDs)
+			}
+		})
+	}
+}
+
 func TestBuildStatsResponse_MembersAlwaysListed(t *testing.T) {
 	t.Parallel()
 
@@ -849,6 +898,7 @@ func TestParseStatsFilters(t *testing.T) {
 		crew    string
 		year    string
 		decade  string
+		addedBy string
 		want    statsFilters
 		wantErr bool
 	}{
@@ -856,6 +906,8 @@ func TestParseStatsFilters(t *testing.T) {
 		{name: "genre trimmed", genre: "  Action  ", want: statsFilters{Genre: "Action"}},
 		{name: "valid actorIds", actors: "6384", want: statsFilters{ActorIDs: []int{6384}}},
 		{name: "valid crewIds", crew: "9340,56", want: statsFilters{CrewIDs: []int{56, 9340}}},
+		{name: "valid addedByIds", addedBy: "20,10", want: statsFilters{AddedByIDs: []int{10, 20}}},
+		{name: "addedByIds garbage", addedBy: "alice", wantErr: true},
 		{name: "valid releaseYear", year: "1999", want: statsFilters{ReleaseYear: 1999}},
 		{
 			name: "all combined", genre: "Drama", actors: "1,2", crew: "3", year: "2001",
@@ -884,7 +936,7 @@ func TestParseStatsFilters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := parseStatsFilters(tc.genre, tc.actors, tc.crew, tc.year, tc.decade)
+			got, err := parseStatsFilters(tc.genre, tc.actors, tc.crew, tc.year, tc.decade, tc.addedBy)
 			if tc.wantErr {
 				if !errors.Is(err, domain.ErrInvalidInput) {
 					t.Fatalf("expected ErrInvalidInput, got %v", err)

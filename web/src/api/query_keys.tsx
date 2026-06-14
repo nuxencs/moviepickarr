@@ -22,6 +22,6 @@ export const StatsKeys = {
     all: ["stats"] as const,
     // actorsKey/crewKey are the canonical comma-joined id lists (sorted in
     // StatsGetQueryOptions), so selection order can't split the cache.
-    byWindow: (window: string, timezone: string, start?: string, end?: string, genre?: string, actorsKey?: string, crewKey?: string, releaseYear?: number, decade?: number) =>
-      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? "", "genre", genre ?? "", "actors", actorsKey ?? "", "crew", crewKey ?? "", "releaseYear", releaseYear ?? 0, "decade", decade ?? 0] as const,
+    byWindow: (window: string, timezone: string, start?: string, end?: string, genre?: string, actorsKey?: string, crewKey?: string, addedByKey?: string, releaseYear?: number, decade?: number) =>
+      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? "", "genre", genre ?? "", "actors", actorsKey ?? "", "crew", crewKey ?? "", "addedBy", addedByKey ?? "", "releaseYear", releaseYear ?? 0, "decade", decade ?? 0] as const,
 }

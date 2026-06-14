@@ -74,15 +74,17 @@ export const StatsGetQueryOptions = (
   genre?: string,
   actorIds?: number[],
   crewIds?: number[],
+  addedByIds?: number[],
   releaseYear?: number,
   decade?: number,
 ) => {
   const actorsKey = idListKey(actorIds);
   const crewKey = idListKey(crewIds);
+  const addedByKey = idListKey(addedByIds);
   return queryOptions({
-    queryKey: StatsKeys.byWindow(window, timezone, start, end, genre, actorsKey, crewKey, releaseYear, decade),
+    queryKey: StatsKeys.byWindow(window, timezone, start, end, genre, actorsKey, crewKey, addedByKey, releaseYear, decade),
     queryFn: () =>
-      APIClient.stats.get({ window, timezone, start, end, genre, actorIds: actorsKey, crewIds: crewKey, releaseYear, decade }),
+      APIClient.stats.get({ window, timezone, start, end, genre, actorIds: actorsKey, crewIds: crewKey, addedByIds: addedByKey, releaseYear, decade }),
     refetchOnWindowFocus: false,
     staleTime: 60_000,
     gcTime: 600_000,

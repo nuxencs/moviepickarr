@@ -1,5 +1,5 @@
 import { StarIcon } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import {
   avatarBg,
@@ -31,19 +31,37 @@ export function Avatar({
 }) {
   const h = hue ?? hueOf(name);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
   const showImg = Boolean(src) && src !== failedSrc;
+
+  // Sync `loaded` from a cached headshot's `complete` before paint, and reset on
+  // a source change, so the photo crossfades in over the initials instead of
+  // popping. Members without a photo never enter the loading state.
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    setLoaded(Boolean(img?.complete && img.naturalWidth > 0));
+  }, [src]);
+  const loading = showImg && !loaded;
+
   return (
-    <span className="avatar" style={{ ["--s" as string]: `${size}px`, backgroundImage: avatarBg(h) }}>
+    <span
+      className={`avatar${loading ? " avatar--loading" : ""}`}
+      style={{ ["--s" as string]: `${size}px`, backgroundImage: avatarBg(h) }}
+    >
       {initialsOf(name)}
       {showImg && (
         <img
+          ref={imgRef}
           className="avatar__img"
           src={src ?? undefined}
           alt=""
           loading="lazy"
+          onLoad={() => setLoaded(true)}
           onError={() => setFailedSrc(src ?? null)}
         />
       )}
+      {loading && <span className="avatar__shimmer" aria-hidden="true" />}
     </span>
   );
 }

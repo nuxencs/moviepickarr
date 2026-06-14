@@ -267,7 +267,16 @@
   }
   /* Optional photo (TMDB headshot) layered over the initials gradient — the
      initials stay underneath as the loading/error fallback. */
-  .avatar__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .avatar__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity var(--dur) var(--ease); }
+  /* Headshot crossfades in over the initials; a shimmer sweeps while it loads
+     (reuses the poster's mg-shimmer keyframe). */
+  .avatar--loading .avatar__img { opacity: 0; }
+  .avatar__shimmer {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.13) 50%, transparent 60%);
+    animation: mg-shimmer 1.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) { .avatar__shimmer { animation: none; } }
 
   /* ---- Buttons ---- */
   .btn {

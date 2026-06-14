@@ -148,9 +148,15 @@ old shadcn primitives.
   heading "Films in Filter View") — the concrete films behind the count (the active
   window AND all filters) as a horizontally scrollable strip of `Poster` tiles (title +
   year·picker caption), each a button that opens the movie modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
-  first tile's hover/focus ring isn't clipped; hidden when nothing matches. The set
+  first tile's hover/focus ring isn't clipped. The set
   comes from the stats endpoint's `matchedMovieIDs` joined to the cached watched list,
-  so its count can't drift from the KPI.
+  so its count can't drift from the KPI. The rail always renders and owns the filter
+  view's single empty state: when the count is zero it keeps its heading and shows one
+  `.empty` placeholder (worded by whether a filter is narrowing it), and it is the only
+  thing under the KPI strip — the member leaderboard, activity charts and people rails
+  all drop away with it, because zeroed bars under an empty filter view are noise, not
+  information. (A non-zero count with no cached posters yet is the transient join lag,
+  so the placeholder reads "Loading films…".)
 - **Genre donut:** `.genredonut` + `.donut` + `.donut-legend` (stats) — a pure-CSS
   `conic-gradient` disc (hole cut with a `radial-gradient` mask, so any background
   shows through) of the top genres + "Other". Segments use ONE hue: the accent at
@@ -335,6 +341,12 @@ The whole hero also rides the global `zoom` ramp (§13) on top of this step.
 
 All "nothing here" / placeholder copy uses the single `.empty` class (centered,
 `--ink-2`, 32px vertical padding). Do not hand-roll per-tab padding/alignment.
+
+On the **stats** tab the empty state is anchored to the films-in-filter-view rail
+(it is the expansion of the "In window" KPI): an empty filter view collapses the whole
+body to that one rail placeholder rather than showing zeroed leaderboards and charts.
+The member leaderboard and activity charts therefore render only when the filter view
+actually has movies.
 
 ---
 

@@ -263,11 +263,14 @@ export function StatsTab() {
             <StatItem icon={<Clock3Icon size={15} />} label="Prime time" value={primeHour?.label ?? "—"} sub={plural(primeHour?.count ?? 0, "movie")} mono />
           </div>
 
-          {count > 0 && <MatchedMoviesRail movies={matchedMovies} count={count} onSelect={setSelected} />}
+          {/* The films rail always renders — it owns the single empty state for the
+              filter view (it is the visual expansion of the "In window" KPI). When
+              the count is zero every downstream section drops away with it: zeroed
+              member bars and empty charts under an empty filter view are noise, not
+              information. */}
+          <MatchedMoviesRail movies={matchedMovies} count={count} filtered={filtered} onSelect={setSelected} />
 
-          {count === 0 && filtered ? (
-            <p className="empty">No watched movies match these filters.</p>
-          ) : (
+          {count > 0 && (
             <>
               <PickedByMember rows={stats.watchedByUser} />
 
@@ -314,44 +317,58 @@ export function StatsTab() {
 function MatchedMoviesRail({
   movies,
   count,
+  filtered,
   onSelect,
 }: {
   movies: Movie[];
   count: number;
+  filtered: boolean;
   onSelect: (movie: Movie) => void;
 }) {
-  if (movies.length === 0) return null;
   return (
     // Flush under the KPI strip (which already closes with a bottom rule) — the
     // rail is the expansion of the "In window" count, not a separate section.
     <section className="statsec statsec--flush">
       <h3 className="statsec__title">Films in Filter View · {count}</h3>
-      <div className="movierail">
-        {movies.map((movie) => {
-          const sub = [yearOf(movie.releaseDate), movie.addedByName].filter(Boolean).join(" · ");
-          return (
-            <button
-              type="button"
-              className="movietile"
-              key={movie.movieID}
-              onClick={() => onSelect(movie)}
-              title={movie.title}
-            >
-              <Poster
+      {movies.length === 0 ? (
+        // count > 0 with no posters means the cached watched list is still
+        // catching up to the stats count (transient); count 0 is a genuinely
+        // empty filter view, worded by whether a filter is narrowing it.
+        <p className="empty">
+          {count > 0
+            ? "Loading films…"
+            : filtered
+              ? "No films match the current filter view."
+              : "No films watched in this window yet."}
+        </p>
+      ) : (
+        <div className="movierail">
+          {movies.map((movie) => {
+            const sub = [yearOf(movie.releaseDate), movie.addedByName].filter(Boolean).join(" · ");
+            return (
+              <button
+                type="button"
+                className="movietile"
+                key={movie.movieID}
+                onClick={() => onSelect(movie)}
                 title={movie.title}
-                hue={hueOf(movie.title)}
-                posterPath={movie.posterPath}
-                voteAverage={movie.voteAverage}
-                showTitle={false}
-              />
-              <span className="movietile__meta">
-                <span className="movietile__title">{movie.title}</span>
-                <span className="movietile__sub">{sub}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+              >
+                <Poster
+                  title={movie.title}
+                  hue={hueOf(movie.title)}
+                  posterPath={movie.posterPath}
+                  voteAverage={movie.voteAverage}
+                  showTitle={false}
+                />
+                <span className="movietile__meta">
+                  <span className="movietile__title">{movie.title}</span>
+                  <span className="movietile__sub">{sub}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

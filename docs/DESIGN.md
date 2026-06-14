@@ -142,10 +142,10 @@ old shadcn primitives.
   always-visible corner scrim chip (hover-only would strand touch) with its own tab
   stop — opens their TMDB page without touching the filter. Active = gold ring on
   the photo + gold name (gold is state).
-- **Films-in-window rail:** `.movierail` + `.movietile` (stats, under the KPI strip) —
-  the concrete films behind the "In window" count as a horizontally scrollable strip
-  of `Poster` tiles (title + year·picker caption), each a button that opens the movie
-  modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
+- **Films-in-filter-view rail:** `.movierail` + `.movietile` (stats, under the KPI strip,
+  heading "Films in Filter View") — the concrete films behind the count (the active
+  window AND all filters) as a horizontally scrollable strip of `Poster` tiles (title +
+  year·picker caption), each a button that opens the movie modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
   first tile's hover/focus ring isn't clipped; hidden when nothing matches. The set
   comes from the stats endpoint's `matchedMovieIDs` joined to the cached watched list,
   so its count can't drift from the KPI.

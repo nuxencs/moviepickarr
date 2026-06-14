@@ -100,8 +100,8 @@ export function StatsTab() {
   }, [watched]);
 
   // Join the matched ids the stats endpoint returns back to the cached watched
-  // movies, so the films-in-window rail renders posters without a second fetch
-  // and its count can never drift from the "In window" KPI.
+  // movies, so the films-in-filter-view rail renders posters without a second
+  // fetch and its count can never drift from the "In window" KPI.
   const watchedById = useMemo(() => {
     const map = new Map<number, Movie>();
     for (const movie of watched ?? []) map.set(movie.movieID, movie);
@@ -325,7 +325,7 @@ function MatchedMoviesRail({
     // Flush under the KPI strip (which already closes with a bottom rule) — the
     // rail is the expansion of the "In window" count, not a separate section.
     <section className="statsec statsec--flush">
-      <h3 className="statsec__title">Films in this window · {count}</h3>
+      <h3 className="statsec__title">Films in Filter View · {count}</h3>
       <div className="movierail">
         {movies.map((movie) => {
           const sub = [yearOf(movie.releaseDate), movie.addedByName].filter(Boolean).join(" · ");

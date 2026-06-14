@@ -96,7 +96,7 @@ func TestUpsertAndGetMetadata_RoundTrip(t *testing.T) {
 
 func TestUpsertMetadata_Idempotent(t *testing.T) {
 	t.Parallel()
-	ctx, meta, movies, users := setupMetadataRepos(t)
+	ctx, credits, meta, movies, users := setupCreditsRepos(t)
 	movieID := seedMovie(t, ctx, users, movies, "Bob")
 
 	first := domain.MovieMetadata{MovieID: movieID, Runtime: 142, Genres: []string{"Drama"}}
@@ -122,7 +122,11 @@ func TestUpsertMetadata_Idempotent(t *testing.T) {
 		t.Fatalf("expected genres replaced, got %v", got.Genres)
 	}
 
-	// Still exactly one row for this movie (no longer a backfill candidate).
+	// Still exactly one row for this movie (no longer a backfill candidate
+	// once the credits marker is stamped too).
+	if err := credits.ReplaceCredits(ctx, movieID, nil); err != nil {
+		t.Fatalf("stamp credits: %v", err)
+	}
 	candidates, err := meta.NeedsEnrichment(ctx, time.Time{}, 100)
 	if err != nil {
 		t.Fatalf("needs-enrichment: %v", err)
@@ -250,7 +254,7 @@ func TestSetExternalIDs_RoundTrip(t *testing.T) {
 
 func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 	t.Parallel()
-	ctx, meta, movies, users := setupMetadataRepos(t)
+	ctx, credits, meta, movies, users := setupCreditsRepos(t)
 	idA := seedMovie(t, ctx, users, movies, "Dave")
 	idB := seedMovie(t, ctx, users, movies, "Erin")
 
@@ -263,9 +267,12 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 		t.Fatalf("expected both movies as backfill candidates, got %v", backfill)
 	}
 
-	// Enrich A. Now backfill returns only B.
+	// Enrich A fully (metadata + credits stamp). Now backfill returns only B.
 	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: idA}); err != nil {
 		t.Fatalf("upsert A: %v", err)
+	}
+	if err := credits.ReplaceCredits(ctx, idA, nil); err != nil {
+		t.Fatalf("stamp A credits: %v", err)
 	}
 	backfill, err = meta.NeedsEnrichment(ctx, time.Time{}, 100)
 	if err != nil {
@@ -299,6 +306,40 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 	}
 	if !containsID(past, idB) {
 		t.Fatalf("B should always be a candidate (no metadata)")
+	}
+}
+
+func TestMarkEnrichmentStale_RetriggersNeedsEnrichment(t *testing.T) {
+	t.Parallel()
+	ctx, credits, meta, movies, users := setupCreditsRepos(t)
+	id := seedMovie(t, ctx, users, movies, "Hal")
+
+	// Fully enriched: not a candidate.
+	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: id}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := credits.ReplaceCredits(ctx, id, nil); err != nil {
+		t.Fatalf("stamp credits: %v", err)
+	}
+	got, err := meta.NeedsEnrichment(ctx, time.Time{}, 100)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if containsID(got, id) {
+		t.Fatalf("enriched movie should not be a candidate")
+	}
+
+	// Identity changed: the cleared marker makes the next drain re-pick the
+	// movie even when the in-memory enqueue is lost.
+	if err := meta.MarkEnrichmentStale(ctx, id); err != nil {
+		t.Fatalf("mark stale: %v", err)
+	}
+	got, err = meta.NeedsEnrichment(ctx, time.Time{}, 100)
+	if err != nil {
+		t.Fatalf("query after stale: %v", err)
+	}
+	if !containsID(got, id) {
+		t.Fatalf("stale-marked movie should be a candidate again")
 	}
 }
 

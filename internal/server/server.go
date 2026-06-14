@@ -127,6 +127,7 @@ func newHandler(dbConn *sql.DB) *handler {
 	nextPickerRepo := repository.NewSqliteNextPickerRepository(dbConn)
 	settingsRepo := repository.NewSqliteSettingsRepository(dbConn)
 	movieMetadataRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
+	movieCreditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
 
 	enrichCfg := loadEnrichConfig()
 	limiter := newRateLimiter(enrichCfg.MinInterval)
@@ -137,22 +138,31 @@ func newHandler(dbConn *sql.DB) *handler {
 	// it stays nil and all enqueue/start/stop sites no-op (handlers guard on nil).
 	var runner *enrichRunner
 	if tmdbCli.apiKey != "" {
-		enrichmentSvc := newEnrichmentService(movieRepo, movieMetadataRepo, tmdbCli)
+		enrichmentSvc := newEnrichmentService(movieRepo, movieMetadataRepo, movieCreditsRepo, tmdbCli, enrichCfg.CastLimit)
 		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg)
 	}
 
-	return &handler{
+	h := &handler{
 		broker:            broker,
 		userService:       user.NewService(userRepo, nextPickerRepo),
 		movieService:      movie.NewService(movieRepo, settingsRepo),
 		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
 		settingsService:   settings.NewService(settingsRepo),
 		movieMetadata:     movieMetadataRepo,
+		movieCredits:      movieCreditsRepo,
 		tmdb:              tmdbCli,
 		enrichRunner:      runner,
 		statsCache:        make(map[string]statsCacheEntry),
 		statsCacheTTL:     time.Minute,
 	}
+
+	// Stats now aggregate enriched metadata/credits, so every successful
+	// enrichment invalidates the cached stats payloads.
+	if runner != nil {
+		runner.onEnriched = h.invalidateStatsCache
+	}
+
+	return h
 }
 
 func registerRoutes(app *fiber.App, h *handler) {

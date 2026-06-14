@@ -202,7 +202,20 @@
     isolation: isolate; flex: none;
     background-size: cover; background-position: center;
   }
-  .poster__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+  .poster__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transition: opacity var(--dur) var(--ease); }
+  /* Until the photo loads, the duotone backdrop shows through (img faded out)
+     under a shimmer sweep; the photo then crossfades in over the duotone. */
+  .poster--loading .poster__img { opacity: 0; }
+  .poster__shimmer {
+    position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.10) 50%, transparent 75%);
+    animation: mg-shimmer 1.4s ease-in-out infinite;
+  }
+  /* translateX from fully off-left to fully off-right so the highlight band is
+     out of view at BOTH keyframe ends — the infinite loop never flashes when it
+     snaps back to the start. */
+  @keyframes mg-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .poster__shimmer { animation: none; } }
   .poster::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
     background: radial-gradient(120% 60% at 50% -10%, rgba(255,255,255,0.14), transparent 55%),
@@ -248,9 +261,22 @@
   .avatar {
     --s: 28px; width: var(--s); height: var(--s); border-radius: var(--r-sm);
     display: inline-flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
     font-family: var(--font-mono); font-weight: 600; font-size: calc(var(--s) * 0.36);
     color: #fff; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16); letter-spacing: 0;
   }
+  /* Optional photo (TMDB headshot) layered over the initials gradient — the
+     initials stay underneath as the loading/error fallback. */
+  .avatar__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity var(--dur) var(--ease); }
+  /* Headshot crossfades in over the initials; a shimmer sweeps while it loads
+     (reuses the poster's mg-shimmer keyframe). */
+  .avatar--loading .avatar__img { opacity: 0; }
+  .avatar__shimmer {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.13) 50%, transparent 75%);
+    animation: mg-shimmer 1.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) { .avatar__shimmer { animation: none; } }
 
   /* ---- Buttons ---- */
   .btn {
@@ -314,6 +340,45 @@
   .seg button:active:not(:disabled) { transform: scale(0.96); }
   .seg button[data-active="true"] { background: var(--surface-3); color: var(--ink); box-shadow: var(--shadow-sm); }
   .seg--accent button[data-active="true"] { background: var(--accent); color: var(--accent-ink); }
+
+  /* ---- Filter bar (FilterBar.tsx) ---- */
+  /* Chip-trigger selects whose dropdown reuses the .mg-menu surface (below).
+     The chip is a wrapper around two real buttons — trigger + clear X — so
+     both stay keyboard-reachable without nesting buttons. */
+  .filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .filterchip {
+    display: inline-flex; align-items: stretch; overflow: hidden;
+    font-family: var(--font-mono); font-size: 12px;
+    background: transparent; border: 1px solid var(--line-2); border-radius: var(--r-sm);
+    color: var(--ink-2);
+    transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .filterchip > button {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none; border: none; padding: 0 10px; min-height: 30px;
+    font: inherit; color: inherit; cursor: pointer; white-space: nowrap;
+    transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  /* The chip clips its corners, so the focus ring must draw inward to survive. */
+  .filterchip > button:focus-visible { outline-offset: -2px; }
+  .filterchip > button:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+  .filterchip > button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .filterchip svg { width: 13px; height: 13px; flex: none; }
+  /* Active filter = gold-tinted chip (gold is for state, §2 of DESIGN.md). */
+  .filterchip[data-active="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--ink); }
+  .filterchip[data-active="true"] > button:hover:not(:disabled) { background: var(--accent-soft); }
+  .filterchip > .filterchip__clear { border-left: 1px solid var(--accent-line); padding: 0 7px; }
+  /* Positioning context for the dropdown. Separate from the chip so the chip
+     keeps its overflow:hidden corner clip while the menu (a child of the wrap)
+     escapes it. The menu anchors here in CSS rather than via a portal, so it
+     rides the :root zoom ramp (§13) in the same space as the chip — no JS
+     placement to drift on large screens. */
+  .filterchip-wrap { position: relative; display: inline-flex; }
+  /* Name the trigger (not the clear X) as the dropdown's anchor, scoped per
+     chip via the inherited --chip-anchor ident. */
+  @supports (anchor-name: --a) {
+    .filterchip > button:not(.filterchip__clear) { anchor-name: var(--chip-anchor); }
+  }
 
   /* ============================================================
      Layout: nav · hero · tabs
@@ -433,9 +498,10 @@
   .empty { padding: 32px 0; text-align: center; color: var(--ink-2); font-size: 14px; }
 
   /* ---- Movies tab ---- */
-  /* Watched search + view-toggle row. The search keeps a fixed desktop width;
-     on phones it fills the stacked header (see the 640px block below). */
-  .watched-controls { display: flex; align-items: stretch; gap: 12px; }
+  /* Section-header control row (Pool: lock button; Watched: search + view
+     toggle). The search keeps a fixed desktop width; on phones it fills the
+     stacked header (see the 640px block below). */
+  .watched-controls { display: flex; flex-wrap: wrap; align-items: stretch; gap: 12px; }
   .watched-controls__search { width: 230px; }
   .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 28px 18px; }
   .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
@@ -516,8 +582,36 @@
   .srow:focus-within .sr-actions { opacity: 1; }
 
   /* ---- Stats tab ---- */
-  .stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
+  .stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
   .win-control { position: relative; }
+
+  /* One filter system (F-008): the time-range seg and every filter chip share
+     a single wrapping row, the 30px control rhythm, and the gold active
+     language. display:contents flattens the FilterBar so its chips wrap as
+     row items beside the seg instead of as one indivisible block. */
+  .statsfilters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 8px; margin-bottom: 30px; }
+  .statsfilters .filterbar { display: contents; }
+  /* Inside the filter row the seg drops its filled-container costume and
+     speaks the chips' dialect — transparent, line-2 outline, r-sm, mono 12px,
+     and the active preset wears the chips' gold tint instead of solid gold —
+     so presets and filters read as one control family, not two systems. */
+  .statsfilters .seg { background: transparent; border-color: var(--line-2); border-radius: var(--r-sm); padding: 0; gap: 0; overflow: hidden; }
+  .statsfilters .seg button {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 400;
+    color: var(--ink-2); padding: 0 12px; min-height: 30px; border-radius: 0; gap: 6px;
+  }
+  .statsfilters .seg button + button { border-left: 1px solid var(--line); }
+  .statsfilters .seg button svg { width: 13px; height: 13px; }
+  .statsfilters .seg button:hover { color: var(--ink); background: var(--surface-2); }
+  /* The container clips its corners, so focus rings draw inward (like chips). */
+  .statsfilters .seg button:focus-visible { outline-offset: -2px; }
+  .statsfilters .seg button[data-active="true"] {
+    background: var(--accent-soft); color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+  }
+  /* The popover used to hang off a right-aligned control; the seg now sits at
+     the row's left, so anchor the calendar's left edge instead. */
+  .statsfilters .daterange { left: 0; right: auto; }
 
   .daterange { position: absolute; top: calc(100% + 10px); right: 0; z-index: 45; width: 540px; max-width: calc(100vw - 40px); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 16px; animation: mg-scaleIn var(--dur-base) var(--ease); }
   .daterange__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
@@ -540,7 +634,7 @@
     .daterange__months { grid-template-columns: 1fr; gap: 18px; }
   }
 
-  .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stat-strip { display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .statitem { padding: 24px 30px; display: flex; flex-direction: column; gap: 13px; border-left: 1px solid var(--line); }
   .statitem:first-child { border-left: none; padding-left: 0; }
   .statitem__top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); }
@@ -551,14 +645,25 @@
   .statitem__val { font-size: 29px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.05; height: 2.1em; display: flex; align-items: flex-end; overflow: hidden; }
   .statitem__val.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
   .statitem__sub { font-size: 12.5px; color: var(--ink-3); }
-  @media (max-width: 760px) {
-    .stat-strip { grid-template-columns: 1fr 1fr; }
+  /* The 6-up KPI strip steps 6 → 3 → 2 columns; each step re-derives which
+     items start a row (and so drop their left border). */
+  @media (max-width: 900px) {
+    .stat-strip { grid-template-columns: repeat(3, 1fr); }
     .statitem { padding: 20px; border-left: 1px solid var(--line); }
     .statitem:first-child { padding-left: 20px; }
+    .statitem:nth-child(3n + 1) { border-left: none; padding-left: 20px; }
+  }
+  @media (max-width: 760px) {
+    .stat-strip { grid-template-columns: 1fr 1fr; }
+    /* undo the 3-column row starts before the odd rule re-removes its own */
+    .statitem:nth-child(3n + 1) { border-left: 1px solid var(--line); }
     .statitem:nth-child(odd) { border-left: none; padding-left: 20px; }
   }
 
   .statsec { margin-top: 30px; padding-top: 28px; border-top: 1px solid var(--line); }
+  /* Hugs the element above it (e.g. the films rail under the KPI strip, which
+     already closes with its own bottom rule) — no second divider. */
+  .statsec--flush { margin-top: 24px; padding-top: 0; border-top: none; }
   .statsec__title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0 0 20px; letter-spacing: -0.005em; }
 
   .bar-rows { display: flex; flex-direction: column; gap: 16px; }
@@ -573,6 +678,88 @@
      rasterize it differently. Timeframe toggles tween via `transition: width`. */
   .barrow .b-fill { width: calc(var(--p, 0) * 100%); height: 100%; border-radius: var(--r-sm); transition: width var(--dur-base) var(--ease); animation: mg-growBfill var(--dur-slow) var(--ease) backwards; }
   .barrow .b-val { font-family: var(--font-mono); font-size: 13px; color: var(--ink-2); text-align: right; }
+
+  /* Top-genres donut (F-003): a conic-gradient disc in stepped accent alphas —
+     gold stays the only hue (color = state, never decoration), and the legend
+     carries the actual mapping so color is never the only channel. The ramp
+     lives here so the disc's gradient stops and the legend swatches read the
+     same variables. */
+  .genredonut {
+    --donut-1: var(--accent);
+    --donut-2: color-mix(in oklab, var(--accent) 78%, transparent);
+    --donut-3: color-mix(in oklab, var(--accent) 60%, transparent);
+    --donut-4: color-mix(in oklab, var(--accent) 46%, transparent);
+    --donut-5: color-mix(in oklab, var(--accent) 34%, transparent);
+    --donut-6: color-mix(in oklab, var(--accent) 25%, transparent);
+    --donut-other: var(--surface-3);
+    display: flex; align-items: center; gap: 28px;
+  }
+  /* The hole is cut with a mask, not a painted-over inner circle, so whatever
+     sits behind the section shows through. */
+  .donut {
+    width: 150px; aspect-ratio: 1; flex: none; border-radius: 50%;
+    mask: radial-gradient(closest-side, transparent calc(100% - 27px), #000 calc(100% - 26px));
+    animation: mg-fadeUp var(--dur-slow) var(--ease) backwards;
+  }
+  .donut-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; max-width: 300px; }
+  .donut-legend li { display: flex; align-items: center; gap: 9px; font-size: 13px; min-width: 0; }
+  .donut-legend__swatch { width: 10px; height: 10px; flex: none; border-radius: var(--r-sm); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .donut-legend__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .donut-legend__count { margin-left: auto; padding-left: 16px; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); }
+
+  /* People rails (F-004/F-005): the modal's castcard visuals as a horizontal
+     drill-down strip. Two SIBLING interactive layers per card — the toggle
+     button filters the page, the always-visible corner link opens TMDB —
+     never nested, so each keeps its own tab stop and a link click can't flip
+     the filter. Gold ring + gold name = active (gold is state). */
+  /* Inline padding + matching negative margin gives the active/hover ring room
+     so the edge cards aren't clipped by the scroll container, while keeping the
+     cards flush with the section title; scroll-padding keeps the first card
+     resting flush at scroll-0. */
+  .peoplerail { display: flex; gap: 14px; overflow-x: auto; padding: 3px 4px 6px; margin-inline: -4px; scroll-padding-inline: 4px; }
+  .peoplecard { position: relative; flex: 0 0 96px; }
+  .peoplecard__toggle {
+    display: flex; flex-direction: column; gap: 7px; width: 100%;
+    background: none; border: none; padding: 0; font: inherit; color: inherit;
+    text-align: left; cursor: pointer; border-radius: var(--r-sm);
+  }
+  /* Inward ring: the scrolling rail clips at its edges, so an outward ring
+     would lose its top/bottom (same reason the chips draw inward). */
+  .peoplecard__toggle:focus-visible { outline-offset: -2px; }
+  .peoplecard__toggle:hover .castcard__photo { box-shadow: inset 0 0 0 1px var(--poster-ring), 0 0 0 2px var(--line-2); }
+  .peoplecard[data-active="true"] .castcard__photo { box-shadow: inset 0 0 0 1px var(--poster-ring), 0 0 0 2px var(--accent); }
+  .peoplecard[data-active="true"] .castcard__name { color: var(--accent); }
+  .peoplecard__ext {
+    position: absolute; top: 5px; right: 5px; z-index: 2;
+    display: grid; place-items: center; width: 26px; height: 26px;
+    border-radius: var(--r-sm); color: #fff;
+    background: rgba(8,9,14,0.55); backdrop-filter: blur(4px);
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .peoplecard__ext:hover { background: rgba(8,9,14,0.8); }
+  .peoplecard__ext svg { width: 13px; height: 13px; }
+
+  /* Films-in-window rail: poster tiles of the matched films. Inline padding +
+     negative margin (as .peoplerail) and a taller top pad keep the edge tiles'
+     hover/focus ring — and the -4px hover lift — clear of the scroll-container
+     clip. align-items:flex-start + min-width:0 hold every tile at the 118px
+     basis; without them a poster's aspect-ratio resolves a larger content
+     min-width under the default stretch and tiles render at uneven sizes. */
+  .movierail { display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; padding: 10px 4px 8px; margin-inline: -4px; scroll-padding-inline: 4px; }
+  .movietile {
+    flex: 0 0 118px; min-width: 0; display: flex; flex-direction: column; gap: 9px;
+    background: none; border: none; padding: 0; font: inherit; color: inherit;
+    text-align: left; cursor: pointer; border-radius: var(--r-sm);
+  }
+  .movietile .poster { transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+  .movietile:hover .poster,
+  .movietile:focus-visible .poster { transform: translateY(-4px); box-shadow: inset 0 0 0 1px var(--poster-ring), 0 0 0 2px var(--line-2); }
+  .movietile:focus-visible { outline-offset: -2px; }
+  .movietile__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .movietile__title { font-size: 12.5px; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--dur-fast) var(--ease); }
+  .movietile__sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .movietile:hover .movietile__title,
+  .movietile:focus-visible .movietile__title { color: var(--accent); }
 
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }
   @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; gap: 0; } }
@@ -595,6 +782,16 @@
   .hcol:hover .hcol__bar { filter: brightness(1.15); }
   .hourchart__axis { display: flex; gap: 3px; }
   .hourchart__axis span { flex: 1; text-align: center; font-family: var(--font-mono); font-size: 9.5px; line-height: 12px; color: var(--ink-3); }
+  /* Release decades (F-007): the hourly pattern at decade granularity. A few
+     wide, left-aligned columns (zero columns keep skipped decades honest in
+     the chronology), every non-empty count permanently visible, and an axis
+     label per column. Axis spans mirror the column flex so labels track bars. */
+  .hourchart--decades .hourchart__bars { justify-content: flex-start; gap: 10px; height: 130px; }
+  .hourchart--decades .hcol { flex: 0 1 72px; }
+  .hourchart--decades .hcol:not([data-empty]) .hcol__n { opacity: 1; }
+  .hourchart--decades .hcol__n { font-size: 10.5px; }
+  .hourchart--decades .hourchart__axis { justify-content: flex-start; gap: 10px; }
+  .hourchart--decades .hourchart__axis span { flex: 0 1 72px; font-size: 10.5px; }
 
   /* ---- Search modal ---- */
   .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: grid; place-items: start center; padding: 56px 20px; overflow-y: auto; animation: mg-fadeIn var(--dur-base) var(--ease); }
@@ -653,6 +850,29 @@
   .moviemodal__overview { margin: 14px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
   .moviemodal__by { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); margin-top: 18px; }
   .moviemodal__links { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  /* "Directed by …" / "Written by …" — quiet prose lines with the names lifted. */
+  .moviemodal__credits { margin: 12px 0 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-3); }
+  .moviemodal__person { font-weight: 550; color: var(--ink-2); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
+  .moviemodal__person:hover,
+  .moviemodal__person:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  /* Cast strip: a horizontally scrollable row of 2:3 headshot cards under the
+     modal body. The frame falls back to the Avatar initials gradient (stretched
+     to fill) when TMDB has no headshot; hidden entirely when cast is empty.
+     Each card links out to the person's TMDB page (F-002) — hover/focus lifts
+     the name to gold; the people rails on Stats reuse the same visuals. */
+  .castrow { display: flex; gap: 14px; overflow-x: auto; padding: 2px 26px 24px; }
+  .castcard { flex: 0 0 84px; margin: 0; display: flex; flex-direction: column; gap: 7px; }
+  a.castcard { text-decoration: none; color: inherit; border-radius: var(--r-sm); }
+  a.castcard:hover .castcard__name,
+  a.castcard:focus-visible .castcard__name { color: var(--accent); }
+  /* Inward ring — the scrolling .castrow clips outward rings at its edges. */
+  a.castcard:focus-visible { outline-offset: -2px; }
+  .castcard__photo { aspect-ratio: 2 / 3; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--poster-ring); }
+  .castcard__photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .castcard__photo .avatar { width: 100%; height: 100%; border-radius: 0; font-size: 17px; }
+  .castcard__caption { display: flex; flex-direction: column; gap: 2px; }
+  .castcard__name { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink); transition: color var(--dur-fast) var(--ease); }
+  .castcard__role { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink-3); }
   @media (max-width: 560px) {
     .moviemodal__body { flex-direction: column; gap: 14px; }
     .moviemodal__info { padding-top: 0; }
@@ -671,6 +891,50 @@
   .mg-menu__item:disabled { opacity: 0.5; cursor: default; }
   .mg-menu__item--danger { color: var(--danger); font-weight: 600; }
   .mg-menu__item--danger:hover, .mg-menu__item--danger:focus-visible { background: color-mix(in oklab, var(--danger) 16%, transparent); }
+
+  /* Filter dropdowns (FilterBar.tsx) reuse the .mg-menu surface as a listbox:
+     an optional inline .field search pinned on top, a scrollable option list,
+     and a gold selected state. */
+  .filtermenu { min-width: 13rem; max-height: min(340px, 70vh); }
+  /* Anchored under its chip (overrides the portalled .mg-menu's position:fixed).
+     Opens downward from the chip's left edge; the chips live at the top of the
+     page so there is always room below. max-width keeps it inside the viewport. */
+  .filterchip-wrap > .filtermenu {
+    position: absolute; top: calc(100% + 6px); left: 0; right: auto;
+    transform-origin: top left; max-width: calc(100vw - 16px);
+  }
+  /* Where anchor positioning is supported, tether to the chip and flip to its
+     right edge when a left-aligned menu would run off-screen (narrow viewports,
+     right-side chips). Older engines keep the left-aligned baseline above. */
+  @supports (position-try-fallbacks: flip-inline) {
+    .filterchip-wrap > .filtermenu {
+      /* Fixed so position-try measures overflow against the viewport (not the
+         chip-sized wrapper) and can flip; anchor() keeps it tethered and the
+         engine re-tracks on scroll/zoom natively — no JS placement. */
+      position: fixed;
+      top: anchor(bottom); left: anchor(left); right: auto; bottom: auto; margin-top: 6px;
+      position-anchor: var(--chip-anchor);
+      position-try-fallbacks: flip-inline;
+    }
+  }
+  .filtermenu .field { height: 34px; flex: none; margin-bottom: 5px; }
+  .filtermenu__list { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+  .filtermenu__empty { margin: 0; padding: 9px 10px; font-size: 12.5px; color: var(--ink-3); }
+  .filtermenu .mg-menu__item[aria-selected="true"] { color: var(--accent); }
+  /* Options sit flush against the scrollable list, whose overflow clips a 2px
+     outset focus ring on the left/scroll edges — draw it inward so keyboard
+     focus stays fully visible (cf. the chip/seg :focus-visible rule). */
+  .filtermenu__list .mg-menu__item:focus-visible { outline-offset: -2px; }
+  /* Release-year dropdown: selectable decade headers ("1990s") with their years
+     indented beneath — both are real options (a decade filters the whole
+     decade, a year the exact year). */
+  .filtermenu__item--decade { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+  .filtermenu__item--decade[aria-selected="true"] { color: var(--accent); }
+  .filtermenu__item--year { padding-left: 24px; }
+  /* Multi-select rows keep a fixed-width check slot so selection reads as a
+     mark (not gold alone) and labels never shift as it toggles. */
+  .filtermenu__check { display: inline-flex; align-items: center; width: 14px; flex: none; }
+  .filtermenu__check svg { width: 13px; height: 13px; color: var(--accent); }
 
   /* ============================================================
      Responsive — phone & touch adaptations
@@ -723,12 +987,15 @@
     /* one user board per row — no 310px min to overflow a 320px screen */
     .boards { grid-template-columns: 1fr; gap: 30px; }
 
-    /* stats: the window control owns its row; bars reclaim track width */
-    .stats-head .win-control { width: 100%; }
-    .stats-head .seg { display: flex; width: 100%; }
-    .stats-head .seg button { flex: 1; padding: 9px 4px; justify-content: center; }
+    /* stats: the window control owns its row; chips wrap below it; bars
+       reclaim track width */
+    .statsfilters .win-control { width: 100%; }
+    .statsfilters .seg { display: flex; width: 100%; }
+    .statsfilters .seg button { flex: 1; padding: 9px 4px; justify-content: center; }
     .barrow { grid-template-columns: 112px 1fr 28px; gap: 12px; }
     .barrow--dow { grid-template-columns: 38px 1fr 22px; }
+    .genredonut { flex-direction: column; align-items: flex-start; }
+    .donut-legend { max-width: none; width: 100%; }
 
     /* poster grids become thumbnail grids, not one giant column */
     .tile-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 20px 12px; }
@@ -780,6 +1047,11 @@
     .iconbtn { width: 40px; height: 40px; }
     .btn--sm { padding: 10px 14px; }
     .seg button { padding: 10px 16px; }
+    .filterchip > button { min-height: 40px; }
+    /* outranks the .statsfilters .seg button override above */
+    .statsfilters .seg button { min-height: 40px; }
+    .peoplecard__ext { width: 40px; height: 40px; }
+    .peoplecard__ext svg { width: 16px; height: 16px; }
   }
 }
 

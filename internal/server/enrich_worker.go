@@ -21,6 +21,7 @@ type enrichConfig struct {
 	BackoffBase     time.Duration // base delay for exponential backoff
 	QueueSize       int           // buffered auto-on-add queue capacity
 	BatchLimit      int           // max candidates fetched per drain
+	CastLimit       int           // cast rows kept per movie at ingest (0 = full cast)
 	RefreshInterval time.Duration // periodic stale-scan cadence (0 disables)
 	TTL             time.Duration // rows older than now-TTL are re-enriched
 }
@@ -32,6 +33,7 @@ func defaultEnrichConfig() enrichConfig {
 		BackoffBase:     500 * time.Millisecond,
 		QueueSize:       256,
 		BatchLimit:      200,
+		CastLimit:       15, // top billing only; deepening just needs a re-enrich
 		RefreshInterval: time.Hour,
 		TTL:             720 * time.Hour, // 30 days
 	}
@@ -53,6 +55,9 @@ func loadEnrichConfig() enrichConfig {
 	}
 	if v, ok := envInt("TMDB_ENRICH_BATCH_LIMIT"); ok && v > 0 {
 		cfg.BatchLimit = v
+	}
+	if v, ok := envInt("TMDB_ENRICH_CAST_LIMIT"); ok && v >= 0 {
+		cfg.CastLimit = v // 0 = full cast; negatives keep the default
 	}
 	if v, ok := envDuration("TMDB_ENRICH_REFRESH_INTERVAL"); ok {
 		cfg.RefreshInterval = v
@@ -142,9 +147,10 @@ func (r *rateLimiter) wait(ctx context.Context) error {
 // triggered as a "drain" that pulls candidates and processes them inline —
 // so a large backlog can never overflow the bounded queue.
 type enrichRunner struct {
-	enricher Enricher
-	broker   *eventBroker // optional SSE; nil-safe
-	cfg      enrichConfig
+	enricher   Enricher
+	broker     *eventBroker // optional SSE; nil-safe
+	onEnriched func()       // optional post-enrich hook (stats-cache invalidation); nil-safe
+	cfg        enrichConfig
 
 	queue    chan int
 	trigger  chan struct{}
@@ -175,8 +181,12 @@ func (r *enrichRunner) Start(ctx context.Context) {
 	if r.cfg.RefreshInterval <= 0 {
 		refresh = "disabled"
 	}
-	log.Printf("enrich: worker started (rate=%s, retries=%d, batch=%d, ttl=%s, refresh=%s)",
-		r.cfg.MinInterval, r.cfg.MaxRetries, r.cfg.BatchLimit, r.cfg.TTL, refresh)
+	cast := strconv.Itoa(r.cfg.CastLimit)
+	if r.cfg.CastLimit <= 0 {
+		cast = "unlimited"
+	}
+	log.Printf("enrich: worker started (rate=%s, retries=%d, batch=%d, cast=%s, ttl=%s, refresh=%s)",
+		r.cfg.MinInterval, r.cfg.MaxRetries, r.cfg.BatchLimit, cast, r.cfg.TTL, refresh)
 
 	r.wg.Add(1)
 	go r.consume(stopCtx)
@@ -311,7 +321,8 @@ func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 	res, err := r.enricher.EnrichOne(ctx, movieID)
 	switch {
 	case err == nil:
-		log.Printf("enrich: movie %d enriched → tmdb %d (%d genres)", movieID, res.TMDBID, res.Genres)
+		log.Printf("enrich: movie %d enriched → tmdb %d (%d genres, %d credits)", movieID, res.TMDBID, res.Genres, res.Credits)
+		r.notifyEnriched()
 		r.broadcastEnriched(movieID)
 		return outcomeEnriched
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
@@ -323,6 +334,13 @@ func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 		log.Printf("enrich: movie %d failed: %v", movieID, err)
 		return outcomeFailed
 	}
+}
+
+func (r *enrichRunner) notifyEnriched() {
+	if r.onEnriched == nil {
+		return
+	}
+	r.onEnriched()
 }
 
 func (r *enrichRunner) broadcastEnriched(movieID int) {

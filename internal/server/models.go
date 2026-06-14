@@ -52,10 +52,27 @@ type movieResponse struct {
 	VoteAverage  float64  `json:"voteAverage,omitempty"`
 	Tagline      string   `json:"tagline,omitempty"`
 	Overview     string   `json:"overview,omitempty"`
+
+	// Trimmed TMDB credits: top-billed cast (in billing order) and
+	// whitelisted crew jobs. Omitted until the movie's credits are ingested.
+	Cast []creditPerson `json:"cast,omitempty"`
+	Crew []creditPerson `json:"crew,omitempty"`
+}
+
+// creditPerson is the wire shape of one cast or crew member on a movie.
+type creditPerson struct {
+	ID          int    `json:"id"` // TMDB person id
+	Name        string `json:"name"`
+	ProfilePath string `json:"profilePath,omitempty"` // raw TMDB path, like posterPath
+	Character   string `json:"character,omitempty"`   // cast only
+	Job         string `json:"job,omitempty"`         // crew only
 }
 
 // metaByID maps a movie id to its enriched metadata (absent when unenriched).
 type metaByID map[int]*domain.MovieMetadata
+
+// creditsByID maps a movie id to its ingested credits (absent when none).
+type creditsByID map[int][]domain.MovieCredit
 
 func formatTime(value *time.Time) string {
 	if value == nil {
@@ -77,15 +94,16 @@ func movieLink(movie *domain.Movie) string {
 	return ""
 }
 
-// toAPIMovie builds a response without enriched metadata. Used for SSE
-// broadcast payloads, where the frontend refetches enriched data from the GET
-// endpoints rather than reading the event body.
+// toAPIMovie builds a response without enriched metadata or credits. Used for
+// SSE broadcast payloads, where the frontend refetches enriched data from the
+// GET endpoints rather than reading the event body.
 func toAPIMovie(movie *domain.Movie) movieResponse {
-	return toAPIMovieMeta(movie, nil)
+	return toAPIMovieMeta(movie, nil, nil)
 }
 
-// toAPIMovieMeta builds a response, folding in enriched metadata when present.
-func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata) movieResponse {
+// toAPIMovieMeta builds a response, folding in enriched metadata and credits
+// when present.
+func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata, credits []domain.MovieCredit) movieResponse {
 	resp := movieResponse{
 		ID:          movie.ID,
 		Title:       movie.Title,
@@ -113,31 +131,50 @@ func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata) movieResponse
 		resp.Tagline = md.Tagline
 		resp.Overview = md.Overview
 	}
+	// Credits arrive cast-first in billing order (repo ORDER BY), so a plain
+	// split by kind keeps both arrays in their display order.
+	for i := range credits {
+		person := creditPerson{
+			ID:   credits[i].Person.ID,
+			Name: credits[i].Person.Name,
+		}
+		if credits[i].Person.ProfilePath != nil {
+			person.ProfilePath = *credits[i].Person.ProfilePath
+		}
+		switch credits[i].Kind {
+		case domain.CreditKindCast:
+			person.Character = credits[i].Character
+			resp.Cast = append(resp.Cast, person)
+		case domain.CreditKindCrew:
+			person.Job = credits[i].Job
+			resp.Crew = append(resp.Crew, person)
+		}
+	}
 	return resp
 }
 
-func toAPIMoviesMeta(movies []*domain.Movie, meta metaByID) []movieResponse {
+func toAPIMoviesMeta(movies []*domain.Movie, meta metaByID, credits creditsByID) []movieResponse {
 	result := make([]movieResponse, 0, len(movies))
 	for i := range movies {
-		result = append(result, toAPIMovieMeta(movies[i], meta[movies[i].ID]))
+		result = append(result, toAPIMovieMeta(movies[i], meta[movies[i].ID], credits[movies[i].ID]))
 	}
 	return result
 }
 
-func moviesToMapMeta(movies []*domain.Movie, meta metaByID) map[string]movieResponse {
+func moviesToMapMeta(movies []*domain.Movie, meta metaByID, credits creditsByID) map[string]movieResponse {
 	result := make(map[string]movieResponse, len(movies))
 	for i := range movies {
-		result[strconv.Itoa(movies[i].ID)] = toAPIMovieMeta(movies[i], meta[movies[i].ID])
+		result[strconv.Itoa(movies[i].ID)] = toAPIMovieMeta(movies[i], meta[movies[i].ID], credits[movies[i].ID])
 	}
 	return result
 }
 
-func toAPIUserMeta(user *domain.User, poolMovies, stashMovies []*domain.Movie, meta metaByID) userResponse {
+func toAPIUserMeta(user *domain.User, poolMovies, stashMovies []*domain.Movie, meta metaByID, credits creditsByID) userResponse {
 	return userResponse{
 		ID:          user.ID,
 		Name:        user.Name,
-		CurrentPool: moviesToMapMeta(poolMovies, meta),
-		Stash:       moviesToMapMeta(stashMovies, meta),
+		CurrentPool: moviesToMapMeta(poolMovies, meta, credits),
+		Stash:       moviesToMapMeta(stashMovies, meta, credits),
 		CreatedAt:   formatTime(user.CreatedAt),
 	}
 }

@@ -61,16 +61,32 @@ export const SettingsGetNextPickerQueryOptions = () =>
     refetchOnWindowFocus: false
   })
 
+/** Sorted, comma-joined person ids — the canonical form shared by the query
+ *  key and the request, mirroring the backend's cache-key canonicalization. */
+const idListKey = (ids?: number[]) =>
+  ids && ids.length > 0 ? [...ids].sort((a, b) => a - b).join(",") : undefined;
+
 export const StatsGetQueryOptions = (
   window: StatsWindow,
   timezone: string,
   start?: string,
   end?: string,
-) =>
-  queryOptions({
-    queryKey: StatsKeys.byWindow(window, timezone, start, end),
-    queryFn: () => APIClient.stats.get({ window, timezone, start, end }),
+  genre?: string,
+  actorIds?: number[],
+  crewIds?: number[],
+  addedByIds?: number[],
+  releaseYear?: number,
+  decade?: number,
+) => {
+  const actorsKey = idListKey(actorIds);
+  const crewKey = idListKey(crewIds);
+  const addedByKey = idListKey(addedByIds);
+  return queryOptions({
+    queryKey: StatsKeys.byWindow(window, timezone, start, end, genre, actorsKey, crewKey, addedByKey, releaseYear, decade),
+    queryFn: () =>
+      APIClient.stats.get({ window, timezone, start, end, genre, actorIds: actorsKey, crewIds: crewKey, addedByIds: addedByKey, releaseYear, decade }),
     refetchOnWindowFocus: false,
     staleTime: 60_000,
     gcTime: 600_000,
-  })
+  });
+}

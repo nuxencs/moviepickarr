@@ -33,11 +33,12 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 	}
 
 	meta := h.metaFor(ctx, visible)
+	credits := h.creditsFor(ctx, visible)
 	poolByUser := make(map[int]map[string]movieResponse)
 	stashByUser := make(map[int]map[string]movieResponse)
 
 	for i := range visible {
-		apiMovie := toAPIMovieMeta(visible[i], meta[visible[i].ID])
+		apiMovie := toAPIMovieMeta(visible[i], meta[visible[i].ID], credits[visible[i].ID])
 		key := strconv.Itoa(visible[i].ID)
 
 		if visible[i].Status == "pool" {
@@ -95,6 +96,10 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
+
+	// Stats list every roster member (zero rows included), so a new member
+	// must show up there immediately, not after the cache TTL.
+	h.invalidateStatsCache()
 
 	payload := userResponse{
 		ID:          createdUser.ID,

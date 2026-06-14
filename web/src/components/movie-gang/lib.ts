@@ -3,7 +3,7 @@
    poster/backdrop art, deterministic hues, formatting.
    ============================================================ */
 
-import type { Movie } from "@/types/Response";
+import type { CreditPerson, Movie } from "@/types/Response";
 
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
@@ -14,6 +14,11 @@ export function posterUrl(path?: string | null, size: "w342" | "w500" = "w342"):
 
 /** Full TMDB backdrop URL from a raw backdrop_path, or null if absent. */
 export function backdropUrl(path?: string | null, size: "w1280" | "w780" = "w1280"): string | null {
+  return path ? `${TMDB_IMG}/${size}${path}` : null;
+}
+
+/** Full TMDB profile (headshot) URL from a raw profile_path, or null if absent. */
+export function profileUrl(path?: string | null, size: "w185" | "h632" = "w185"): string | null {
   return path ? `${TMDB_IMG}/${size}${path}` : null;
 }
 
@@ -106,11 +111,127 @@ export function ratingLabel(voteAverage?: number): string | undefined {
   return voteAverage.toFixed(1);
 }
 
+/* ---- Stats filters (the drill-down state of the Stats tab; matching
+   happens server-side in the stats endpoint) ---- */
+
+/**
+ * One selected person filter. The name rides along with the id so the chip
+ * stays readable even when the person later drops out of the option list
+ * (their last movie moved/deleted under an SSE refetch).
+ */
+export interface PersonFilter {
+  id: number;
+  name: string;
+}
+
+/**
+ * Active stats filters; null/empty = "any". `year` matches an exact release
+ * year and `decade` a release decade (its floor, e.g. 1990 ⇒ 1990–1999); the
+ * two are mutually exclusive — setting one clears the other. The people lists
+ * are any-of within a list and AND-ed across filters — `actors` match cast
+ * credits, `crew` matches crew credits (any whitelisted job, so a director also
+ * matches through their writer credits).
+ */
+export interface MovieFilters {
+  genre: string | null;
+  actors: PersonFilter[];
+  crew: PersonFilter[];
+  year: number | null;
+  decade: number | null;
+  /** Adders/pickers of the movie — any-of, matched against `addedByID`. */
+  pickers: PersonFilter[];
+}
+
+/** The everything-passes filter state — handy as `useState` initial value. */
+export const NO_FILTERS: MovieFilters = {
+  genre: null,
+  actors: [],
+  crew: [],
+  year: null,
+  decade: null,
+  pickers: [],
+};
+
+/** Whether any filter is set (drives the stats empty copy). */
+export function hasActiveFilters(filters: MovieFilters): boolean {
+  return (
+    filters.genre !== null ||
+    filters.actors.length > 0 ||
+    filters.crew.length > 0 ||
+    filters.year !== null ||
+    filters.decade !== null ||
+    filters.pickers.length > 0
+  );
+}
+
+/** A filterable person (a cast or crew member). */
+export interface PersonOption {
+  id: number;
+  name: string;
+}
+
+export interface FilterOptions {
+  genres: string[];
+  actors: PersonOption[];
+  crew: PersonOption[];
+  years: number[];
+  /** The members who added the movies, by id, sorted A→Z by name. */
+  pickers: PersonOption[];
+}
+
+/**
+ * Filter options derived from an already-cached movie list (no endpoint):
+ * unique genres sorted A→Z, cast and crew collected into separate lists (each
+ * sorted A→Z by name) matching the actors/crew filter split, the unique adders
+ * (pickers) A→Z, and unique release years newest-first.
+ */
+export function filterOptionsFrom(movies: Movie[]): FilterOptions {
+  const genres = new Set<string>();
+  const actors = new Map<number, PersonOption>();
+  const crew = new Map<number, PersonOption>();
+  const pickers = new Map<number, PersonOption>();
+  const years = new Set<number>();
+
+  // One filter entry per person per list — multiple credits (an actor in twin
+  // roles, a writer-director) still collapse to a single option.
+  const collectInto = (list: Map<number, PersonOption>, people?: CreditPerson[]) => {
+    for (const person of people ?? []) {
+      if (!list.has(person.id)) list.set(person.id, { id: person.id, name: person.name });
+    }
+  };
+
+  for (const movie of movies) {
+    for (const genre of movie.genres ?? []) genres.add(genre);
+    collectInto(actors, movie.cast);
+    collectInto(crew, movie.crew);
+    if (movie.addedByID && !pickers.has(movie.addedByID)) {
+      pickers.set(movie.addedByID, { id: movie.addedByID, name: movie.addedByName });
+    }
+    const year = yearOf(movie.releaseDate);
+    if (year !== undefined) years.add(year);
+  }
+
+  const byName = (a: PersonOption, b: PersonOption) => a.name.localeCompare(b.name);
+
+  return {
+    pickers: [...pickers.values()].sort(byName),
+    genres: [...genres].sort((a, b) => a.localeCompare(b)),
+    actors: [...actors.values()].sort(byName),
+    crew: [...crew.values()].sort(byName),
+    years: [...years].sort((a, b) => b - a),
+  };
+}
+
 /**
  * External links for a movie, derived from its stable ids. Letterboxd resolves
  * via /tmdb/{id} (preferred) or /imdb/{id}. Only links with a backing id are
  * returned, in a stable order.
  */
+/** TMDB person page URL from a TMDB person id. */
+export function tmdbPersonUrl(personId: number): string {
+  return `https://www.themoviedb.org/person/${personId}`;
+}
+
 export function externalLinks(movie: Pick<Movie, "tmdbId" | "imdbId">): { label: string; href: string }[] {
   const links: { label: string; href: string }[] = [];
   if (movie.imdbId) links.push({ label: "IMDb", href: `https://www.imdb.com/title/${movie.imdbId}/` });

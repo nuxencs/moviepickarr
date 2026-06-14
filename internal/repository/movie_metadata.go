@@ -170,12 +170,21 @@ func (d *SqliteMovieMetadataRepository) GetMetadataByMovieIDs(ctx context.Contex
 	return result, rows.Err()
 }
 
+func (d *SqliteMovieMetadataRepository) MarkEnrichmentStale(ctx context.Context, movieID int) error {
+	query := `UPDATE movie_metadata SET credits_refreshed_at = NULL WHERE movie_id = ?`
+	_, err := d.db.ExecContext(ctx, query, movieID)
+	return err
+}
+
 func (d *SqliteMovieMetadataRepository) NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]domain.EnrichmentCandidate, error) {
+	// A NULL credits_refreshed_at means credits were never ingested for an
+	// otherwise-enriched row, so existing libraries backfill credits on the
+	// first drain after the credits migration.
 	query := `
 		SELECT m.id
 		FROM movies m
 		LEFT JOIN movie_metadata md ON md.movie_id = m.id
-		WHERE md.movie_id IS NULL OR md.enriched_at < ?
+		WHERE md.movie_id IS NULL OR md.enriched_at < ? OR md.credits_refreshed_at IS NULL
 		ORDER BY m.id
 		LIMIT ?
 	`

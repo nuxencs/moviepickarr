@@ -15,7 +15,7 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 	movie := domain.Movie{ID: 7, Title: "The Matrix", TMDBID: &tmdb}
 
 	// Without metadata: enriched fields stay zero and serialize as omitted.
-	bare := toAPIMovieMeta(&movie, nil)
+	bare := toAPIMovieMeta(&movie, nil, nil)
 	if bare.PosterPath != "" || bare.Runtime != 0 || bare.Genres != nil {
 		t.Fatalf("expected no enriched fields, got %+v", bare)
 	}
@@ -38,7 +38,7 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal bare: %v", err)
 	}
-	for _, key := range []string{"posterPath", "backdropPath", "releaseDate", "runtime", "genres", "voteAverage", "tagline", "overview", "imdbId"} {
+	for _, key := range []string{"posterPath", "backdropPath", "releaseDate", "runtime", "genres", "voteAverage", "tagline", "overview", "imdbId", "cast", "crew"} {
 		if strings.Contains(string(bareJSON), `"`+key+`"`) {
 			t.Fatalf("expected %q omitted for unenriched movie, got %s", key, bareJSON)
 		}
@@ -58,7 +58,7 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 		Tagline:     "Free your mind.",
 		Overview:    "A hacker learns the truth.",
 	}
-	got := toAPIMovieMeta(&movie, md)
+	got := toAPIMovieMeta(&movie, md, nil)
 	if got.PosterPath != "/p.jpg" || got.Runtime != 136 || got.VoteAverage != 8.2 {
 		t.Fatalf("scalar fold mismatch: %+v", got)
 	}
@@ -81,6 +81,73 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 		`"genres":["Action","Sci-Fi"]`,
 		`"voteAverage":8.2`,
 		`"tagline":"Free your mind."`,
+	} {
+		if !strings.Contains(string(gotJSON), want) {
+			t.Fatalf("expected %s in %s", want, gotJSON)
+		}
+	}
+}
+
+func TestToAPIMovieMeta_FoldsCredits(t *testing.T) {
+	t.Parallel()
+
+	movie := domain.Movie{ID: 7, Title: "The Matrix"}
+	keanuProfile := "/kr.jpg"
+	credits := []domain.MovieCredit{
+		// Repo order: cast first (billing order), then crew.
+		{
+			MovieID:   7,
+			Person:    domain.Person{ID: 6384, Name: "Keanu Reeves", ProfilePath: &keanuProfile},
+			Kind:      domain.CreditKindCast,
+			Character: "Neo",
+			CastOrder: 0,
+		},
+		{
+			MovieID:   7,
+			Person:    domain.Person{ID: 530, Name: "Carrie-Anne Moss"},
+			Kind:      domain.CreditKindCast,
+			Character: "Trinity",
+			CastOrder: 1,
+		},
+		{
+			MovieID:    7,
+			Person:     domain.Person{ID: 9340, Name: "Lana Wachowski"},
+			Kind:       domain.CreditKindCrew,
+			Job:        "Director",
+			Department: "Directing",
+		},
+	}
+
+	got := toAPIMovieMeta(&movie, nil, credits)
+	if len(got.Cast) != 2 || len(got.Crew) != 1 {
+		t.Fatalf("expected 2 cast + 1 crew, got %d/%d", len(got.Cast), len(got.Crew))
+	}
+	if got.Cast[0].ID != 6384 || got.Cast[0].Name != "Keanu Reeves" || got.Cast[0].Character != "Neo" {
+		t.Fatalf("cast[0] mismatch: %+v", got.Cast[0])
+	}
+	if got.Cast[0].ProfilePath != "/kr.jpg" || got.Cast[1].ProfilePath != "" {
+		t.Fatalf("profile fold mismatch: %+v", got.Cast)
+	}
+	if got.Cast[1].Name != "Carrie-Anne Moss" || got.Cast[1].Character != "Trinity" {
+		t.Fatalf("cast[1] mismatch (input order must be preserved): %+v", got.Cast[1])
+	}
+	if got.Crew[0].ID != 9340 || got.Crew[0].Job != "Director" {
+		t.Fatalf("crew[0] mismatch: %+v", got.Crew[0])
+	}
+	// Cast rows never carry a job, crew rows never a character.
+	if got.Cast[0].Job != "" || got.Crew[0].Character != "" {
+		t.Fatalf("kind fields leaked across: %+v / %+v", got.Cast[0], got.Crew[0])
+	}
+
+	// Exact wire keys per the TS contract (web/src/types/Response.ts).
+	gotJSON, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, want := range []string{
+		`"cast":[{"id":6384,"name":"Keanu Reeves","profilePath":"/kr.jpg","character":"Neo"}`,
+		`{"id":530,"name":"Carrie-Anne Moss","character":"Trinity"}]`,
+		`"crew":[{"id":9340,"name":"Lana Wachowski","job":"Director"}]`,
 	} {
 		if !strings.Contains(string(gotJSON), want) {
 			t.Fatalf("expected %s in %s", want, gotJSON)

@@ -32,12 +32,32 @@ func (h *handler) metaFor(ctx context.Context, movies []*domain.Movie) metaByID 
 	return meta
 }
 
+// creditsFor batch-loads ingested credits for the given movies. Same contract
+// as metaFor: a lookup failure is non-fatal — it logs and returns an empty map
+// so responses still render (without cast/crew) rather than failing the whole
+// request.
+func (h *handler) creditsFor(ctx context.Context, movies []*domain.Movie) creditsByID {
+	if h.movieCredits == nil || len(movies) == 0 {
+		return creditsByID{}
+	}
+	ids := make([]int, len(movies))
+	for i := range movies {
+		ids[i] = movies[i].ID
+	}
+	credits, err := h.movieCredits.GetCreditsByMovieIDs(ctx, ids)
+	if err != nil {
+		log.Printf("failed to load movie credits: %v", err)
+		return creditsByID{}
+	}
+	return credits
+}
+
 func (h *handler) getPooledMovies(ctx context.Context) ([]movieResponse, error) {
 	movies, err := h.movieService.Pooled(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return toAPIMoviesMeta(movies, h.metaFor(ctx, movies)), nil
+	return toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
 }
 
 func (h *handler) advanceNextPicker(ctx context.Context) error {
@@ -176,7 +196,7 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
 }
 
 func (h *handler) handleEditMovie(c *fiber.Ctx) error {
@@ -250,6 +270,13 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 		if err := h.movieService.SetExternalIDs(ctx, movieID, nil, imdbPtr); err != nil {
 			return writeError(c, err)
 		}
+		// The enqueue below is in-memory; clearing the credits marker makes the
+		// periodic drain a reliable backstop if it is lost (queue full or
+		// restart) — otherwise the movie would keep serving and tallying the
+		// previous film's metadata and credits until the refresh TTL.
+		if err := h.movieMetadata.MarkEnrichmentStale(ctx, movieID); err != nil {
+			return writeError(c, err)
+		}
 		updatedMovie.TMDBID = nil
 		updatedMovie.IMDbID = imdbPtr
 		if h.enrichRunner != nil {
@@ -310,7 +337,7 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
 }
 
 func (h *handler) handleMove(c *fiber.Ctx) error {
@@ -372,8 +399,8 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	meta := h.metaFor(ctx, append(append([]*domain.Movie{}, updatedPool...), updatedStash...))
-	updatedUser := toAPIUserMeta(userRecord, updatedPool, updatedStash, meta)
+	combined := append(append([]*domain.Movie{}, updatedPool...), updatedStash...)
+	updatedUser := toAPIUserMeta(userRecord, updatedPool, updatedStash, h.metaFor(ctx, combined), h.creditsFor(ctx, combined))
 	h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
 
 	return c.Status(fiber.StatusOK).JSON(updatedUser)
@@ -417,7 +444,8 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 	}
 
 	meta := h.metaFor(ctx, []*domain.Movie{movieRecord})
-	return c.Status(fiber.StatusOK).JSON(toAPIMovieMeta(movieRecord, meta[movieRecord.ID]))
+	credits := h.creditsFor(ctx, []*domain.Movie{movieRecord})
+	return c.Status(fiber.StatusOK).JSON(toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
 }
 
 func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
@@ -441,5 +469,5 @@ func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
 }

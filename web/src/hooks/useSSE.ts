@@ -57,13 +57,15 @@ export function useSSE() {
 
           case "movie:enriched":
             // Async TMDB enrichment landed for a movie; refresh every cache that
-            // embeds enriched fields (poster, runtime, rating, …) so it shows
-            // without waiting for an unrelated event or a reload. Stats carry no
-            // TMDB metadata, so they're intentionally left untouched.
+            // embeds enriched fields (poster, runtime, rating, credits, …) so it
+            // shows without waiting for an unrelated event or a reload. Stats
+            // aggregate TMDB metadata too (genres, people, runtime, rating), so
+            // they're invalidated alongside the movie lists.
             void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+            void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
             break;
 
           case "movie:picked":

@@ -1,4 +1,5 @@
 import { ExternalLinkIcon, XIcon } from "lucide-react";
+import { Fragment } from "react";
 
 import { Avatar, MetaChips } from "@/components/movie-gang/Bits";
 import { backdropBg, backdropUrl, externalLinks, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/movie-gang/lib";
@@ -15,6 +16,27 @@ function dedupeById(people: CreditPerson[]): CreditPerson[] {
     seen.add(p.id);
     return true;
   });
+}
+
+/** Comma-separated credit names, each a link out to its TMDB person page. */
+function PersonLinks({ people }: { people: CreditPerson[] }) {
+  return (
+    <>
+      {people.map((p, i) => (
+        <Fragment key={p.id}>
+          {i > 0 && ", "}
+          <a
+            className="moviemodal__person"
+            href={tmdbPersonUrl(p.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {p.name}
+          </a>
+        </Fragment>
+      ))}
+    </>
+  );
 }
 
 /** Rich detail view for a movie: backdrop, poster, metadata, credits, overview, links out. */
@@ -63,12 +85,12 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
                 <div className="moviemodal__credits">
                   {directors.length > 0 && (
                     <span>
-                      Directed by <b>{directors.map((p) => p.name).join(", ")}</b>
+                      Directed by <PersonLinks people={directors} />
                     </span>
                   )}
                   {writers.length > 0 && (
                     <span>
-                      Written by <b>{writers.map((p) => p.name).join(", ")}</b>
+                      Written by <PersonLinks people={writers} />
                     </span>
                   )}
                 </div>

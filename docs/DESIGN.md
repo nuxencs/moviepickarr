@@ -429,10 +429,17 @@ What each does:
 whole UI steps up through a discrete root `zoom` ramp (`:root { zoom }` at 1728 / 2240 /
 2560 / 3200 / 3840px) so type, posters, modals, menus, grids and the column all grow
 together — keeping the centered cinematic composition instead of leaving content adrift on
-a 2K/4K panel. It lives on `:root` (not `.app`) because modals, menus and toasts portal to
-`<body>`; only a root-level scale reaches them. The top steps carry a `min-height` guard
+a 2K/4K panel. It lives on `:root` (not `.app`) because modals, toasts and the portalled
+`Menu` (the "more actions" surface, which must escape its row's scroll clip) reach `<body>`;
+only a root-level scale reaches them. The top steps carry a `min-height` guard
 so ultrawide-but-short panels (e.g. 3440×1440) don't over-scale. Stepped, not fluid
-`clamp` — the discrete-scale ethos (§3) holds. The **hero** takes an extra large-screen
+`clamp` — the discrete-scale ethos (§3) holds. **Overlay placement under the ramp:** any
+overlay positioned by JS from `getBoundingClientRect` and written as inline `top/left` on a
+`position:fixed` portal child drifts under the ramp — the zoomed viewport coords get scaled
+by the inherited zoom a second time. So prefer CSS-anchored overlays (the stats filter
+dropdowns and the `DateRange` popover anchor to their trigger in CSS, sharing its space and
+riding the ramp for free); where a portal is unavoidable (the row `Menu` escaping its
+`overflow` clip), divide the GBCR coords by the element's `currentCSSZoom` before writing them. The **hero** takes an extra large-screen
 step on top of the zoom (taller `--hero-body-h`, roomier padding, a higher title ceiling)
 so the centerpiece feels grander, not merely bigger (§7).
 

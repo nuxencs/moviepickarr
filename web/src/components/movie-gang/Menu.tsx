@@ -46,6 +46,22 @@ const GAP = 6;
 const MARGIN = 8;
 
 /**
+ * The effective CSS zoom applied to `el`. The large-screen scale ramp (§13)
+ * lives on `:root` and cascades into the `<body>`-portalled menu, so a
+ * position:fixed surface re-applies that zoom to its inline `top/left`.
+ * Coordinates read from getBoundingClientRect() are already in the zoomed
+ * viewport space, so they must be divided by this factor to land on target.
+ */
+function effectiveZoom(el: Element): number {
+  const cur = (el as { currentCSSZoom?: number }).currentCSSZoom;
+  if (typeof cur === "number" && cur > 0) return cur;
+  // Older engines without currentCSSZoom: the ramp is on :root, so read its
+  // declared zoom — the element's own computed zoom is 1 and would be a no-op.
+  const z = parseFloat(getComputedStyle(document.documentElement).zoom || "1");
+  return Number.isFinite(z) && z > 0 ? z : 1;
+}
+
+/**
  * Bespoke "more actions" menu — a portalled floating surface on the shared
  * mg-scaleIn/Out motion (see Modal), replacing the former Radix dropdown so the
  * app owns its focus behaviour. Every reason but an outside-click returns focus
@@ -113,9 +129,13 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
     let left = align === "end" ? t.right - m.width : t.left;
     left = Math.max(MARGIN, Math.min(left, window.innerWidth - m.width - MARGIN));
 
+    // Flip/clamp run in the zoomed viewport space (GBCR + innerWidth/Height all
+    // agree there); divide only the written coords so the fixed portal child
+    // doesn't get scaled by the inherited :root zoom a second time.
+    const zoom = effectiveZoom(menu);
     setPlacement({
-      top,
-      left,
+      top: top / zoom,
+      left: left / zoom,
       origin: `${above ? "bottom" : "top"} ${align === "end" ? "right" : "left"}`,
     });
   }, [align]);

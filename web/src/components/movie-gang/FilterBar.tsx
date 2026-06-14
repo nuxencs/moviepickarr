@@ -1,5 +1,6 @@
 import { CheckIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
 import {
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useCallback,
@@ -9,7 +10,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 
 import {
   type FilterOptions,
@@ -29,14 +29,6 @@ export interface FilterChoice<T extends string | number> {
 
 type CloseReason = "select" | "escape" | "tab" | "outside" | "trigger";
 
-interface Placement {
-  top: number;
-  left: number;
-  origin: string;
-}
-
-const GAP = 6;
-const MARGIN = 8;
 /** People lists at least this long get the inline search field. */
 const SEARCHABLE_FROM = 9;
 /** Mirrors the backend's statsMaxPeopleFilterIDs — the stats endpoint rejects
@@ -45,9 +37,12 @@ const MAX_SELECTED = 25;
 
 /**
  * Shared chip-trigger dropdown machinery behind FilterSelect/FilterMultiSelect
- * — the dropdown reuses the Menu's portalled `.mg-menu` surface and
- * mg-scaleIn/Out motion (see Menu.tsx for the pattern). Long lists opt into an
- * inline `.field` search. Gold tint on the chip = active filter state.
+ * — the dropdown reuses the `.mg-menu` surface and mg-scaleIn/Out motion, but
+ * (unlike the portalled Menu.tsx) anchors to its chip purely in CSS: it shares
+ * the trigger's coordinate space, so it rides the large-screen `:root` zoom ramp
+ * (§13) without the JS getBoundingClientRect placement that drifts under zoom.
+ * Where supported it flips to the chip's right edge near the viewport edge. Long
+ * lists opt into an inline `.field` search. Gold tint on the chip = active state.
  */
 function FilterChipMenu<T extends string | number>({
   label,
@@ -76,7 +71,6 @@ function FilterChipMenu<T extends string | number>({
 }) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [placement, setPlacement] = useState<Placement | null>(null);
   const [query, setQuery] = useState("");
 
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -84,6 +78,10 @@ function FilterChipMenu<T extends string | number>({
   const closingRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const menuId = useId();
+  // Unique anchor ident so the dropdown can tether to THIS chip — and flip to
+  // its right edge on narrow screens — via CSS anchor positioning where it is
+  // supported. Older engines fall back to the plain left-aligned drop (below).
+  const anchorName = `--chip-anchor-${menuId.replace(/[^a-zA-Z0-9]/g, "")}`;
 
   const q = query.trim().toLowerCase();
   const visible = q ? choices.filter((c) => c.label.toLowerCase().includes(q)) : choices;
@@ -99,7 +97,6 @@ function FilterChipMenu<T extends string | number>({
     clearTimer();
     closingRef.current = false;
     setClosing(false);
-    setPlacement(null);
     setQuery("");
     setOpen(true);
   }, []);
@@ -115,36 +112,8 @@ function FilterChipMenu<T extends string | number>({
       closingRef.current = false;
       setClosing(false);
       setOpen(false);
-      setPlacement(null);
     }, exitDelayMs());
   }, []);
-
-  const place = useCallback(() => {
-    const trigger = triggerRef.current;
-    const menu = menuRef.current;
-    if (!trigger || !menu) return;
-    const t = trigger.getBoundingClientRect();
-    const m = menu.getBoundingClientRect();
-
-    let top = t.bottom + GAP;
-    let above = false;
-    if (top + m.height > window.innerHeight - MARGIN && t.top - GAP - m.height >= MARGIN) {
-      top = t.top - GAP - m.height;
-      above = true;
-    }
-
-    let left = t.left;
-    left = Math.max(MARGIN, Math.min(left, window.innerWidth - m.width - MARGIN));
-
-    setPlacement({ top, left, origin: `${above ? "bottom" : "top"} left` });
-  }, []);
-
-  // Position before paint on open, and re-place when the search narrows the
-  // list (the menu height changes under the same anchor).
-  useLayoutEffect(() => {
-    if (!open || closing) return;
-    place();
-  }, [open, closing, place, visible.length]);
 
   // Focus the search field (when present) or the selected/first option on open.
   useLayoutEffect(() => {
@@ -161,11 +130,11 @@ function FilterChipMenu<T extends string | number>({
     )?.focus();
   }, [open, closing]);
 
-  // Keep it anchored while scrolling/resizing; dismiss on Esc or outside click.
+  // Dismiss on Esc or outside click. The menu is CSS-anchored to its chip, so
+  // it tracks the trigger through scroll/resize/zoom with no JS repositioning.
   useEffect(() => {
     if (!open || closing) return;
 
-    const reposition = () => place();
     const onPointerDown = (e: PointerEvent) => {
       const node = e.target as Node;
       if (menuRef.current?.contains(node) || triggerRef.current?.contains(node)) return;
@@ -178,17 +147,13 @@ function FilterChipMenu<T extends string | number>({
       }
     };
 
-    window.addEventListener("scroll", reposition, true);
-    window.addEventListener("resize", reposition);
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("scroll", reposition, true);
-      window.removeEventListener("resize", reposition);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open, closing, place, requestClose]);
+  }, [open, closing, requestClose]);
 
   useEffect(() => () => clearTimer(), []);
 
@@ -230,106 +195,103 @@ function FilterChipMenu<T extends string | number>({
   };
 
   return (
-    <span className="filterchip" data-active={active}>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        disabled={choices.length === 0 && !active}
-        onClick={() => (open && !closingRef.current ? requestClose("trigger") : openMenu())}
-        onKeyDown={(e) => {
-          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-            e.preventDefault();
-            openMenu();
-          }
-        }}
-      >
-        {chipLabel}
-        <ChevronDownIcon />
-      </button>
-      {active && (
+    // The wrapper owns positioning; the inner `.filterchip` keeps its
+    // overflow-clipped rounded pill, which would otherwise crop the dropdown.
+    <span className="filterchip-wrap" style={{ "--chip-anchor": anchorName } as CSSProperties}>
+      <span className="filterchip" data-active={active}>
         <button
+          ref={triggerRef}
           type="button"
-          className="filterchip__clear"
-          aria-label={`Clear ${label.toLowerCase()} filter`}
-          onClick={() => {
-            onClear();
-            // Clearing unmounts this button — hand focus to the trigger so
-            // keyboard users don't drop to <body>.
-            triggerRef.current?.focus();
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={open ? menuId : undefined}
+          disabled={choices.length === 0 && !active}
+          onClick={() => (open && !closingRef.current ? requestClose("trigger") : openMenu())}
+          onKeyDown={(e) => {
+            if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+              e.preventDefault();
+              openMenu();
+            }
           }}
         >
-          <XIcon />
+          {chipLabel}
+          <ChevronDownIcon />
         </button>
-      )}
-
-      {open &&
-        createPortal(
-          // The listbox role sits on the option list itself — never on this
-          // surface — so the search field (a combobox controlling the list)
-          // and the empty-state copy are not announced as stray "options".
-          <div
-            ref={menuRef}
-            className={`mg-menu filtermenu${closing ? " mg-menu--closing" : ""}`}
-            style={{
-              position: "fixed",
-              top: placement?.top ?? 0,
-              left: placement?.left ?? 0,
-              transformOrigin: placement?.origin ?? "top left",
-              visibility: placement ? "visible" : "hidden",
+        {active && (
+          <button
+            type="button"
+            className="filterchip__clear"
+            aria-label={`Clear ${label.toLowerCase()} filter`}
+            onClick={() => {
+              onClear();
+              // Clearing unmounts this button — hand focus to the trigger so
+              // keyboard users don't drop to <body>.
+              triggerRef.current?.focus();
             }}
-            onKeyDown={onMenuKeyDown}
           >
-            {searchable && (
-              <label className="field">
-                <SearchIcon />
-                <input
-                  role="combobox"
-                  aria-expanded="true"
-                  aria-controls={menuId}
-                  aria-autocomplete="list"
-                  placeholder={`Search ${label.toLowerCase()}…`}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </label>
-            )}
-            <div
-              className="filtermenu__list"
-              id={menuId}
-              role="listbox"
-              aria-label={`Filter by ${label.toLowerCase()}`}
-              aria-multiselectable={multiselectable || undefined}
-            >
-              {visible.map((choice) => {
-                const selected = isSelected(choice.value);
-                return (
-                  <button
-                    key={choice.value}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    className={`mg-menu__item${choice.kind ? ` filtermenu__item--${choice.kind}` : ""}`}
-                    onClick={() => pick(choice.value)}
-                  >
-                    {multiselectable && (
-                      // Fixed-width check slot: selection reads as a mark, not
-                      // color alone, and labels don't shift as it toggles.
-                      <span className="filtermenu__check" aria-hidden="true">
-                        {selected && <CheckIcon />}
-                      </span>
-                    )}
-                    {choice.label}
-                  </button>
-                );
-              })}
-            </div>
-            {visible.length === 0 && <p className="filtermenu__empty">No matches</p>}
-          </div>,
-          document.body,
+            <XIcon />
+          </button>
         )}
+      </span>
+
+      {/* Anchored to the chip in CSS (no portal) so it shares the trigger's
+          coordinate space and rides the :root zoom ramp (§13) without JS
+          placement drift. The listbox role sits on the option list itself — not
+          this surface — so the search combobox and empty-state copy are not
+          announced as stray "options". */}
+      {open && (
+        <div
+          ref={menuRef}
+          className={`mg-menu filtermenu${closing ? " mg-menu--closing" : ""}`}
+          onKeyDown={onMenuKeyDown}
+        >
+          {searchable && (
+            <label className="field">
+              <SearchIcon />
+              <input
+                role="combobox"
+                aria-expanded="true"
+                aria-controls={menuId}
+                aria-autocomplete="list"
+                placeholder={`Search ${label.toLowerCase()}…`}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+          )}
+          <div
+            className="filtermenu__list"
+            id={menuId}
+            role="listbox"
+            aria-label={`Filter by ${label.toLowerCase()}`}
+            aria-multiselectable={multiselectable || undefined}
+          >
+            {visible.map((choice) => {
+              const selected = isSelected(choice.value);
+              return (
+                <button
+                  key={choice.value}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={`mg-menu__item${choice.kind ? ` filtermenu__item--${choice.kind}` : ""}`}
+                  onClick={() => pick(choice.value)}
+                >
+                  {multiselectable && (
+                    // Fixed-width check slot: selection reads as a mark, not
+                    // color alone, and labels don't shift as it toggles.
+                    <span className="filtermenu__check" aria-hidden="true">
+                      {selected && <CheckIcon />}
+                    </span>
+                  )}
+                  {choice.label}
+                </button>
+              );
+            })}
+          </div>
+          {visible.length === 0 && <p className="filtermenu__empty">No matches</p>}
+        </div>
+      )}
     </span>
   );
 }

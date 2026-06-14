@@ -368,6 +368,17 @@
   .filterchip[data-active="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--ink); }
   .filterchip[data-active="true"] > button:hover:not(:disabled) { background: var(--accent-soft); }
   .filterchip > .filterchip__clear { border-left: 1px solid var(--accent-line); padding: 0 7px; }
+  /* Positioning context for the dropdown. Separate from the chip so the chip
+     keeps its overflow:hidden corner clip while the menu (a child of the wrap)
+     escapes it. The menu anchors here in CSS rather than via a portal, so it
+     rides the :root zoom ramp (§13) in the same space as the chip — no JS
+     placement to drift on large screens. */
+  .filterchip-wrap { position: relative; display: inline-flex; }
+  /* Name the trigger (not the clear X) as the dropdown's anchor, scoped per
+     chip via the inherited --chip-anchor ident. */
+  @supports (anchor-name: --a) {
+    .filterchip > button:not(.filterchip__clear) { anchor-name: var(--chip-anchor); }
+  }
 
   /* ============================================================
      Layout: nav · hero · tabs
@@ -885,10 +896,35 @@
      an optional inline .field search pinned on top, a scrollable option list,
      and a gold selected state. */
   .filtermenu { min-width: 13rem; max-height: min(340px, 70vh); }
+  /* Anchored under its chip (overrides the portalled .mg-menu's position:fixed).
+     Opens downward from the chip's left edge; the chips live at the top of the
+     page so there is always room below. max-width keeps it inside the viewport. */
+  .filterchip-wrap > .filtermenu {
+    position: absolute; top: calc(100% + 6px); left: 0; right: auto;
+    transform-origin: top left; max-width: calc(100vw - 16px);
+  }
+  /* Where anchor positioning is supported, tether to the chip and flip to its
+     right edge when a left-aligned menu would run off-screen (narrow viewports,
+     right-side chips). Older engines keep the left-aligned baseline above. */
+  @supports (position-try-fallbacks: flip-inline) {
+    .filterchip-wrap > .filtermenu {
+      /* Fixed so position-try measures overflow against the viewport (not the
+         chip-sized wrapper) and can flip; anchor() keeps it tethered and the
+         engine re-tracks on scroll/zoom natively — no JS placement. */
+      position: fixed;
+      top: anchor(bottom); left: anchor(left); right: auto; bottom: auto; margin-top: 6px;
+      position-anchor: var(--chip-anchor);
+      position-try-fallbacks: flip-inline;
+    }
+  }
   .filtermenu .field { height: 34px; flex: none; margin-bottom: 5px; }
   .filtermenu__list { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
   .filtermenu__empty { margin: 0; padding: 9px 10px; font-size: 12.5px; color: var(--ink-3); }
   .filtermenu .mg-menu__item[aria-selected="true"] { color: var(--accent); }
+  /* Options sit flush against the scrollable list, whose overflow clips a 2px
+     outset focus ring on the left/scroll edges — draw it inward so keyboard
+     focus stays fully visible (cf. the chip/seg :focus-visible rule). */
+  .filtermenu__list .mg-menu__item:focus-visible { outline-offset: -2px; }
   /* Release-year dropdown: selectable decade headers ("1990s") with their years
      indented beneath — both are real options (a decade filters the whole
      decade, a year the exact year). */

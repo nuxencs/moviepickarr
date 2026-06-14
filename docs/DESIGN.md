@@ -127,7 +127,9 @@ old shadcn primitives.
 - **Avatar:** `.avatar` — the square, hue-derived initials block. An optional `src`
   photo (TMDB headshot, `.avatar__img`) layers over the initials gradient and falls
   back to the initials when missing or failing to load; the size contract is
-  identical either way.
+  identical either way. While the photo loads the initials gradient is the
+  placeholder under a shimmer sweep (`.avatar__shimmer`, reusing `mg-shimmer`) and
+  the photo crossfades in (`.avatar--loading`).
 - **Cast strip:** `.castrow` + `.castcard` (movie modal) — a horizontally scrollable
   row of 2:3 headshot cards: TMDB profile photo (the Avatar initials gradient,
   stretched to fill the frame, as fallback) with mono 12px name + character below
@@ -161,7 +163,10 @@ old shadcn primitives.
   decades render as zero columns (a gap is information), counts on non-empty
   columns stay permanently visible, and the axis labels every column ("1990s").
 - **Poster:** `.poster` — the one container; real TMDB art or a deterministic
-  procedural duotone (`lib.ts`), with a rating badge.
+  procedural duotone (`lib.ts`), with a rating badge. While the photo loads the
+  duotone is the placeholder under a sweeping shimmer (`.poster__shimmer`,
+  `mg-shimmer` keyframe) and the photo crossfades in over it (`.poster--loading`);
+  the duotone is the permanent art only when there's no/failed image.
 - **Meta chips:** `.metachips` — a wrapping row reading `year · runtime · ★rating`
   (mono, dot-separated) `│` genre chips `│` external links. A `.metasep` vertical
   rule divides the rating facts from the genres, and the genres from the links.
@@ -247,6 +252,9 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   reappearing. It re-measures on resize and on `document.fonts.ready` (font swap
   changes label width). The reduced-motion guard collapses the slide to an instant
   jump for free.
+- **Image load:** poster and avatar photos crossfade in over the duotone/initials
+  placeholder under an `mg-shimmer` sweep (`.poster__shimmer` / `.avatar__shimmer`) —
+  both reduced-motion-guarded to `animation: none`.
 - **`prefers-reduced-motion`**: the global block zeroes animation/transition *duration
   AND delay* (so staggered reveals don't pop in) and collapses iteration counts.
   Loaders are the one exception — `.mg-spin` keeps spinning (essential motion). Any new

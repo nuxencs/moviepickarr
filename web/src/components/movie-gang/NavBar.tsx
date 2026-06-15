@@ -1,3 +1,4 @@
+import { Link, useRouterState } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon, FilmIcon, MoonIcon, SunIcon, UsersIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -5,11 +6,19 @@ import { useTheme } from "@/components/ThemeProvider";
 
 export type Tab = "movies" | "users" | "stats";
 
-const TABS: { id: Tab; label: string; icon: typeof FilmIcon }[] = [
-  { id: "movies", label: "Movies", icon: FilmIcon },
-  { id: "users", label: "Users", icon: UsersIcon },
-  { id: "stats", label: "Stats", icon: ChartNoAxesColumnIcon },
+const TABS: { id: Tab; label: string; icon: typeof FilmIcon; path: "/" | "/users" | "/stats" }[] = [
+  { id: "movies", label: "Movies", icon: FilmIcon, path: "/" },
+  { id: "users", label: "Users", icon: UsersIcon, path: "/users" },
+  { id: "stats", label: "Stats", icon: ChartNoAxesColumnIcon, path: "/stats" },
 ];
+
+/** The router is the source of truth for the active tab now. Map the current
+ *  pathname back to a tab id ('/' → movies) to drive the active styling. */
+function tabFromPath(pathname: string): Tab {
+  if (pathname.startsWith("/stats")) return "stats";
+  if (pathname.startsWith("/users")) return "users";
+  return "movies";
+}
 
 /**
  * Resolve dark/light from the `theme` value directly (not the DOM class):
@@ -26,15 +35,16 @@ function resolveDark(theme: string): boolean {
 /** Horizontal inset (px) the underline keeps from each edge of the active tab. */
 const INK_INSET = 12;
 
-export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab) => void }) {
+export function NavBar() {
   const { theme, setTheme } = useTheme();
   const isDark = resolveDark(theme);
+  const active = useRouterState({ select: (s) => tabFromPath(s.location.pathname) });
 
   // A single shared underline that slides between tabs, rather than one per tab
-  // that unmounts/remounts on switch. We measure the active button and drive the
+  // that unmounts/remounts on switch. We measure the active link and drive the
   // indicator's left/width; CSS transitions the move (and the reduced-motion
   // guard in index.css collapses it to an instant jump).
-  const btnRefs = useRef<Record<Tab, HTMLButtonElement | null>>({
+  const btnRefs = useRef<Record<Tab, HTMLAnchorElement | null>>({
     movies: null,
     users: null,
     stats: null,
@@ -44,7 +54,7 @@ export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
   const measure = useCallback(() => {
     const btn = btnRefs.current[active];
     // Skip when the top-bar tabs are hidden (mobile bottom-bar layout): a
-    // display:none button reports offsetWidth 0, which would park the slider
+    // display:none link reports offsetWidth 0, which would park the slider
     // at a bogus negative width. It re-measures on resize back to desktop.
     if (!btn || btn.offsetParent === null) return;
     setInk({ left: btn.offsetLeft + INK_INSET, width: btn.offsetWidth - INK_INSET * 2 });
@@ -67,10 +77,9 @@ export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
       <nav className="nav">
         <div className="nav__inner">
           <h1 className="wordmark">
-            <button
-              type="button"
+            <Link
+              to="/"
               className="wordmark__home"
-              onClick={() => onChange("movies")}
               aria-current={active === "movies" ? "page" : undefined}
               title="Go to Movies"
             >
@@ -78,27 +87,26 @@ export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
                 <FilmIcon />
               </span>
               Movie Gang
-            </button>
+            </Link>
           </h1>
 
           {/* Top-bar tabs with the sliding underline (desktop / tablet). Hidden on
               phones, where navigation moves to the fixed bottom bar below. */}
           <div className="nav__tabs">
-            {TABS.map(({ id, label, icon: Icon }) => (
-              <button
+            {TABS.map(({ id, label, icon: Icon, path }) => (
+              <Link
                 key={id}
+                to={path}
                 ref={(el) => {
                   btnRefs.current[id] = el;
                 }}
-                type="button"
                 className="tab"
                 data-active={active === id}
                 aria-current={active === id ? "page" : undefined}
-                onClick={() => onChange(id)}
               >
                 <Icon />
                 {label}
-              </button>
+              </Link>
             ))}
             {ink && (
               <span className="tab__ink" style={{ left: ink.left, width: ink.width }} />
@@ -121,18 +129,17 @@ export function NavBar({ active, onChange }: { active: Tab; onChange: (tab: Tab)
           tab is gold-tinted instead of carrying the desktop underline slider.
           Hidden at the same breakpoint where the top-bar tabs reappear. */}
       <nav className="navbar-bottom" aria-label="Primary">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
+        {TABS.map(({ id, label, icon: Icon, path }) => (
+          <Link
             key={id}
-            type="button"
+            to={path}
             className="navbar-bottom__tab"
             data-active={active === id}
             aria-current={active === id ? "page" : undefined}
-            onClick={() => onChange(id)}
           >
             <Icon />
             <span>{label}</span>
-          </button>
+          </Link>
         ))}
       </nav>
     </>

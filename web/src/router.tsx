@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  stripSearchParams,
 } from "@tanstack/react-router";
 
 import { queryClient } from "@/api/QueryClient";
@@ -10,6 +11,7 @@ import { queryClient } from "@/api/QueryClient";
 import { Hero } from "@/components/movie-gang/Hero";
 import { MoviesTab } from "@/components/movie-gang/MoviesTab";
 import { NavBar } from "@/components/movie-gang/NavBar";
+import { statsSearchDefaults, validateStatsSearch } from "@/components/movie-gang/statsSearch";
 import { StatsTab } from "@/components/movie-gang/StatsTab";
 import { UsersTab } from "@/components/movie-gang/UsersTab";
 import { Toaster } from "@/components/ui/toast";
@@ -82,6 +84,9 @@ const usersRoute = createRoute({
 const statsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/stats",
+  // All Stats filter state lives in the URL search params (see statsSearch).
+  validateSearch: validateStatsSearch,
+  search: { middlewares: [stripSearchParams(statsSearchDefaults)] },
   component: function StatsPage() {
     return (
       <Shell>

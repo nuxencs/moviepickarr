@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ActivityIcon,
   CalendarDaysIcon,
@@ -14,14 +15,13 @@ import { type CSSProperties, useMemo, useState } from "react";
 import { MoviesGetWatchedQueryOptions, StatsGetQueryOptions } from "@/api/queries";
 
 import { Avatar } from "@/components/movie-gang/Bits";
-import { DateRangePopover, shortRange, type DayRange } from "@/components/movie-gang/DateRange";
+import { DateRangePopover, shortRange } from "@/components/movie-gang/DateRange";
 import { FilterBar, FilterSelect } from "@/components/movie-gang/FilterBar";
 import {
   filterOptionsFrom,
   hasActiveFilters,
   hueOf,
   type MovieFilters,
-  NO_FILTERS,
   plural,
   profileUrl,
   runtimeLabel,
@@ -30,6 +30,12 @@ import {
 } from "@/components/movie-gang/lib";
 import { MovieModal } from "@/components/movie-gang/MovieModal";
 import { Poster } from "@/components/movie-gang/Poster";
+import {
+  filtersFromSearch,
+  filtersToSearch,
+  rangeFromSearch,
+  ymd,
+} from "@/components/movie-gang/statsSearch";
 
 import type {
   Movie,
@@ -54,19 +60,17 @@ function topNamed(items: StatsNamedCount[]) {
 function topHour(items: StatsHourCount[]) {
   return [...items].sort((a, b) => b.count - a.count || a.hour - b.hour)[0];
 }
-function ymd(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 export function StatsTab() {
-  const [win, setWin] = useState<StatsWindow>("30d");
+  const search = useSearch({ from: "/stats" });
+  const navigate = useNavigate({ from: "/stats" });
   const [showPicker, setShowPicker] = useState(false);
-  const [customRange, setCustomRange] = useState<DayRange | null>(null);
-  const [filters, setFilters] = useState<MovieFilters>(NO_FILTERS);
   const [selected, setSelected] = useState<Movie | null>(null);
 
+  const win = search.win;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
+  // The whole filter state is driven by the URL search params (see statsSearch).
+  const customRange = useMemo(() => rangeFromSearch(search), [search]);
   const apiRange =
     win === "custom" && customRange?.start && customRange?.end
       ? { start: ymd(customRange.start), end: ymd(customRange.end) }
@@ -78,12 +82,12 @@ export function StatsTab() {
       timezone,
       apiRange.start,
       apiRange.end,
-      filters.genre ?? undefined,
-      filters.actors.map((p) => p.id),
-      filters.crew.map((p) => p.id),
-      filters.pickers.map((p) => p.id),
-      filters.year ?? undefined,
-      filters.decade ?? undefined,
+      search.genre || undefined,
+      search.actors,
+      search.crew,
+      search.pickers,
+      search.year || undefined,
+      search.decade || undefined,
     ),
   );
 
@@ -91,6 +95,8 @@ export function StatsTab() {
   // the same tiny dataset the Movies tab shows, no extra endpoint.
   const { data: watched } = useQuery(MoviesGetWatchedQueryOptions());
   const filterOptions = useMemo(() => filterOptionsFrom(watched ?? []), [watched]);
+  // Resolve the URL's id lists back into {id, name} chips for the FilterBar.
+  const filters = useMemo(() => filtersFromSearch(search, filterOptions), [search, filterOptions]);
   const watchYears = useMemo(() => {
     const years = new Set<number>();
     for (const movie of watched ?? []) {
@@ -131,28 +137,39 @@ export function StatsTab() {
       ? customRange.start.getFullYear()
       : null;
 
+  // Every filter mutation writes to the URL; the components below are unchanged.
+  const setFilters = (next: MovieFilters) =>
+    navigate({ search: (prev) => ({ ...prev, ...filtersToSearch(next) }) });
+
   const onWatchYear = (year: number | null) => {
     setShowPicker(false);
     if (year === null) {
-      setWin("all-time");
-      setCustomRange(null);
+      navigate({ search: (prev) => ({ ...prev, win: "all-time", start: "", end: "" }) });
       return;
     }
-    setCustomRange({ start: new Date(year, 0, 1), end: new Date(year, 11, 31) });
-    setWin("custom");
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        win: "custom",
+        start: ymd(new Date(year, 0, 1)),
+        end: ymd(new Date(year, 11, 31)),
+      }),
+    });
   };
 
   // Rail clicks drill the whole page down: actors toggle into the actors
   // filter, directors into the crew filter (any-of within a group).
-  const togglePerson = (key: "actors" | "crew") => (person: StatsPersonCount) =>
-    setFilters((f) => ({
-      ...f,
-      [key]: f[key].some((p) => p.id === person.personId)
-        ? f[key].filter((p) => p.id !== person.personId)
-        : [...f[key], { id: person.personId, name: person.name }],
-    }));
-  const activeActorIds = useMemo(() => new Set(filters.actors.map((p) => p.id)), [filters.actors]);
-  const activeCrewIds = useMemo(() => new Set(filters.crew.map((p) => p.id)), [filters.crew]);
+  const togglePerson = (key: "actors" | "crew") => (person: StatsPersonCount) => {
+    const ids = search[key];
+    const next = (
+      ids.includes(person.personId)
+        ? ids.filter((id) => id !== person.personId)
+        : [...ids, person.personId]
+    ).sort((a, b) => a - b);
+    navigate({ search: (prev) => ({ ...prev, [key]: next }) });
+  };
+  const activeActorIds = useMemo(() => new Set(search.actors), [search.actors]);
+  const activeCrewIds = useMemo(() => new Set(search.crew), [search.crew]);
 
   const filtered = hasActiveFilters(filters);
   const count = stats?.selectedWindowCount ?? 0;
@@ -172,8 +189,8 @@ export function StatsTab() {
       setShowPicker((p) => !p);
       return;
     }
-    setWin(id);
     setShowPicker(false);
+    navigate({ search: (prev) => ({ ...prev, win: id, start: "", end: "" }) });
   };
 
   return (
@@ -213,9 +230,15 @@ export function StatsTab() {
               initial={customRange}
               onClose={() => setShowPicker(false)}
               onApply={(r) => {
-                setCustomRange(r);
-                setWin("custom");
                 setShowPicker(false);
+                navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    win: "custom",
+                    start: r.start ? ymd(r.start) : "",
+                    end: r.end ? ymd(r.end) : "",
+                  }),
+                });
               }}
             />
           )}

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { StarIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 
@@ -9,6 +10,7 @@ import {
   runtimeLabel,
   yearOf,
 } from "@/components/movie-gang/lib";
+import { statsSearchDefaults } from "@/components/movie-gang/statsSearch";
 
 import type { Movie } from "@/types/Response";
 
@@ -120,7 +122,18 @@ export function MetaChips({
 
   return (
     <div className="metachips">
-      {year && <span className={dot()}>{year}</span>}
+      {year && (
+        // Release year deep-links to stats filtered to that year, mirroring the
+        // genre chips below. Runtime/rating stay static — they aren't filters.
+        <Link
+          to="/stats"
+          search={{ ...statsSearchDefaults, year }}
+          className={`${dot()} metachip--link`}
+          title={`See ${year} stats`}
+        >
+          {year}
+        </Link>
+      )}
       {runtime && <span className={dot()}>{runtime}</span>}
       {rating && (
         <span className={dot()}>
@@ -130,9 +143,17 @@ export function MetaChips({
 
       {genres.length > 0 && hasFacts && <span className="metasep" aria-hidden="true" />}
       {genres.map((g) => (
-        <span key={g} className="genrechip">
+        // Deep-link to the Stats tab pre-filtered by this genre. stripSearchParams
+        // trims the spread defaults, so the URL is just /stats?genre=<g>.
+        <Link
+          key={g}
+          to="/stats"
+          search={{ ...statsSearchDefaults, genre: g }}
+          className="genrechip genrechip--link"
+          title={`See ${g} stats`}
+        >
           {g}
-        </span>
+        </Link>
       ))}
 
       {links.length > 0 && (hasFacts || genres.length > 0) && (

@@ -253,9 +253,19 @@
   /* The "·" glyph (matching the eyebrow dot), not a CSS circle, for one dot style. */
   .metachip--dot::before { content: "·"; margin-right: 8px; color: var(--ink-3); }
   .genrechip { font-size: 12px; padding: 3px 9px; border-radius: var(--r-sm); border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap; }
+  /* Genre chips deep-link to filtered stats — give the anchor a clear clickable
+     affordance while keeping the resting pill identical to the static chip. */
+  a.genrechip { text-decoration: none; cursor: pointer; transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease); }
+  .genrechip--link:hover, .genrechip--link:focus-visible { color: var(--ink); border-color: var(--accent-line); background: var(--accent-soft); }
+  .genrechip--link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .metasep { width: 1px; height: 13px; border-radius: 99px; background: var(--line-2); margin: 0 2px; }
   .metalink { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); text-decoration: none; white-space: nowrap; transition: color var(--dur-fast) var(--ease); }
   .metalink:hover { color: var(--accent); }
+  /* The year fact deep-links to filtered stats; mirror the metalink color-shift
+     affordance rather than a pill so the mono facts run stays calm. */
+  a.metachip { text-decoration: none; cursor: pointer; }
+  .metachip--link:hover, .metachip--link:focus-visible { color: var(--accent); }
+  .metachip--link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   /* ---- Avatar ---- */
   .avatar {
@@ -400,7 +410,7 @@
   .wordmark { margin: 0; flex: none; }
   .wordmark__home {
     display: inline-flex; align-items: center; gap: 11px;
-    background: none; border: 0; padding: 0; cursor: pointer; color: inherit;
+    background: none; border: 0; padding: 0; cursor: pointer; color: inherit; text-decoration: none;
     font-family: var(--font-display); font-size: 16px; font-weight: 700;
     letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
     border-radius: var(--r-sm); transition: transform var(--dur-fast) var(--ease);
@@ -413,7 +423,7 @@
   .nav__tabs { position: relative; display: flex; gap: 2px; align-items: stretch; height: 100%; margin-left: 8px; }
 
   .tab {
-    position: relative; background: none; border: none; cursor: pointer;
+    position: relative; background: none; border: none; cursor: pointer; text-decoration: none;
     font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
     padding: 0 15px; display: inline-flex; align-items: center; gap: 8px;
     transition: color var(--dur-fast) var(--ease);
@@ -462,9 +472,13 @@
   .hero__meta { margin-top: 14px; min-height: 26px; }
   .hero__meta .metachip, .hero__meta .rating { color: rgba(255,255,255,0.84); }
   .hero__meta .genrechip { color: rgba(255,255,255,0.84); border-color: rgba(255,255,255,0.28); }
+  /* Hero text stays light on the cinematic backdrop regardless of theme, so the
+     chip hover keeps a light treatment rather than the page-level ink tokens. */
+  .hero__meta .genrechip--link:hover, .hero__meta .genrechip--link:focus-visible { color: #fff; border-color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.14); }
   .hero__meta .metasep { background: rgba(255,255,255,0.28); }
   .hero__meta .metalink { color: rgba(255,255,255,0.84); }
   .hero__meta .metalink:hover { color: #fff; }
+  .hero__meta .metachip--link:hover, .hero__meta .metachip--link:focus-visible { color: #fff; }
   .hero__actions { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   /* Pick-reveal: poster + each text slot fade-settle into place, lightly
      staggered, on the keyed remount when the pick changes (or clears). The §7
@@ -958,7 +972,7 @@
   .navbar-bottom__tab {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
     min-height: 56px; padding: 9px 6px;
-    background: none; border: none; cursor: pointer;
+    background: none; border: none; cursor: pointer; text-decoration: none;
     font-family: var(--font-display); font-weight: 600; font-size: 10.5px;
     letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
     transition: color var(--dur-fast) var(--ease);

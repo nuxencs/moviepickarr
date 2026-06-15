@@ -389,8 +389,9 @@ use tokens so they follow the theme.
 
 ## 12. Stack & build notes
 
-- React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query, Sonner,
-  lucide. No Radix/shadcn. Package manager: **bun** (`web/`).
+- React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query +
+  **TanStack Router** (code-based, no route-gen plugin), Sonner, lucide. No
+  Radix/shadcn. Package manager: **bun** (`web/`).
 - Tailwind v4 has no config file; theme/aliases live in `index.css` (`@theme inline`).
 - Gate before handoff: `bunx tsc -b` + `bun run lint` + `bunx vite build` (all from
   `web/`). The editor's inline TS diagnostics often fail to resolve the `@/*` path
@@ -403,6 +404,23 @@ use tokens so they follow the theme.
   on `:5173` directly. (Fixed in `59f2f80`; the base used to hardcode `:3030`, which
   the browser blocked as a cross-origin/CORS call.) Empty data on `:5173` ⇒ the Go
   backend isn't up, the proxy `target` is wrong, or the DB is empty — not CORS.
+- **Routing & URL state (TanStack Router).** Three path routes — `/` (Movies),
+  `/stats`, `/users` — defined code-based in `router.tsx`. The root route is the app
+  shell (NavBar + `<Outlet/>` + Toaster) and owns the single `useSSE()` mount, so the
+  stream opens once and survives tab navigation rather than reconnecting per switch;
+  `NavBar` derives the active tab from the router and renders `<Link>`s. The **Stats
+  tab keeps its entire filter state in typed URL search params** (`statsSearch.ts`:
+  window, custom range, genre, actors/crew/pickers id-lists, release year/decade).
+  `validateStatsSearch` is a total, never-throwing validator (caps id lists at 25,
+  sorts + de-dupes to a canonical form, parses custom-range dates as *local* `ymd`)
+  and `stripSearchParams` trims defaults so the default view stays a clean `/stats`.
+  Net: every filter is shareable, bookmarkable, and survives reload + back/forward,
+  and the genre/year chips in the hero + movie modal (`MetaChips`) deep-link straight
+  into a pre-filtered `/stats` (genre → `?genre=`, release year → `?year=`).
+- **Backend SPA fallback.** The Fiber file server uses `NotFoundFile: "index.html"`
+  so a hard refresh or shared deep-link on a client route (`/stats`, `/users`)
+  resolves to the SPA instead of 404ing, with an `/api` JSON-404 catch-all above it
+  so unknown API paths still return `application/problem+json`, not the SPA shell.
 
 ---
 

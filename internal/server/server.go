@@ -80,7 +80,19 @@ func Run(ctx context.Context, cfg Config) error {
 
 	registerRoutes(app, h)
 
-	app.Use("/", filesystem.New(filesystem.Config{Root: cfg.WebRoot}))
+	// Unmatched API routes must 404 as JSON rather than fall through to the SPA
+	// fallback below — otherwise a mistyped endpoint would return index.html.
+	// Real /api routes are registered above and terminate the chain, so this
+	// only fires for paths no handler matched.
+	app.Use("/api", func(c *fiber.Ctx) error {
+		return writeProblem(c, fiber.StatusNotFound, "not_found", "unknown API endpoint")
+	})
+
+	// Serve the embedded SPA. NotFoundFile makes unknown paths fall back to
+	// index.html so client-side routes (e.g. /stats, /users) resolve on a hard
+	// refresh or shared deep-link instead of 404ing. Non-API paths only — the
+	// /api catch-all above keeps API 404s as JSON.
+	app.Use("/", filesystem.New(filesystem.Config{Root: cfg.WebRoot, NotFoundFile: "index.html"}))
 
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)

@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 // enrichConfig tunes the background enrichment worker. All fields are
@@ -24,6 +22,15 @@ type enrichConfig struct {
 	CastLimit       int           // cast rows kept per movie at ingest (0 = full cast)
 	RefreshInterval time.Duration // periodic stale-scan cadence (0 disables)
 	TTL             time.Duration // rows older than now-TTL are re-enriched
+
+	// Enriched-broadcast coalescing. A drain enriches many movies back-to-back;
+	// emitting one SSE event per movie makes the frontend invalidate-refetch
+	// every list per movie. Instead, ids accumulate and a single
+	// "movies:enriched-batch" fires once the burst goes quiet for BatchDebounce,
+	// with BatchMaxWait as a ceiling so a long backfill still shows periodic
+	// progress rather than one delayed dump at drain end.
+	BatchDebounce time.Duration
+	BatchMaxWait  time.Duration
 }
 
 func defaultEnrichConfig() enrichConfig {
@@ -36,6 +43,8 @@ func defaultEnrichConfig() enrichConfig {
 		CastLimit:       15, // top billing only; deepening just needs a re-enrich
 		RefreshInterval: time.Hour,
 		TTL:             720 * time.Hour, // 30 days
+		BatchDebounce:   500 * time.Millisecond,
+		BatchMaxWait:    2 * time.Second,
 	}
 }
 
@@ -64,6 +73,12 @@ func loadEnrichConfig() enrichConfig {
 	}
 	if v, ok := envDuration("TMDB_ENRICH_TTL"); ok && v > 0 {
 		cfg.TTL = v
+	}
+	if v, ok := envDurationMS("TMDB_ENRICH_BATCH_DEBOUNCE_MS"); ok {
+		cfg.BatchDebounce = v
+	}
+	if v, ok := envDurationMS("TMDB_ENRICH_BATCH_MAX_WAIT_MS"); ok {
+		cfg.BatchMaxWait = v
 	}
 	return cfg
 }
@@ -157,6 +172,14 @@ type enrichRunner struct {
 	inflight map[int]struct{}
 	mu       sync.Mutex // guards inflight only
 
+	// batch coalesces freshly-enriched ids into one SSE broadcast. batchMu guards
+	// these because the debounce timer fires on its own goroutine; flushBatch does
+	// the broker/onEnriched work outside the lock.
+	batchMu       sync.Mutex
+	pending       []int
+	flushTimer    *time.Timer
+	batchDeadline time.Time
+
 	wg       sync.WaitGroup
 	stopOnce sync.Once
 	cancel   context.CancelFunc
@@ -206,6 +229,7 @@ func (r *enrichRunner) Stop() {
 			r.cancel()
 		}
 		r.wg.Wait()
+		r.flushBatch() // emit any final partial batch and stop the debounce timer
 	})
 }
 
@@ -303,6 +327,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 			return
 		}
 	}
+	r.flushBatch() // emit the tail of this drain's batch immediately
 	log.Printf("enrich: drain complete — %d enriched, %d skipped, %d failed", enriched, skipped, failed)
 }
 
@@ -322,8 +347,7 @@ func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 	switch {
 	case err == nil:
 		log.Printf("enrich: movie %d enriched → tmdb %d (%d genres, %d credits)", movieID, res.TMDBID, res.Genres, res.Credits)
-		r.notifyEnriched()
-		r.broadcastEnriched(movieID)
+		r.recordEnriched(movieID)
 		return outcomeEnriched
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		return outcomeCanceled
@@ -343,9 +367,57 @@ func (r *enrichRunner) notifyEnriched() {
 	r.onEnriched()
 }
 
-func (r *enrichRunner) broadcastEnriched(movieID int) {
+// recordEnriched buffers a freshly-enriched movie id and (re)arms the debounce
+// timer. Enrichments within BatchDebounce of each other coalesce into one flush;
+// BatchMaxWait caps how long the first id in a batch waits, so a long backfill
+// still emits periodic progress instead of one delayed dump at drain end.
+func (r *enrichRunner) recordEnriched(movieID int) {
+	r.batchMu.Lock()
+	defer r.batchMu.Unlock()
+
+	r.pending = append(r.pending, movieID)
+	if r.flushTimer == nil {
+		r.batchDeadline = time.Now().Add(r.cfg.BatchMaxWait)
+		r.flushTimer = time.AfterFunc(r.cfg.BatchDebounce, r.flushBatch)
+		return
+	}
+
+	d := r.cfg.BatchDebounce
+	if rem := time.Until(r.batchDeadline); rem < d {
+		d = rem
+	}
+	if d < 0 {
+		d = 0
+	}
+	r.flushTimer.Reset(d)
+}
+
+// flushBatch emits one coalesced enrichment signal for the buffered burst: it
+// invalidates the stats cache once (onEnriched) and broadcasts a single
+// "movies:enriched-batch" SSE event. A no-op when nothing is pending, so it is
+// safe to call from the drain tail, the debounce timer, and Stop(). The broker
+// and onEnriched work runs outside the lock.
+func (r *enrichRunner) flushBatch() {
+	r.batchMu.Lock()
+	if r.flushTimer != nil {
+		r.flushTimer.Stop()
+		r.flushTimer = nil
+	}
+	n := len(r.pending)
+	r.pending = nil
+	r.batchMu.Unlock()
+
+	if n == 0 {
+		return
+	}
+	r.notifyEnriched()
+	r.broadcastEnrichedBatch(n)
+}
+
+func (r *enrichRunner) broadcastEnrichedBatch(n int) {
 	if r.broker == nil {
 		return
 	}
-	r.broker.Broadcast(event{Type: "movie:enriched", Data: fiber.Map{"id": movieID}})
+	log.Printf("enrich: flushed %d enriched movie(s) → movies:enriched-batch", n)
+	r.broker.Broadcast(event{Type: "movies:enriched-batch"})
 }

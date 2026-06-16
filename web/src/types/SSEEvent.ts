@@ -9,7 +9,7 @@ export type SSEEventType =
   | "movie:picked"
   | "movie:watched"
   | "movie:updated"
-  | "movie:enriched"
+  | "movies:enriched-batch"
   | "settings:pool-lock-changed"
   | "settings:next-picker-changed";
 
@@ -50,8 +50,11 @@ export interface MovieUpdatedEvent extends SSEEvent<Movie> {
   type: "movie:updated";
 }
 
-export interface MovieEnrichedEvent extends SSEEvent<{ id: number }> {
-  type: "movie:enriched";
+// Coalesced signal: the enrichment worker finished a burst of movies and emits
+// one batch event instead of one per movie. Carries no payload — the frontend
+// invalidates the affected lists (see useSSE), which then refetch enriched data.
+export interface MoviesEnrichedBatchEvent extends SSEEvent<undefined> {
+  type: "movies:enriched-batch";
 }
 
 export interface PoolLockChangedEvent extends SSEEvent<Settings> {

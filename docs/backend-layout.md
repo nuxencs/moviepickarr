@@ -38,6 +38,9 @@
 - API served under `/api/v1/*` only.
 - Resource ID operations use path params only (no query/body ID fallbacks).
 - Error responses use `application/problem+json`.
+- Responses (and the embedded SPA assets) are gzip-compressed via the `compress`
+  middleware. The SSE stream (`/api/v1/events`) is excluded — compression buffers
+  the body, which would break its per-event flush.
 
 ## Movie identity & enrichment (TMDB)
 
@@ -108,13 +111,16 @@ A single background worker (`enrichRunner`) drives it: a startup backfill of
 un-enriched rows, fire-and-forget enqueue when a movie is added or its link is
 edited, and a periodic "drain" that re-enriches rows older than the TTL. TMDB
 requests are paced by a min-interval rate limiter and retried (429 `Retry-After`,
-exponential backoff + jitter on 5xx/network). Successful upserts broadcast a
-`movie:enriched` SSE event. Enrichment is skipped entirely when `TMDB_API_KEY`
-is unset.
+exponential backoff + jitter on 5xx/network). Successful upserts are coalesced
+into a single `movies:enriched-batch` SSE event per burst (debounced, with a hard
+ceiling) rather than one event per movie — a backfill of many rows used to trigger
+one invalidate-refetch wave per movie. Enrichment is skipped entirely when
+`TMDB_API_KEY` is unset.
 
 Env knobs (all optional; sensible defaults): `TMDB_ENRICH_MIN_INTERVAL_MS`
 (250), `TMDB_ENRICH_MAX_RETRIES` (4), `TMDB_ENRICH_BACKOFF_MS` (500),
 `TMDB_ENRICH_QUEUE_SIZE` (256), `TMDB_ENRICH_BATCH_LIMIT` (200),
+`TMDB_ENRICH_BATCH_DEBOUNCE_MS` (500), `TMDB_ENRICH_BATCH_MAX_WAIT_MS` (2000),
 `TMDB_ENRICH_CAST_LIMIT` (15, `0` = full cast),
 `TMDB_ENRICH_REFRESH_INTERVAL` (`1h`, `0` disables), `TMDB_ENRICH_TTL` (`720h`).
 
@@ -160,6 +166,7 @@ resolved from the credit rows).
 Responses are cached per `window|tz|start|end|genre|actorIds|crewIds|releaseYear|decade|addedByIds`
 key (genre lowercased; id lists in canonical sorted form, so request order
 can't split the cache) with a short TTL. The cache is invalidated when a movie is
-watched/edited/user-deleted **and** after every successful enrichment
-(`enrichRunner.onEnriched` → `invalidateStatsCache`), since stats now depend
-on metadata/credits; the frontend hears the matching `movie:enriched` SSE.
+watched/edited/user-deleted **and** once per enrichment burst
+(`enrichRunner.onEnriched` → `invalidateStatsCache`, fired on each batch flush so
+the TTL stays useful during a backfill), since stats now depend on
+metadata/credits; the frontend hears the matching `movies:enriched-batch` SSE.

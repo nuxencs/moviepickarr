@@ -11,7 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { exitDelayMs } from "@/components/movie-gang/Modal";
+import { exitDelayMs } from "@/components/movie-gang/exitDelay";
 
 export interface MenuAction {
   label: string;

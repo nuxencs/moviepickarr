@@ -21,7 +21,7 @@ import {
 } from "@/components/movie-gang/lib";
 import { MovieModal } from "@/components/movie-gang/MovieModal";
 import { Poster } from "@/components/movie-gang/Poster";
-import { toast } from "@/components/ui/toast";
+import { toast } from "@/components/ui/toast-api";
 
 import type { Movie } from "@/types/Response";
 
@@ -144,6 +144,8 @@ export function MoviesTab() {
             <label className="field watched-controls__search">
               <SearchIcon />
               <input
+                name="watched-search"
+                aria-label="Search watched films by title or picker"
                 placeholder="Search by title or picker…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}

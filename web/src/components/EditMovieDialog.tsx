@@ -106,6 +106,8 @@ export function EditMovieDialog({
             <label className="field">
               <FilmIcon />
               <input
+                name="movie-title"
+                aria-label="Movie title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Movie title"
@@ -116,6 +118,8 @@ export function EditMovieDialog({
               <LinkIcon />
               <input
                 type="url"
+                name="movie-link"
+                aria-label="Movie link"
                 value={link}
                 onChange={(e) => setLink(e.target.value)}
                 placeholder="Movie link"
@@ -127,6 +131,8 @@ export function EditMovieDialog({
                 <CalendarClockIcon />
                 <input
                   type="datetime-local"
+                  name="watched-at"
+                  aria-label="Watched date and time"
                   value={watchedAtLocal}
                   onChange={(e) => setWatchedAtLocal(e.target.value)}
                   disabled={isSaving}

@@ -1,5 +1,4 @@
 import {
-  Outlet,
   createRootRouteWithContext,
   createRoute,
   createRouter,
@@ -8,46 +7,17 @@ import {
 
 import { queryClient } from "@/api/QueryClient";
 
+import { RootLayout, Shell } from "@/components/movie-gang/AppShell";
 import { Hero } from "@/components/movie-gang/Hero";
 import { MoviesTab } from "@/components/movie-gang/MoviesTab";
-import { NavBar } from "@/components/movie-gang/NavBar";
 import { statsSearchDefaults, validateStatsSearch } from "@/components/movie-gang/statsSearch";
 import { StatsTab } from "@/components/movie-gang/StatsTab";
 import { UsersTab } from "@/components/movie-gang/UsersTab";
-import { Toaster } from "@/components/ui/toast";
 
 import type { QueryClient } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-
-import { useSSE } from "@/hooks/useSSE";
 
 interface RouterContext {
   queryClient: QueryClient;
-}
-
-/**
- * App shell. The root route mounts once and persists across tab navigations,
- * so the SSE stream (useSSE) opens a single EventSource for the session rather
- * than tearing it down and reconnecting on every route change.
- */
-function RootLayout() {
-  useSSE();
-  return (
-    <div className="app">
-      <NavBar />
-      <Outlet />
-      <Toaster />
-    </div>
-  );
-}
-
-/**
- * Mirrors the former `<main className="shell">` wrapper. Each route renders its
- * own, so navigating between tabs unmounts/remounts the content — preserving the
- * old `key={tab}` behavior (fresh state and scroll on every tab entry).
- */
-function Shell({ children }: { children: ReactNode }) {
-  return <main className="shell">{children}</main>;
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({

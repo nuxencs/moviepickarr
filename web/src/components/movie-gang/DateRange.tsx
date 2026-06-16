@@ -1,12 +1,13 @@
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { fmtRange } from "@/components/movie-gang/dateRangeFormat";
+
 const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export interface DayRange {
   start: Date | null;
@@ -32,19 +33,6 @@ function monthGrid(year: number, month: number) {
     const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
     return { date: d, inMonth: d.getMonth() === month };
   });
-}
-
-export function fmtRange(start: Date | null, end: Date | null): string {
-  if (!start) return "Select a start date";
-  const s = `${MON_SHORT[start.getMonth()]} ${start.getDate()}`;
-  if (!end) return `${s} — …`;
-  return `${s} — ${MON_SHORT[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
-}
-
-/** Compact "May 5 – May 19" label for the stats eyebrow. */
-export function shortRange(start?: Date | null, end?: Date | null): string | null {
-  if (!start || !end) return null;
-  return `${MON_SHORT[start.getMonth()]} ${start.getDate()} – ${MON_SHORT[end.getMonth()]} ${end.getDate()}`;
 }
 
 function MonthView({

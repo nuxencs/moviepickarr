@@ -20,6 +20,8 @@ var (
 var webFS embed.FS
 
 func main() {
+	log.Printf("moviepickarr %s (commit %s, built %s)", version, commit, date)
+
 	webRoot, err := fs.Sub(webFS, "web/dist")
 	if err != nil {
 		log.Fatal(err)

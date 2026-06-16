@@ -11,13 +11,13 @@ import {
   useState,
 } from "react";
 
+import { exitDelayMs } from "@/components/movie-gang/exitDelay";
 import {
   type FilterOptions,
   type MovieFilters,
   type PersonFilter,
   type PersonOption,
 } from "@/components/movie-gang/lib";
-import { exitDelayMs } from "@/components/movie-gang/Modal";
 
 export interface FilterChoice<T extends string | number> {
   value: T;
@@ -253,6 +253,8 @@ function FilterChipMenu<T extends string | number>({
                 aria-expanded="true"
                 aria-controls={menuId}
                 aria-autocomplete="list"
+                name="filter-search"
+                aria-label={`Search ${label.toLowerCase()}`}
                 placeholder={`Search ${label.toLowerCase()}…`}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}

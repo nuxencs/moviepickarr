@@ -93,9 +93,11 @@ old shadcn primitives.
 - **Inputs:** `.field` — a 42px filled wrapper with a leading icon and gold
   focus-within border. All text inputs use this; there is no bare/hollow input style.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
-- **Segmented control:** `.seg` (+ `.seg--accent` for the active-gold variant).
-  Inside `.statsfilters` the seg is restyled to the chips' dialect (see Stats
-  filter row below).
+- **Segmented control:** `.seg` — neutral surface-3 active (the Movies watched
+  grid/list toggle, filled to match the `.field` search beside it). Inside
+  `.statsfilters` the seg is restyled to the chips' dialect — transparent with a
+  gold-tint active — so the time presets read as one family with the filter chips
+  (see Stats filter row below).
 - **Filter bar:** `.filterbar` + `.filterchip` (`FilterBar.tsx`) — a wrapping row of
   mono 12px chip-trigger selects (Genre / Actors / Crew / Picked by / Release year, stats-only).
   The chip wraps two real buttons — the trigger and, when active, a clear X — so both
@@ -352,7 +354,9 @@ actually has movies.
 
 ## 9. Copy & microcopy
 
-- **Buttons:** verb + object ("Save changes", "Add User", "Mark as Watched").
+- **Buttons:** verb + object, sentence case ("Save changes", "Add user", "Mark as
+  watched", "Pick random movie", "Lock pool"). Only the object keeps any proper-noun
+  capital ("Add to Felix's stash"). Nav tabs are the deliberate uppercase exception.
 - **Error toasts:** one voice, "Failed to <verb> <thing>" ("Failed to update movie").
   Not "Error <x>ing".
 - **Success toasts:** terse, past tense, no exclamation ("Movie picked", "Marked as
@@ -367,7 +371,7 @@ actually has movies.
 
 ## 10. Iconography (lucide)
 
-- `PlusIcon` = "add / open the add flow" (board "Add to stash" button, "Add User").
+- `PlusIcon` = "add / open the add flow" (board "Add to <name>'s stash" button, "Add user").
   Note: empty **pool** slots are non-interactive placeholders (no `+`) — movies enter
   the pool only by being promoted from the stash, so a `+` there would falsely imply a
   direct pool add.

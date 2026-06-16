@@ -10,13 +10,14 @@ import {
   StarIcon,
   TrophyIcon,
 } from "lucide-react";
-import { type CSSProperties, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { MoviesGetWatchedQueryOptions, StatsGetQueryOptions } from "@/api/queries";
 
 import { Avatar } from "@/components/movie-gang/Bits";
 import { DateRangePopover } from "@/components/movie-gang/DateRange";
 import { shortRange } from "@/components/movie-gang/dateRangeFormat";
+import { exitDelayMs } from "@/components/movie-gang/exitDelay";
 import { FilterBar, FilterSelect } from "@/components/movie-gang/FilterBar";
 import {
   filterOptionsFrom,
@@ -65,6 +66,51 @@ export function StatsTab() {
   const search = useSearch({ from: "/stats" });
   const navigate = useNavigate({ from: "/stats" });
   const [showPicker, setShowPicker] = useState(false);
+  // The custom-range popover shares the floating-surface exit motion: closePicker
+  // flags it closing (so CSS plays daterange--closing), restores focus to the
+  // trigger, then unmounts after exitDelayMs() — the same lockstep the Menu/Modal
+  // use, and 0ms under reduced motion.
+  const [pickerClosing, setPickerClosing] = useState(false);
+  const pickerClosingRef = useRef(false);
+  const pickerTimer = useRef<number | null>(null);
+  const pickerId = useId();
+  const customRef = useRef<HTMLButtonElement>(null);
+
+  const closePicker = useCallback((restoreFocus: boolean, after?: () => void) => {
+    if (pickerClosingRef.current) return;
+    pickerClosingRef.current = true;
+    setPickerClosing(true);
+    if (restoreFocus) customRef.current?.focus();
+    if (pickerTimer.current !== null) window.clearTimeout(pickerTimer.current);
+    pickerTimer.current = window.setTimeout(() => {
+      pickerClosingRef.current = false;
+      pickerTimer.current = null;
+      setPickerClosing(false);
+      setShowPicker(false);
+      after?.();
+    }, exitDelayMs());
+  }, []);
+
+  // Hard-hide without the exit animation (when the view changes out from under the
+  // popover — picking another preset or a watch year). Resets the closing guard so
+  // a later open isn't blocked.
+  const hidePickerNow = useCallback(() => {
+    if (pickerTimer.current !== null) {
+      window.clearTimeout(pickerTimer.current);
+      pickerTimer.current = null;
+    }
+    pickerClosingRef.current = false;
+    setPickerClosing(false);
+    setShowPicker(false);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (pickerTimer.current !== null) window.clearTimeout(pickerTimer.current);
+    },
+    [],
+  );
+
   // The modal is local state. A genre/year chip inside it is a same-route
   // /stats→/stats nav that never unmounts StatsTab, so the chip itself drives
   // the close (via MetaChips' onNavigate → the modal's animated `close`) rather
@@ -147,7 +193,7 @@ export function StatsTab() {
     navigate({ search: (prev) => ({ ...prev, ...filtersToSearch(next) }) });
 
   const onWatchYear = (year: number | null) => {
-    setShowPicker(false);
+    hidePickerNow();
     if (year === null) {
       navigate({ search: (prev) => ({ ...prev, win: "all-time", start: "", end: "" }) });
       return;
@@ -191,10 +237,23 @@ export function StatsTab() {
 
   const onWin = (id: StatsWindow) => {
     if (id === "custom") {
-      setShowPicker((p) => !p);
+      if (showPicker && !pickerClosingRef.current) {
+        closePicker(true);
+      } else {
+        // Open — or interrupt an in-flight close and re-open, so a fast re-click
+        // during the exit fade isn't swallowed. Clearing the timer is load-bearing:
+        // otherwise the original close timer still fires and slams it shut again.
+        if (pickerTimer.current !== null) {
+          window.clearTimeout(pickerTimer.current);
+          pickerTimer.current = null;
+        }
+        pickerClosingRef.current = false;
+        setPickerClosing(false);
+        setShowPicker(true);
+      }
       return;
     }
-    setShowPicker(false);
+    hidePickerNow();
     navigate({ search: (prev) => ({ ...prev, win: id, start: "", end: "" }) });
   };
 
@@ -217,34 +276,45 @@ export function StatsTab() {
           in a single row, sharing the 30px rhythm and gold active states. */}
       <div className="statsfilters">
         <div className="win-control">
-          <div className="seg seg--accent">
-            {WINDOWS.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                data-active={win === w.id || (w.id === "custom" && showPicker)}
-                onClick={() => onWin(w.id)}
-              >
-                {w.calendar && <CalendarDaysIcon />}
-                {w.label}
-              </button>
-            ))}
+          <div className="seg">
+            {WINDOWS.map((w) => {
+              const isCustom = w.id === "custom";
+              return (
+                <button
+                  key={w.id}
+                  type="button"
+                  ref={isCustom ? customRef : undefined}
+                  data-active={win === w.id || (isCustom && showPicker)}
+                  aria-haspopup={isCustom ? "dialog" : undefined}
+                  aria-expanded={isCustom ? showPicker : undefined}
+                  aria-controls={isCustom && showPicker ? pickerId : undefined}
+                  onClick={() => onWin(w.id)}
+                >
+                  {w.calendar && <CalendarDaysIcon />}
+                  {w.label}
+                </button>
+              );
+            })}
           </div>
           {showPicker && (
             <DateRangePopover
+              id={pickerId}
+              triggerRef={customRef}
+              closing={pickerClosing}
               initial={customRange}
-              onClose={() => setShowPicker(false)}
-              onApply={(r) => {
-                setShowPicker(false);
-                navigate({
-                  search: (prev) => ({
-                    ...prev,
-                    win: "custom",
-                    start: r.start ? ymd(r.start) : "",
-                    end: r.end ? ymd(r.end) : "",
+              onDismiss={closePicker}
+              onApply={(r) =>
+                closePicker(true, () =>
+                  navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      win: "custom",
+                      start: r.start ? ymd(r.start) : "",
+                      end: r.end ? ymd(r.end) : "",
+                    }),
                   }),
-                });
-              }}
+                )
+              }
             />
           )}
         </div>

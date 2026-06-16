@@ -1,5 +1,5 @@
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { fmtRange } from "@/components/movie-gang/dateRangeFormat";
 
@@ -95,14 +95,32 @@ function MonthView({
   );
 }
 
+/**
+ * Custom-range calendar popover. Shares the floating-surface lifecycle with the
+ * Menu and the filter dropdowns: it opens with `mg-scaleIn`, animates out via
+ * `daterange--closing` (the parent keeps it mounted for `exitDelayMs()`), takes
+ * focus on open (role="dialog"), restores it to the trigger on dismiss, and
+ * dismisses on capturing `pointerdown` outside / Esc. The `.daterange` surface
+ * itself stays bespoke (a 2-month calendar isn't a `.mg-menu` listbox).
+ */
 export function DateRangePopover({
+  id,
   initial,
+  triggerRef,
+  closing = false,
   onApply,
-  onClose,
+  onDismiss,
 }: {
+  id?: string;
   initial: DayRange | null;
+  /** The opener (the "Custom" preset), so outside-dismiss ignores it and its own
+   *  toggle owns open/close — no double-fire. */
+  triggerRef?: RefObject<HTMLButtonElement | null>;
+  closing?: boolean;
   onApply: (range: DayRange) => void;
-  onClose: () => void;
+  /** Dismiss without applying. `restoreFocus` is false for an outside click
+   *  (focus follows the click) and true for Cancel/Esc. */
+  onDismiss: (restoreFocus: boolean) => void;
 }) {
   const [base, setBase] = useState<Date>(() =>
     initial?.start ? startOfMonth(initial.start) : startOfMonth(new Date()),
@@ -111,20 +129,33 @@ export function DateRangePopover({
   const [hover, setHover] = useState<Date | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
+  // Move focus into the dialog on open (mirrors Modal/Menu); preventScroll so
+  // focusing the absolutely-positioned surface never jumps the page.
+  useLayoutEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+  }, []);
+
   useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    // Capturing pointerdown + Esc, matching Menu.tsx / FilterChipMenu. The
+    // trigger is excluded so its toggle handles open/close itself.
+    const onPointerDown = (e: PointerEvent) => {
+      const node = e.target as Node;
+      if (ref.current?.contains(node) || triggerRef?.current?.contains(node)) return;
+      onDismiss(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onDismiss(true);
+      }
     };
-    document.addEventListener("mousedown", onDoc);
-    window.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKey, true);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKey, true);
     };
-  }, [onClose]);
+  }, [onDismiss, triggerRef]);
 
   const pick = (date: Date) => {
     setRange((r) => {
@@ -137,7 +168,14 @@ export function DateRangePopover({
   const ready = !!range.start && !!range.end;
 
   return (
-    <div className="daterange" ref={ref}>
+    <div
+      className={`daterange${closing ? " daterange--closing" : ""}`}
+      ref={ref}
+      id={id}
+      role="dialog"
+      aria-label="Custom date range"
+      tabIndex={-1}
+    >
       <div className="daterange__head">
         <button type="button" className="iconbtn" onClick={() => setBase((b) => addMonths(b, -1))} aria-label="Previous month">
           <ChevronLeftIcon />
@@ -154,7 +192,7 @@ export function DateRangePopover({
       <div className="daterange__foot">
         <span className="daterange__range">{fmtRange(range.start, range.end)}</span>
         <div className="daterange__btns">
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => onDismiss(true)}>
             Cancel
           </button>
           <button type="button" className="btn btn--accent btn--sm" disabled={!ready} onClick={() => onApply(range)}>

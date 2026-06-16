@@ -174,7 +174,7 @@ export function Hero() {
                   disabled={watchMutation.isPending}
                 >
                   {watchMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <EyeIcon />}
-                  {watchMutation.isPending ? "Marking…" : "Mark as Watched"}
+                  {watchMutation.isPending ? "Marking…" : "Mark as watched"}
                 </button>
               ) : (
                 <button
@@ -184,7 +184,7 @@ export function Hero() {
                   disabled={!canPick || pickMutation.isPending}
                 >
                   {pickMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <ShuffleIcon />}
-                  {pickMutation.isPending ? "Picking…" : "Pick Random Movie"}
+                  {pickMutation.isPending ? "Picking…" : "Pick random movie"}
                 </button>
               ))}
 

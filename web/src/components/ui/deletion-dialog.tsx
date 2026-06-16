@@ -24,7 +24,7 @@ export const DeletionDialog: React.FC<ConfirmDialogProps> = ({
     onConfirm,
     title,
     description,
-    confirmText = "Continue",
+    confirmText = "Delete",
     cancelText = "Cancel",
 }) => {
     if (!isOpen) {

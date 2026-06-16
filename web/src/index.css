@@ -349,7 +349,6 @@
   .seg button:hover { color: var(--ink); }
   .seg button:active:not(:disabled) { transform: scale(0.96); }
   .seg button[data-active="true"] { background: var(--surface-3); color: var(--ink); box-shadow: var(--shadow-sm); }
-  .seg--accent button[data-active="true"] { background: var(--accent); color: var(--accent-ink); }
 
   /* ---- Filter bar (FilterBar.tsx) ---- */
   /* Chip-trigger selects whose dropdown reuses the .mg-menu surface (below).
@@ -628,6 +627,15 @@
   .statsfilters .daterange { left: 0; right: auto; }
 
   .daterange { position: absolute; top: calc(100% + 10px); right: 0; z-index: 45; width: 540px; max-width: calc(100vw - 40px); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 16px; animation: mg-scaleIn var(--dur-base) var(--ease); }
+  /* Exit motion to match the Menu/filter dropdowns: scale-out, fast, accelerate-away.
+     The popover stays mounted for exitDelayMs() while this plays (StatsTab gates the
+     unmount), so it never pops out instantly. The focus outline must still draw, so
+     no display:contents here. */
+  .daterange--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
+  /* The popover is a focusable dialog (focus lands here on open); don't paint the
+     2px global focus ring on the surface itself — its controls carry their own. */
+  .daterange:focus { outline: none; }
+  .daterange:focus-visible { outline: none; }
   .daterange__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .daterange__title { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
   .daterange__months { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }

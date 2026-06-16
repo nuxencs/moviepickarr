@@ -94,7 +94,7 @@ export function MoviesTab() {
               disabled={lockMutation.isPending}
             >
               {isLocked ? <LockOpenIcon /> : <LockIcon />}
-              {isLocked ? "Unlock Pool" : "Lock Pool"}
+              {isLocked ? "Unlock pool" : "Lock pool"}
             </button>
           </div>
         </div>

@@ -1,3 +1,4 @@
+import NumberFlow from "@number-flow/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -26,7 +27,6 @@ import {
   type MovieFilters,
   plural,
   profileUrl,
-  runtimeLabel,
   tmdbPersonUrl,
   yearOf,
 } from "@/components/movie-gang/lib";
@@ -55,6 +55,57 @@ const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
   { id: "all-time", label: "All" },
   { id: "custom", label: "Custom", calendar: true },
 ];
+
+// Number-roll timing for the KPI / rail-heading counts — tuned to the MG motion
+// scale (§6): --dur-slow (0.4s) + --ease (decelerating ease-out, no bounce).
+// NumberFlow honors prefers-reduced-motion itself (renders instantly), matching
+// the global RM guard, and only animates on value change (initial paint is static).
+const NUMBER_TIMING: EffectTiming = { duration: 400, easing: "cubic-bezier(0.22, 0.61, 0.36, 1)" };
+
+/** A Stats number with the shared MG roll timing. With `animateOnMount` it counts up
+ *  from 0 on mount (the KPI strip "wakes up" on each visit, matching the bars' from-0
+ *  entrance); otherwise it's static on first paint and only rolls on value change. */
+function StatNumber({
+  animateOnMount = false,
+  ...props
+}: React.ComponentProps<typeof NumberFlow> & { animateOnMount?: boolean }) {
+  if (animateOnMount) return <MountRollNumber {...props} />;
+  return <NumberFlow transformTiming={NUMBER_TIMING} spinTiming={NUMBER_TIMING} {...props} />;
+}
+
+/** Renders 0 first, then bumps to the real value after mount so NumberFlow rolls
+ *  0 -> value. Reduced motion collapses it to an instant set (NumberFlow's default). */
+function MountRollNumber({ value, ...props }: React.ComponentProps<typeof NumberFlow>) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    setDisplay(value);
+  }, [value]);
+  return <NumberFlow transformTiming={NUMBER_TIMING} spinTiming={NUMBER_TIMING} value={display} {...props} />;
+}
+
+/** A rolling count plus its noun ("4 movies") — the number animates, the noun is a
+ *  static suffix. Replaces plural(n, "movie") wherever the count should roll. */
+function MovieCount({ value, animateOnMount }: { value: number; animateOnMount?: boolean }) {
+  return <StatNumber value={value} animateOnMount={animateOnMount} suffix={` ${value === 1 ? "movie" : "movies"}`} />;
+}
+
+/** Rolling "Xh Ym" runtime (mirrors `runtimeLabel`: minutes unpadded, hours dropped
+ *  under an hour). Each part animates independently; `prefix` is static lead text. */
+function RuntimeCount({ minutes, prefix, animateOnMount }: { minutes: number; prefix?: string; animateOnMount?: boolean }) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return (
+    <>
+      {prefix}
+      {h > 0 && (
+        <>
+          <StatNumber value={h} animateOnMount={animateOnMount} suffix="h" />{" "}
+        </>
+      )}
+      <StatNumber value={m} animateOnMount={animateOnMount} suffix="m" />
+    </>
+  );
+}
 
 function topNamed(items: StatsNamedCount[]) {
   return [...items].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))[0];
@@ -341,24 +392,36 @@ export function StatsTab() {
       ) : (
         <>
           <div className="stat-strip">
-            <StatItem icon={<FilmIcon size={15} />} label="In window" value={count} sub="movies watched" mono />
+            <StatItem icon={<FilmIcon size={15} />} label="In window" value={<StatNumber value={count} animateOnMount />} sub="movies watched" mono />
             <StatItem
               icon={<HourglassIcon size={15} />}
               label="Hours watched"
-              value={`${Math.round(stats.runtime.totalMinutes / 60)}h`}
-              sub={stats.runtime.averageMinutes > 0 ? `avg ${runtimeLabel(stats.runtime.averageMinutes)}` : undefined}
+              value={<StatNumber value={Math.round(stats.runtime.totalMinutes / 60)} suffix="h" animateOnMount />}
+              sub={stats.runtime.averageMinutes > 0 ? <RuntimeCount minutes={stats.runtime.averageMinutes} prefix="avg " animateOnMount /> : undefined}
               mono
             />
             <StatItem
               icon={<StarIcon size={15} />}
               label="Avg rating"
-              value={stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "—"}
+              value={
+                stats.averageRating > 0 ? (
+                  <StatNumber value={stats.averageRating} format={{ minimumFractionDigits: 1, maximumFractionDigits: 1 }} animateOnMount />
+                ) : (
+                  "—"
+                )
+              }
               sub="TMDB average"
               mono
             />
-            <StatItem icon={<TrophyIcon size={15} />} label="Top picker" value={topUser?.name ?? "—"} sub={plural(topUser?.count ?? 0, "movie")} />
-            <StatItem icon={<CalendarDaysIcon size={15} />} label="Busiest day" value={topDay?.name ?? "—"} sub={plural(topDay?.count ?? 0, "movie")} />
-            <StatItem icon={<Clock3Icon size={15} />} label="Prime time" value={primeHour?.label ?? "—"} sub={plural(primeHour?.count ?? 0, "movie")} mono />
+            <StatItem icon={<TrophyIcon size={15} />} label="Top picker" value={topUser?.name ?? "—"} sub={<MovieCount value={topUser?.count ?? 0} animateOnMount />} />
+            <StatItem icon={<CalendarDaysIcon size={15} />} label="Busiest day" value={topDay?.name ?? "—"} sub={<MovieCount value={topDay?.count ?? 0} animateOnMount />} />
+            <StatItem
+              icon={<Clock3Icon size={15} />}
+              label="Prime time"
+              value={primeHour ? <StatNumber value={primeHour.hour} format={{ minimumIntegerDigits: 2 }} suffix=":00" animateOnMount /> : "—"}
+              sub={<MovieCount value={primeHour?.count ?? 0} animateOnMount />}
+              mono
+            />
           </div>
 
           {/* The films rail always renders — it owns the single empty state for the
@@ -427,7 +490,9 @@ function MatchedMoviesRail({
     // Flush under the KPI strip (which already closes with a bottom rule) — the
     // rail is the expansion of the "In window" count, not a separate section.
     <section className="statsec statsec--flush">
-      <h3 className="statsec__title">Films in Filter View · {count}</h3>
+      <h3 className="statsec__title">
+        Films in Filter View · <StatNumber value={count} />
+      </h3>
       {movies.length === 0 ? (
         // count > 0 with no posters means the cached watched list is still
         // catching up to the stats count (transient); count 0 is a genuinely
@@ -481,7 +546,7 @@ function StatItem({
   icon: React.ReactNode;
   label: string;
   value: React.ReactNode;
-  sub?: string;
+  sub?: React.ReactNode;
   mono?: boolean;
 }) {
   return (
@@ -522,7 +587,7 @@ function PickedByMember({ rows }: { rows: StatsNamedCount[] }) {
                   } as CSSProperties}
                 />
               </div>
-              <div className="b-val">{r.count}</div>
+              <div className="b-val"><StatNumber value={r.count} /></div>
             </div>
           ))}
         </div>
@@ -551,7 +616,7 @@ function WeekdayActivity({ rows }: { rows: StatsNamedCount[] }) {
                 } as CSSProperties}
               />
             </div>
-            <div className="b-val">{r.count}</div>
+            <div className="b-val"><StatNumber value={r.count} /></div>
           </div>
         ))}
       </div>
@@ -635,7 +700,7 @@ function TopGenres({ rows }: { rows: StatsNamedCount[] }) {
             <li key={s.name}>
               <span className="donut-legend__swatch" style={{ background: s.color }} aria-hidden="true" />
               <span className="donut-legend__name">{s.name}</span>
-              <span className="donut-legend__count">{s.count}</span>
+              <span className="donut-legend__count"><StatNumber value={s.count} /></span>
             </li>
           ))}
         </ul>
@@ -681,7 +746,7 @@ function PeopleRail({
                 </div>
                 <span className="castcard__caption">
                   <span className="castcard__name">{p.name}</span>
-                  <span className="castcard__role">{plural(p.count, "movie")}</span>
+                  <span className="castcard__role"><MovieCount value={p.count} /></span>
                 </span>
               </button>
               {/* Sibling, never nested in the toggle — its own tab stop, and a

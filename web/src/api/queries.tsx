@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 
 import { APIClient } from "@/api/APIClient";
 import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
@@ -85,6 +85,11 @@ export const StatsGetQueryOptions = (
     queryKey: StatsKeys.byWindow(window, timezone, start, end, genre, actorsKey, crewKey, addedByKey, releaseYear, decade),
     queryFn: () =>
       APIClient.stats.get({ window, timezone, start, end, genre, actorIds: actorsKey, crewIds: crewKey, addedByIds: addedByKey, releaseYear, decade }),
+    // Keep the previous window/filter's result on screen while the next one loads,
+    // so the stats body never blanks to "Loading stats…" on an uncached change —
+    // the numbers stay mounted and roll (NumberFlow) to the new values instead of
+    // remounting static. The first-ever load still shows the loading placeholder.
+    placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
     staleTime: 60_000,
     gcTime: 600_000,

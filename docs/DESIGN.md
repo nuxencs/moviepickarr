@@ -236,8 +236,21 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   token; exits use `--ease-exit` and run one step faster than their enter. No
   bounce/elastic. Motion conveys state, not decoration. Hardcode no new durations —
   reach for the scale.
-- **CSS-only.** No JS animation library; everything is CSS keyframes (prefixed `mg-`) +
-  transitions. Do not add framer-motion / gsap / etc.
+- **CSS-first, with one sanctioned exception.** Visual motion (entrances, state
+  changes, overlays, charts) is CSS keyframes (prefixed `mg-`) + transitions — do not
+  reach for a general-purpose animation library (framer-motion / gsap / etc.) for those.
+  The one exception is **animated number transitions**, which CSS can't do for arbitrary
+  formats: the Stats counts that change with the window/filters — the KPI strip, the
+  "Films in Filter View" count, the leaderboard + weekday bar values, the genre-donut
+  legend, and the people-rail counts — use **NumberFlow** (`@number-flow/react`, via the
+  `StatNumber` / `MovieCount` wrappers in `StatsTab.tsx`), tuned to the MG scale
+  (`NUMBER_TIMING` = `--dur-slow` duration + `--ease`, no bounce) and honoring
+  `prefers-reduced-motion` (it renders instantly). The dense hourly + decade axis counts
+  stay static on purpose (too many to roll at once reads as noise). NumberFlow only
+  animates on value change, so the first paint is static; and the stats query keeps the
+  previous result (`placeholderData: keepPreviousData`) so the numbers stay mounted and
+  roll on an uncached filter change instead of remounting. Any new motion must still
+  degrade to an instant state under RM.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
   member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use
   `height: calc(--p * 88%)`. Scaling a rounded box squishes its `border-radius` on short

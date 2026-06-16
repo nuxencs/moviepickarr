@@ -16,9 +16,25 @@ description: >-
 # Verify front-end changes (moviepickarr)
 
 This project is a Go (Fiber) backend on `:3030` that serves an embedded
-`web/dist`, plus a React 19 + Vite 7 + Tailwind v4 SPA. The frontend is a
-**single page** — there is no router. "Views" are reached by interacting
-(clicking pick/next, opening menus, toggling settings), not by visiting URLs.
+`web/dist`, plus a React 19 + Vite 7 + Tailwind v4 SPA. The frontend uses
+**TanStack Router** (`@tanstack/react-router`; code-based route tree in
+`web/src/router.tsx`) with three routes under one shell: `/` (Movies — the Hero
++ pool/watched grid), `/users`, and `/stats`. Views are reachable **both** ways
+now — click the top-nav links *or* visit the URL directly; the routes are
+deep-linkable, so navigate straight to the screen the change touches.
+
+The `/stats` route is special: its **entire filter state lives in the URL search
+params** (window, genre, year, decade, actors, crew, pickers — see
+`web/src/components/movie-gang/statsSearch.ts`), validated by
+`validateStatsSearch` and trimmed to a clean URL by `stripSearchParams`. So the
+genre/year chips (in the Hero, the movie modal, and metadata rows) deep-link to a
+pre-filtered Stats view — e.g. `/stats?genre=Drama`, `/stats?year=1997` — and
+reload / back / forward preserve the filters. The movie detail **modal**, by
+contrast, is *local component state*, not URL-driven: opened by clicking a
+poster/tile/row, closed by Esc / backdrop / the X. Gotcha when verifying
+modal-or-filter behavior: a same-route `/stats`→`/stats` search-param change does
+**not** remount `StatsTab`, so state that should reset on navigation (like the
+open modal) only does if something clears it explicitly.
 
 The job: bring the real app up, drive the part the change touched, and report a
 tight pass/fail with screenshots — fixing obvious breakage in a loop rather than
@@ -31,10 +47,13 @@ layout shift there specifically.
 ## Step 0 — Scope the change from the diff
 
 Run `git --no-pager diff --stat` and `git --no-pager diff` scoped to `web/`.
-Identify which components changed, then reason about **which on-screen state(s)
-exercise them**. A change to the hero → the Movies pick view; a change to the
-menu component → open the menu; a settings change → open settings. If the diff
-is empty (already committed), diff against the base branch (`develop`).
+Identify which components changed, then reason about **which route + on-screen
+state exercises them**, and navigate straight there. A hero change → `/` (the
+Movies pick view); `StatsTab`/`statsSearch`/charts → `/stats`, and exercise the
+URL-driven filters directly (`/stats?genre=Drama`, `/stats?year=1997`); a
+`UsersTab` change → `/users`; the movie modal → open it from a poster on `/` or
+`/stats`. If the diff is empty (already committed), diff against the base branch
+(`develop`).
 
 If you genuinely can't tell which view a component renders in, say so and ask —
 don't guess and verify the wrong screen.

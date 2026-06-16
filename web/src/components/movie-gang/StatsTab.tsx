@@ -48,6 +48,8 @@ import type {
   StatsYearCount,
 } from "@/types/Response";
 
+import { useReplayOnChange } from "@/hooks/hooks";
+
 const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
   { id: "7d", label: "7d" },
   { id: "30d", label: "30d" },
@@ -486,6 +488,12 @@ function MatchedMoviesRail({
   filtered: boolean;
   onSelect: (movie: Movie) => void;
 }) {
+  // Replay the staggered entrance whenever the matched set changes — including a
+  // reorder of the same films (fingerprint is order-sensitive, per the films-rail
+  // decision). Derived from ids, so SSE refetches that resolve to the same set
+  // don't re-animate. Tiles re-mount on add/remove anyway; the restart also
+  // covers the pure-reorder case, where keyed nodes are reused.
+  const railRef = useReplayOnChange<HTMLDivElement>(movies.map((m) => m.movieID).join(","));
   return (
     // Flush under the KPI strip (which already closes with a bottom rule) — the
     // rail is the expansion of the "In window" count, not a separate section.
@@ -505,14 +513,15 @@ function MatchedMoviesRail({
               : "No films watched in this window yet."}
         </p>
       ) : (
-        <div className="movierail">
-          {movies.map((movie) => {
+        <div className="movierail" data-animate="" ref={railRef}>
+          {movies.map((movie, i) => {
             const sub = [yearOf(movie.releaseDate), movie.addedByName].filter(Boolean).join(" · ");
             return (
               <button
                 type="button"
                 className="movietile"
                 key={movie.movieID}
+                style={{ "--i": i } as CSSProperties}
                 onClick={() => onSelect(movie)}
                 title={movie.title}
               >
@@ -725,15 +734,22 @@ function PeopleRail({
   activeIds: ReadonlySet<number>;
   onToggle: (person: StatsPersonCount) => void;
 }) {
+  // Replay the staggered entrance when the ranking actually changes — membership,
+  // counts, or order (the server returns these count-sorted). Derived from
+  // personId+count so unrelated re-renders / same-result refetches don't fire it.
+  // No remount, so each card's NumberFlow count keeps rolling underneath.
+  const railRef = useReplayOnChange<HTMLDivElement>(
+    people.map((p) => `${p.personId}:${p.count}`).join(","),
+  );
   if (people.length === 0) return null;
   return (
     <section className="statsec">
       <h3 className="statsec__title">{title}</h3>
-      <div className="peoplerail">
-        {people.map((p) => {
+      <div className="peoplerail" data-animate="" ref={railRef}>
+        {people.map((p, i) => {
           const active = activeIds.has(p.personId);
           return (
-            <div className="castcard peoplecard" key={p.personId} data-active={active}>
+            <div className="castcard peoplecard" key={p.personId} data-active={active} style={{ "--i": i } as CSSProperties}>
               <button
                 type="button"
                 className="peoplecard__toggle"

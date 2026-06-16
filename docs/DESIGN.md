@@ -252,6 +252,19 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   (`placeholderData: keepPreviousData`) so an uncached filter change rolls in place
   instead of blanking to "Loading stats…" and remounting. Any new motion must still
   degrade to an instant state under RM.
+- **Stats rail entrances (on filter change).** The two horizontal rails — the films
+  "Films in Filter View" rail and the people rails (directors/actors) — replay a
+  staggered `mg-fadeUp` (`--dur-slow`/`--ease`, per-item `--i` stagger like the hero
+  pick-reveal but capped at index 12, so a long films rail can't trail a multi-second
+  tail) whenever their content *actually changes*. `useReplayOnChange` (`hooks.ts`)
+  gates this on a content **fingerprint** taken from the API payload — the ordered
+  `matchedMovieIDs` for films (a reorder counts as a change), `personId:count` tuples
+  for people — never on render identity, so unrelated re-renders (opening the movie
+  modal) and same-result SSE refetches don't re-fire it. The restart is a
+  strip-reflow-re-add of a `data-animate` attribute on the rail container, NOT a React
+  remount: the people cards keep their DOM nodes, so their NumberFlow counts roll
+  rather than snap. Transform/opacity only (no layout shift); reduced-motion collapses
+  it to an instant state via the global guard.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
   member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use
   `height: calc(--p * 88%)`. Scaling a rounded box squishes its `border-radius` on short

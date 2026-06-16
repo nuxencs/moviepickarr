@@ -74,7 +74,7 @@ export function UsersTab() {
             </label>
             <button type="submit" className="btn btn--accent" disabled={!name.trim() || createMutation.isPending}>
               <PlusIcon />
-              Add User
+              Add user
             </button>
           </form>
         </div>
@@ -156,7 +156,7 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
             </div>
           </div>
         </div>
-        <button type="button" className="iconbtn iconbtn--danger" onClick={toggleDelete} aria-label="Remove user">
+        <button type="button" className="iconbtn iconbtn--danger" onClick={toggleDelete} aria-label="Delete user">
           <Trash2Icon />
         </button>
       </div>
@@ -211,8 +211,8 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
             <SearchIcon />
             <input
               name="stash-filter"
-              aria-label={`Filter ${firstName}'s stash`}
-              placeholder="Filter…"
+              aria-label={`Search ${firstName}'s stash`}
+              placeholder="Search stash…"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />

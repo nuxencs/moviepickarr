@@ -108,10 +108,10 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
 
               {links.length > 0 && (
                 <div className="moviemodal__links">
-                  {links.map((link, i) => (
+                  {links.map((link) => (
                     <a
                       key={link.label}
-                      className={`btn btn--sm ${i === 0 ? "btn--accent" : "btn--ghost"}`}
+                      className="btn btn--sm btn--ghost"
                       href={link.href}
                       target="_blank"
                       rel="noopener noreferrer"

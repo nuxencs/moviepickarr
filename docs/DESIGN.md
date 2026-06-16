@@ -243,13 +243,14 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   formats: the Stats counts that change with the window/filters — the KPI strip, the
   "Films in Filter View" count, the leaderboard + weekday bar values, the genre-donut
   legend, and the people-rail counts — use **NumberFlow** (`@number-flow/react`, via the
-  `StatNumber` / `MovieCount` wrappers in `StatsTab.tsx`), tuned to the MG scale
-  (`NUMBER_TIMING` = `--dur-slow` duration + `--ease`, no bounce) and honoring
+  `StatNumber` / `MovieCount` / `RuntimeCount` wrappers in `StatsTab.tsx`), tuned to the
+  MG scale (`NUMBER_TIMING` = `--dur-slow` duration + `--ease`, no bounce) and honoring
   `prefers-reduced-motion` (it renders instantly). The dense hourly + decade axis counts
-  stay static on purpose (too many to roll at once reads as noise). NumberFlow only
-  animates on value change, so the first paint is static; and the stats query keeps the
-  previous result (`placeholderData: keepPreviousData`) so the numbers stay mounted and
-  roll on an uncached filter change instead of remounting. Any new motion must still
+  stay static on purpose (too many to roll at once reads as noise). The KPI strip counts
+  up from 0 on mount (`animateOnMount`, matching the bars' from-0 entrance); the charts
+  stay static on mount and only roll on change. The stats query keeps the previous result
+  (`placeholderData: keepPreviousData`) so an uncached filter change rolls in place
+  instead of blanking to "Loading stats…" and remounting. Any new motion must still
   degrade to an instant state under RM.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
   member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use

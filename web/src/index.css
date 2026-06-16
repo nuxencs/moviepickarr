@@ -783,6 +783,21 @@
   .movietile:hover .movietile__title,
   .movietile:focus-visible .movietile__title { color: var(--accent); }
 
+  /* Filter-change entrance for both stats rails. When the matched film set or the
+     people ranking actually changes (see useReplayOnChange — gated on a content
+     fingerprint, never on re-renders or same-result SSE refetches), each rail's
+     items replay the shared fadeUp, lightly staggered like the hero pick-reveal.
+     The hook strips + re-adds data-animate to restart this WITHOUT remounting, so
+     the people cards' NumberFlow counts keep rolling instead of snapping. Only
+     opacity + translateY move (no geometry → no layout shift), and the stagger is
+     capped so a long films rail can't trail a multi-second tail. reduced-motion
+     zeroes both duration and delay via the global guard. */
+  .movierail[data-animate] .movietile,
+  .peoplerail[data-animate] .peoplecard {
+    animation: mg-fadeUp var(--dur-slow) var(--ease) both;
+    animation-delay: calc(min(var(--i, 0), 12) * 40ms);
+  }
+
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }
   @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; gap: 0; } }
 

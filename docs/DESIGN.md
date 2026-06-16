@@ -236,8 +236,35 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   token; exits use `--ease-exit` and run one step faster than their enter. No
   bounce/elastic. Motion conveys state, not decoration. Hardcode no new durations —
   reach for the scale.
-- **CSS-only.** No JS animation library; everything is CSS keyframes (prefixed `mg-`) +
-  transitions. Do not add framer-motion / gsap / etc.
+- **CSS-first, with one sanctioned exception.** Visual motion (entrances, state
+  changes, overlays, charts) is CSS keyframes (prefixed `mg-`) + transitions — do not
+  reach for a general-purpose animation library (framer-motion / gsap / etc.) for those.
+  The one exception is **animated number transitions**, which CSS can't do for arbitrary
+  formats: the Stats counts that change with the window/filters — the KPI strip, the
+  "Films in Filter View" count, the leaderboard + weekday bar values, the genre-donut
+  legend, and the people-rail counts — use **NumberFlow** (`@number-flow/react`, via the
+  `StatNumber` / `MovieCount` / `RuntimeCount` wrappers in `StatsTab.tsx`), tuned to the
+  MG scale (`NUMBER_TIMING` = `--dur-slow` duration + `--ease`, no bounce) and honoring
+  `prefers-reduced-motion` (it renders instantly). The dense hourly + decade axis counts
+  stay static on purpose (too many to roll at once reads as noise). The KPI strip counts
+  up from 0 on mount (`animateOnMount`, matching the bars' from-0 entrance); the charts
+  stay static on mount and only roll on change. The stats query keeps the previous result
+  (`placeholderData: keepPreviousData`) so an uncached filter change rolls in place
+  instead of blanking to "Loading stats…" and remounting. Any new motion must still
+  degrade to an instant state under RM.
+- **Stats rail entrances (on filter change).** The two horizontal rails — the films
+  "Films in Filter View" rail and the people rails (directors/actors) — replay a
+  staggered `mg-fadeUp` (`--dur-slow`/`--ease`, per-item `--i` stagger like the hero
+  pick-reveal but capped at index 12, so a long films rail can't trail a multi-second
+  tail) whenever their content *actually changes*. `useReplayOnChange` (`hooks.ts`)
+  gates this on a content **fingerprint** taken from the API payload — the ordered
+  `matchedMovieIDs` for films (a reorder counts as a change), `personId:count` tuples
+  for people — never on render identity, so unrelated re-renders (opening the movie
+  modal) and same-result SSE refetches don't re-fire it. The restart is a
+  strip-reflow-re-add of a `data-animate` attribute on the rail container, NOT a React
+  remount: the people cards keep their DOM nodes, so their NumberFlow counts roll
+  rather than snap. Transform/opacity only (no layout shift); reduced-motion collapses
+  it to an instant state via the global guard.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
   member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use
   `height: calc(--p * 88%)`. Scaling a rounded box squishes its `border-radius` on short

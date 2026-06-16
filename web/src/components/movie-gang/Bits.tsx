@@ -100,9 +100,18 @@ export function PickerTag({ name, size = 20 }: { name: string; size?: number }) 
 export function MetaChips({
   movie,
   links = [],
+  onNavigate,
 }: {
   movie: Movie;
   links?: { label: string; href: string }[];
+  /**
+   * Fired when a genre/year chip is clicked, before its navigation commits.
+   * The movie modal passes its `close` here so a chip click plays the exit
+   * animation: on /stats the chip is a same-route nav that keeps the modal
+   * mounted, so it can animate out over the freshly-filtered view (off a
+   * different route the route change unmounts it first — no animation, as before).
+   */
+  onNavigate?: () => void;
 }) {
   const year = yearOf(movie.releaseDate);
   const runtime = runtimeLabel(movie.runtime);
@@ -130,6 +139,7 @@ export function MetaChips({
           search={{ ...statsSearchDefaults, year }}
           className={`${dot()} metachip--link`}
           title={`See ${year} stats`}
+          onClick={onNavigate}
         >
           {year}
         </Link>
@@ -151,6 +161,7 @@ export function MetaChips({
           search={{ ...statsSearchDefaults, genre: g }}
           className="genrechip genrechip--link"
           title={`See ${g} stats`}
+          onClick={onNavigate}
         >
           {g}
         </Link>

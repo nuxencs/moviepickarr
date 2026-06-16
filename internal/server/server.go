@@ -20,6 +20,7 @@ import (
 	"moviepickarr/internal/user"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -76,6 +77,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}))
 	app.Use(recover.New())
 	app.Use(requestid.New())
+	// Gzip JSON responses and the embedded SPA assets. The SSE stream is excluded:
+	// compression buffers the response body, which would break the per-event flush
+	// that keeps the event stream real-time.
+	app.Use(compress.New(compress.Config{
+		Next: func(c *fiber.Ctx) bool { return c.Path() == "/api/v1/events" },
+	}))
 	app.Use(cors.New())
 
 	registerRoutes(app, h)

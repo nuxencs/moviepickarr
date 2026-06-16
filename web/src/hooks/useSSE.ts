@@ -55,12 +55,14 @@ export function useSSE() {
             void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
             break;
 
-          case "movie:enriched":
-            // Async TMDB enrichment landed for a movie; refresh every cache that
-            // embeds enriched fields (poster, runtime, rating, credits, …) so it
-            // shows without waiting for an unrelated event or a reload. Stats
-            // aggregate TMDB metadata too (genres, people, runtime, rating), so
-            // they're invalidated alongside the movie lists.
+          case "movies:enriched-batch":
+            // The enrichment worker coalesces a burst of TMDB enrichments into a
+            // single batch event (instead of one per movie). Refresh every cache
+            // that embeds enriched fields (poster, runtime, rating, credits, …) —
+            // UsersKeys.list included, since the Members boards render posters.
+            // Stats aggregate TMDB metadata too (genres, people, runtime, rating),
+            // so they're invalidated alongside the movie lists. Same targets as
+            // before; now fired once per burst rather than once per movie.
             void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });

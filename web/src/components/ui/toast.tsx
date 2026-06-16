@@ -1,4 +1,4 @@
-import { toast as sonnerToast, Toaster as SonnerToaster } from 'sonner';
+import { Toaster as SonnerToaster } from 'sonner';
 
 /** Sonner toaster themed to the Movie Gang surfaces (dark + light via tokens). */
 export const Toaster = () => {
@@ -15,10 +15,4 @@ export const Toaster = () => {
             }}
         />
     );
-};
-
-export const toast = {
-    success: (message: string) => sonnerToast.success(message),
-    error: (message: string) => sonnerToast.error(message),
-    info: (message: string) => sonnerToast.info(message),
 };

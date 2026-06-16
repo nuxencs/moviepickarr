@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon, FilmIcon, MoonIcon, SunIcon, UsersIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { useTheme } from "@/components/ThemeProvider";
+import { useTheme } from "@/components/theme-context";
 
 export type Tab = "movies" | "users" | "stats";
 

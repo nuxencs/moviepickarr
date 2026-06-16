@@ -15,7 +15,8 @@ import { type CSSProperties, useMemo, useState } from "react";
 import { MoviesGetWatchedQueryOptions, StatsGetQueryOptions } from "@/api/queries";
 
 import { Avatar } from "@/components/movie-gang/Bits";
-import { DateRangePopover, shortRange } from "@/components/movie-gang/DateRange";
+import { DateRangePopover } from "@/components/movie-gang/DateRange";
+import { shortRange } from "@/components/movie-gang/dateRangeFormat";
 import { FilterBar, FilterSelect } from "@/components/movie-gang/FilterBar";
 import {
   filterOptionsFrom,

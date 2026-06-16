@@ -21,7 +21,7 @@ import { Menu } from "@/components/movie-gang/Menu";
 import { Poster } from "@/components/movie-gang/Poster";
 import { SearchModal } from "@/components/movie-gang/SearchModal";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
-import { toast } from "@/components/ui/toast";
+import { toast } from "@/components/ui/toast-api";
 
 import type { Movie, User } from "@/types/Response";
 
@@ -64,6 +64,8 @@ export function UsersTab() {
             <label className="field user-add__field">
               <UsersIcon />
               <input
+                name="new-user-name"
+                aria-label="Add a new member by name"
                 placeholder="Add someone…"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -207,7 +209,13 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
           </h3>
           <label className="field">
             <SearchIcon />
-            <input placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <input
+              name="stash-filter"
+              aria-label={`Filter ${firstName}'s stash`}
+              placeholder="Filter…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
           </label>
         </div>
         <div className="stash__list">

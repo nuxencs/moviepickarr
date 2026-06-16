@@ -6,7 +6,7 @@ import { APIClient } from "@/api/APIClient";
 import { hueOf, yearOf } from "@/components/movie-gang/lib";
 import { Modal } from "@/components/movie-gang/Modal";
 import { Poster } from "@/components/movie-gang/Poster";
-import { toast } from "@/components/ui/toast";
+import { toast } from "@/components/ui/toast-api";
 
 import type { TMDBMovie } from "@/types/Response";
 
@@ -83,6 +83,8 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
                 <SearchIcon />
                 <input
                   ref={inputRef}
+                  name="movie-search"
+                  aria-label="Search movies by title"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search title (e.g. Dune, The Matrix)…"

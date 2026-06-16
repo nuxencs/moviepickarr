@@ -1,6 +1,8 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { exitDelayMs } from "@/components/movie-gang/exitDelay";
+
 interface ModalProps {
   onClose: () => void;
   /** Extra class on the `.modal` surface (e.g. `modal--movie` for a narrower width). */
@@ -23,19 +25,6 @@ const FOCUSABLE =
  * dismissal, body-scroll lock, and a focus trap (focus moves in on open, cycles
  * inside, and returns to the opener on close) so it behaves like a real dialog.
  */
-/**
- * How long to keep a closing floating surface mounted so its exit animation can
- * finish, read from the shared `--dur-fast` token so CSS and JS never desync.
- * Reduced-motion users skip the wait entirely. Shared by the `Modal` and the
- * bespoke `Menu` so every overlay's unmount delay stays in lockstep with the CSS.
- */
-export function exitDelayMs(): number {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return 0;
-  const raw = getComputedStyle(document.documentElement).getPropertyValue("--dur-fast");
-  const secs = parseFloat(raw) || 0.14;
-  return Math.round(secs * 1000) + 20;
-}
-
 export function Modal({ onClose, className, dismissible = true, children }: ModalProps) {
   const [closing, setClosing] = useState(false);
   const onCloseRef = useRef(onClose);

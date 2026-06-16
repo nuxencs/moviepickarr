@@ -1,0 +1,11 @@
+version: "2"
+
+linters:
+  exclusions:
+    rules:
+      # Errors from deferred Close() calls are intentionally ignored — there is
+      # nothing actionable to do with a cleanup error on a defer, and adding
+      # `_ =` noise to every site hurts readability more than it helps.
+      - linters:
+          - errcheck
+        source: 'defer .*\.Close\(\)'

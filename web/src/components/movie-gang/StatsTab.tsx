@@ -65,6 +65,10 @@ export function StatsTab() {
   const search = useSearch({ from: "/stats" });
   const navigate = useNavigate({ from: "/stats" });
   const [showPicker, setShowPicker] = useState(false);
+  // The modal is local state. A genre/year chip inside it is a same-route
+  // /stats→/stats nav that never unmounts StatsTab, so the chip itself drives
+  // the close (via MetaChips' onNavigate → the modal's animated `close`) rather
+  // than this component reacting to the search change.
   const [selected, setSelected] = useState<Movie | null>(null);
 
   const win = search.win;

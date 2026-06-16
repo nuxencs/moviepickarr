@@ -79,7 +79,9 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
 
             <div className="moviemodal__info">
               <h3>{movie.title}</h3>
-              <MetaChips movie={movie} />
+              {/* Pass `close` so a genre/year chip plays the modal's exit
+                  animation before its /stats navigation (see MetaChips). */}
+              <MetaChips movie={movie} onNavigate={close} />
 
               {(directors.length > 0 || writers.length > 0) && (
                 <div className="moviemodal__credits">

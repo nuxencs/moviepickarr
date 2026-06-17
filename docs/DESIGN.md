@@ -252,19 +252,29 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   (`placeholderData: keepPreviousData`) so an uncached filter change rolls in place
   instead of blanking to "Loading stats…" and remounting. Any new motion must still
   degrade to an instant state under RM.
-- **Stats rail entrances (on filter change).** The two horizontal rails — the films
-  "Films in Filter View" rail and the people rails (directors/actors) — replay a
-  staggered `mg-fadeUp` (`--dur-slow`/`--ease`, per-item `--i` stagger like the hero
-  pick-reveal but capped at index 12, so a long films rail can't trail a multi-second
-  tail) whenever their content *actually changes*. `useReplayOnChange` (`hooks.ts`)
-  gates this on a content **fingerprint** taken from the API payload — the ordered
-  `matchedMovieIDs` for films (a reorder counts as a change), `personId:count` tuples
-  for people — never on render identity, so unrelated re-renders (opening the movie
-  modal) and same-result SSE refetches don't re-fire it. The restart is a
-  strip-reflow-re-add of a `data-animate` attribute on the rail container, NOT a React
-  remount: the people cards keep their DOM nodes, so their NumberFlow counts roll
-  rather than snap. Transform/opacity only (no layout shift); reduced-motion collapses
-  it to an instant state via the global guard.
+- **Stats rail motion (on filter change) — FLIP.** The three rails — the films "Films
+  in Filter View" rail, the people rails (directors/actors), and the "Picked by member"
+  leaderboard — animate by how each item's box *actually moved* between the old and new
+  layout, via `useFlipRail` (`hooks/useFlipRail.ts`), not a blanket fade-up replay:
+  - an item whose position is **unchanged** gets a zero delta and never moves — so the
+    30d films that are a prefix of the 1y set stay dead still (the "skip the overlap"
+    case is free, not special-cased);
+  - an item that **moved** (a rerank, or survivors closing the gap after a removal)
+    **glides** to its new spot (a JS-driven `transform: translate` released under
+    `transition: transform --dur-base --ease`);
+  - a **new** item pops in with `mg-fadeUp` (`data-flip-enter`, per-newcomer stagger
+    capped at 12 × 40ms);
+  - a **dropped** item fades out in place (`data-flip-exit` → `mg-fadeOut`, all drops
+    batched onto one `exitDelayMs` timer so the gap closes in a single clean glide),
+    then unmounts.
+  Whether an item is *new* is decided by key membership in the previous render
+  (`prevKeys`), never by whether a position happens to be recorded — so a churned/late
+  node stays put instead of wrongly fading in. Positions are measured **container-
+  relative**, so a reflow ABOVE a rail (the films rail tripling in height) slides the
+  whole rail without animating every card; and deltas are divided by `effectiveZoom`
+  (`movie-gang/zoom.ts`) so the glide lands exactly on target under the `:root` zoom ramp
+  (§13). No React remount, so NumberFlow counts keep rolling; reduced-motion skips every
+  transform/entrance and drops exits instantly.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
   member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use
   `height: calc(--p * 88%)`. Scaling a rounded box squishes its `border-radius` on short

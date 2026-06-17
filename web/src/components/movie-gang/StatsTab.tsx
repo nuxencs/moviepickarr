@@ -48,7 +48,7 @@ import type {
   StatsYearCount,
 } from "@/types/Response";
 
-import { useReplayOnChange } from "@/hooks/hooks";
+import { useFlipRail } from "@/hooks/useFlipRail";
 
 const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
   { id: "7d", label: "7d" },
@@ -488,12 +488,11 @@ function MatchedMoviesRail({
   filtered: boolean;
   onSelect: (movie: Movie) => void;
 }) {
-  // Replay the staggered entrance whenever the matched set changes — including a
-  // reorder of the same films (fingerprint is order-sensitive, per the films-rail
-  // decision). Derived from ids, so SSE refetches that resolve to the same set
-  // don't re-animate. Tiles re-mount on add/remove anyway; the restart also
-  // covers the pure-reorder case, where keyed nodes are reused.
-  const railRef = useReplayOnChange<HTMLDivElement>(movies.map((m) => m.movieID).join(","));
+  // FLIP the matched-films rail: films present in both windows glide to their new
+  // spot (the 30d prefix of a 1y set has a zero delta and stays put), new films
+  // pop in, dropped films fade out then the rail tightens. Keyed by id; item data
+  // resolves live so an SSE refetch flows in without re-animating.
+  const { containerRef, entries, itemProps } = useFlipRail<Movie>(movies, (m) => String(m.movieID));
   return (
     // Flush under the KPI strip (which already closes with a bottom rule) — the
     // rail is the expansion of the "In window" count, not a separate section.
@@ -501,7 +500,7 @@ function MatchedMoviesRail({
       <h3 className="statsec__title">
         Films in Filter View · <StatNumber value={count} />
       </h3>
-      {movies.length === 0 ? (
+      {entries.length === 0 ? (
         // count > 0 with no posters means the cached watched list is still
         // catching up to the stats count (transient); count 0 is a genuinely
         // empty filter view, worded by whether a filter is narrowing it.
@@ -513,15 +512,16 @@ function MatchedMoviesRail({
               : "No films watched in this window yet."}
         </p>
       ) : (
-        <div className="movierail" data-animate="" ref={railRef}>
-          {movies.map((movie, i) => {
+        <div className="movierail" ref={containerRef}>
+          {entries.map(({ key, item: movie, exiting }) => {
             const sub = [yearOf(movie.releaseDate), movie.addedByName].filter(Boolean).join(" · ");
             return (
               <button
                 type="button"
                 className="movietile"
-                key={movie.movieID}
-                style={{ "--i": i } as CSSProperties}
+                key={key}
+                data-flip-exit={exiting || undefined}
+                {...itemProps(key)}
                 onClick={() => onSelect(movie)}
                 title={movie.title}
               >
@@ -572,15 +572,19 @@ function StatItem({
 
 function PickedByMember({ rows }: { rows: StatsNamedCount[] }) {
   const max = Math.max(...rows.map((r) => r.count), 1);
+  // FLIP the leaderboard: when a window change reranks members, the rows glide to
+  // their new rank rather than snapping; new members pop in, dropped ones fade
+  // out then the column tightens. Bar widths still tween via the b-fill CSS.
+  const { containerRef, entries, itemProps } = useFlipRail<StatsNamedCount>(rows, (r) => r.name);
   return (
     <section className="statsec">
       <h3 className="statsec__title">Picked by member</h3>
-      {rows.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="empty">No watched movies in this window.</p>
       ) : (
-        <div className="bar-rows">
-          {rows.map((r, i) => (
-            <div className="barrow" key={r.name}>
+        <div className="bar-rows" ref={containerRef}>
+          {entries.map(({ key, item: r, exiting }, i) => (
+            <div className="barrow" key={key} data-flip-exit={exiting || undefined} {...itemProps(key)}>
               <div className="b-name">
                 <Avatar name={r.name} size={22} />
                 <span>{r.name}</span>
@@ -734,22 +738,20 @@ function PeopleRail({
   activeIds: ReadonlySet<number>;
   onToggle: (person: StatsPersonCount) => void;
 }) {
-  // Replay the staggered entrance when the ranking actually changes — membership,
-  // counts, or order (the server returns these count-sorted). Derived from
-  // personId+count so unrelated re-renders / same-result refetches don't fire it.
-  // No remount, so each card's NumberFlow count keeps rolling underneath.
-  const railRef = useReplayOnChange<HTMLDivElement>(
-    people.map((p) => `${p.personId}:${p.count}`).join(","),
-  );
-  if (people.length === 0) return null;
+  // FLIP the ranking: when a window change reranks people, cards glide between
+  // ranks; new entries pop in, dropped ones fade out then the rail tightens.
+  // Keyed by personId only (not count) — a count change rolls the card's
+  // NumberFlow live without re-animating the rail; order changes drive the glide.
+  const { containerRef, entries, itemProps } = useFlipRail<StatsPersonCount>(people, (p) => String(p.personId));
+  if (entries.length === 0) return null;
   return (
     <section className="statsec">
       <h3 className="statsec__title">{title}</h3>
-      <div className="peoplerail" data-animate="" ref={railRef}>
-        {people.map((p, i) => {
+      <div className="peoplerail" ref={containerRef}>
+        {entries.map(({ key, item: p, exiting }) => {
           const active = activeIds.has(p.personId);
           return (
-            <div className="castcard peoplecard" key={p.personId} data-active={active} style={{ "--i": i } as CSSProperties}>
+            <div className="castcard peoplecard" key={key} data-active={active} data-flip-exit={exiting || undefined} {...itemProps(key)}>
               <button
                 type="button"
                 className="peoplecard__toggle"

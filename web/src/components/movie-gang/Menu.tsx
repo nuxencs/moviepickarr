@@ -12,6 +12,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { exitDelayMs } from "@/components/movie-gang/exitDelay";
+import { effectiveZoom } from "@/components/movie-gang/zoom";
 
 export interface MenuAction {
   label: string;
@@ -44,22 +45,6 @@ interface Placement {
 
 const GAP = 6;
 const MARGIN = 8;
-
-/**
- * The effective CSS zoom applied to `el`. The large-screen scale ramp (§13)
- * lives on `:root` and cascades into the `<body>`-portalled menu, so a
- * position:fixed surface re-applies that zoom to its inline `top/left`.
- * Coordinates read from getBoundingClientRect() are already in the zoomed
- * viewport space, so they must be divided by this factor to land on target.
- */
-function effectiveZoom(el: Element): number {
-  const cur = (el as { currentCSSZoom?: number }).currentCSSZoom;
-  if (typeof cur === "number" && cur > 0) return cur;
-  // Older engines without currentCSSZoom: the ramp is on :root, so read its
-  // declared zoom — the element's own computed zoom is 1 and would be a no-op.
-  const z = parseFloat(getComputedStyle(document.documentElement).zoom || "1");
-  return Number.isFinite(z) && z > 0 ? z : 1;
-}
 
 /**
  * Bespoke "more actions" menu — a portalled floating surface on the shared

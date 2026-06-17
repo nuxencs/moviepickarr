@@ -783,19 +783,28 @@
   .movietile:hover .movietile__title,
   .movietile:focus-visible .movietile__title { color: var(--accent); }
 
-  /* Filter-change entrance for both stats rails. When the matched film set or the
-     people ranking actually changes (see useReplayOnChange — gated on a content
-     fingerprint, never on re-renders or same-result SSE refetches), each rail's
-     items replay the shared fadeUp, lightly staggered like the hero pick-reveal.
-     The hook strips + re-adds data-animate to restart this WITHOUT remounting, so
-     the people cards' NumberFlow counts keep rolling instead of snapping. Only
-     opacity + translateY move (no geometry → no layout shift), and the stagger is
-     capped so a long films rail can't trail a multi-second tail. reduced-motion
-     zeroes both duration and delay via the global guard. */
-  .movierail[data-animate] .movietile,
-  .peoplerail[data-animate] .peoplecard {
-    animation: mg-fadeUp var(--dur-slow) var(--ease) both;
-    animation-delay: calc(min(var(--i, 0), 12) * 40ms);
+  /* Filter-change motion for the stats rails (films, people, member bars), driven
+     by useFlipRail. The hook measures each item's old→new box and animates by how
+     it actually moved: persistent items glide (an inline transform it sets in JS,
+     zoom-corrected for the :root ramp), so an item whose position didn't change —
+     e.g. the 30d films that are a prefix of the 1y set — gets a zero delta and
+     never moves. Newcomers fade in (data-flip-enter, set by the hook with a capped
+     per-newcomer stagger via inline animation-delay) — the exit played in reverse,
+     a pure opacity fade with no vertical motion; dropped items fade out
+     (data-flip-exit, set declaratively from the entry's `exiting` flag) and then
+     unmount, after which the survivors glide to close the gap. reduced-motion is
+     honored in the hook (no transforms/entrance, exits drop instantly) and the
+     global guard zeroes any leftover animation. */
+  .movierail .movietile[data-flip-enter],
+  .peoplerail .peoplecard[data-flip-enter],
+  .bar-rows .barrow[data-flip-enter] {
+    animation: mg-fadeIn var(--dur-fast) var(--ease) both;
+  }
+  .movierail .movietile[data-flip-exit],
+  .peoplerail .peoplecard[data-flip-exit],
+  .bar-rows .barrow[data-flip-exit] {
+    animation: mg-fadeOut var(--dur-fast) var(--ease-exit) both;
+    pointer-events: none;
   }
 
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }

@@ -50,8 +50,8 @@ Modals use `--r-xl`. Don't exceed the scale.
 
 **Motion:** a 3-step duration scale — `--dur-fast 0.14s` (pointer feedback: hover,
 press, color), `--dur-base 0.22s` (state changes, crossfades), `--dur-slow 0.4s`
-(entrances) — plus `--dur-reveal 0.6s` (the hero pick-reveal). `--dur` remains as a
-legacy alias of `--dur-base`. Easing: `--ease` (decelerating ease-out, no bounce) for
+(entrances) — plus `--dur-reveal 0.6s` (the hero pick-reveal) and `--dur-spin 3.2s`
+(the slot-machine pick reel, §7). `--dur` remains as a legacy alias of `--dur-base`. Easing: `--ease` (decelerating ease-out, no bounce) for
 entrances, `--ease-exit` (accelerate-away) for exits, `--ease-reveal` (expo) for the
 pick-reveal. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
 
@@ -364,6 +364,22 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
 - The hero stays a **dark "island"** in light theme by design (cinematic scrim over a
   backdrop). Its scrim/text are intentionally dark/white in both themes; only fix the
   genuinely-broken light overlays, not the hero's darkness.
+
+**Pick reel (slot-machine spin).** A pick first plays a slot-machine **reel** — a
+takeover overlay *inside* the hero footprint (`PickReel.tsx`, `.pickreel*`) that scrolls
+a strip of pool-candidate posters past a centre reticle, decelerates onto the
+server-chosen winner, then hands off to the reveal below. It animates a result the
+**server already decided** (`ORDER BY RANDOM()`), so the randomness stays honest — the
+reel only adds anticipation. Only **pool candidates** scroll (every tile is a real
+possibility; never the watched library), and the strip is deduped at the landing seam so
+no poster sits beside an identical copy of itself. Motion is the **measure-then-transition**
+idiom (§6): JS measures the winner tile and glides the track there with a CSS transition
+over `--dur-spin` (3.2s) / `--ease-reveal`, with a within-tile **jitter** so the landing
+feels live. The `movie:picked` SSE event drives it so **every connected client spins**,
+not just the clicker; it skips for a **pool of one** or under reduced motion (straight to
+the reveal) and **resumes** server-relative on a reload mid-spin, while the hero **holds
+its commit** so the reveal never fires mid-spin. Full mechanics + invariants:
+`docs/findings/pick-reveal-reel.md`.
 
 **Pick-reveal (motion).** When the pick changes (or clears), the banner reveals the new
 state without breaking the static contract: a two-layer `.hero__bg-stack` crossfades the

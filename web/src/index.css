@@ -666,6 +666,17 @@
      changes the strip height — the page no longer jumps between windows. */
   .statitem__val { font-size: 29px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.05; height: 2.1em; display: flex; align-items: flex-end; overflow: hidden; }
   .statitem__val.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
+  /* NumberFlow's box carries internal mask padding round(0.25em/2,1px) below the
+     glyph — at this fixed 29px value size exactly 4px CSS-px (zoom-invariant). The
+     value cell is align-items:flex-end, which aligns box bottoms (not baselines),
+     so the numeral floats 4px above where the plain-text values (Top picker /
+     Busiest day) land. Pull it down so numbers and names share one baseline.
+     NOTE: this comp is only needed because of flex-end box alignment. Inline
+     NumberFlows (the .statitem__sub runtime + .statsec__title count) baseline-align
+     on their own — the mask is visual-only and does not move the glyph baseline,
+     at any :root zoom step. Do NOT add vertical-align nudges there; they shove the
+     numeral off the text baseline (regressed the avg-runtime sub once already). */
+  .statitem__val number-flow-react { margin-bottom: -4px; }
   .statitem__sub { font-size: 12.5px; color: var(--ink-3); }
   /* The 6-up KPI strip steps 6 → 3 → 2 columns; each step re-derives which
      items start a row (and so drop their left border). */
@@ -687,6 +698,8 @@
      already closes with its own bottom rule) — no second divider. */
   .statsec--flush { margin-top: 24px; padding-top: 0; border-top: none; }
   .statsec__title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0 0 20px; letter-spacing: -0.005em; }
+  /* Inline count ("Films in Filter View · N") baseline-aligns on its own — see the
+     NOTE on .statitem__val above; no vertical-align nudge. */
 
   .bar-rows { display: flex; flex-direction: column; gap: 16px; }
   .barrow { display: grid; grid-template-columns: 188px 1fr 34px; align-items: center; gap: 16px; }
@@ -783,19 +796,28 @@
   .movietile:hover .movietile__title,
   .movietile:focus-visible .movietile__title { color: var(--accent); }
 
-  /* Filter-change entrance for both stats rails. When the matched film set or the
-     people ranking actually changes (see useReplayOnChange — gated on a content
-     fingerprint, never on re-renders or same-result SSE refetches), each rail's
-     items replay the shared fadeUp, lightly staggered like the hero pick-reveal.
-     The hook strips + re-adds data-animate to restart this WITHOUT remounting, so
-     the people cards' NumberFlow counts keep rolling instead of snapping. Only
-     opacity + translateY move (no geometry → no layout shift), and the stagger is
-     capped so a long films rail can't trail a multi-second tail. reduced-motion
-     zeroes both duration and delay via the global guard. */
-  .movierail[data-animate] .movietile,
-  .peoplerail[data-animate] .peoplecard {
-    animation: mg-fadeUp var(--dur-slow) var(--ease) both;
-    animation-delay: calc(min(var(--i, 0), 12) * 40ms);
+  /* Filter-change motion for the stats rails (films, people, member bars), driven
+     by useFlipRail. The hook measures each item's old→new box and animates by how
+     it actually moved: persistent items glide (an inline transform it sets in JS,
+     zoom-corrected for the :root ramp), so an item whose position didn't change —
+     e.g. the 30d films that are a prefix of the 1y set — gets a zero delta and
+     never moves. Newcomers fade in (data-flip-enter, set by the hook with a capped
+     per-newcomer stagger via inline animation-delay) — the exit played in reverse,
+     a pure opacity fade with no vertical motion; dropped items fade out
+     (data-flip-exit, set declaratively from the entry's `exiting` flag) and then
+     unmount, after which the survivors glide to close the gap. reduced-motion is
+     honored in the hook (no transforms/entrance, exits drop instantly) and the
+     global guard zeroes any leftover animation. */
+  .movierail .movietile[data-flip-enter],
+  .peoplerail .peoplecard[data-flip-enter],
+  .bar-rows .barrow[data-flip-enter] {
+    animation: mg-fadeIn var(--dur-fast) var(--ease) both;
+  }
+  .movierail .movietile[data-flip-exit],
+  .peoplerail .peoplecard[data-flip-exit],
+  .bar-rows .barrow[data-flip-exit] {
+    animation: mg-fadeOut var(--dur-fast) var(--ease-exit) both;
+    pointer-events: none;
   }
 
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }

@@ -71,6 +71,14 @@ func (r *testMovieRepo) SetExternalIDs(context.Context, int, *int, *string) erro
 	panic("unexpected call")
 }
 func (r *testMovieRepo) UpdateStatus(context.Context, int, string) error { panic("unexpected call") }
+func (r *testMovieRepo) UpdateStatusIf(context.Context, int, string, string) (int64, error) {
+	panic("unexpected call")
+}
+
+func (r *testMovieRepo) PromoteToPoolIfRoom(context.Context, int, int) (int64, error) {
+	panic("unexpected call")
+}
+
 func (r *testMovieRepo) MarkAsWatched(context.Context, int, time.Time) error {
 	panic("unexpected call")
 }

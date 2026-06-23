@@ -348,6 +348,19 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 
 	ctx := c.UserContext()
 
+	// The client names the destination ("pool" or "stash") instead of letting the
+	// server toggle on live status — a directional move is idempotent, so a
+	// duplicate click can only re-confirm the target, never reverse it.
+	var body struct {
+		Target string `json:"target"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
+	}
+	if body.Target != "pool" && body.Target != "stash" {
+		return writeError(c, fmt.Errorf("%w: target must be \"pool\" or \"stash\"", domain.ErrInvalidInput))
+	}
+
 	poolLocked, err := h.settingsService.GetPoolLock(ctx)
 	if err != nil {
 		return writeError(c, err)
@@ -370,24 +383,20 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeError(c, domain.ErrNotFound)
 	}
 
-	switch movieRecord.Status {
-	case "stash":
-		pooled, err := h.movieService.PooledByUserID(ctx, userID)
-		if err != nil {
-			return writeError(c, err)
-		}
-		if len(pooled) >= maxPoolSize {
-			return writeError(c, domain.ErrPoolLimitReached)
-		}
-		if err := h.movieService.MoveToPool(ctx, movieID); err != nil {
-			return writeError(c, err)
-		}
+	// The transition is enforced atomically in the service: it moves the movie
+	// only if it sits at the source (and, for a promotion, only if the owner's
+	// pool has room), so a duplicate click is an idempotent no-op and concurrent
+	// promotions can't overshoot the cap. `changed` reports whether a real move
+	// happened, so a no-op duplicate doesn't broadcast.
+	var changed bool
+	switch body.Target {
 	case "pool":
-		if err := h.movieService.MoveToStash(ctx, movieID); err != nil {
-			return writeError(c, err)
-		}
-	default:
-		return writeError(c, domain.ErrInvalidState)
+		changed, err = h.movieService.MoveToPool(ctx, movieID)
+	case "stash":
+		changed, err = h.movieService.MoveToStash(ctx, movieID)
+	}
+	if err != nil {
+		return writeError(c, err)
 	}
 
 	updatedPool, err := h.movieService.PooledByUserID(ctx, userID)
@@ -401,7 +410,9 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 
 	combined := append(append([]*domain.Movie{}, updatedPool...), updatedStash...)
 	updatedUser := toAPIUserMeta(userRecord, updatedPool, updatedStash, h.metaFor(ctx, combined), h.creditsFor(ctx, combined))
-	h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
+	if changed {
+		h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
+	}
 
 	return c.Status(fiber.StatusOK).JSON(updatedUser)
 }

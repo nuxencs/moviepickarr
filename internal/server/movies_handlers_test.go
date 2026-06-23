@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,5 +134,384 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	expectedWatchedAt := time.Date(2026, 2, 8, 16, 45, 0, 0, time.UTC)
 	if !updated.WatchedAt.Equal(expectedWatchedAt) {
 		t.Fatalf("expected watchedAt %v, got %v", expectedWatchedAt, updated.WatchedAt)
+	}
+}
+
+func postMove(t *testing.T, app *fiber.App, userID, movieID int, target string) *http.Response {
+	t.Helper()
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/users/%d/movies/%d/move", userID, movieID),
+		strings.NewReader(fmt.Sprintf(`{"target":%q}`, target)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	return resp
+}
+
+func movieStatus(t *testing.T, ctx context.Context, movieRepo *repository.SqliteMoviesRepository, id int) string {
+	t.Helper()
+
+	m, err := movieRepo.FindByID(ctx, id)
+	if err != nil {
+		t.Fatalf("fetch movie: %v", err)
+	}
+	return m.Status
+}
+
+// A rapid duplicate click used to cancel itself out: the move endpoint blind-
+// toggled on live status, so two clicks did stash→pool→stash and the movie
+// appeared to move then snap back. The directional endpoint treats a move to
+// the current location as an idempotent no-op, so duplicates can't reverse it.
+func TestHandleMove_DirectionalIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Cara")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	movie, err := movieRepo.Add(ctx, "Heat", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create movie: %v", err)
+	}
+
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("first promote: expected 200, got %d", resp.StatusCode)
+	}
+	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "pool" {
+		t.Fatalf("after first promote: expected pool, got %q", got)
+	}
+
+	// The regression: a second promote to the same target must NOT revert it.
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("duplicate promote: expected 200, got %d", resp.StatusCode)
+	}
+	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "pool" {
+		t.Fatalf("after duplicate promote: expected pool (no revert), got %q", got)
+	}
+
+	if resp := postMove(t, app, user.ID, movie.ID, "stash"); resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("demote: expected 200, got %d", resp.StatusCode)
+	}
+	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "stash" {
+		t.Fatalf("after demote: expected stash, got %q", got)
+	}
+}
+
+func TestHandleMove_RejectsMissingTarget(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Dev")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	movie, err := movieRepo.Add(ctx, "Drive", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create movie: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, movie.ID),
+		strings.NewReader(`{}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("expected 400 for missing target, got %d", resp.StatusCode)
+	}
+	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "stash" {
+		t.Fatalf("movie should be unchanged, got %q", got)
+	}
+}
+
+// A fast double-click fires two near-simultaneous /move POSTs (the pending-guard
+// can't block the second before React re-renders). With a blind toggle the
+// even count cancelled out; the directional endpoint must instead leave the
+// movie at the target and return 2xx for every duplicate — no spurious 409
+// (pool-limit counting the movie against its own promotion) or 400
+// (ErrInvalidState from a lost read-modify-write race).
+func TestHandleMove_ConcurrentDuplicatePromote_NoSpuriousError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Eve")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	// Fill two of three pool slots so the duplicates also exercise the pool-limit
+	// check, which must not count the movie against its own in-flight promotion.
+	if _, err := movieRepo.Add(ctx, "Alien", "pool", user.ID); err != nil {
+		t.Fatalf("seed pool: %v", err)
+	}
+	if _, err := movieRepo.Add(ctx, "Aliens", "pool", user.ID); err != nil {
+		t.Fatalf("seed pool: %v", err)
+	}
+	movie, err := movieRepo.Add(ctx, "Predator", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create movie: %v", err)
+	}
+
+	const clicks = 12
+	results := make([]struct {
+		status int
+		err    error
+	}, clicks)
+	var wg sync.WaitGroup
+	for i := range clicks {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			req := httptest.NewRequest(
+				http.MethodPost,
+				fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, movie.ID),
+				strings.NewReader(`{"target":"pool"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			results[i].status = resp.StatusCode
+		}(i)
+	}
+	wg.Wait()
+
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("click %d: app.Test: %v", i, r.err)
+		}
+		if r.status < 200 || r.status >= 300 {
+			t.Fatalf("click %d: expected 2xx (idempotent), got %d", i, r.status)
+		}
+	}
+	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "pool" {
+		t.Fatalf("after concurrent promotes: expected pool, got %q", got)
+	}
+	pooled, err := movieRepo.FindByUserIDAndStatus(ctx, user.ID, "pool")
+	if err != nil {
+		t.Fatalf("fetch pool: %v", err)
+	}
+	if len(pooled) != 3 {
+		t.Fatalf("expected pool of 3 after concurrent promotes, got %d", len(pooled))
+	}
+}
+
+// countMovedEvents drains a broker client for "movie:moved" frames until the
+// channel goes quiet for `within`.
+func countMovedEvents(client chan event, within time.Duration) int {
+	count := 0
+	for {
+		select {
+		case e, ok := <-client:
+			if !ok {
+				return count
+			}
+			if e.Type == "movie:moved" {
+				count++
+			}
+		case <-time.After(within):
+			return count
+		}
+	}
+}
+
+// A real move broadcasts movie:moved so other clients refetch; a no-op duplicate
+// must NOT — otherwise every redundant click triggers an invalidation storm. The
+// `changed` flag gates the broadcast; this asserts the gate holds.
+func TestHandleMove_NoOpDuplicateSuppressesBroadcast(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Faye")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	movie, err := movieRepo.Add(ctx, "Fargo", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create movie: %v", err)
+	}
+
+	client := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	// First promote is a real transition → exactly one movie:moved.
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("promote: expected 200, got %d", resp.StatusCode)
+	}
+	if got := countMovedEvents(client, 100*time.Millisecond); got != 1 {
+		t.Fatalf("real move: expected 1 movie:moved broadcast, got %d", got)
+	}
+
+	// Duplicate promote finds the movie already pooled → no-op, no broadcast.
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("duplicate promote: expected 200, got %d", resp.StatusCode)
+	}
+	if got := countMovedEvents(client, 100*time.Millisecond); got != 0 {
+		t.Fatalf("no-op duplicate: expected 0 broadcasts (suppression), got %d", got)
+	}
+}
+
+// Two DIFFERENT stashed movies promoted concurrently into a one-free-slot pool
+// must not overshoot maxPoolSize: the pool-count check is folded into the same
+// atomic UPDATE as the status flip, so exactly one wins and the rest get 409.
+// Before the atomic refactor both could read count<cap and both commit -> pool of 4.
+func TestHandleMove_ConcurrentDistinctPromotes_RespectPoolCap(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Gus")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	// Seed 2 of 3 pool slots → exactly one free slot for the contenders below.
+	if _, err := movieRepo.Add(ctx, "Fargo", "pool", user.ID); err != nil {
+		t.Fatalf("seed pool: %v", err)
+	}
+	if _, err := movieRepo.Add(ctx, "Brick", "pool", user.ID); err != nil {
+		t.Fatalf("seed pool: %v", err)
+	}
+
+	const contenders = 4
+	ids := make([]int, contenders)
+	for i := range contenders {
+		m, err := movieRepo.Add(ctx, fmt.Sprintf("Contender %d", i), "stash", user.ID)
+		if err != nil {
+			t.Fatalf("seed contender %d: %v", i, err)
+		}
+		ids[i] = m.ID
+	}
+
+	results := make([]struct {
+		status int
+		err    error
+	}, contenders)
+	var wg sync.WaitGroup
+	for i := range contenders {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			req := httptest.NewRequest(
+				http.MethodPost,
+				fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, ids[i]),
+				strings.NewReader(`{"target":"pool"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			results[i].status = resp.StatusCode
+		}(i)
+	}
+	wg.Wait()
+
+	var promoted, rejected int
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("contender %d: app.Test: %v", i, r.err)
+		}
+		switch r.status {
+		case fiber.StatusOK:
+			promoted++
+		case fiber.StatusConflict:
+			rejected++
+		default:
+			t.Fatalf("contender %d: expected 200 or 409, got %d", i, r.status)
+		}
+	}
+	if promoted != 1 {
+		t.Fatalf("expected exactly 1 promotion to win the free slot, got %d", promoted)
+	}
+	if rejected != contenders-1 {
+		t.Fatalf("expected %d pool-limit rejections, got %d", contenders-1, rejected)
+	}
+
+	pooled, err := movieRepo.FindByUserIDAndStatus(ctx, user.ID, "pool")
+	if err != nil {
+		t.Fatalf("fetch pool: %v", err)
+	}
+	if len(pooled) != 3 {
+		t.Fatalf("pool cap breached: expected 3, got %d", len(pooled))
+	}
+}
+
+// The demote path is directional + idempotent too: many concurrent demotes of
+// the same pooled movie all succeed (2xx) and leave it stashed, never erroring
+// on the lost-race ErrInvalidState.
+func TestHandleMove_ConcurrentDemoteIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Hank")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	movie, err := movieRepo.Add(ctx, "Holes", "pool", user.ID)
+	if err != nil {
+		t.Fatalf("create movie: %v", err)
+	}
+
+	const clicks = 8
+	results := make([]struct {
+		status int
+		err    error
+	}, clicks)
+	var wg sync.WaitGroup
+	for i := range clicks {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			req := httptest.NewRequest(
+				http.MethodPost,
+				fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, movie.ID),
+				strings.NewReader(`{"target":"stash"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			results[i].status = resp.StatusCode
+		}(i)
+	}
+	wg.Wait()
+
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("click %d: app.Test: %v", i, r.err)
+		}
+		if r.status < 200 || r.status >= 300 {
+			t.Fatalf("click %d: expected 2xx (idempotent demote), got %d", i, r.status)
+		}
+	}
+	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "stash" {
+		t.Fatalf("after concurrent demotes: expected stash, got %q", got)
 	}
 }

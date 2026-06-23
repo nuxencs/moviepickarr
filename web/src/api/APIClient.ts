@@ -188,8 +188,10 @@ export const APIClient = {
                     watchedAt,
                 },
             }),
-        moveMovie: (userID: number, movieID: number) =>
-            appClient.Post<Movie>(`api/v1/users/${userID}/movies/${movieID}/move`),
+        moveMovie: (userID: number, movieID: number, target: "pool" | "stash") =>
+            appClient.Post<Movie>(`api/v1/users/${userID}/movies/${movieID}/move`, {
+                body: { target },
+            }),
         getPool: (userID: number) =>
             appClient.Get<Movie[]>(`api/v1/users/${userID}/pool`),
         getStash: (userID: number) =>

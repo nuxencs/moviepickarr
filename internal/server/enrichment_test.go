@@ -80,6 +80,14 @@ func (r *fakeMovieRepo) UpdateWatchedAt(context.Context, int, time.Time) error {
 	panic("unexpected call")
 }
 func (r *fakeMovieRepo) UpdateStatus(context.Context, int, string) error { panic("unexpected call") }
+func (r *fakeMovieRepo) UpdateStatusIf(context.Context, int, string, string) (int64, error) {
+	panic("unexpected call")
+}
+
+func (r *fakeMovieRepo) PromoteToPoolIfRoom(context.Context, int, int) (int64, error) {
+	panic("unexpected call")
+}
+
 func (r *fakeMovieRepo) MarkAsWatched(context.Context, int, time.Time) error {
 	panic("unexpected call")
 }

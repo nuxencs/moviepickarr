@@ -8,10 +8,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-const (
-	maxPoolSize = 3
-	timeFormat  = time.RFC3339
-)
+const timeFormat = time.RFC3339
 
 type settingsResponse struct {
 	PoolLocked bool `json:"poolLocked"`

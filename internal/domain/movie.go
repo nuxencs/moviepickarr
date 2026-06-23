@@ -18,6 +18,17 @@ type MovieRepo interface {
 	UpdateTitle(ctx context.Context, id int, title string) error
 	UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error
 	UpdateStatus(ctx context.Context, id int, status string) error
+	// UpdateStatusIf conditionally transitions a movie: it sets status=to only
+	// WHERE the row currently has status=from, returning the number of rows
+	// affected (1 = transitioned, 0 = the precondition did not hold). This makes
+	// a status move idempotent and race-safe without a read-modify-write.
+	UpdateStatusIf(ctx context.Context, id int, to, from string) (int64, error)
+	// PromoteToPoolIfRoom atomically moves a stashed movie into its owner's pool,
+	// but only when that pool holds fewer than maxPool movies. The source-status
+	// check and the per-user pool-count check happen in one statement, so
+	// concurrent promotions of distinct movies cannot overshoot the cap. Returns
+	// rows affected (1 = promoted, 0 = not — already pooled, not stashed, or full).
+	PromoteToPoolIfRoom(ctx context.Context, id, maxPool int) (int64, error)
 	MarkAsWatched(ctx context.Context, id int, time time.Time) error
 	GetRandomPooled(ctx context.Context) (*Movie, error)
 	GetCurrent(ctx context.Context) (*Movie, error)

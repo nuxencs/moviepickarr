@@ -129,9 +129,10 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
     onError: () => toast.error("Failed to delete user"),
   });
 
-  // Demote a pooled movie back to the stash (moveMovie toggles pool <-> stash).
+  // Demote a pooled movie back to the stash. The move endpoint is directional
+  // (target = destination) and idempotent, so a repeat click is a safe no-op.
   const demoteMutation = useMutation({
-    mutationFn: (movieID: number) => APIClient.users.moveMovie(user.userID, movieID),
+    mutationFn: (movieID: number) => APIClient.users.moveMovie(user.userID, movieID, "stash"),
     onError: () => toast.error("Failed to move movie"),
   });
 
@@ -249,7 +250,7 @@ function StashRow({
   const [deleteOpen, toggleDelete] = useToggle(false);
 
   const moveMutation = useMutation({
-    mutationFn: () => APIClient.users.moveMovie(user.userID, movie.movieID),
+    mutationFn: () => APIClient.users.moveMovie(user.userID, movie.movieID, "pool"),
     onError: () => toast.error("Failed to move movie"),
   });
   const deleteMutation = useMutation({
@@ -299,7 +300,7 @@ function StashRow({
             type="button"
             className="iconbtn"
             onClick={() => moveMutation.mutate()}
-            disabled={locked || poolFull}
+            disabled={locked || poolFull || moveMutation.isPending}
             aria-label="Promote to pool"
             title={poolFull ? "Pool is full" : locked ? "Pool is locked" : "Promote to pool"}
           >

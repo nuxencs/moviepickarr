@@ -510,6 +510,42 @@ func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, statu
 	return nil
 }
 
+func (d *SqliteMoviesRepository) UpdateStatusIf(ctx context.Context, id int, to, from string) (int64, error) {
+	query := "UPDATE movies SET status = ? WHERE id = ? AND status = ?"
+
+	res, err := d.db.ExecContext(ctx, query, to, id, from)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}
+
+// PromoteToPoolIfRoom flips a stashed movie to "pool" in a single statement,
+// gated on the owner's current pool count via a correlated subquery (the owner
+// is derived from the movie row itself). Because it is one atomic UPDATE, two
+// concurrent promotions cannot both pass a stale count and overshoot maxPool.
+func (d *SqliteMoviesRepository) PromoteToPoolIfRoom(ctx context.Context, id, maxPool int) (int64, error) {
+	query := `
+		UPDATE movies
+		SET status = 'pool'
+		WHERE id = ?
+			AND status = 'stash'
+			AND (
+				SELECT COUNT(*)
+				FROM movies AS p
+				WHERE p.added_by_id = movies.added_by_id AND p.status = 'pool'
+			) < ?
+	`
+
+	res, err := d.db.ExecContext(ctx, query, id, maxPool)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}
+
 func (d *SqliteMoviesRepository) MarkAsWatched(ctx context.Context, id int, time time.Time) error {
 	query := "UPDATE movies SET status = 'watched', watched_at = ? WHERE id = ?"
 

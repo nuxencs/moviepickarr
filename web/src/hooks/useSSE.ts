@@ -3,6 +3,9 @@ import { useEffect, useRef } from "react";
 
 import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
+import { buildLiveSpin, setActiveSpin } from "@/components/movie-gang/pickSpin";
+
+import type { Movie } from "@/types/Response";
 import type { SSEEvent } from "@/types/SSEEvent";
 
 function baseURL(): string {
@@ -70,12 +73,24 @@ export function useSSE() {
             void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
             break;
 
-          case "movie:picked":
+          case "movie:picked": {
+            // Start the cross-client reveal spin. Capture the pre-pick pool
+            // snapshot (which still holds the winner) BEFORE invalidating, since
+            // the reel is built from it.
+            const picked = sseEvent.data as Movie | undefined;
+            const spin = picked
+              ? buildLiveSpin(picked, queryClient.getQueryData<Movie[]>(MoviesKeys.listpool()) ?? [])
+              : null;
+            if (picked) setActiveSpin(queryClient, spin);
             void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
-            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
             void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });
+            // When a reel will play, hold the pool refresh until it lands (the Hero
+            // does it on land) so the pool grid doesn't drop the winner mid-spin
+            // and spoil it. No reel → refresh now.
+            if (!spin) void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
             break;
+          }
 
           case "movie:watched":
             void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });

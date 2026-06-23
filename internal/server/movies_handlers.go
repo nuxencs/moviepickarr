@@ -439,6 +439,11 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	}
 
 	payload := toAPIMovie(selectedMovie)
+	// Carry the authoritative pick time so the clicker (whose own SSE event may
+	// drop) and every other client resume the reveal spin from the same instant.
+	if ap, ok := h.movieService.ActivePick(); ok && ap.MovieID == selectedMovie.ID {
+		payload.PickedAt = formatTime(&ap.PickedAt)
+	}
 	h.broker.Broadcast(event{Type: "movie:picked", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
@@ -456,7 +461,16 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 
 	meta := h.metaFor(ctx, []*domain.Movie{movieRecord})
 	credits := h.creditsFor(ctx, []*domain.Movie{movieRecord})
-	return c.Status(fiber.StatusOK).JSON(toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
+	resp := toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
+	// When this movie is the active pick, hand the client the timing it needs to
+	// resume the reveal spin after a reload: when it was picked, plus the server
+	// clock now (so elapsed is computed server-relative, free of client skew).
+	if ap, ok := h.movieService.ActivePick(); ok && ap.MovieID == movieRecord.ID {
+		now := time.Now().UTC()
+		resp.PickedAt = formatTime(&ap.PickedAt)
+		resp.ServerNow = formatTime(&now)
+	}
+	return c.Status(fiber.StatusOK).JSON(resp)
 }
 
 func (h *handler) handleWatchMovie(c *fiber.Ctx) error {

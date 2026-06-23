@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
@@ -8,9 +8,19 @@ import {
   MoviesGetPoolQueryOptions,
   SettingsGetNextPickerQueryOptions,
 } from "@/api/queries";
+import { MoviesKeys, PickKeys, SettingsKeys } from "@/api/query_keys";
 
 import { Avatar, MetaChips } from "@/components/movie-gang/Bits";
 import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/movie-gang/lib";
+import { PickReel } from "@/components/movie-gang/PickReel";
+import {
+  type ActiveSpin,
+  buildLiveSpin,
+  buildResumeSpin,
+  clearActiveSpin,
+  isWithinSpinWindow,
+  setActiveSpin,
+} from "@/components/movie-gang/pickSpin";
 import { Poster } from "@/components/movie-gang/Poster";
 import { toast } from "@/components/ui/toast-api";
 
@@ -53,19 +63,49 @@ function Backdrop({ bg, revealId }: { bg: string; revealId: number }) {
   );
 }
 
+// Picks already turned into a reel this page session. Module-level (not component
+// state) so it survives Hero remounts — leaving and returning to the Movies tab
+// must NOT replay a spin that already ran — while still resetting on a full page
+// reload, so a genuine reload can resume an in-flight spin.
+const handledPicks = new Set<string>();
+
 /**
  * Full-bleed cinematic banner for the current pick (Movies tab only).
  * Absorbs the old NextPicker: it carries the Mark-Watched / Pick-Random
  * actions and the next-picker chip.
  */
 export function Hero() {
+  const queryClient = useQueryClient();
   const { data: current, isLoading } = useQuery(MoviesGetCurrentQueryOptions());
   const { data: pooled } = useQuery(MoviesGetPoolQueryOptions());
   const { data: nextPicker } = useQuery(SettingsGetNextPickerQueryOptions());
 
+  // Reactive read of the cross-client spin signal, set via setQueryData by the
+  // SSE handler (movie:picked) and the pick mutation below.
+  const { data: activeSpin } = useQuery<ActiveSpin | null>({
+    queryKey: PickKeys.active(),
+    queryFn: () => null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
   const pickMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
-    onSuccess: () => toast.success("Movie picked"),
+    onSuccess: (movie) => {
+      toast.success("Movie picked");
+      // Fallback if the clicker's own SSE event drops: start the reel from the
+      // response and pull in the winner + rotated state without the SSE-driven
+      // invalidation. setActiveSpin dedups against the SSE event by pickedAt.
+      const poolSnapshot = queryClient.getQueryData<Movie[]>(MoviesKeys.listpool()) ?? [];
+      const spin = buildLiveSpin(movie, poolSnapshot);
+      setActiveSpin(queryClient, spin);
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });
+      // Hold the pool refresh until the reel lands (see onLand) so the pool grid
+      // doesn't drop the winner mid-spin and spoil the result. No reel → now.
+      if (!spin) void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+    },
     onError: () => toast.error("Failed to pick a random movie"),
   });
 
@@ -75,20 +115,71 @@ export function Hero() {
     onError: () => toast.error("Failed to mark as watched"),
   });
 
-  // The pick we actually display lags `current`: when the pick changes we
-  // preload + decode its backdrop first, then commit the new pick AND bump
-  // `revealId` together — so the backdrop crossfade and the staggered content
-  // reveal land in the same frame, never flash blank, and the loading
-  // placeholder never gets its own reveal cycle (revealId stays 0 until ready).
   const [shown, setShown] = useState<Movie | null>(null);
   const [revealId, setRevealId] = useState(0);
+  // Reel state: `spinning` mounts the takeover overlay; `spinDescriptor` is the
+  // spin it renders (held locally so it survives clearing the shared signal on
+  // land). `committed` is the last pick we revealed, so an unrelated pool refetch
+  // re-running the commit effect can't replay the reveal. (`handledPicks`, which
+  // stops a re-render or a tab-switch remount from restarting a spin, is
+  // module-level so it outlives this component's mount.)
+  const [spinning, setSpinning] = useState(false);
+  const [spinDescriptor, setSpinDescriptor] = useState<ActiveSpin | null>(null);
+  const committed = useRef<Movie | null | undefined>(undefined);
 
+  // Start the reel when a spin signal arrives (SSE pick / clicker fallback).
+  // Declared before the commit effect so its handledPicks write lands first.
+  useEffect(() => {
+    if (!activeSpin || handledPicks.has(activeSpin.pickedAt)) return;
+    handledPicks.add(activeSpin.pickedAt);
+    setSpinDescriptor(activeSpin);
+    setSpinning(true);
+  }, [activeSpin]);
+
+  // The pick we actually display lags `current`: when the pick changes we preload
+  // + decode its backdrop first, then commit the new pick AND bump `revealId`
+  // together — so the backdrop crossfade and the staggered content reveal land in
+  // the same frame, never flash blank, and the loading placeholder never gets its
+  // own reveal cycle (revealId stays 0 until ready). While the reel spins the
+  // commit is held back, so the reveal hands off the instant it lands.
   useEffect(() => {
     if (isLoading) return;
+    if (spinning) return; // the reel owns the transition; commit waits for the land
+
     const next = current ?? null;
+
+    // Reload mid-spin: resume the reel from the time that's left, before
+    // committing, so the winner never flashes ahead of it. Decided once per pick.
+    // The window check needs only `current`; building the reel needs the pool, so
+    // hold the commit until the pool has loaded.
+    if (next?.pickedAt && !handledPicks.has(next.pickedAt)) {
+      if (isWithinSpinWindow(next)) {
+        if (pooled === undefined) return;
+        handledPicks.add(next.pickedAt);
+        const resume = buildResumeSpin(next, pooled);
+        if (resume) {
+          setSpinDescriptor(resume);
+          setSpinning(true);
+          return;
+        }
+      } else {
+        handledPicks.add(next.pickedAt);
+      }
+    }
+
+    // Only (re)reveal when the pick itself changed — not when an unrelated pool
+    // refetch re-ran this effect (pooled is a dep for the resume decision above).
+    if (current === committed.current) return;
+
     let cancelled = false;
     const commit = () => {
       if (cancelled) return;
+      // Claim the pick only when the reveal actually lands — NOT synchronously
+      // before the async backdrop decode. onLand invalidates the pool, so this
+      // effect re-runs (pooled dep) and its cleanup cancels the in-flight decode;
+      // if `committed` had already claimed the pick, the guard above would skip
+      // the re-commit and the hero would stay stuck on the previous frame.
+      committed.current = current;
       setShown(next);
       setRevealId((n) => n + 1);
     };
@@ -104,8 +195,9 @@ export function Hero() {
       cancelled = true;
     };
     // `current` keeps a stable reference across no-op refetches (TanStack structural
-    // sharing), so this re-runs only when the pick actually changes or first settles.
-  }, [isLoading, current]);
+    // sharing), so this re-runs only when the pick changes, the pool loads, or the
+    // reel lands.
+  }, [isLoading, current, spinning, pooled]);
 
   const pick = shown;
   // False until the first pick (or confirmed-empty) has committed after its
@@ -200,6 +292,20 @@ export function Hero() {
           </div>
         </div>
       </div>
+
+      {spinning && spinDescriptor && (
+        <PickReel
+          key={spinDescriptor.pickedAt}
+          spin={spinDescriptor}
+          onLand={() => {
+            setSpinning(false);
+            clearActiveSpin(queryClient);
+            // Reveal the post-pick pool (the winner leaves the grid) in lockstep
+            // with the hero reveal, not the instant Pick was clicked.
+            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+          }}
+        />
+      )}
     </section>
   );
 }

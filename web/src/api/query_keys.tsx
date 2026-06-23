@@ -12,6 +12,13 @@ export const MoviesKeys = {
     listwatched: () => [...MoviesKeys.all, "listwatched"] as const,
 }
 
+// Client-only state (no endpoint): the in-flight pick-reveal spin descriptor,
+// set via setQueryData by the SSE handler / pick mutation and read by the Hero.
+export const PickKeys = {
+    all: ["pick"] as const,
+    active: () => [...PickKeys.all, "active"] as const,
+}
+
 export const SettingsKeys = {
     all: ["settings"] as const,
     poolLock: () => [...SettingsKeys.all, "poolLock"] as const,

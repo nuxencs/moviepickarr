@@ -41,7 +41,12 @@ export function PickReel({ spin, onLand }: PickReelProps) {
     const loops = Math.max(6, Math.ceil(TARGET_LEAD / cands.length));
     const lead: Movie[] = [];
     for (let i = 0; i < loops; i++) lead.push(...cands);
-    const trail = cands.slice(0, Math.min(4, cands.length));
+    // Avoid a double-poster at the landing seam: if the lead already ends on the
+    // winner, drop that tile so the winner cell isn't next to an identical copy.
+    if (lead.length && lead[lead.length - 1].movieID === winner.movieID) lead.pop();
+    // Trail tiles sit just past the winner; keep the winner out so its right
+    // neighbour can't be an identical copy either.
+    const trail = cands.filter((m) => m.movieID !== winner.movieID).slice(0, 4);
     return { strip: [...lead, winner, ...trail], winnerIndex: lead.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spin.pickedAt]);

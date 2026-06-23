@@ -1,7 +1,7 @@
 services:
-  moviepackarr:
-    container_name: moviepackarr
-    image: ghcr.io/nuxencs/moviepackarr
+  moviepickarr:
+    container_name: moviepickarr
+    image: ghcr.io/nuxencs/moviepickarr
     restart: unless-stopped
     ports:
       - "3030:3030"

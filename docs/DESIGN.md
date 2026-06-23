@@ -251,7 +251,21 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   stay static on mount and only roll on change. The stats query keeps the previous result
   (`placeholderData: keepPreviousData`) so an uncached filter change rolls in place
   instead of blanking to "Loading stats…" and remounting. Any new motion must still
-  degrade to an instant state under RM.
+  degrade to an instant state under RM. **Alignment gotcha:** `<number-flow-react>` is
+  `display:inline-block; line-height:1` with internal vertical mask padding
+  `round(0.25em/2,1px)`. The mask is **visual-only** — it does *not* move the glyph
+  baseline — so a number used **inline with text** (the "Films in Filter View · N" title,
+  the "avg 1h 53m" runtime sub) baseline-aligns on its own at every `:root` zoom step;
+  leave it at `vertical-align: baseline` and add no nudge. The one place that needs a fix
+  is the **KPI value cell** (`.statitem__val`, `align-items: flex-end`): `flex-end` aligns
+  box *bottoms*, not baselines, so the mask padding lets the numeral float ~4px above where
+  the plain-text values (Top picker / Busiest day) land. Compensated with
+  `.statitem__val number-flow-react { margin-bottom: -4px }` — at the fixed 29px value size
+  the padding is exactly 4px CSS-px and zoom-invariant. (A previous attempt also added
+  `vertical-align` lifts to the inline title/sub; that pushed those numerals *off* the text
+  baseline and was reverted — the trap is measuring the box, not the glyph.) Standalone
+  number-flows (`.b-val`, donut legend, people-rail counts) have no adjacent text and need
+  nothing.
 - **Stats rail motion (on filter change) — FLIP.** The three rails — the films "Films
   in Filter View" rail, the people rails (directors/actors), and the "Picked by member"
   leaderboard — animate by how each item's box *actually moved* between the old and new

@@ -90,6 +90,12 @@ export function Hero() {
     refetchOnWindowFocus: false,
   });
 
+  // True from the moment "Mark as watched" is clicked until the watched pick has
+  // actually left the hero. The POST resolves (and isPending drops) before the
+  // current-pick refetch lands, so without this the action button flashes back to
+  // "Mark as watched" in that gap instead of settling straight on "Pick random movie".
+  const [marking, setMarking] = useState(false);
+
   const pickMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
     onSuccess: (movie) => {
@@ -111,8 +117,21 @@ export function Hero() {
 
   const watchMutation = useMutation({
     mutationFn: () => APIClient.movies.markWatched(),
-    onSuccess: () => toast.success("Marked as watched"),
-    onError: () => toast.error("Failed to mark as watched"),
+    // Hold the button busy from the click; released only once the watched pick
+    // actually leaves the hero (see the `marking` effect below).
+    onMutate: () => setMarking(true),
+    onSuccess: () => {
+      toast.success("Marked as watched");
+      // Clear the current pick ourselves instead of waiting on the SSE
+      // movie:watched round-trip — keeps the hero transition snappy and self-
+      // sufficient if the stream lags. (The SSE event still re-invalidates; the
+      // duplicate refetch is a harmless no-op once current is already null.)
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+    },
+    onError: () => {
+      setMarking(false);
+      toast.error("Failed to mark as watched");
+    },
   });
 
   const [shown, setShown] = useState<Movie | null>(null);
@@ -199,6 +218,13 @@ export function Hero() {
     // reel lands.
   }, [isLoading, current, spinning, pooled]);
 
+  // Release the marking busy-state once the watched pick has left the hero (shown
+  // cleared by the commit effect above), so the action button goes Marking… → Pick
+  // random movie with no flash back to "Mark as watched" in between.
+  useEffect(() => {
+    if (marking && !shown) setMarking(false);
+  }, [marking, shown]);
+
   const pick = shown;
   // False until the first pick (or confirmed-empty) has committed after its
   // backdrop decoded. While loading we render a quiet banner shell — no
@@ -258,15 +284,21 @@ export function Hero() {
 
           <div className="hero__actions" style={ri(5)}>
             {ready &&
-              (pick ? (
+              (marking ? (
+                // Held from click until the watched pick clears (see `marking`), so
+                // the button never regresses to "Mark as watched" mid-transition.
+                <button type="button" className="btn btn--accent" disabled aria-busy="true">
+                  <Loader2Icon className="animate-spin mg-spin" />
+                  Marking…
+                </button>
+              ) : pick ? (
                 <button
                   type="button"
                   className="btn btn--accent"
                   onClick={() => watchMutation.mutate()}
-                  disabled={watchMutation.isPending}
                 >
-                  {watchMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <EyeIcon />}
-                  {watchMutation.isPending ? "Marking…" : "Mark as watched"}
+                  <EyeIcon />
+                  Mark as watched
                 </button>
               ) : (
                 <button

@@ -31,6 +31,15 @@ type movieResponse struct {
 	AddedByName string `json:"addedByName"`
 	WatchedAt   string `json:"watchedAt"`
 
+	// Pick-reveal coordination. Set only on the movie:picked event and the
+	// current-movie endpoint, never on list payloads. PickedAt is when the
+	// current movie was picked (drives resuming the cross-client reveal spin
+	// after a reload); ServerNow is the server clock at response time so the
+	// client computes elapsed without trusting its own clock. Both omitted when
+	// no pick is active.
+	PickedAt  string `json:"pickedAt,omitempty"`
+	ServerNow string `json:"serverNow,omitempty"`
+
 	// Stable external identities, exposed so the frontend can build links to
 	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).
 	// Omitted when the movie carries no such id.

@@ -14,18 +14,19 @@ import { Avatar, PickerTag, Rating } from "@/components/movie-gang/Bits";
 import {
   dateTimeParts,
   hueOf,
-  plural,
   relativeDate,
   runtimeLabel,
   yearOf,
 } from "@/components/movie-gang/lib";
 import { MovieModal } from "@/components/movie-gang/MovieModal";
+import { StatNumber } from "@/components/movie-gang/numberRoll";
 import { Poster } from "@/components/movie-gang/Poster";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie } from "@/types/Response";
 
 import { useToggle } from "@/hooks/hooks";
+import { useFlipRail } from "@/hooks/useFlipRail";
 
 type WatchedView = "grid" | "list";
 
@@ -33,6 +34,17 @@ export function MoviesTab() {
   const { data: pooled, isPending: poolPending, isError: poolError } = useQuery(MoviesGetPoolQueryOptions());
   const { data: watched, isPending: watchedPending, isError: watchedError } = useQuery(MoviesGetWatchedQueryOptions());
   const { data: isLocked } = useQuery(SettingsGetPoolLockQueryOptions());
+
+  // FLIP enter/exit + glide for the pool grid — the same hook the Stats rails
+  // use. Tiles fade in when a movie is added/promoted, fade out when it's picked
+  // (on reel-land), moved to the stash, or deleted; survivors glide to close the
+  // gap. `poolEntries` includes a just-removed tile until its exit finishes, so
+  // the grid render maps over it (not `pooled`) and gates on its length.
+  const {
+    containerRef: poolRef,
+    entries: poolEntries,
+    itemProps: poolItemProps,
+  } = useFlipRail<Movie>(pooled ?? [], (m) => String(m.movieID));
 
   const [search, setSearch] = useState("");
   const [view, setView] = useState<WatchedView>("grid");
@@ -83,7 +95,7 @@ export function MoviesTab() {
           <div className="sec-title">
             <h2>In the Pool</h2>
             <span className="sec-count">
-              {`${pooled?.length ?? 0} locked in · round ${isLocked ? "closed" : "open"}`}
+              <StatNumber value={pooled?.length ?? 0} /> locked in · round {isLocked ? "closed" : "open"}
             </span>
           </div>
           <div className="watched-controls">
@@ -103,10 +115,16 @@ export function MoviesTab() {
           <p className="empty text-destructive">Failed to load the pool.</p>
         ) : poolPending ? (
           <p className="empty">Loading pool…</p>
-        ) : (pooled ?? []).length > 0 ? (
-          <div className="tile-grid tile-grid--pool">
-            {(pooled ?? []).map((movie) => (
-              <article className="tile" key={movie.movieID} {...tileProps(movie)}>
+        ) : poolEntries.length > 0 ? (
+          <div className="tile-grid tile-grid--pool" ref={poolRef}>
+            {poolEntries.map(({ key, item: movie, exiting }) => (
+              <article
+                className="tile"
+                key={key}
+                data-flip-exit={exiting || undefined}
+                {...poolItemProps(key)}
+                {...tileProps(movie)}
+              >
                 <Poster
                   title={movie.title}
                   hue={hueOf(movie.title)}
@@ -135,9 +153,15 @@ export function MoviesTab() {
           <div className="sec-title">
             <h2>Watched</h2>
             <span className="sec-count">
-              {search
-                ? `${filteredWatched.length}/${watched?.length ?? 0} films`
-                : plural(watched?.length ?? 0, "film")}
+              {search ? (
+                <>
+                  <StatNumber value={filteredWatched.length} />/<StatNumber value={watched?.length ?? 0} /> films
+                </>
+              ) : (
+                <>
+                  <StatNumber value={watched?.length ?? 0} /> {(watched?.length ?? 0) === 1 ? "film" : "films"}
+                </>
+              )}
             </span>
           </div>
           <div className="watched-controls">

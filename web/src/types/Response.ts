@@ -17,6 +17,13 @@ export interface Movie {
     addedByName: string;
     watchedAt?: string;
 
+    // Pick-reveal coordination — present only on the current-movie endpoint and
+    // the movie:picked event. pickedAt is when the current movie was picked;
+    // serverNow is the server clock at fetch time, so the client computes the
+    // reveal spin's elapsed time without trusting its own clock (see PickReel).
+    pickedAt?: string;
+    serverNow?: string;
+
     // Stable external identities — used to build IMDb / TMDB / Letterboxd links.
     tmdbId?: number;
     imdbId?: string;

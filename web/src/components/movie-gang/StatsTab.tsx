@@ -1,4 +1,3 @@
-import NumberFlow from "@number-flow/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -31,6 +30,7 @@ import {
   yearOf,
 } from "@/components/movie-gang/lib";
 import { MovieModal } from "@/components/movie-gang/MovieModal";
+import { StatNumber } from "@/components/movie-gang/numberRoll";
 import { Poster } from "@/components/movie-gang/Poster";
 import {
   filtersFromSearch,
@@ -57,33 +57,6 @@ const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
   { id: "all-time", label: "All" },
   { id: "custom", label: "Custom", calendar: true },
 ];
-
-// Number-roll timing for the KPI / rail-heading counts — tuned to the MG motion
-// scale (§6): --dur-slow (0.4s) + --ease (decelerating ease-out, no bounce).
-// NumberFlow honors prefers-reduced-motion itself (renders instantly), matching
-// the global RM guard, and only animates on value change (initial paint is static).
-const NUMBER_TIMING: EffectTiming = { duration: 400, easing: "cubic-bezier(0.22, 0.61, 0.36, 1)" };
-
-/** A Stats number with the shared MG roll timing. With `animateOnMount` it counts up
- *  from 0 on mount (the KPI strip "wakes up" on each visit, matching the bars' from-0
- *  entrance); otherwise it's static on first paint and only rolls on value change. */
-function StatNumber({
-  animateOnMount = false,
-  ...props
-}: React.ComponentProps<typeof NumberFlow> & { animateOnMount?: boolean }) {
-  if (animateOnMount) return <MountRollNumber {...props} />;
-  return <NumberFlow transformTiming={NUMBER_TIMING} spinTiming={NUMBER_TIMING} {...props} />;
-}
-
-/** Renders 0 first, then bumps to the real value after mount so NumberFlow rolls
- *  0 -> value. Reduced motion collapses it to an instant set (NumberFlow's default). */
-function MountRollNumber({ value, ...props }: React.ComponentProps<typeof NumberFlow>) {
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    setDisplay(value);
-  }, [value]);
-  return <NumberFlow transformTiming={NUMBER_TIMING} spinTiming={NUMBER_TIMING} value={display} {...props} />;
-}
 
 /** A rolling count plus its noun ("4 movies") — the number animates, the noun is a
  *  static suffix. Replaces plural(n, "movie") wherever the count should roll. */

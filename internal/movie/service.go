@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -36,11 +37,28 @@ type Service interface {
 	StashedByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
 	PickRandom(ctx context.Context) (*domain.Movie, error)
 	MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error)
+	// ActivePick reports the in-flight pick (movie id + when it was picked) that
+	// drives the cross-client pick-reveal spin, or ok=false when none is active
+	// (no current movie, or the current movie was already marked watched). It is
+	// in-memory only, consistent with the in-process event broker: a server
+	// restart drops it, which just means a reload won't replay the spin.
+	ActivePick() (ActivePick, bool)
+}
+
+// ActivePick records the most recent random pick so a reloading client — or one
+// that joined late / dropped the SSE event — can resume the pick-reveal spin
+// instead of jumping straight to the result. Held in memory only.
+type ActivePick struct {
+	MovieID  int
+	PickedAt time.Time
 }
 
 type service struct {
 	movieRepo    domain.MovieRepo
 	settingsRepo domain.SettingsRepo
+
+	mu         sync.Mutex
+	activePick *ActivePick
 }
 
 func NewService(movieRepo domain.MovieRepo, settingsRepo domain.SettingsRepo) Service {
@@ -239,6 +257,10 @@ func (s *service) PickRandom(ctx context.Context) (*domain.Movie, error) {
 		return nil, err
 	}
 
+	s.mu.Lock()
+	s.activePick = &ActivePick{MovieID: movie.ID, PickedAt: time.Now().UTC()}
+	s.mu.Unlock()
+
 	return movie, nil
 }
 
@@ -257,8 +279,23 @@ func (s *service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 		return nil, err
 	}
 
+	// The pick is done — clear the active spin so a reload now shows the result
+	// directly rather than replaying the reel.
+	s.mu.Lock()
+	s.activePick = nil
+	s.mu.Unlock()
+
 	current.Status = "watched"
 	current.WatchedAt = &watchedAt
 
 	return current, nil
+}
+
+func (s *service) ActivePick() (ActivePick, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activePick == nil {
+		return ActivePick{}, false
+	}
+	return *s.activePick, true
 }

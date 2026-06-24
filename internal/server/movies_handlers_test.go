@@ -515,3 +515,49 @@ func TestHandleMove_ConcurrentDemoteIsIdempotent(t *testing.T) {
 		t.Fatalf("after concurrent demotes: expected stash, got %q", got)
 	}
 }
+
+// Regression: adding a movie lands it in the stash, never the pool — even when
+// the pool has free slots. The button says "Add to <user>'s stash", so the add
+// must not silently auto-promote; reaching the pool is a separate explicit move.
+func TestHandleAddMovie_LandsInStashEvenWithPoolRoom(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Casey")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/api/v1/users/%d/movies", user.ID),
+		strings.NewReader(`{"title":"Dune","tmdbId":438631}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusCreated {
+		t.Fatalf("expected status 201, got %d", resp.StatusCode)
+	}
+
+	pooled, err := movieRepo.FindByUserIDAndStatus(ctx, user.ID, "pool")
+	if err != nil {
+		t.Fatalf("fetch pool: %v", err)
+	}
+	if len(pooled) != 0 {
+		t.Fatalf("expected empty pool after add, got %d pooled", len(pooled))
+	}
+
+	stashed, err := movieRepo.FindByUserIDAndStatus(ctx, user.ID, "stash")
+	if err != nil {
+		t.Fatalf("fetch stash: %v", err)
+	}
+	if len(stashed) != 1 || stashed[0].Title != "Dune" {
+		t.Fatalf("expected Dune stashed, got %#v", stashed)
+	}
+}

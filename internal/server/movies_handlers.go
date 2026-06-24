@@ -156,10 +156,9 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	movieRecord, err := h.movieService.AddToPool(ctx, title, userID)
-	if err != nil && (errors.Is(err, domain.ErrPoolLimitReached) || errors.Is(err, domain.ErrPoolLocked)) {
-		movieRecord, err = h.movieService.AddToStash(ctx, title, userID)
-	}
+	// Adds always land in the stash. Reaching the pool is a separate, explicit
+	// promotion (the move endpoint), so "Add to <user>'s stash" does exactly that.
+	movieRecord, err := h.movieService.AddToStash(ctx, title, userID)
 	if err != nil {
 		return writeError(c, err)
 	}

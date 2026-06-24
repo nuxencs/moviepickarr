@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 const maxPoolSize = 3
 
 type Service interface {
-	AddToPool(ctx context.Context, title string, userID int) (*domain.Movie, error)
 	AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error)
 	// MoveToPool promotes a stashed movie into its owner's pool. It is idempotent
 	// (already-pooled is a no-op) and reports whether a real transition happened.
@@ -54,45 +52,16 @@ type ActivePick struct {
 }
 
 type service struct {
-	movieRepo    domain.MovieRepo
-	settingsRepo domain.SettingsRepo
+	movieRepo domain.MovieRepo
 
 	mu         sync.Mutex
 	activePick *ActivePick
 }
 
-func NewService(movieRepo domain.MovieRepo, settingsRepo domain.SettingsRepo) Service {
+func NewService(movieRepo domain.MovieRepo) Service {
 	return &service{
-		movieRepo:    movieRepo,
-		settingsRepo: settingsRepo,
+		movieRepo: movieRepo,
 	}
-}
-
-func (s *service) AddToPool(ctx context.Context, title string, userID int) (*domain.Movie, error) {
-	pooled, err := s.movieRepo.CountByUserIDAndStatus(ctx, userID, "pool")
-	if err != nil {
-		return nil, err
-	}
-
-	if pooled >= maxPoolSize {
-		return nil, domain.ErrPoolLimitReached
-	}
-
-	poolLocked, err := s.settingsRepo.FindByKey(ctx, "pool_locked")
-	if err != nil {
-		return nil, err
-	}
-
-	parseBool, err := strconv.ParseBool(poolLocked)
-	if err != nil {
-		return nil, err
-	}
-
-	if parseBool {
-		return nil, domain.ErrPoolLocked
-	}
-
-	return s.movieRepo.Add(ctx, title, "pool", userID)
 }
 
 func (s *service) AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error) {

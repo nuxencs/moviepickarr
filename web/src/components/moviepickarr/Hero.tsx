@@ -195,9 +195,27 @@ export function Hero() {
       }
     }
 
-    // Only (re)reveal when the pick itself changed — not when an unrelated pool
-    // refetch re-ran this effect (pooled is a dep for the resume decision above).
-    if (current === committed.current) return;
+    // Only (re)reveal when the pick IDENTITY changes. Comparing object reference
+    // (relying on TanStack structural sharing) is too fragile: the current-pick
+    // endpoint stamps a fresh `serverNow` on every request, so a no-op refetch —
+    // the SSE resync on tab refocus, or an enrichment update — returns a
+    // structurally-different object for the SAME pick. That churns the reference
+    // and would replay the whole reveal (backdrop crossfade + staggered content)
+    // on every tab switch. Key on pickedAt + movieID, which are stable for a given
+    // pick, instead. `committed.current === undefined` means nothing has committed
+    // yet — distinct from a committed empty state (null).
+    const samePick =
+      committed.current !== undefined &&
+      (current?.pickedAt ?? null) === (committed.current?.pickedAt ?? null) &&
+      (current?.movieID ?? null) === (committed.current?.movieID ?? null);
+    if (samePick) {
+      // Same pick, possibly churned metadata: refresh the shown object so any
+      // late-arriving fields land, but DON'T bump revealId — the hero must stay
+      // static across tab switches and never re-animate for an unchanged pick.
+      committed.current = current;
+      setShown(next);
+      return;
+    }
 
     let cancelled = false;
     const commit = () => {
@@ -222,9 +240,9 @@ export function Hero() {
     return () => {
       cancelled = true;
     };
-    // `current` keeps a stable reference across no-op refetches (TanStack structural
-    // sharing), so this re-runs only when the pick changes, the pool loads, or the
-    // reel lands.
+    // The samePick guard above stops this from replaying the reveal on no-op
+    // refetches (serverNow churn, enrichment, resync), so it re-animates only when
+    // the pick actually changes; the pool/spin deps just re-run the resume check.
   }, [isLoading, current, spinning, pooled]);
 
   // Release the marking busy-state once the watched pick has left the hero (shown

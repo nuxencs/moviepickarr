@@ -6,6 +6,8 @@ import { Poster } from "@/components/moviepickarr/Poster";
 
 import type { Movie } from "@/types/Response";
 
+import { playPickJingle, stopPickJingle } from "@/lib/sound";
+
 /** Roughly how many decoy tiles to scroll before the winner — enough for a long
  *  spin, while the per-pick cap keeps the DOM light (no virtualization needed). */
 const TARGET_LEAD = 48;
@@ -63,6 +65,8 @@ export function PickReel({ spin, onLand }: PickReelProps) {
       track.style.transition = "none";
       track.style.transform = `translate3d(${targetXRef.current}px, 0, 0)`;
     }
+    // A natural landing lets the jingle ride out its payoff; a skip cuts it short.
+    stopPickJingle();
     land();
   }, [land]);
 
@@ -109,18 +113,22 @@ export function PickReel({ spin, onLand }: PickReelProps) {
 
     const full = spinDurationMs();
     const remaining = Math.max(150, Math.min(spin.durationMs, full));
-    // Resume: enter the easing curve roughly where it would already be (expo-out
-    // ≈ 1 − 2^(−10t), matching --ease-reveal), then ease the rest — the "remaining
-    // (approx)" resume the spin was specced for.
+    // Resume: enter the easing curve roughly where it would already be, then ease
+    // the rest. easeOutQuad (1 − (1−t)²) here mirrors --ease-reel so the resume
+    // start position matches the curve the transition will glide along.
     const startFrac = full > 0 ? 1 - remaining / full : 0;
-    const easedStart = 1 - Math.pow(2, -10 * startFrac);
+    const easedStart = 1 - Math.pow(1 - startFrac, 2);
     const startX = easedStart * targetX;
 
     track.style.transition = "none";
     track.style.transform = `translate3d(${startX}px, 0, 0)`;
     void track.offsetHeight; // commit the start position before transitioning
-    track.style.transition = `transform ${remaining}ms var(--ease-reveal)`;
+    track.style.transition = `transform ${remaining}ms var(--ease-reel)`;
     track.style.transform = `translate3d(${targetX}px, 0, 0)`;
+
+    // Fire the jingle in lockstep with the reel's first frame — fresh picks only;
+    // a reload-resume starts mid-spin where the jingle's intro would be off-cue.
+    if (spin.live) playPickJingle();
 
     const onEnd = (e: TransitionEvent) => {
       if (e.propertyName === "transform") land();

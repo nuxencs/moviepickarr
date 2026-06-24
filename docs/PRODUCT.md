@@ -1,4 +1,4 @@
-# Movie Gang — Product
+# moviepickarr — Product
 
 **Register: product** (an app/tool; design serves the task, earned familiarity over novelty).
 

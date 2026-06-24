@@ -2,7 +2,7 @@ import NumberFlow from "@number-flow/react";
 import { type ComponentProps, useEffect, useState } from "react";
 
 /* ============================================================
-   Movie Gang — shared number-roll primitives (NumberFlow).
+   moviepickarr — shared number-roll primitives (NumberFlow).
    Used by the Stats KPIs/rail headings and the Movies pool /
    watched counts so every animated count rolls identically.
    ============================================================ */

@@ -1,8 +1,8 @@
-# 🎬 Movie Gang
+# 🎬 moviepickarr
 
 **Whose turn is it to pick the movie?** Never argue about it again.
 
-Movie Gang is a small, private web app for a group of friends — "the gang" — to
+moviepickarr is a small, private web app for a group of friends — "the gang" — to
 run a shared movie-night rotation. Everyone keeps their own list of films they
 want to watch, promotes their top picks into a shared pool, and the app draws
 the next movie at random. It then remembers what you watched and turns it into
@@ -53,7 +53,7 @@ looks complete.
 
 ## Run it yourself
 
-Movie Gang ships as a single program with everything bundled in — the website,
+moviepickarr ships as a single program with everything bundled in — the website,
 the server and the database all live in one place. Pick whichever setup you like.
 
 ### What you'll need

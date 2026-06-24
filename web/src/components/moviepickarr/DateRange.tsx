@@ -1,7 +1,7 @@
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { fmtRange } from "@/components/movie-gang/dateRangeFormat";
+import { fmtRange } from "@/components/moviepickarr/dateRangeFormat";
 
 const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = [

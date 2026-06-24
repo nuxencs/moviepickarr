@@ -11,13 +11,13 @@ import {
   useState,
 } from "react";
 
-import { exitDelayMs } from "@/components/movie-gang/exitDelay";
+import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 import {
   type FilterOptions,
   type MovieFilters,
   type PersonFilter,
   type PersonOption,
-} from "@/components/movie-gang/lib";
+} from "@/components/moviepickarr/lib";
 
 export interface FilterChoice<T extends string | number> {
   value: T;

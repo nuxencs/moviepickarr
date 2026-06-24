@@ -86,7 +86,7 @@ export function NavBar() {
               <span className="mark">
                 <FilmIcon />
               </span>
-              Movie Gang
+              moviepickarr
             </Link>
           </h1>
 

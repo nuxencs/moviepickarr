@@ -3,7 +3,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================
-   Movie Gang — design tokens
+   moviepickarr — design tokens
    Geist (UI) + Geist Mono (data) + Hubot Sans (display).
    Dark-primary, light included. Fixed gold accent.
    ============================================================ */
@@ -186,7 +186,7 @@
 @keyframes mg-revealPick { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================
-   Movie Gang components (ported from the design prototype)
+   moviepickarr components (ported from the design prototype)
    ============================================================ */
 @layer components {
   .mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
@@ -992,7 +992,7 @@
     .moviemodal__info { padding-top: 0; }
   }
 
-  /* "More actions" menu — bespoke portalled floating surface (movie-gang/Menu.tsx)
+  /* "More actions" menu — bespoke portalled floating surface (moviepickarr/Menu.tsx)
      on the shared overlay motion (mg-scaleIn/Out), scaling from the trigger corner
      via an inline transform-origin. Replaces the former Radix dropdown. */
   /* z-index 45 (matching .daterange): above the page + navbar (40), but below the

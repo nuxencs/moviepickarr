@@ -1,5 +1,5 @@
 /* ============================================================
-   Movie Gang — shared helpers: TMDB image URLs, procedural
+   moviepickarr — shared helpers: TMDB image URLs, procedural
    poster/backdrop art, deterministic hues, formatting.
    ============================================================ */
 

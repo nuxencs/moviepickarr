@@ -1,7 +1,7 @@
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { exitDelayMs } from "@/components/movie-gang/exitDelay";
-import { effectiveZoom } from "@/components/movie-gang/zoom";
+import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
+import { effectiveZoom } from "@/components/moviepickarr/zoom";
 
 /**
  * FLIP motion for a stats rail (films, people, member bars). Instead of fading

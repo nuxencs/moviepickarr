@@ -1,6 +1,6 @@
-# Movie Gang — Design System & Decisions
+# moviepickarr — Design System & Decisions
 
-The web UI is a single, bespoke design language called **Movie Gang (MG)**. This
+The web UI is a single, bespoke design language called **moviepickarr (MG)**. This
 document is the durable record of how it works and the decisions behind it, so we
 don't re-litigate them each session.
 
@@ -193,7 +193,7 @@ the moment of editing/deleting. We removed them:
 - `EditMovieDialog` and `DeletionDialog` were re-authored on the bespoke `Modal` with
   `.field` + `.btn`.
 - `web/src/components/ui/{alert-dialog,button,input}.tsx` were **deleted**.
-- The user "more actions" menu is the bespoke `Menu` (`movie-gang/Menu.tsx`): a
+- The user "more actions" menu is the bespoke `Menu` (`moviepickarr/Menu.tsx`): a
   portalled floating surface (`.mg-menu`) on the shared `mg-scaleIn` / `mg-scaleOut`
   motion, scaling from the trigger corner. It owns its focus behaviour — Esc/Tab
   return focus to the trigger, but selecting an item does not (the action's `Modal`
@@ -212,7 +212,7 @@ control system. Extend `.btn`/`.field`/`.modal` instead.
 
 ## 5. Modals & overlays
 
-One overlay system: the bespoke `Modal` (`web/src/components/movie-gang/Modal.tsx`).
+One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.tsx`).
 - Portalled; dark blurred veil (`rgba(5,6,10,0.62)` + `blur(8px)`); `--r-xl` corners;
   matching `mg-scaleIn` enter / `mg-scaleOut` exit.
 - Dismiss via Esc, veil click, or an explicit top-right close X (`.iconbtn`).
@@ -286,7 +286,7 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   node stays put instead of wrongly fading in. Positions are measured **container-
   relative**, so a reflow ABOVE a rail (the films rail tripling in height) slides the
   whole rail without animating every card; and deltas are divided by `effectiveZoom`
-  (`movie-gang/zoom.ts`) so the glide lands exactly on target under the `:root` zoom ramp
+  (`moviepickarr/zoom.ts`) so the glide lands exactly on target under the `:root` zoom ramp
   (§13). No React remount, so NumberFlow counts keep rolling; reduced-motion skips every
   transform/entrance and drops exits instantly.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal

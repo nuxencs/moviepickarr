@@ -9,8 +9,8 @@ import {
   ratingLabel,
   runtimeLabel,
   yearOf,
-} from "@/components/movie-gang/lib";
-import { statsSearchDefaults } from "@/components/movie-gang/statsSearch";
+} from "@/components/moviepickarr/lib";
+import { statsSearchDefaults } from "@/components/moviepickarr/statsSearch";
 
 import type { Movie } from "@/types/Response";
 

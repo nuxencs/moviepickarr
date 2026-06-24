@@ -7,12 +7,12 @@ import {
 
 import { queryClient } from "@/api/QueryClient";
 
-import { RootLayout, Shell } from "@/components/movie-gang/AppShell";
-import { Hero } from "@/components/movie-gang/Hero";
-import { MoviesTab } from "@/components/movie-gang/MoviesTab";
-import { statsSearchDefaults, validateStatsSearch } from "@/components/movie-gang/statsSearch";
-import { StatsTab } from "@/components/movie-gang/StatsTab";
-import { UsersTab } from "@/components/movie-gang/UsersTab";
+import { RootLayout, Shell } from "@/components/moviepickarr/AppShell";
+import { Hero } from "@/components/moviepickarr/Hero";
+import { MoviesTab } from "@/components/moviepickarr/MoviesTab";
+import { statsSearchDefaults, validateStatsSearch } from "@/components/moviepickarr/statsSearch";
+import { StatsTab } from "@/components/moviepickarr/StatsTab";
+import { UsersTab } from "@/components/moviepickarr/UsersTab";
 
 import type { QueryClient } from "@tanstack/react-query";
 

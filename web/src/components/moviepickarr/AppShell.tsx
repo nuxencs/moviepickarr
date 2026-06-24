@@ -1,6 +1,6 @@
 import { Outlet } from "@tanstack/react-router";
 
-import { NavBar } from "@/components/movie-gang/NavBar";
+import { NavBar } from "@/components/moviepickarr/NavBar";
 import { Toaster } from "@/components/ui/toast";
 
 import type { ReactNode } from "react";

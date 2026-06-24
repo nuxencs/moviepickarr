@@ -3,9 +3,9 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
 
-import { hueOf, yearOf } from "@/components/movie-gang/lib";
-import { Modal } from "@/components/movie-gang/Modal";
-import { Poster } from "@/components/movie-gang/Poster";
+import { hueOf, yearOf } from "@/components/moviepickarr/lib";
+import { Modal } from "@/components/moviepickarr/Modal";
+import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
 
 import type { TMDBMovie } from "@/types/Response";

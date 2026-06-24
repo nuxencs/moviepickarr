@@ -11,8 +11,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { exitDelayMs } from "@/components/movie-gang/exitDelay";
-import { effectiveZoom } from "@/components/movie-gang/zoom";
+import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
+import { effectiveZoom } from "@/components/moviepickarr/zoom";
 
 export interface MenuAction {
   label: string;

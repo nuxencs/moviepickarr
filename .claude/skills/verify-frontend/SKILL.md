@@ -25,7 +25,7 @@ deep-linkable, so navigate straight to the screen the change touches.
 
 The `/stats` route is special: its **entire filter state lives in the URL search
 params** (window, genre, year, decade, actors, crew, pickers — see
-`web/src/components/movie-gang/statsSearch.ts`), validated by
+`web/src/components/moviepickarr/statsSearch.ts`), validated by
 `validateStatsSearch` and trimmed to a clean URL by `stripSearchParams`. So the
 genre/year chips (in the Hero, the movie modal, and metadata rows) deep-link to a
 pre-filtered Stats view — e.g. `/stats?genre=Drama`, `/stats?year=1997` — and

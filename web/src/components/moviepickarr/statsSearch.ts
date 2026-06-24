@@ -1,10 +1,10 @@
-import type { DayRange } from "@/components/movie-gang/DateRange";
+import type { DayRange } from "@/components/moviepickarr/DateRange";
 import type {
   FilterOptions,
   MovieFilters,
   PersonFilter,
   PersonOption,
-} from "@/components/movie-gang/lib";
+} from "@/components/moviepickarr/lib";
 
 import type { StatsWindow } from "@/types/Response";
 

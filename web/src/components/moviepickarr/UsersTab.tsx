@@ -15,11 +15,11 @@ import { APIClient } from "@/api/APIClient";
 import { SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
-import { Avatar } from "@/components/movie-gang/Bits";
-import { hueOf, plural } from "@/components/movie-gang/lib";
-import { Menu } from "@/components/movie-gang/Menu";
-import { Poster } from "@/components/movie-gang/Poster";
-import { SearchModal } from "@/components/movie-gang/SearchModal";
+import { Avatar } from "@/components/moviepickarr/Bits";
+import { hueOf, plural } from "@/components/moviepickarr/lib";
+import { Menu } from "@/components/moviepickarr/Menu";
+import { Poster } from "@/components/moviepickarr/Poster";
+import { SearchModal } from "@/components/moviepickarr/SearchModal";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
 import { toast } from "@/components/ui/toast-api";
 

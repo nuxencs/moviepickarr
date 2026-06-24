@@ -1,7 +1,7 @@
 import { StarIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { posterBg, posterUrl, ratingLabel } from "@/components/movie-gang/lib";
+import { posterBg, posterUrl, ratingLabel } from "@/components/moviepickarr/lib";
 
 interface PosterProps {
   title: string;

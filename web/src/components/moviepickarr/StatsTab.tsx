@@ -14,11 +14,11 @@ import { type CSSProperties, useCallback, useEffect, useId, useMemo, useRef, use
 
 import { MoviesGetWatchedQueryOptions, StatsGetQueryOptions } from "@/api/queries";
 
-import { Avatar } from "@/components/movie-gang/Bits";
-import { DateRangePopover } from "@/components/movie-gang/DateRange";
-import { shortRange } from "@/components/movie-gang/dateRangeFormat";
-import { exitDelayMs } from "@/components/movie-gang/exitDelay";
-import { FilterBar, FilterSelect } from "@/components/movie-gang/FilterBar";
+import { Avatar } from "@/components/moviepickarr/Bits";
+import { DateRangePopover } from "@/components/moviepickarr/DateRange";
+import { shortRange } from "@/components/moviepickarr/dateRangeFormat";
+import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
+import { FilterBar, FilterSelect } from "@/components/moviepickarr/FilterBar";
 import {
   filterOptionsFrom,
   hasActiveFilters,
@@ -28,16 +28,16 @@ import {
   profileUrl,
   tmdbPersonUrl,
   yearOf,
-} from "@/components/movie-gang/lib";
-import { MovieModal } from "@/components/movie-gang/MovieModal";
-import { StatNumber } from "@/components/movie-gang/numberRoll";
-import { Poster } from "@/components/movie-gang/Poster";
+} from "@/components/moviepickarr/lib";
+import { MovieModal } from "@/components/moviepickarr/MovieModal";
+import { StatNumber } from "@/components/moviepickarr/numberRoll";
+import { Poster } from "@/components/moviepickarr/Poster";
 import {
   filtersFromSearch,
   filtersToSearch,
   rangeFromSearch,
   ymd,
-} from "@/components/movie-gang/statsSearch";
+} from "@/components/moviepickarr/statsSearch";
 
 import type {
   Movie,

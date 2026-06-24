@@ -10,17 +10,17 @@ import {
 } from "@/api/queries";
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
-import { Avatar, PickerTag, Rating } from "@/components/movie-gang/Bits";
+import { Avatar, PickerTag, Rating } from "@/components/moviepickarr/Bits";
 import {
   dateTimeParts,
   hueOf,
   relativeDate,
   runtimeLabel,
   yearOf,
-} from "@/components/movie-gang/lib";
-import { MovieModal } from "@/components/movie-gang/MovieModal";
-import { StatNumber } from "@/components/movie-gang/numberRoll";
-import { Poster } from "@/components/movie-gang/Poster";
+} from "@/components/moviepickarr/lib";
+import { MovieModal } from "@/components/moviepickarr/MovieModal";
+import { StatNumber } from "@/components/moviepickarr/numberRoll";
+import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie } from "@/types/Response";

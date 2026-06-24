@@ -1,5 +1,5 @@
 /* ============================================================
-   Movie Gang — pick-reveal spin model.
+   moviepickarr — pick-reveal spin model.
 
    A pick is decided by the server (movie:picked). Every client then plays a
    slot-machine reel that scrolls the pool candidates and lands on the winner —

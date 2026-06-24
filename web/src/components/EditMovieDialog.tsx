@@ -1,7 +1,7 @@
 import { CalendarClockIcon, FilmIcon, LinkIcon, Loader2Icon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { Modal } from "@/components/movie-gang/Modal";
+import { Modal } from "@/components/moviepickarr/Modal";
 
 interface EditMovieDialogSubmit {
   title: string;

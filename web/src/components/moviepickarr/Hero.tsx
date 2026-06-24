@@ -10,9 +10,9 @@ import {
 } from "@/api/queries";
 import { MoviesKeys, PickKeys, SettingsKeys } from "@/api/query_keys";
 
-import { Avatar, MetaChips } from "@/components/movie-gang/Bits";
-import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/movie-gang/lib";
-import { PickReel } from "@/components/movie-gang/PickReel";
+import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
+import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/moviepickarr/lib";
+import { PickReel } from "@/components/moviepickarr/PickReel";
 import {
   type ActiveSpin,
   buildLiveSpin,
@@ -20,8 +20,8 @@ import {
   clearActiveSpin,
   isWithinSpinWindow,
   setActiveSpin,
-} from "@/components/movie-gang/pickSpin";
-import { Poster } from "@/components/movie-gang/Poster";
+} from "@/components/moviepickarr/pickSpin";
+import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie } from "@/types/Response";
@@ -246,7 +246,7 @@ export function Hero() {
   // backdrop decoded. While loading we render a quiet banner shell — no
   // placeholder copy ("Pick next movie") flashing before the real pick.
   const ready = revealId > 0;
-  const hue = hueOf(pick?.title ?? "Movie Gang");
+  const hue = hueOf(pick?.title ?? "moviepickarr");
   const bg = pick?.backdropPath ? `url(${backdropUrl(pick.backdropPath)})` : backdropBg(hue);
   const canPick = !pick && (pooled?.length ?? 0) > 0;
 

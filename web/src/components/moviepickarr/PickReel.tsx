@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
-import { backdropUrl, hueOf } from "@/components/movie-gang/lib";
-import { type ActiveSpin, spinDurationMs } from "@/components/movie-gang/pickSpin";
-import { Poster } from "@/components/movie-gang/Poster";
+import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
+import { type ActiveSpin, spinDurationMs } from "@/components/moviepickarr/pickSpin";
+import { Poster } from "@/components/moviepickarr/Poster";
 
 import type { Movie } from "@/types/Response";
 

@@ -1,7 +1,7 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { exitDelayMs } from "@/components/movie-gang/exitDelay";
+import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 
 interface ModalProps {
   onClose: () => void;

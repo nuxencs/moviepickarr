@@ -1,6 +1,6 @@
 import { Toaster as SonnerToaster } from 'sonner';
 
-/** Sonner toaster themed to the Movie Gang surfaces (dark + light via tokens). */
+/** Sonner toaster themed to the moviepickarr surfaces (dark + light via tokens). */
 export const Toaster = () => {
     return (
         <SonnerToaster

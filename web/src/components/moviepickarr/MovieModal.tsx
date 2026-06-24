@@ -1,10 +1,10 @@
 import { ExternalLinkIcon, XIcon } from "lucide-react";
 import { Fragment } from "react";
 
-import { Avatar, MetaChips } from "@/components/movie-gang/Bits";
-import { backdropBg, backdropUrl, externalLinks, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/movie-gang/lib";
-import { Modal } from "@/components/movie-gang/Modal";
-import { Poster } from "@/components/movie-gang/Poster";
+import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
+import { backdropBg, backdropUrl, externalLinks, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/moviepickarr/lib";
+import { Modal } from "@/components/moviepickarr/Modal";
+import { Poster } from "@/components/moviepickarr/Poster";
 
 import type { CreditPerson, Movie } from "@/types/Response";
 

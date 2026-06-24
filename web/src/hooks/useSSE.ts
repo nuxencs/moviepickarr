@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 
 import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
-import { buildLiveSpin, setActiveSpin } from "@/components/movie-gang/pickSpin";
+import { buildLiveSpin, setActiveSpin } from "@/components/moviepickarr/pickSpin";
 
 import type { Movie } from "@/types/Response";
 import type { SSEEvent } from "@/types/SSEEvent";

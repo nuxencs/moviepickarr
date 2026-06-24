@@ -90,14 +90,20 @@ export function Hero() {
     refetchOnWindowFocus: false,
   });
 
-  // True from the moment "Mark as watched" is clicked until the watched pick has
-  // actually left the hero. The POST resolves (and isPending drops) before the
-  // current-pick refetch lands, so without this the action button flashes back to
-  // "Mark as watched" in that gap instead of settling straight on "Pick random movie".
+  // Held from the moment the action button is clicked until the hero has actually
+  // moved on. The POST resolves (and isPending drops) before the transition lands —
+  // for `marking`, before the current-pick refetch; for `picking`, before the reel
+  // takes over (set in an effect, a frame later) or the no-reel refetch commits — so
+  // without these the button flashes back to its resting label in that gap instead of
+  // settling straight on the next state.
   const [marking, setMarking] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   const pickMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
+    // Hold the button busy from the click; released only once the new pick is
+    // revealed (see the `picking` effect below).
+    onMutate: () => setPicking(true),
     onSuccess: (movie) => {
       toast.success("Movie picked");
       // Fallback if the clicker's own SSE event drops: start the reel from the
@@ -112,7 +118,10 @@ export function Hero() {
       // doesn't drop the winner mid-spin and spoil the result. No reel → now.
       if (!spin) void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
     },
-    onError: () => toast.error("Failed to pick a random movie"),
+    onError: () => {
+      setPicking(false);
+      toast.error("Failed to pick a random movie");
+    },
   });
 
   const watchMutation = useMutation({
@@ -225,6 +234,13 @@ export function Hero() {
     if (marking && !shown) setMarking(false);
   }, [marking, shown]);
 
+  // Mirror of the above for the pick flow: release the picking busy-state once the
+  // new pick is revealed (shown set), so the button goes Picking… → Mark as watched
+  // with no flash back to "Pick random movie" in the pre-reel frame or the no-reel gap.
+  useEffect(() => {
+    if (picking && shown) setPicking(false);
+  }, [picking, shown]);
+
   const pick = shown;
   // False until the first pick (or confirmed-empty) has committed after its
   // backdrop decoded. While loading we render a quiet banner shell — no
@@ -284,12 +300,13 @@ export function Hero() {
 
           <div className="hero__actions" style={ri(5)}>
             {ready &&
-              (marking ? (
-                // Held from click until the watched pick clears (see `marking`), so
-                // the button never regresses to "Mark as watched" mid-transition.
+              (marking || picking ? (
+                // Held from the click until the transition settles (the watched pick
+                // leaves the hero, or the new pick is revealed), so the button never
+                // regresses to its resting label mid-transition. See `marking`/`picking`.
                 <button type="button" className="btn btn--accent" disabled aria-busy="true">
                   <Loader2Icon className="animate-spin mg-spin" />
-                  Marking…
+                  {marking ? "Marking…" : "Picking…"}
                 </button>
               ) : pick ? (
                 <button
@@ -305,10 +322,10 @@ export function Hero() {
                   type="button"
                   className="btn btn--accent"
                   onClick={() => pickMutation.mutate()}
-                  disabled={!canPick || pickMutation.isPending}
+                  disabled={!canPick}
                 >
-                  {pickMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <ShuffleIcon />}
-                  {pickMutation.isPending ? "Picking…" : "Pick random movie"}
+                  <ShuffleIcon />
+                  Pick random movie
                 </button>
               ))}
 

@@ -132,17 +132,6 @@ func (r *testMovieRepo) GetCurrent(context.Context) (*domain.Movie, error) {
 }
 func (r *testMovieRepo) Delete(context.Context, int) error { panic("unexpected call") }
 
-type testSettingsRepo struct{}
-
-func (r *testSettingsRepo) List(context.Context) ([]*domain.Settings, error) {
-	panic("unexpected call")
-}
-
-func (r *testSettingsRepo) FindByKey(context.Context, string) (string, error) {
-	panic("unexpected call")
-}
-func (r *testSettingsRepo) Set(context.Context, string, string) error { panic("unexpected call") }
-
 func TestActivePickLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -152,7 +141,7 @@ func TestActivePickLifecycle(t *testing.T) {
 			2: {ID: 2, Title: "Two", Status: string(domain.MovieStatusPool)},
 		},
 	}
-	svc := NewService(repo, &testSettingsRepo{})
+	svc := NewService(repo)
 	ctx := context.Background()
 
 	if _, ok := svc.ActivePick(); ok {
@@ -196,7 +185,7 @@ func TestUpdateRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(repo, &testSettingsRepo{})
+	svc := NewService(repo)
 	watchedAt := time.Date(2026, 2, 8, 10, 30, 0, 0, time.UTC)
 
 	_, err := svc.Update(context.Background(), 42, "After", &watchedAt)
@@ -224,7 +213,7 @@ func TestUpdateWatchedMovieAllowsWatchedAt(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(repo, &testSettingsRepo{})
+	svc := NewService(repo)
 	watchedAt := time.Date(2026, 2, 8, 18, 45, 0, 0, time.UTC)
 
 	updated, err := svc.Update(context.Background(), 7, "After", &watchedAt)

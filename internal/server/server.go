@@ -164,7 +164,7 @@ func newHandler(dbConn *sql.DB) *handler {
 	h := &handler{
 		broker:            broker,
 		userService:       user.NewService(userRepo, nextPickerRepo),
-		movieService:      movie.NewService(movieRepo, settingsRepo),
+		movieService:      movie.NewService(movieRepo),
 		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
 		settingsService:   settings.NewService(settingsRepo),
 		movieMetadata:     movieMetadataRepo,

@@ -26,10 +26,14 @@ export interface ActiveSpin {
   /** How long THIS client should spin: the full duration for a fresh pick, or
    *  the remaining time when resuming after a reload mid-spin. */
   durationMs: number;
+  /** True for a fresh pick, false for a reload-resume. The reel plays the pick
+   *  jingle only for live picks — a resume starts mid-spin, where replaying the
+   *  jingle from its intro would be out of sync with the audio's payoff. */
+  live: boolean;
 }
 
 /** Fallback used when the --dur-spin token can't be read (e.g. SSR/no DOM). */
-const DEFAULT_SPIN_MS = 3200;
+const DEFAULT_SPIN_MS = 6500;
 
 /** The reveal-spin duration, read from the `--dur-spin` CSS token so the JS and
  *  the keyframe share one source of truth. */
@@ -69,7 +73,13 @@ export function buildLiveSpin(picked: Movie, poolSnapshot: Movie[]): ActiveSpin 
   if (!picked.pickedAt) return null;
   const candidates = uniqueById([...(poolSnapshot ?? []), picked]);
   if (candidates.length < 2) return null;
-  return { pickedAt: picked.pickedAt, winnerId: picked.movieID, candidates, durationMs: spinDurationMs() };
+  return {
+    pickedAt: picked.pickedAt,
+    winnerId: picked.movieID,
+    candidates,
+    durationMs: spinDurationMs(),
+    live: true,
+  };
 }
 
 /**
@@ -88,7 +98,13 @@ export function buildResumeSpin(current: Movie, freshPool: Movie[]): ActiveSpin 
   if (remaining <= 0) return null; // window passed — show the result directly
   const candidates = uniqueById([...(freshPool ?? []), current]);
   if (candidates.length < 2) return null;
-  return { pickedAt: current.pickedAt, winnerId: current.movieID, candidates, durationMs: remaining };
+  return {
+    pickedAt: current.pickedAt,
+    winnerId: current.movieID,
+    candidates,
+    durationMs: remaining,
+    live: false,
+  };
 }
 
 /**

@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon, FilmIcon, MoonIcon, SunIcon, UsersIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { VolumeControl } from "@/components/moviepickarr/VolumeControl";
 import { useTheme } from "@/components/theme-context";
 
 export type Tab = "movies" | "users" | "stats";
@@ -113,15 +114,19 @@ export function NavBar() {
             )}
           </div>
 
-          <button
-            type="button"
-            className="iconbtn"
-            onClick={toggleTheme}
-            aria-label="Toggle theme"
-            title={isDark ? "Switch to light" : "Switch to dark"}
-          >
-            {isDark ? <SunIcon /> : <MoonIcon />}
-          </button>
+          <div className="nav__actions">
+            <VolumeControl />
+
+            <button
+              type="button"
+              className="iconbtn"
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              title={isDark ? "Switch to light" : "Switch to dark"}
+            >
+              {isDark ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
         </div>
       </nav>
 

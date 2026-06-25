@@ -24,6 +24,10 @@
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Reel glide: gentler than --ease-reveal (whose expo front-loading would visually
+     stall a long spin within ~1s). easeOutQuad keeps the reel rolling through the
+     jingle body and settles into the payoff. Mirror in pickSpin.ts (resume math). */
+  --ease-reel: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 
   /* duration scale — fast = pointer feedback, base = state change + overlay entrances,
      slow = page/section load + chart grow, reveal = the hero pick-reveal */
@@ -31,7 +35,7 @@
   --dur-base: 0.22s;
   --dur-slow: 0.4s;
   --dur-reveal: 0.6s; /* the cinematic pick-reveal (backdrop crossfade + content settle) */
-  --dur-spin: 3.2s; /* the slot-machine pick reel — scroll + decelerate onto the winner */
+  --dur-spin: 6.5s; /* the slot-machine pick reel — scroll + decelerate onto the winner, timed to land on the jingle's payoff */
   --dur: var(--dur-base); /* legacy alias — prefer the scale above */
 
   /* accent — gold (fixed) */
@@ -434,7 +438,26 @@
   /* Single shared underline; left/width are set inline per active tab (NavBar.tsx)
      and the slide between tabs is the transition below. */
   .tab__ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); transition: left var(--dur) var(--ease), width var(--dur) var(--ease); }
-  .nav .iconbtn { margin-left: auto; border: 1px solid var(--line); }
+  .nav .iconbtn { border: 1px solid var(--line); }
+  /* Trailing controls (pick-sound + theme) grouped at the right edge of the bar. */
+  .nav__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  /* Pick-sound control: speaker button + a popover holding the mute toggle and
+     volume slider (VolumeControl.tsx). Popover mirrors the date-range pattern. */
+  .volume { position: relative; display: flex; }
+  .volume__pop {
+    position: absolute; top: calc(100% + 10px); right: 0; z-index: 45;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: var(--r-md); box-shadow: var(--shadow);
+    animation: mg-scaleIn var(--dur-base) var(--ease);
+  }
+  .volume__range { width: 120px; accent-color: var(--accent); cursor: pointer; }
+  .volume__pct {
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink-2);
+    width: 34px; text-align: right; font-variant-numeric: tabular-nums;
+  }
 
   /* ---- Hero ---- */
   .hero { --hero-body-h: 18.5rem; position: relative; overflow: hidden; isolation: isolate; border-bottom: 1px solid var(--line); animation: mg-fadeIn var(--dur-slow) var(--ease); }

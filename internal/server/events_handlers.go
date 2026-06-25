@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -38,11 +37,11 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 		// retry: hints the reconnect delay EventSource uses in the window before
 		// the client's own backoff takes over.
 		if _, err := fmt.Fprintf(w, "retry: 3000\nevent: connected\ndata: {\"type\":\"connected\"}\n\n"); err != nil {
-			log.Printf("error writing to client: %v", err)
+			h.log.Debug().Str("subsystem", "sse").Err(err).Msg("sse client write failed (likely disconnect)")
 			return
 		}
 		if err := w.Flush(); err != nil {
-			log.Printf("error flushing client: %v", err)
+			h.log.Debug().Str("subsystem", "sse").Err(err).Msg("sse client flush failed (likely disconnect)")
 			return
 		}
 
@@ -59,7 +58,7 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 
 				eventData, err := json.Marshal(e)
 				if err != nil {
-					log.Printf("error marshalling event: %v", err)
+					h.log.Error().Str("subsystem", "sse").Err(err).Msg("sse event marshal failed")
 					continue
 				}
 

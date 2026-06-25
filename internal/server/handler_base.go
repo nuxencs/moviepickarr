@@ -15,12 +15,14 @@ import (
 	"moviepickarr/internal/user"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog"
 )
 
 var imdbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
 
 type handler struct {
 	broker            *eventBroker
+	log               zerolog.Logger
 	userService       user.Service
 	movieService      movie.Service
 	nextPickerService nextpicker.Service

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -26,7 +25,7 @@ func (h *handler) metaFor(ctx context.Context, movies []*domain.Movie) metaByID 
 	}
 	meta, err := h.movieMetadata.GetMetadataByMovieIDs(ctx, ids)
 	if err != nil {
-		log.Printf("failed to load movie metadata: %v", err)
+		h.log.Warn().Err(err).Msg("failed to load movie metadata (using empty)")
 		return metaByID{}
 	}
 	return meta
@@ -46,7 +45,7 @@ func (h *handler) creditsFor(ctx context.Context, movies []*domain.Movie) credit
 	}
 	credits, err := h.movieCredits.GetCreditsByMovieIDs(ctx, ids)
 	if err != nil {
-		log.Printf("failed to load movie credits: %v", err)
+		h.log.Warn().Err(err).Msg("failed to load movie credits (using empty)")
 		return creditsByID{}
 	}
 	return credits
@@ -434,7 +433,7 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	}
 
 	if err := h.advanceNextPicker(ctx); err != nil {
-		log.Printf("failed to advance next picker: %v", err)
+		h.log.Error().Err(err).Msg("failed to advance next picker")
 	}
 
 	payload := toAPIMovie(selectedMovie)

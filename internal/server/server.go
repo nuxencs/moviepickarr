@@ -201,6 +201,7 @@ func newHandler(dbConn *sql.DB, rootLog zerolog.Logger) *handler {
 
 	h := &handler{
 		broker:            broker,
+		log:               rootLog.With().Str("component", "http").Logger(),
 		userService:       user.NewService(userRepo, nextPickerRepo),
 		movieService:      movie.NewService(movieRepo),
 		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),

@@ -23,6 +23,11 @@ export interface Movie {
     // reveal spin's elapsed time without trusting its own clock (see PickReel).
     pickedAt?: string;
     serverNow?: string;
+    // pickerClientId is the client that initiated the pick — only that client
+    // shows the reel's confirm (OK) button. revealed reports whether the pick has
+    // been confirmed, so a reload after the reveal skips the reel (see pickSpin).
+    pickerClientId?: string;
+    revealed?: boolean;
 
     // Stable external identities — used to build IMDb / TMDB / Letterboxd links.
     tmdbId?: number;

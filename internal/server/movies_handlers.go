@@ -427,7 +427,15 @@ func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {
 func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 
-	selectedMovie, err := h.movieService.PickRandom(ctx)
+	// The client identifies itself so only the picker sees the reel's confirm
+	// button. Optional + best-effort: a malformed/absent body just means no picker
+	// (every client's reel then auto-reveals on its countdown).
+	var body struct {
+		ClientID string `json:"clientId"`
+	}
+	_ = c.BodyParser(&body)
+
+	selectedMovie, err := h.movieService.PickRandom(ctx, sanitizeInput(body.ClientID))
 	if err != nil {
 		return writeError(c, err)
 	}
@@ -438,9 +446,11 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 
 	payload := toAPIMovie(selectedMovie)
 	// Carry the authoritative pick time so the clicker (whose own SSE event may
-	// drop) and every other client resume the reveal spin from the same instant.
+	// drop) and every other client resume the reveal spin from the same instant,
+	// plus the picker id so each client knows whether to show the confirm button.
 	if ap, ok := h.movieService.ActivePick(); ok && ap.MovieID == selectedMovie.ID {
 		payload.PickedAt = formatTime(&ap.PickedAt)
+		payload.PickerClientID = ap.PickerClientID
 	}
 	h.broker.Broadcast(event{Type: "movie:picked", Data: payload})
 
@@ -467,8 +477,26 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 		now := time.Now().UTC()
 		resp.PickedAt = formatTime(&ap.PickedAt)
 		resp.ServerNow = formatTime(&now)
+		resp.PickerClientID = ap.PickerClientID
+		resp.Revealed = ap.Revealed
 	}
 	return c.Status(fiber.StatusOK).JSON(resp)
+}
+
+// handleRevealCurrentMovie confirms the active pick — the picker pressed the
+// reel's button, or its countdown filled. It flips the pick to revealed and
+// broadcasts movie:revealed so every client's reel closes in lockstep. Idempotent:
+// a second confirm (or a confirm with no active pick) is a quiet 200 with no
+// re-broadcast, so racing clients don't double-fire the reveal.
+func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
+	ap, flipped := h.movieService.RevealCurrentPick()
+	if flipped {
+		h.broker.Broadcast(event{Type: "movie:revealed", Data: map[string]any{
+			"movieID":  ap.MovieID,
+			"pickedAt": formatTime(&ap.PickedAt),
+		}})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *handler) handleWatchMovie(c *fiber.Ctx) error {

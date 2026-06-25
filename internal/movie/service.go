@@ -33,7 +33,10 @@ type Service interface {
 	Current(ctx context.Context) (*domain.Movie, error)
 	PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
 	StashedByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
-	PickRandom(ctx context.Context) (*domain.Movie, error)
+	// PickRandom selects a random pooled movie as the current pick. clientID is
+	// the opaque id of the client that initiated the pick (see ActivePick) — it
+	// gates who sees the reel's confirm button; "" is acceptable (no picker).
+	PickRandom(ctx context.Context, clientID string) (*domain.Movie, error)
 	MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error)
 	// ActivePick reports the in-flight pick (movie id + when it was picked) that
 	// drives the cross-client pick-reveal spin, or ok=false when none is active
@@ -41,6 +44,12 @@ type Service interface {
 	// in-memory only, consistent with the in-process event broker: a server
 	// restart drops it, which just means a reload won't replay the spin.
 	ActivePick() (ActivePick, bool)
+	// RevealCurrentPick marks the active pick as revealed (the picker confirmed,
+	// or the reel's countdown elapsed). It reports the pick plus whether this call
+	// is the one that flipped it — so the caller broadcasts movie:revealed exactly
+	// once, and a duplicate confirm is a silent no-op. ok=false when there's no
+	// active pick or it was already revealed.
+	RevealCurrentPick() (ActivePick, bool)
 }
 
 // ActivePick records the most recent random pick so a reloading client — or one
@@ -49,6 +58,13 @@ type Service interface {
 type ActivePick struct {
 	MovieID  int
 	PickedAt time.Time
+	// PickerClientID is the client that clicked Pick. Only that client shows the
+	// reel's confirm button; everyone else's reel closes when the pick is revealed.
+	PickerClientID string
+	// Revealed flips true once the pick has been confirmed (picker pressed the
+	// button or its countdown filled). A reload then shows the result directly
+	// instead of re-opening the reel.
+	Revealed bool
 }
 
 type service struct {
@@ -198,7 +214,7 @@ func (s *service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 	return movies, nil
 }
 
-func (s *service) PickRandom(ctx context.Context) (*domain.Movie, error) {
+func (s *service) PickRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
 	pooled, err := s.movieRepo.FindByStatus(ctx, "pool")
 	if err != nil {
 		return nil, err
@@ -227,7 +243,7 @@ func (s *service) PickRandom(ctx context.Context) (*domain.Movie, error) {
 	}
 
 	s.mu.Lock()
-	s.activePick = &ActivePick{MovieID: movie.ID, PickedAt: time.Now().UTC()}
+	s.activePick = &ActivePick{MovieID: movie.ID, PickedAt: time.Now().UTC(), PickerClientID: clientID}
 	s.mu.Unlock()
 
 	return movie, nil
@@ -266,5 +282,15 @@ func (s *service) ActivePick() (ActivePick, bool) {
 	if s.activePick == nil {
 		return ActivePick{}, false
 	}
+	return *s.activePick, true
+}
+
+func (s *service) RevealCurrentPick() (ActivePick, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activePick == nil || s.activePick.Revealed {
+		return ActivePick{}, false
+	}
+	s.activePick.Revealed = true
 	return *s.activePick, true
 }

@@ -148,7 +148,7 @@ func TestActivePickLifecycle(t *testing.T) {
 		t.Fatal("expected no active pick before any pick")
 	}
 
-	picked, err := svc.PickRandom(ctx)
+	picked, err := svc.PickRandom(ctx, "client-abc")
 	if err != nil {
 		t.Fatalf("PickRandom: unexpected error: %v", err)
 	}
@@ -162,6 +162,28 @@ func TestActivePickLifecycle(t *testing.T) {
 	}
 	if ap.PickedAt.IsZero() {
 		t.Fatal("expected a non-zero pickedAt")
+	}
+	if ap.PickerClientID != "client-abc" {
+		t.Fatalf("picker client id = %q, want %q", ap.PickerClientID, "client-abc")
+	}
+	if ap.Revealed {
+		t.Fatal("expected a fresh pick to be unrevealed")
+	}
+
+	// First reveal flips it and reports the pick; a second is a no-op so the
+	// handler broadcasts movie:revealed exactly once.
+	revealed, flipped := svc.RevealCurrentPick()
+	if !flipped {
+		t.Fatal("expected the first reveal to flip the pick")
+	}
+	if revealed.MovieID != picked.ID {
+		t.Fatalf("revealed movie = %d, want %d", revealed.MovieID, picked.ID)
+	}
+	if _, flippedAgain := svc.RevealCurrentPick(); flippedAgain {
+		t.Fatal("expected a second reveal to be a no-op")
+	}
+	if ap, ok := svc.ActivePick(); !ok || !ap.Revealed {
+		t.Fatal("expected the active pick to remain, now marked revealed")
 	}
 
 	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {

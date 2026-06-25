@@ -39,6 +39,11 @@ type movieResponse struct {
 	// no pick is active.
 	PickedAt  string `json:"pickedAt,omitempty"`
 	ServerNow string `json:"serverNow,omitempty"`
+	// PickerClientID is the client that initiated the pick; only that client shows
+	// the reel's confirm button. Revealed reports whether the pick was confirmed,
+	// so a reload after the reveal shows the result instead of re-opening the reel.
+	PickerClientID string `json:"pickerClientId,omitempty"`
+	Revealed       bool   `json:"revealed,omitempty"`
 
 	// Stable external identities, exposed so the frontend can build links to
 	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).

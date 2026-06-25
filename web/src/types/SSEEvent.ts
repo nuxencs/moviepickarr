@@ -7,6 +7,7 @@ export type SSEEventType =
   | "movie:deleted"
   | "movie:moved"
   | "movie:picked"
+  | "movie:revealed"
   | "movie:watched"
   | "movie:updated"
   | "movies:enriched-batch"
@@ -40,6 +41,12 @@ export interface MovieMovedEvent extends SSEEvent<User> {
 
 export interface MoviePickedEvent extends SSEEvent<Movie> {
   type: "movie:picked";
+}
+
+// The picker confirmed (or the reel's countdown filled): every client closes its
+// reel and reveals the pick in lockstep. Carries just enough to match the spin.
+export interface MovieRevealedEvent extends SSEEvent<{ movieID: number; pickedAt: string }> {
+  type: "movie:revealed";
 }
 
 export interface MovieWatchedEvent extends SSEEvent<Movie> {

@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 
 import { MoviesKeys, PickKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
-import { buildLiveSpin, setActiveSpin } from "@/components/moviepickarr/pickSpin";
+import { buildLiveSpin, setActiveSpin, signalRevealed } from "@/components/moviepickarr/pickSpin";
 
 import type { Movie } from "@/types/Response";
 import type { SSEEvent } from "@/types/SSEEvent";
@@ -167,6 +167,14 @@ export function useSSE() {
               // does it on land) so the pool grid doesn't drop the winner mid-spin
               // and spoil it. No reel → refresh now.
               if (!spin) void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+              break;
+            }
+
+            case "movie:revealed": {
+              // The picker confirmed (or the reel's countdown filled). Signal the
+              // matching pickedAt so every client's Hero closes its reel together.
+              const data = sseEvent.data as { pickedAt?: string } | undefined;
+              if (data?.pickedAt) signalRevealed(queryClient, data.pickedAt);
               break;
             }
 

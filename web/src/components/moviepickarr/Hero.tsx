@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import {
@@ -18,7 +18,7 @@ import {
   buildLiveSpin,
   buildResumeSpin,
   clearActiveSpin,
-  isWithinSpinWindow,
+  pickAwaitingReveal,
   setActiveSpin,
 } from "@/components/moviepickarr/pickSpin";
 import { Poster } from "@/components/moviepickarr/Poster";
@@ -90,6 +90,17 @@ export function Hero() {
     refetchOnWindowFocus: false,
   });
 
+  // Cross-client close signal: the pickedAt of a pick that was revealed (the
+  // picker confirmed, or a countdown filled), set by the useSSE movie:revealed
+  // handler. When it matches the in-flight spin, this client closes its reel too.
+  const { data: revealSignal } = useQuery<string | null>({
+    queryKey: PickKeys.revealed(),
+    queryFn: () => null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
   // Held from the moment the action button is clicked until the hero has actually
   // moved on. The POST resolves (and isPending drops) before the transition lands —
   // for `marking`, before the current-pick refetch; for `picking`, before the reel
@@ -105,7 +116,8 @@ export function Hero() {
     // revealed (see the `picking` effect below).
     onMutate: () => setPicking(true),
     onSuccess: (movie) => {
-      toast.success("Movie picked");
+      // No toast here — the reel itself is the pick feedback; a "Movie picked"
+      // toast popping while the reel is still spinning just competes with it.
       // Fallback if the clicker's own SSE event drops: start the reel from the
       // response and pull in the winner + rotated state without the SSE-driven
       // invalidation. setActiveSpin dedups against the SSE event by pickedAt.
@@ -154,6 +166,60 @@ export function Hero() {
   const [spinning, setSpinning] = useState(false);
   const [spinDescriptor, setSpinDescriptor] = useState<ActiveSpin | null>(null);
   const committed = useRef<Movie | null | undefined>(undefined);
+  // Mirrors of the latest values, so the stable `reveal` callback (held by
+  // PickReel across renders and by the SSE-signal effect) reads current state.
+  // `revealedPick` is the pickedAt already handed off, so reveal() runs once per
+  // pick no matter which trigger fires first (OK press, countdown, or SSE).
+  const spinDescriptorRef = useRef<ActiveSpin | null>(null);
+  spinDescriptorRef.current = spinDescriptor;
+  const currentRef = useRef<Movie | null | undefined>(current);
+  currentRef.current = current;
+  const revealedPickRef = useRef<string | null>(null);
+
+  // Close the reel and hand off to the hero reveal — once per pick. A "local"
+  // trigger (the picker's OK, or any client's countdown self-heal) also tells the
+  // server, which broadcasts movie:revealed so the other clients close in step; a
+  // "remote" trigger IS that broadcast, so it doesn't echo back. The winner's
+  // backdrop (preloaded during the spin) is decoded while the reel still covers
+  // the hero, then the reel drops + the reveal commits in ONE batched render — so
+  // no placeholder frame leaks through between the reel closing and the reveal.
+  const reveal = useCallback(
+    (source: "local" | "remote") => {
+      const desc = spinDescriptorRef.current;
+      if (!desc || revealedPickRef.current === desc.pickedAt) return;
+      revealedPickRef.current = desc.pickedAt;
+      if (source === "local") void APIClient.movies.reveal().catch(() => {});
+      const next = currentRef.current ?? null;
+      const finish = () => {
+        committed.current = next;
+        setShown(next);
+        setRevealId((n) => n + 1);
+        setSpinning(false);
+        clearActiveSpin(queryClient);
+        void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+      };
+      const url = next?.backdropPath ? backdropUrl(next.backdropPath) : null;
+      if (url) {
+        const img = new Image();
+        img.src = url;
+        img.decode().then(finish, finish);
+      } else {
+        finish();
+      }
+    },
+    [queryClient],
+  );
+  // Stable zero-arg confirm handler for the reel (a fresh arrow each render would
+  // reset PickReel's countdown timer on every Hero re-render).
+  const confirmLocal = useCallback(() => reveal("local"), [reveal]);
+
+  // A movie:revealed signal for the in-flight pick (the picker confirmed, or a
+  // countdown filled on some client) closes this client's reel too.
+  useEffect(() => {
+    if (revealSignal && spinDescriptor && revealSignal === spinDescriptor.pickedAt) {
+      reveal("remote");
+    }
+  }, [revealSignal, spinDescriptor, reveal]);
 
   // Start the reel when a spin signal arrives (SSE pick / clicker fallback).
   // Declared before the commit effect so its handledPicks write lands first.
@@ -181,7 +247,7 @@ export function Hero() {
     // The window check needs only `current`; building the reel needs the pool, so
     // hold the commit until the pool has loaded.
     if (next?.pickedAt && !handledPicks.has(next.pickedAt)) {
-      if (isWithinSpinWindow(next)) {
+      if (pickAwaitingReveal(next)) {
         if (pooled === undefined) return;
         handledPicks.add(next.pickedAt);
         const resume = buildResumeSpin(next, pooled);
@@ -364,13 +430,7 @@ export function Hero() {
         <PickReel
           key={spinDescriptor.pickedAt}
           spin={spinDescriptor}
-          onLand={() => {
-            setSpinning(false);
-            clearActiveSpin(queryClient);
-            // Reveal the post-pick pool (the winner leaves the grid) in lockstep
-            // with the hero reveal, not the instant Pick was clicked.
-            void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
-          }}
+          onConfirm={confirmLocal}
         />
       )}
     </section>

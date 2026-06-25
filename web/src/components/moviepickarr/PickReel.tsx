@@ -1,74 +1,119 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
-import { type ActiveSpin, spinDurationMs } from "@/components/moviepickarr/pickSpin";
+import {
+  type ActiveSpin,
+  reelEaseOutput,
+  reelEaseTimeAt,
+  spinDurationMs,
+} from "@/components/moviepickarr/pickSpin";
 import { Poster } from "@/components/moviepickarr/Poster";
 
 import type { Movie } from "@/types/Response";
 
-import { playPickJingle, stopPickJingle } from "@/lib/sound";
+import { isAudioRunning, playPickJingle } from "@/lib/sound";
 
 /** Roughly how many decoy tiles to scroll before the winner — enough for a long
  *  spin, while the per-pick cap keeps the DOM light (no virtualization needed). */
 const TARGET_LEAD = 48;
 
+/** Trailing tiles past the winner. Enough to overflow the viewport's right rim
+ *  (~1100px max-width over ~132px tiles) so the strip never ends on the winner;
+ *  the pool loops to fill them, so a small pool reads as endless as a large one. */
+const TARGET_TRAIL = 6;
+
+/** Fallback confirm-countdown when the --dur-confirm token can't be read. */
+const DEFAULT_CONFIRM_MS = 10000;
+
+/** How long the settled reel waits for confirmation before auto-revealing. Read
+ *  from --dur-confirm so the JS timer and the button's fill animation share one
+ *  source of truth. */
+function confirmDurationMs(): number {
+  if (typeof window === "undefined") return DEFAULT_CONFIRM_MS;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--dur-confirm");
+  const secs = parseFloat(raw);
+  return Number.isFinite(secs) && secs > 0 ? Math.round(secs * 1000) : DEFAULT_CONFIRM_MS;
+}
+
 interface PickReelProps {
   spin: ActiveSpin;
-  /** Called once when the reel settles on the winner (or the user skips). The
-   *  Hero uses this to drop the reel and hand off to its own pick-reveal. */
-  onLand: () => void;
+  /** Called once when the pick is confirmed — the picker pressed OK, or the
+   *  settled reel's countdown filled. The Hero closes the reel for every client
+   *  (broadcasting movie:revealed) and hands off to its own pick-reveal. */
+  onConfirm: () => void;
 }
 
 /**
  * The slot-machine pick reveal: a horizontal reel of pool-candidate posters that
- * scrolls and decelerates onto the server-chosen winner, then hands off to the
- * Hero reveal. Rendered as a takeover overlay inside the Hero (stays within its
- * fixed footprint). Motion is a JS-measured target + a CSS transition — the same
+ * scrolls and decelerates onto the server-chosen winner, then *settles* and waits
+ * for confirmation rather than auto-closing. The picker sees an OK button whose
+ * fill counts down ~10s; pressing it (or letting it fill) closes the reel for
+ * everyone. Motion is a JS-measured target + a CSS transition — the same
  * "measure then transition" idiom as the FLIP rails — so no animation library.
  */
-export function PickReel({ spin, onLand }: PickReelProps) {
+export function PickReel({ spin, onConfirm }: PickReelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const winnerRef = useRef<HTMLDivElement>(null);
   const skipRef = useRef<HTMLButtonElement>(null);
-  const landedRef = useRef(false);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const settledRef = useRef(false);
+  const confirmedRef = useRef(false);
   const targetXRef = useRef<number | null>(null);
+
+  // The reel has scrolled to rest on the winner and now awaits confirmation.
+  const [settled, setSettled] = useState(false);
 
   // Built once per pick (pickedAt identity). The pool repeats in its natural
   // order for a long run, then the winner, then a few trailing tiles so the
   // winner isn't the very last cell.
   const { strip, winnerIndex } = useMemo(() => {
     const cands = spin.candidates;
-    const winner = cands.find((m) => m.movieID === spin.winnerId) ?? cands[cands.length - 1];
+    const winnerPos = cands.findIndex((m) => m.movieID === spin.winnerId);
+    const winnerAt = winnerPos >= 0 ? winnerPos : cands.length - 1;
+    const winner = cands[winnerAt];
     const loops = Math.max(6, Math.ceil(TARGET_LEAD / cands.length));
     const lead: Movie[] = [];
     for (let i = 0; i < loops; i++) lead.push(...cands);
     // Avoid a double-poster at the landing seam: if the lead already ends on the
     // winner, drop that tile so the winner cell isn't next to an identical copy.
     if (lead.length && lead[lead.length - 1].movieID === winner.movieID) lead.pop();
-    // Trail tiles sit just past the winner; keep the winner out so its right
-    // neighbour can't be an identical copy either.
-    const trail = cands.filter((m) => m.movieID !== winner.movieID).slice(0, 4);
+    // Trail: keep looping the pool past the winner so the strip always fills the
+    // viewport's right half and reads as one endless reel — even for small pools,
+    // where a fixed unique-slice would run out and leave a gap after the winner.
+    // Start one slot past the winner so its right neighbour is never an identical
+    // copy; the loop may repeat the winner far down the trail, which is fine.
+    const trail: Movie[] = [];
+    for (let i = 1; i <= TARGET_TRAIL; i++) trail.push(cands[(winnerAt + i) % cands.length]);
     return { strip: [...lead, winner, ...trail], winnerIndex: lead.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spin.pickedAt]);
 
-  const land = useCallback(() => {
-    if (landedRef.current) return;
-    landedRef.current = true;
-    onLand();
-  }, [onLand]);
+  // The reel has rested on the winner; show the confirm controls + start the
+  // countdown. Does NOT close — that waits for confirm().
+  const settle = useCallback(() => {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    setSettled(true);
+  }, []);
 
+  // Hand off to the Hero exactly once (OK press, or the countdown elapsing).
+  const confirm = useCallback(() => {
+    if (confirmedRef.current) return;
+    confirmedRef.current = true;
+    onConfirm();
+  }, [onConfirm]);
+
+  // Skip the scroll: snap the track onto the winner and settle (still awaits
+  // confirmation — skipping fast-forwards the animation, it doesn't reveal).
   const skip = useCallback(() => {
     const track = trackRef.current;
     if (track && targetXRef.current != null) {
       track.style.transition = "none";
       track.style.transform = `translate3d(${targetXRef.current}px, 0, 0)`;
     }
-    // A natural landing lets the jingle ride out its payoff; a skip cuts it short.
-    stopPickJingle();
-    land();
-  }, [land]);
+    settle();
+  }, [settle]);
 
   // Warm the winner's backdrop while the reel spins, so the Hero's decode-then-
   // commit handoff paints in one frame instead of waiting on the network.
@@ -78,25 +123,45 @@ export function PickReel({ spin, onLand }: PickReelProps) {
     if (url) new Image().src = url;
   }, [spin]);
 
-  // Focus the skip control for keyboard users; Escape skips to the result.
+  // Keyboard: while scrolling, Escape skips ahead; once settled, Escape confirms
+  // (the picker only — spectators can't close the reel for everyone).
   useEffect(() => {
-    skipRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") skip();
+      if (e.key !== "Escape") return;
+      if (!settledRef.current) skip();
+      else if (spin.mine) confirm();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [skip]);
+  }, [skip, confirm, spin.mine]);
+
+  // Move focus to whichever control is live, for keyboard users.
+  useEffect(() => {
+    if (settled) {
+      if (spin.mine) confirmRef.current?.focus();
+    } else {
+      skipRef.current?.focus();
+    }
+  }, [settled, spin.mine]);
+
+  // Once settled, count down to an automatic confirm. Every client runs this so
+  // the reel never hangs — normally the picker's OK (broadcast as movie:revealed)
+  // closes everyone first; if the picker vanished, each client self-heals here.
+  useEffect(() => {
+    if (!settled) return;
+    const t = window.setTimeout(confirm, confirmDurationMs());
+    return () => window.clearTimeout(t);
+  }, [settled, confirm]);
 
   // Measure the winner tile, pick a within-tile landing offset (jitter, so it can
   // rest near a border for excitement while the reticle still sits over it), then
-  // glide the track to that offset with the reveal easing.
+  // glide the track to that offset with the reel easing — and settle on arrival.
   useLayoutEffect(() => {
     const track = trackRef.current;
     const viewport = viewportRef.current;
     const winnerEl = winnerRef.current;
     if (!track || !viewport || !winnerEl) {
-      land();
+      settle();
       return;
     }
 
@@ -113,12 +178,11 @@ export function PickReel({ spin, onLand }: PickReelProps) {
 
     const full = spinDurationMs();
     const remaining = Math.max(150, Math.min(spin.durationMs, full));
-    // Resume: enter the easing curve roughly where it would already be, then ease
-    // the rest. easeOutQuad (1 − (1−t)²) here mirrors --ease-reel so the resume
-    // start position matches the curve the transition will glide along.
+    // Resume: enter the easing curve where it would already be, then ease the rest.
+    // reelEaseOutput evaluates the actual --ease-reel cubic-bezier (not a polynomial
+    // stand-in), so the resume start position matches the curve the transition glides.
     const startFrac = full > 0 ? 1 - remaining / full : 0;
-    const easedStart = 1 - Math.pow(1 - startFrac, 2);
-    const startX = easedStart * targetX;
+    const startX = reelEaseOutput(startFrac) * targetX;
 
     track.style.transition = "none";
     track.style.transform = `translate3d(${startX}px, 0, 0)`;
@@ -126,16 +190,36 @@ export function PickReel({ spin, onLand }: PickReelProps) {
     track.style.transition = `transform ${remaining}ms var(--ease-reel)`;
     track.style.transform = `translate3d(${targetX}px, 0, 0)`;
 
-    // Fire the jingle in lockstep with the reel's first frame — fresh picks only;
-    // a reload-resume starts mid-spin where the jingle's intro would be off-cue.
-    if (spin.live) playPickJingle();
+    // Pick-sound sync: a click each time a poster gap crosses the reticle. As the
+    // track slides startX→targetX, each gap reaches viewport centre at translateX =
+    // vpCenter − gap; invert the reel easing per gap so the click train decelerates
+    // on the exact curve the posters ride. Computed here (where the geometry lives)
+    // and handed to the synth, which schedules each tick sample-accurately.
+    const span = targetX - startX;
+    const clickTimes: number[] = [];
+    if (Math.abs(span) > 1) {
+      const tiles = track.children;
+      for (let i = 1; i < tiles.length; i++) {
+        const prev = tiles[i - 1] as HTMLElement;
+        const cur = tiles[i] as HTMLElement;
+        const gapCenter = (prev.offsetLeft + prev.offsetWidth + cur.offsetLeft) / 2;
+        const frac = (vpCenter - gapCenter - startX) / span;
+        if (frac <= 0 || frac >= 1) continue; // gap doesn't cross during this motion
+        clickTimes.push((reelEaseTimeAt(frac) * remaining) / 1000);
+      }
+      clickTimes.sort((a, b) => a - b);
+    }
+    // Fresh pick: always sound (its context resumes off the click that started it).
+    // Reload-resume: only join if audio is already running — a cold reload's context
+    // is suspended, and scheduling onto it would replay the clicks shifted out of sync.
+    if (spin.live || isAudioRunning()) playPickJingle(clickTimes);
 
     const onEnd = (e: TransitionEvent) => {
-      if (e.propertyName === "transform") land();
+      if (e.propertyName === "transform") settle();
     };
     track.addEventListener("transitionend", onEnd);
     // Safety net if transitionend is missed (tab backgrounded, RM instant-skip).
-    const timer = window.setTimeout(land, remaining + 150);
+    const timer = window.setTimeout(settle, remaining + 150);
     return () => {
       track.removeEventListener("transitionend", onEnd);
       window.clearTimeout(timer);
@@ -145,7 +229,7 @@ export function PickReel({ spin, onLand }: PickReelProps) {
 
   return (
     <div className="pickreel" role="dialog" aria-modal="true" aria-label="Picking a random movie">
-      <div className="pickreel__label eyebrow">Picking…</div>
+      <div className="pickreel__label eyebrow">{settled ? "Your pick" : "Picking…"}</div>
       <div className="pickreel__viewport" ref={viewportRef}>
         <div className="pickreel__track" ref={trackRef}>
           {strip.map((m, i) => (
@@ -162,9 +246,23 @@ export function PickReel({ spin, onLand }: PickReelProps) {
         </div>
         <div className="pickreel__reticle" aria-hidden="true" />
       </div>
-      <button type="button" className="pickreel__skip" ref={skipRef} onClick={skip}>
-        Skip
-      </button>
+
+      <div className="pickreel__controls">
+        {!settled ? (
+          <button type="button" className="pickreel__skip" ref={skipRef} onClick={skip}>
+            Skip
+          </button>
+        ) : spin.mine ? (
+          <button type="button" className="btn btn--accent pickreel__ok" ref={confirmRef} onClick={confirm}>
+            <span className="pickreel__ok-fill" aria-hidden="true" />
+            <span className="pickreel__ok-label">OK</span>
+          </button>
+        ) : (
+          <div className="pickreel__waiting" role="status">
+            Waiting for the picker…
+          </div>
+        )}
+      </div>
     </div>
   );
 }

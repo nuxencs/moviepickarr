@@ -10,8 +10,11 @@
 
 import { PickKeys } from "@/api/query_keys";
 
+
 import type { Movie } from "@/types/Response";
 import type { QueryClient } from "@tanstack/react-query";
+
+import { getClientId } from "@/lib/clientId";
 
 export interface ActiveSpin {
   /** Server pick time (RFC3339) — the identity of this pick. Setting an
@@ -26,10 +29,15 @@ export interface ActiveSpin {
   /** How long THIS client should spin: the full duration for a fresh pick, or
    *  the remaining time when resuming after a reload mid-spin. */
   durationMs: number;
-  /** True for a fresh pick, false for a reload-resume. The reel plays the pick
-   *  jingle only for live picks — a resume starts mid-spin, where replaying the
-   *  jingle from its intro would be out of sync with the audio's payoff. */
+  /** True for a fresh pick, false for a reload-resume. A fresh pick always starts
+   *  the pick sound (its click train is computed from the spin); a resume only
+   *  joins if audio is already running, since a cold reload's context is suspended
+   *  and scheduling onto it would replay the clicks shifted out of sync. */
   live: boolean;
+  /** Whether THIS client initiated the pick. Only the picker sees the reel's
+   *  confirm (OK) button; their press closes the reel for everyone. Derived from
+   *  the pick's pickerClientId vs this browser's stable client id. */
+  mine: boolean;
 }
 
 /** Fallback used when the --dur-spin token can't be read (e.g. SSR/no DOM). */
@@ -42,6 +50,67 @@ export function spinDurationMs(): number {
   const raw = getComputedStyle(document.documentElement).getPropertyValue("--dur-spin");
   const secs = parseFloat(raw);
   return Number.isFinite(secs) && secs > 0 ? Math.round(secs * 1000) : DEFAULT_SPIN_MS;
+}
+
+/* ---- Reel easing geometry ----
+   The reel glides on `--ease-reel` (a cubic-bezier). These helpers read that token
+   and evaluate the *actual* curve — not a polynomial stand-in — so two things stay
+   locked to what's rendered: the resume start-position after a reload, and the
+   pick-sound clicks (one per poster gap crossing the reticle). Parsing the token
+   means a future `--ease-reel` change carries through for free. */
+
+/** Cubic-bezier control points (x1, y1, x2, y2) of `--ease-reel`, parsed once.
+ *  Falls back to easeOutCubic's standard approximation (SSR / non-bezier token). */
+let reelEasePts: [number, number, number, number] | null = null;
+function reelEasePoints(): [number, number, number, number] {
+  if (reelEasePts) return reelEasePts;
+  const fallback: [number, number, number, number] = [0.33, 1, 0.68, 1];
+  if (typeof window === "undefined") return (reelEasePts = fallback);
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--ease-reel");
+  const m = raw.match(/cubic-bezier\(([^)]+)\)/);
+  const n = m ? m[1].split(",").map((s) => parseFloat(s)) : [];
+  reelEasePts = n.length === 4 && n.every((v) => Number.isFinite(v))
+    ? (n as [number, number, number, number])
+    : fallback;
+  return reelEasePts;
+}
+
+/** One cubic-bezier component with control points (0, p1, p2, 1), sampled at s∈[0,1]. */
+function bezierComponent(p1: number, p2: number, s: number): number {
+  const c = 3 * p1;
+  const b = 3 * (p2 - p1) - c;
+  const a = 1 - c - b;
+  return ((a * s + b) * s + c) * s;
+}
+
+/** Invert a monotonic component: the s∈[0,1] where component(p1,p2,s) == target. */
+function solveBezierS(target: number, p1: number, p2: number): number {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 28; i++) {
+    const mid = (lo + hi) / 2;
+    if (bezierComponent(p1, p2, mid) < target) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** Distance fraction the reel has covered at elapsed-time fraction `tx` (the CSS
+ *  ease output). Resumes the scroll at the right spot after a reload mid-spin. */
+export function reelEaseOutput(tx: number): number {
+  if (tx <= 0) return 0;
+  if (tx >= 1) return 1;
+  const [x1, y1, x2, y2] = reelEasePoints();
+  return bezierComponent(y1, y2, solveBezierS(tx, x1, x2));
+}
+
+/** Inverse: elapsed-time fraction at which the reel has covered `frac` of its
+ *  distance. Times a click to the instant a poster gap crosses the reticle. */
+export function reelEaseTimeAt(frac: number): number {
+  if (frac <= 0) return 0;
+  if (frac >= 1) return 1;
+  const [x1, y1, x2, y2] = reelEasePoints();
+  return bezierComponent(x1, x2, solveBezierS(frac, y1, y2));
 }
 
 export function prefersReducedMotion(): boolean {
@@ -79,45 +148,49 @@ export function buildLiveSpin(picked: Movie, poolSnapshot: Movie[]): ActiveSpin 
     candidates,
     durationMs: spinDurationMs(),
     live: true,
+    mine: !!picked.pickerClientId && picked.pickerClientId === getClientId(),
   };
 }
 
 /**
  * Build a resume spin on reload, from the current movie's pick timing and the
- * (post-pick) pool. Elapsed is server-relative (serverNow − pickedAt), so a
- * skewed client clock can't mis-time it. Returns null when there's nothing to
- * resume: reduced motion, missing timing, the spin window already elapsed, or a
- * pool of one (no decoys left to scroll past the winner).
+ * (post-pick) pool. The reel now holds until the pick is *revealed* (the picker's
+ * confirm / countdown), not for a fixed window, so a reload mid-flight re-opens
+ * it: the scroll resumes from the server-relative elapsed time (serverNow −
+ * pickedAt, immune to client clock skew) — or snaps straight to the settled
+ * winner if the scroll already finished — and the confirm countdown restarts.
+ * Returns null when there's nothing to resume: reduced motion, missing timing,
+ * the pick was already revealed, or a pool of one (no decoys to scroll past).
  */
 export function buildResumeSpin(current: Movie, freshPool: Movie[]): ActiveSpin | null {
   if (prefersReducedMotion()) return null;
   if (!current.pickedAt || !current.serverNow) return null;
+  if (current.revealed) return null; // already confirmed — show the result directly
   const elapsed = Date.parse(current.serverNow) - Date.parse(current.pickedAt);
   if (!Number.isFinite(elapsed)) return null;
-  const remaining = spinDurationMs() - elapsed;
-  if (remaining <= 0) return null; // window passed — show the result directly
   const candidates = uniqueById([...(freshPool ?? []), current]);
   if (candidates.length < 2) return null;
   return {
     pickedAt: current.pickedAt,
     winnerId: current.movieID,
     candidates,
-    durationMs: remaining,
+    // Remaining scroll time; 0 once the scroll has elapsed (the reel then snaps to
+    // the settled winner and waits for the confirm/countdown).
+    durationMs: Math.max(0, spinDurationMs() - elapsed),
     live: false,
+    mine: !!current.pickerClientId && current.pickerClientId === getClientId(),
   };
 }
 
 /**
- * Whether a current movie is still inside its reveal-spin window (server-relative
- * elapsed < spin duration). Lets a reload decide — using only the current movie,
- * before the pool has loaded — whether to wait for the pool and resume the reel,
- * or just show the result. Reduced motion and missing timing both read as false.
+ * Whether a current movie's reel is still pending — picked but not yet revealed.
+ * Lets a reload decide, using only the current movie (before the pool loads),
+ * whether to wait for the pool and re-open the reel or just show the result.
+ * Reduced motion and a missing pick time both read as false (no reel).
  */
-export function isWithinSpinWindow(current: Movie): boolean {
+export function pickAwaitingReveal(current: Movie): boolean {
   if (prefersReducedMotion()) return false;
-  if (!current.pickedAt || !current.serverNow) return false;
-  const elapsed = Date.parse(current.serverNow) - Date.parse(current.pickedAt);
-  return Number.isFinite(elapsed) && spinDurationMs() - elapsed > 0;
+  return !!current.pickedAt && !current.revealed;
 }
 
 /** Set the active spin, deduped by pickedAt (see ActiveSpin.pickedAt). */
@@ -131,4 +204,11 @@ export function setActiveSpin(qc: QueryClient, spin: ActiveSpin | null): void {
 
 export function clearActiveSpin(qc: QueryClient): void {
   qc.setQueryData(PickKeys.active(), null);
+}
+
+/** Record that a pick was revealed (the picker confirmed, or the reel's countdown
+ *  filled), keyed by pickedAt. Set by the useSSE movie:revealed handler; the Hero
+ *  watches it and closes the matching reel on every client at once. */
+export function signalRevealed(qc: QueryClient, pickedAt: string): void {
+  qc.setQueryData(PickKeys.revealed(), pickedAt);
 }

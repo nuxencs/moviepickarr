@@ -14,9 +14,13 @@ export const MoviesKeys = {
 
 // Client-only state (no endpoint): the in-flight pick-reveal spin descriptor,
 // set via setQueryData by the SSE handler / pick mutation and read by the Hero.
+// `revealed` is the cross-client close signal — the picker's confirm (or the
+// countdown) broadcasts movie:revealed; useSSE stows the pickedAt here and the
+// Hero closes the reel for that pick.
 export const PickKeys = {
     all: ["pick"] as const,
     active: () => [...PickKeys.all, "active"] as const,
+    revealed: () => [...PickKeys.all, "revealed"] as const,
 }
 
 export const SettingsKeys = {

@@ -53,7 +53,7 @@ press, color), `--dur-base 0.22s` (state changes, crossfades), `--dur-slow 0.4s`
 (entrances) — plus `--dur-reveal 0.6s` (the hero pick-reveal) and `--dur-spin 6.5s`
 (the slot-machine pick reel, §7). `--dur` remains as a legacy alias of `--dur-base`. Easing: `--ease` (decelerating ease-out, no bounce) for
 entrances, `--ease-exit` (accelerate-away) for exits, `--ease-reveal` (expo) for the
-pick-reveal, `--ease-reel` (easeOutQuad) for the longer pick reel. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
+pick-reveal, `--ease-reel` (easeOutCubic) for the longer pick reel. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
 
 ### Contrast (WCAG AA, non-negotiable)
 `--ink-3` is the floor for body/meta/placeholder text and is tuned to clear **4.5:1**:
@@ -368,30 +368,51 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
 **Pick reel (slot-machine spin).** A pick first plays a slot-machine **reel** — a
 takeover overlay *inside* the hero footprint (`PickReel.tsx`, `.pickreel*`) that scrolls
 a strip of pool-candidate posters past a centre reticle, decelerates onto the
-server-chosen winner, then hands off to the reveal below. It animates a result the
+server-chosen winner, then **settles and holds** — handing off to the reveal only on
+confirmation (see Pick confirm). It animates a result the
 **server already decided** (`ORDER BY RANDOM()`), so the randomness stays honest — the
 reel only adds anticipation. Only **pool candidates** scroll (every tile is a real
 possibility; never the watched library), and the strip is deduped at the landing seam so
 no poster sits beside an identical copy of itself. Motion is the **measure-then-transition**
 idiom (§6): JS measures the winner tile and glides the track there with a CSS transition
-over `--dur-spin` (6.5s) / `--ease-reel` (a gentle easeOutQuad — `--ease-reveal`'s expo
-front-loading would stall a multi-second spin within ~1s), with a within-tile **jitter** so
-the landing feels live. The `movie:picked` SSE event drives it so **every connected client
+over `--dur-spin` (6.5s) / `--ease-reel` (easeOutCubic — a higher-order ease-out whose
+deceleration tapers off so the reel floats to a stop rather than braking at a constant rate;
+still short of `--ease-reveal`'s expo, whose front-loading would stall a multi-second spin
+within ~1s), with a within-tile **jitter** so the landing feels live. The `movie:picked` SSE event drives it so **every connected client
 spins**, not just the clicker; it skips for a **pool of one** or under reduced motion
-(straight to the reveal) and **resumes** server-relative on a reload mid-spin, while the
-hero **holds its commit** so the reveal never fires mid-spin. Full mechanics + invariants:
-`docs/findings/pick-reveal-reel.md`.
+(straight to the reveal) and **resumes** server-relative on a reload while the pick is
+still unrevealed, while the hero **holds its commit** so the reveal never fires mid-spin.
+Full mechanics + invariants: `docs/findings/pick-reveal-reel.md`.
 
-**Pick sound.** As the reel starts, a one-shot jingle plays — an original, fully
-**synthesized** sound (no audio file ships, so nothing to license): a Wheel-of-Fortune click
-train that decelerates as the wheel settles to a stop on the reveal (the deceleration itself is
-the payoff — no reveal stinger), with `--dur-spin` tuned so the final click lands on the
-reveal. Built on the native **Web Audio API** (no library, no dependency) in
-`web/src/lib/sound.ts`; the `AudioProvider` owns the on/off and 0..1 volume prefs
+**Pick confirm (hold-and-reveal).** The settled reel does **not** auto-close — it waits
+for confirmation, so the group sees the result land together. Only the **picker** (the
+client whose stable `mp-client-id` matches the pick's `pickerClientId`) gets an **OK**
+button; it carries a ~`--dur-confirm` (10s) fill that doubles as a countdown. Pressing it
+— or letting it fill — confirms, which `POST`s `/movies/current/reveal`; the server flips
+the pick to `revealed` and broadcasts **`movie:revealed`**, so **every** client's reel
+closes and reveals in lockstep. Each client also self-heals on its own countdown, so the
+reel never hangs if the picker leaves. The close is **flash-free**: the winner backdrop
+(preloaded during the spin) is decoded while the reel still covers the hero, then the reel
+drops and the reveal commits in one batched frame — no placeholder leaks through. A reload
+keys off the server `revealed` flag (not a timer): unrevealed re-opens the settled reel
+(the picker keeps OK, since the client id persists), revealed shows the result directly.
+
+**Pick sound.** As the reel starts, a Wheel-of-Fortune **click train** plays —
+an original, fully **synthesized** sound (no audio file ships, so nothing to
+license), each tick a short bandpass-filtered noise burst on the native **Web
+Audio API** (no library) in `web/src/lib/sound.ts`. The clicks are **synced to the
+posters**: `PickReel` computes the exact instant each gap crosses the reticle (it
+inverts `--ease-reel` per gap, `reelEaseTimeAt`) and hands the offsets to
+`playPickJingle`, so the ticks land on the gaps you see and decelerate on the same
+curve — then go quiet as the winner coasts under the reticle (no gaps left to
+tick). A `SYNC_OFFSET_MS` trims the fixed audio↔compositor lag by ear; the
+relative timing is exact. The `AudioProvider` owns the on/off and 0..1 volume prefs
 (localStorage `mp-sound` / `mp-volume`) plus a one-time autoplay **unlock** (an AudioContext
 resume) on first interaction, so SSE-driven clients that never click Pick can still play. A speaker control in the nav (`VolumeControl.tsx`) opens a popover with a mute toggle, a
-volume slider, and a play/stop button to audition the jingle. Fresh picks only — a
-reload-resume stays silent, and reduced motion (no reel) is silent for free.
+volume slider, and a play/stop button to audition the (fallback) wheel. A fresh pick
+always sounds; a reload-resume joins only if audio is already running (a cold
+reload's context is suspended, so it's visually in-sync but silent), and reduced
+motion (no reel) is silent for free.
 
 **Pick-reveal (motion).** When the pick changes (or clears), the banner reveals the new
 state without breaking the static contract: a two-layer `.hero__bg-stack` crossfades the

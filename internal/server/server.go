@@ -244,6 +244,7 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/movies/pool", h.handleGetPooledMovies)
 	v1.Post("/movies/random", h.handleGetRandomMovie)
 	v1.Get("/movies/current", h.handleGetCurrentMovie)
+	v1.Post("/movies/current/reveal", h.handleRevealCurrentMovie)
 	v1.Get("/movies/watched", h.handleGetWatchedMovies)
 	v1.Post("/movies/current/watch", h.handleWatchMovie)
 	v1.Get("/stats", h.handleGetStats)

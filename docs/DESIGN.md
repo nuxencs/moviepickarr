@@ -368,7 +368,8 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
 **Pick reel (slot-machine spin).** A pick first plays a slot-machine **reel** — a
 takeover overlay *inside* the hero footprint (`PickReel.tsx`, `.pickreel*`) that scrolls
 a strip of pool-candidate posters past a centre reticle, decelerates onto the
-server-chosen winner, then hands off to the reveal below. It animates a result the
+server-chosen winner, then **settles and holds** — handing off to the reveal only on
+confirmation (see Pick confirm). It animates a result the
 **server already decided** (`ORDER BY RANDOM()`), so the randomness stays honest — the
 reel only adds anticipation. Only **pool candidates** scroll (every tile is a real
 possibility; never the watched library), and the strip is deduped at the landing seam so
@@ -378,9 +379,22 @@ over `--dur-spin` (6.5s) / `--ease-reel` (a gentle easeOutQuad — `--ease-revea
 front-loading would stall a multi-second spin within ~1s), with a within-tile **jitter** so
 the landing feels live. The `movie:picked` SSE event drives it so **every connected client
 spins**, not just the clicker; it skips for a **pool of one** or under reduced motion
-(straight to the reveal) and **resumes** server-relative on a reload mid-spin, while the
-hero **holds its commit** so the reveal never fires mid-spin. Full mechanics + invariants:
-`docs/findings/pick-reveal-reel.md`.
+(straight to the reveal) and **resumes** server-relative on a reload while the pick is
+still unrevealed, while the hero **holds its commit** so the reveal never fires mid-spin.
+Full mechanics + invariants: `docs/findings/pick-reveal-reel.md`.
+
+**Pick confirm (hold-and-reveal).** The settled reel does **not** auto-close — it waits
+for confirmation, so the group sees the result land together. Only the **picker** (the
+client whose stable `mp-client-id` matches the pick's `pickerClientId`) gets an **OK**
+button; it carries a ~`--dur-confirm` (10s) fill that doubles as a countdown. Pressing it
+— or letting it fill — confirms, which `POST`s `/movies/current/reveal`; the server flips
+the pick to `revealed` and broadcasts **`movie:revealed`**, so **every** client's reel
+closes and reveals in lockstep. Each client also self-heals on its own countdown, so the
+reel never hangs if the picker leaves. The close is **flash-free**: the winner backdrop
+(preloaded during the spin) is decoded while the reel still covers the hero, then the reel
+drops and the reveal commits in one batched frame — no placeholder leaks through. A reload
+keys off the server `revealed` flag (not a timer): unrevealed re-opens the settled reel
+(the picker keeps OK, since the client id persists), revealed shows the result directly.
 
 **Pick sound.** As the reel starts, a one-shot jingle plays — an original, fully
 **synthesized** sound (no audio file ships, so nothing to license): a Wheel-of-Fortune click

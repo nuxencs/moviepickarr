@@ -10,8 +10,11 @@
 
 import { PickKeys } from "@/api/query_keys";
 
+
 import type { Movie } from "@/types/Response";
 import type { QueryClient } from "@tanstack/react-query";
+
+import { getClientId } from "@/lib/clientId";
 
 export interface ActiveSpin {
   /** Server pick time (RFC3339) — the identity of this pick. Setting an
@@ -30,6 +33,10 @@ export interface ActiveSpin {
    *  jingle only for live picks — a resume starts mid-spin, where replaying the
    *  jingle from its intro would be out of sync with the audio's payoff. */
   live: boolean;
+  /** Whether THIS client initiated the pick. Only the picker sees the reel's
+   *  confirm (OK) button; their press closes the reel for everyone. Derived from
+   *  the pick's pickerClientId vs this browser's stable client id. */
+  mine: boolean;
 }
 
 /** Fallback used when the --dur-spin token can't be read (e.g. SSR/no DOM). */
@@ -79,45 +86,49 @@ export function buildLiveSpin(picked: Movie, poolSnapshot: Movie[]): ActiveSpin 
     candidates,
     durationMs: spinDurationMs(),
     live: true,
+    mine: !!picked.pickerClientId && picked.pickerClientId === getClientId(),
   };
 }
 
 /**
  * Build a resume spin on reload, from the current movie's pick timing and the
- * (post-pick) pool. Elapsed is server-relative (serverNow − pickedAt), so a
- * skewed client clock can't mis-time it. Returns null when there's nothing to
- * resume: reduced motion, missing timing, the spin window already elapsed, or a
- * pool of one (no decoys left to scroll past the winner).
+ * (post-pick) pool. The reel now holds until the pick is *revealed* (the picker's
+ * confirm / countdown), not for a fixed window, so a reload mid-flight re-opens
+ * it: the scroll resumes from the server-relative elapsed time (serverNow −
+ * pickedAt, immune to client clock skew) — or snaps straight to the settled
+ * winner if the scroll already finished — and the confirm countdown restarts.
+ * Returns null when there's nothing to resume: reduced motion, missing timing,
+ * the pick was already revealed, or a pool of one (no decoys to scroll past).
  */
 export function buildResumeSpin(current: Movie, freshPool: Movie[]): ActiveSpin | null {
   if (prefersReducedMotion()) return null;
   if (!current.pickedAt || !current.serverNow) return null;
+  if (current.revealed) return null; // already confirmed — show the result directly
   const elapsed = Date.parse(current.serverNow) - Date.parse(current.pickedAt);
   if (!Number.isFinite(elapsed)) return null;
-  const remaining = spinDurationMs() - elapsed;
-  if (remaining <= 0) return null; // window passed — show the result directly
   const candidates = uniqueById([...(freshPool ?? []), current]);
   if (candidates.length < 2) return null;
   return {
     pickedAt: current.pickedAt,
     winnerId: current.movieID,
     candidates,
-    durationMs: remaining,
+    // Remaining scroll time; 0 once the scroll has elapsed (the reel then snaps to
+    // the settled winner and waits for the confirm/countdown).
+    durationMs: Math.max(0, spinDurationMs() - elapsed),
     live: false,
+    mine: !!current.pickerClientId && current.pickerClientId === getClientId(),
   };
 }
 
 /**
- * Whether a current movie is still inside its reveal-spin window (server-relative
- * elapsed < spin duration). Lets a reload decide — using only the current movie,
- * before the pool has loaded — whether to wait for the pool and resume the reel,
- * or just show the result. Reduced motion and missing timing both read as false.
+ * Whether a current movie's reel is still pending — picked but not yet revealed.
+ * Lets a reload decide, using only the current movie (before the pool loads),
+ * whether to wait for the pool and re-open the reel or just show the result.
+ * Reduced motion and a missing pick time both read as false (no reel).
  */
-export function isWithinSpinWindow(current: Movie): boolean {
+export function pickAwaitingReveal(current: Movie): boolean {
   if (prefersReducedMotion()) return false;
-  if (!current.pickedAt || !current.serverNow) return false;
-  const elapsed = Date.parse(current.serverNow) - Date.parse(current.pickedAt);
-  return Number.isFinite(elapsed) && spinDurationMs() - elapsed > 0;
+  return !!current.pickedAt && !current.revealed;
 }
 
 /** Set the active spin, deduped by pickedAt (see ActiveSpin.pickedAt). */
@@ -131,4 +142,11 @@ export function setActiveSpin(qc: QueryClient, spin: ActiveSpin | null): void {
 
 export function clearActiveSpin(qc: QueryClient): void {
   qc.setQueryData(PickKeys.active(), null);
+}
+
+/** Record that a pick was revealed (the picker confirmed, or the reel's countdown
+ *  filled), keyed by pickedAt. Set by the useSSE movie:revealed handler; the Hero
+ *  watches it and closes the matching reel on every client at once. */
+export function signalRevealed(qc: QueryClient, pickedAt: string): void {
+  qc.setQueryData(PickKeys.revealed(), pickedAt);
 }

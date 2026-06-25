@@ -1,3 +1,4 @@
+import { getClientId } from "@/lib/clientId";
 import { Movie, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
@@ -199,8 +200,14 @@ export const APIClient = {
     },
     movies: {
         getPooled: () => appClient.Get<Movie[]>("api/v1/movies/pool"),
-        getRandom: () => appClient.Post<Movie>("api/v1/movies/random"),
+        // Identify the picker so only this client shows the reel's confirm button.
+        getRandom: () =>
+            appClient.Post<Movie>("api/v1/movies/random", {
+                body: { clientId: getClientId() },
+            }),
         getCurrent: () => appClient.Get<Movie>("api/v1/movies/current"),
+        // Confirm the pick — closes the reel for every client (via movie:revealed).
+        reveal: () => appClient.Post<void>("api/v1/movies/current/reveal"),
         getWatched: () =>
             appClient.Get<Movie[]>("api/v1/movies/watched"),
         markWatched: () =>

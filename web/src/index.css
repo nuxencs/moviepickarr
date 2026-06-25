@@ -36,6 +36,7 @@
   --dur-slow: 0.4s;
   --dur-reveal: 0.6s; /* the cinematic pick-reveal (backdrop crossfade + content settle) */
   --dur-spin: 6.5s; /* the slot-machine pick reel — scroll + decelerate onto the winner, timed to land on the jingle's payoff */
+  --dur-confirm: 10s; /* the settled reel's confirm countdown (OK button fill); read in PickReel for the auto-reveal timer */
   --dur: var(--dur-base); /* legacy alias — prefer the scale above */
 
   /* accent — gold (fixed) */
@@ -577,6 +578,22 @@
     transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
   .pickreel__skip:hover { color: #fff; background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.34); }
+  /* Settled reel: the picker's confirm button. It's the gold accent button with a
+     dark sweep that fills left→right over --dur-confirm — a visible countdown.
+     When it fills, PickReel auto-confirms (same token drives the JS timer), so the
+     reel never hangs. The label stays above the sweep for constant legibility. */
+  .pickreel__ok { position: relative; overflow: hidden; min-width: 132px; justify-content: center; }
+  .pickreel__ok-fill {
+    position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
+    background: rgba(0, 0, 0, 0.22); pointer-events: none;
+    animation: mg-okfill var(--dur-confirm) linear forwards;
+  }
+  .pickreel__ok-label { position: relative; z-index: 1; }
+  .pickreel__waiting {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+  }
+  @keyframes mg-okfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   @media (max-width: 700px) {
     .pickreel { gap: 14px; padding: 16px; }
     .pickreel__tile { flex-basis: 96px; }

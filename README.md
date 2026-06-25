@@ -138,12 +138,15 @@ Everything is optional except the TMDB key. Set these as environment variables
 | Variable | What it does | Default |
 | --- | --- | --- |
 | `TMDB_API_KEY` | Enables posters, cast & metadata-powered stats | *(unset — enrichment off)* |
+| `LOG_LEVEL` | Minimum log level (`trace`…`fatal`) | `info` |
+| `LOG_FORMAT` | `json` (production) or `console` (colourised dev) | `json` |
 | `TMDB_ENRICH_CAST_LIMIT` | How many cast members to store per movie (`0` = all) | `15` |
 | `TMDB_ENRICH_REFRESH_INTERVAL` | How often to refresh metadata (`0` disables) | `1h` |
 | `TMDB_ENRICH_TTL` | How stale metadata can get before a refresh | `720h` |
 
-There are a few more fine-tuning knobs for the enrichment worker — see
-[`docs/backend-layout.md`](docs/backend-layout.md) if you want to dig in.
+See [`.env.example`](.env.example) for the full list. Logging is documented in
+[`docs/LOGGING.md`](docs/LOGGING.md), and there are a few more enrichment-worker
+knobs in [`docs/backend-layout.md`](docs/backend-layout.md).
 
 ---
 

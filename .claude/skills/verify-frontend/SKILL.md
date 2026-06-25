@@ -148,6 +148,29 @@ For each affected view, in this order:
 Capture a couple of extra frames around interactions if recording a GIF so
 playback is smooth.
 
+**Transient / fast animations: measure from inside the page, don't race them
+with screenshots.** A screenshot is a separate tool round-trip, and that latency
+(often several seconds) is *longer* than the animation you're trying to catch —
+so the screenshot lands on whatever frame happens to be live when the round-trip
+returns, which is almost always the **end** state. This bites repeatedly: a
+~6.5s pick-reel spin still returns a *settled*-frame screenshot, because the
+round-trip outran the spin. Anything mid-animation — a spin, a slide/transition,
+a sweep/countdown, a FLIP — is effectively un-screenshottable by timing.
+
+Instead, drive **and** sample the animation from within one `evaluate_script`:
+trigger the interaction in the script (find the button, `.click()`) so there's
+zero inter-call latency, then sample the element's geometry/state on a timeline
+(e.g. every ~80–100ms from t=0 until the end state), and **return the timeline**.
+Assert on the numbers: compare `getBoundingClientRect()` across animation phases
+(e.g. the reel viewport's `top` while *spinning* vs *settled* → a 0px delta
+proves "no layout shift"; the rightmost tile's `right` vs the viewport's `right`
+proves "strip fills the rim"). A measured sub-pixel delta is far more reliable
+than eyeballing a 4px jump in a screenshot you had to win a race to take.
+
+Still grab **one** screenshot of a state that *holds* (a settled reel inside its
+countdown window, a hovered/open menu) for the visual record — but base the
+pass/fail on the measurement, not the frame you happened to catch.
+
 ## Step 3b — Mobile performance audit (Core Web Vitals)
 
 Layout can look right and still regress *performance* — a heavy hero image, an

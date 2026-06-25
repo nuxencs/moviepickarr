@@ -116,7 +116,8 @@ export function Hero() {
     // revealed (see the `picking` effect below).
     onMutate: () => setPicking(true),
     onSuccess: (movie) => {
-      toast.success("Movie picked");
+      // No toast here — the reel itself is the pick feedback; a "Movie picked"
+      // toast popping while the reel is still spinning just competes with it.
       // Fallback if the clicker's own SSE event drops: start the reel from the
       // response and pull in the winner + rotated state without the SSE-driven
       // invalidation. setActiveSpin dedups against the SSE event by pickedAt.

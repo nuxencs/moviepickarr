@@ -569,6 +569,11 @@
   }
   .pickreel__reticle::before { top: -2px; border-top-color: var(--accent); }
   .pickreel__reticle::after { bottom: -2px; border-bottom-color: var(--accent); }
+  /* Fixed-height control row: the spinning Skip button, the settled OK button, and
+     the spectator "Waiting" line are all different heights. Reserving the tallest
+     (the OK button) keeps the centered column from reflowing — so the reel doesn't
+     shift up when the controls swap on settle. */
+  .pickreel__controls { display: flex; align-items: center; justify-content: center; min-height: 40px; }
   .pickreel__skip {
     font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
     color: rgba(255, 255, 255, 0.72);

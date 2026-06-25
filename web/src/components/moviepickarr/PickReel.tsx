@@ -12,6 +12,11 @@ import { playPickJingle } from "@/lib/sound";
  *  spin, while the per-pick cap keeps the DOM light (no virtualization needed). */
 const TARGET_LEAD = 48;
 
+/** Trailing tiles past the winner. Enough to overflow the viewport's right rim
+ *  (~1100px max-width over ~132px tiles) so the strip never ends on the winner;
+ *  the pool loops to fill them, so a small pool reads as endless as a large one. */
+const TARGET_TRAIL = 6;
+
 /** Fallback confirm-countdown when the --dur-confirm token can't be read. */
 const DEFAULT_CONFIRM_MS = 10000;
 
@@ -59,16 +64,22 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
   // winner isn't the very last cell.
   const { strip, winnerIndex } = useMemo(() => {
     const cands = spin.candidates;
-    const winner = cands.find((m) => m.movieID === spin.winnerId) ?? cands[cands.length - 1];
+    const winnerPos = cands.findIndex((m) => m.movieID === spin.winnerId);
+    const winnerAt = winnerPos >= 0 ? winnerPos : cands.length - 1;
+    const winner = cands[winnerAt];
     const loops = Math.max(6, Math.ceil(TARGET_LEAD / cands.length));
     const lead: Movie[] = [];
     for (let i = 0; i < loops; i++) lead.push(...cands);
     // Avoid a double-poster at the landing seam: if the lead already ends on the
     // winner, drop that tile so the winner cell isn't next to an identical copy.
     if (lead.length && lead[lead.length - 1].movieID === winner.movieID) lead.pop();
-    // Trail tiles sit just past the winner; keep the winner out so its right
-    // neighbour can't be an identical copy either.
-    const trail = cands.filter((m) => m.movieID !== winner.movieID).slice(0, 4);
+    // Trail: keep looping the pool past the winner so the strip always fills the
+    // viewport's right half and reads as one endless reel — even for small pools,
+    // where a fixed unique-slice would run out and leave a gap after the winner.
+    // Start one slot past the winner so its right neighbour is never an identical
+    // copy; the loop may repeat the winner far down the trail, which is fine.
+    const trail: Movie[] = [];
+    for (let i = 1; i <= TARGET_TRAIL; i++) trail.push(cands[(winnerAt + i) % cands.length]);
     return { strip: [...lead, winner, ...trail], winnerIndex: lead.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spin.pickedAt]);
@@ -212,20 +223,22 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
         <div className="pickreel__reticle" aria-hidden="true" />
       </div>
 
-      {!settled ? (
-        <button type="button" className="pickreel__skip" ref={skipRef} onClick={skip}>
-          Skip
-        </button>
-      ) : spin.mine ? (
-        <button type="button" className="btn btn--accent pickreel__ok" ref={confirmRef} onClick={confirm}>
-          <span className="pickreel__ok-fill" aria-hidden="true" />
-          <span className="pickreel__ok-label">OK</span>
-        </button>
-      ) : (
-        <div className="pickreel__waiting" role="status">
-          Waiting for the picker…
-        </div>
-      )}
+      <div className="pickreel__controls">
+        {!settled ? (
+          <button type="button" className="pickreel__skip" ref={skipRef} onClick={skip}>
+            Skip
+          </button>
+        ) : spin.mine ? (
+          <button type="button" className="btn btn--accent pickreel__ok" ref={confirmRef} onClick={confirm}>
+            <span className="pickreel__ok-fill" aria-hidden="true" />
+            <span className="pickreel__ok-label">OK</span>
+          </button>
+        ) : (
+          <div className="pickreel__waiting" role="status">
+            Waiting for the picker…
+          </div>
+        )}
+      </div>
     </div>
   );
 }

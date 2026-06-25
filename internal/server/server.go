@@ -89,14 +89,14 @@ func Run(ctx context.Context, cfg Config) error {
 
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 
-	httpLog := rootLog.With().Str("component", "http").Logger()
 	// Middleware order is deliberate: requestid sets the X-Request-ID response
 	// header on the way in; fiberzerolog reads it on the way out, so requestid
 	// must precede it. fiberzerolog also sits ahead of recover so a recovered
-	// panic still yields one access-log line carrying the error.
+	// panic still yields one access-log line carrying the error. It reuses the
+	// handler's component=http logger so access and app logs share one derivation.
 	app.Use(requestid.New())
 	app.Use(fiberzerolog.New(fiberzerolog.Config{
-		Logger: &httpLog,
+		Logger: &h.log,
 		Fields: []string{
 			fiberzerolog.FieldRequestID,
 			fiberzerolog.FieldIP,

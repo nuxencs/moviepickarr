@@ -212,12 +212,15 @@ func (r *enrichRunner) Start(ctx context.Context) {
 	if r.cfg.CastLimit <= 0 {
 		cast = "unlimited"
 	}
+	// rate/ttl are logged as strings (e.g. "250ms", "720h0m0s") to match the
+	// already-stringified cast/refresh — this line is a human-facing config echo,
+	// not a metric, so readable units beat zerolog's raw-millisecond numbers.
 	r.log.Info().
-		Dur("rate", r.cfg.MinInterval).
+		Str("rate", r.cfg.MinInterval.String()).
 		Int("retries", r.cfg.MaxRetries).
 		Int("batch", r.cfg.BatchLimit).
 		Str("cast", cast).
-		Dur("ttl", r.cfg.TTL).
+		Str("ttl", r.cfg.TTL.String()).
 		Str("refresh", refresh).
 		Msg("enrich worker started")
 

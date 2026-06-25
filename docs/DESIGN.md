@@ -397,16 +397,22 @@ drops and the reveal commits in one batched frame — no placeholder leaks throu
 keys off the server `revealed` flag (not a timer): unrevealed re-opens the settled reel
 (the picker keeps OK, since the client id persists), revealed shows the result directly.
 
-**Pick sound.** As the reel starts, a one-shot jingle plays — an original, fully
-**synthesized** sound (no audio file ships, so nothing to license): a Wheel-of-Fortune click
-train that decelerates as the wheel settles to a stop on the reveal (the deceleration itself is
-the payoff — no reveal stinger), with `--dur-spin` tuned so the final click lands on the
-reveal. Built on the native **Web Audio API** (no library, no dependency) in
-`web/src/lib/sound.ts`; the `AudioProvider` owns the on/off and 0..1 volume prefs
+**Pick sound.** As the reel starts, a Wheel-of-Fortune **click train** plays —
+an original, fully **synthesized** sound (no audio file ships, so nothing to
+license), each tick a short bandpass-filtered noise burst on the native **Web
+Audio API** (no library) in `web/src/lib/sound.ts`. The clicks are **synced to the
+posters**: `PickReel` computes the exact instant each gap crosses the reticle (it
+inverts `--ease-reel` per gap, `reelEaseTimeAt`) and hands the offsets to
+`playPickJingle`, so the ticks land on the gaps you see and decelerate on the same
+curve — then go quiet as the winner coasts under the reticle (no gaps left to
+tick). A `SYNC_OFFSET_MS` trims the fixed audio↔compositor lag by ear; the
+relative timing is exact. The `AudioProvider` owns the on/off and 0..1 volume prefs
 (localStorage `mp-sound` / `mp-volume`) plus a one-time autoplay **unlock** (an AudioContext
 resume) on first interaction, so SSE-driven clients that never click Pick can still play. A speaker control in the nav (`VolumeControl.tsx`) opens a popover with a mute toggle, a
-volume slider, and a play/stop button to audition the jingle. Fresh picks only — a
-reload-resume stays silent, and reduced motion (no reel) is silent for free.
+volume slider, and a play/stop button to audition the (fallback) wheel. A fresh pick
+always sounds; a reload-resume joins only if audio is already running (a cold
+reload's context is suspended, so it's visually in-sync but silent), and reduced
+motion (no reel) is silent for free.
 
 **Pick-reveal (motion).** When the pick changes (or clears), the banner reveals the new
 state without breaking the static contract: a two-layer `.hero__bg-stack` crossfades the

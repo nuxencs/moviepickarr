@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
-import { type ActiveSpin, spinDurationMs } from "@/components/moviepickarr/pickSpin";
+import {
+  type ActiveSpin,
+  reelEaseOutput,
+  reelEaseTimeAt,
+  spinDurationMs,
+} from "@/components/moviepickarr/pickSpin";
 import { Poster } from "@/components/moviepickarr/Poster";
 
 import type { Movie } from "@/types/Response";
 
-import { playPickJingle } from "@/lib/sound";
+import { isAudioRunning, playPickJingle } from "@/lib/sound";
 
 /** Roughly how many decoy tiles to scroll before the winner — enough for a long
  *  spin, while the per-pick cap keeps the DOM light (no virtualization needed). */
@@ -173,12 +178,11 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
 
     const full = spinDurationMs();
     const remaining = Math.max(150, Math.min(spin.durationMs, full));
-    // Resume: enter the easing curve roughly where it would already be, then ease
-    // the rest. easeOutCubic (1 − (1−t)³) here mirrors --ease-reel so the resume
-    // start position matches the curve the transition will glide along.
+    // Resume: enter the easing curve where it would already be, then ease the rest.
+    // reelEaseOutput evaluates the actual --ease-reel cubic-bezier (not a polynomial
+    // stand-in), so the resume start position matches the curve the transition glides.
     const startFrac = full > 0 ? 1 - remaining / full : 0;
-    const easedStart = 1 - Math.pow(1 - startFrac, 3);
-    const startX = easedStart * targetX;
+    const startX = reelEaseOutput(startFrac) * targetX;
 
     track.style.transition = "none";
     track.style.transform = `translate3d(${startX}px, 0, 0)`;
@@ -186,9 +190,29 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
     track.style.transition = `transform ${remaining}ms var(--ease-reel)`;
     track.style.transform = `translate3d(${targetX}px, 0, 0)`;
 
-    // Fire the jingle in lockstep with the reel's first frame — fresh picks only;
-    // a reload-resume starts mid-spin where the jingle's intro would be off-cue.
-    if (spin.live) playPickJingle();
+    // Pick-sound sync: a click each time a poster gap crosses the reticle. As the
+    // track slides startX→targetX, each gap reaches viewport centre at translateX =
+    // vpCenter − gap; invert the reel easing per gap so the click train decelerates
+    // on the exact curve the posters ride. Computed here (where the geometry lives)
+    // and handed to the synth, which schedules each tick sample-accurately.
+    const span = targetX - startX;
+    const clickTimes: number[] = [];
+    if (Math.abs(span) > 1) {
+      const tiles = track.children;
+      for (let i = 1; i < tiles.length; i++) {
+        const prev = tiles[i - 1] as HTMLElement;
+        const cur = tiles[i] as HTMLElement;
+        const gapCenter = (prev.offsetLeft + prev.offsetWidth + cur.offsetLeft) / 2;
+        const frac = (vpCenter - gapCenter - startX) / span;
+        if (frac <= 0 || frac >= 1) continue; // gap doesn't cross during this motion
+        clickTimes.push((reelEaseTimeAt(frac) * remaining) / 1000);
+      }
+      clickTimes.sort((a, b) => a - b);
+    }
+    // Fresh pick: always sound (its context resumes off the click that started it).
+    // Reload-resume: only join if audio is already running — a cold reload's context
+    // is suspended, and scheduling onto it would replay the clicks shifted out of sync.
+    if (spin.live || isAudioRunning()) playPickJingle(clickTimes);
 
     const onEnd = (e: TransitionEvent) => {
       if (e.propertyName === "transform") settle();

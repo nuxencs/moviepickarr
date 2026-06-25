@@ -20,12 +20,19 @@ const STORAGE_KEY = "mp-sound";
 const VOLUME_KEY = "mp-volume";
 const DEFAULT_VOLUME = 0.5;
 
-/** When the wheel settles, in seconds from jingle start. Tuned to the reel: the
- *  slot spin runs for `--dur-spin` (6.5s, see DESIGN.md §7), so the final click
- *  lands just as the reveal settles on the picked movie. */
+/** When the fallback wheel settles, in seconds from start. Only used when no
+ *  geometry-synced schedule is supplied (e.g. the popover preview) — a fresh pick
+ *  passes exact gap-crossing times instead (see playPickJingle / PickReel). */
 const REVEAL_AT = 6.4;
-/** Tiny tail after the final click — total ≈ REVEAL_AT + this. */
+/** Tiny tail after the final click — total ≈ last click + this. */
 const TAIL_S = 0.15;
+/** Lead before the first click, so it's scheduled safely in the audio future. */
+const START_LEAD_S = 0.03;
+/** Global audio↔visual alignment nudge (ms). The click train's *relative* timing
+ *  matches the reel exactly; this shifts the whole train to compensate for the
+ *  fixed lag between the audio clock and the compositor. +ve = clicks later;
+ *  tune by ear. */
+const SYNC_OFFSET_MS = 0;
 
 let unlocked = false;
 /** True while a full jingle is sounding. Drives the popover play/stop button. */
@@ -177,9 +184,21 @@ export function unlockAudio(): void {
   if (ctx.state === "suspended") void ctx.resume();
 }
 
-/** Play the pick jingle from the top. No-op when sound is off. */
-export function playPickJingle(): void {
+/** Whether audio is unlocked and actively running — i.e. clicks scheduled now will
+ *  fire when scheduled, not strand on a suspended context that resumes later (and
+ *  replays them out of sync). PickReel uses this to gate a reload-resume's sound. */
+export function isAudioRunning(): boolean {
+  return !!ctx && ctx.state === "running";
+}
+
+/** Play the pick sound from the top. No-op when sound is off.
+ *  - With `clickOffsets` (seconds from start): a geometry-synced click per poster
+ *    gap crossing the reticle (computed by PickReel from the live motion). An empty
+ *    array is an explicit "nothing to play" (e.g. a resume that already settled).
+ *  - Without it (the popover preview): a self-contained decelerating wheel. */
+export function playPickJingle(clickOffsets?: number[]): void {
   if (!isSoundEnabled()) return;
+  if (clickOffsets && clickOffsets.length === 0) return;
   if (!ensureGraph() || !ctx || !playGain) return;
   if (ctx.state === "suspended") void ctx.resume();
   killVoices();
@@ -187,14 +206,23 @@ export function playPickJingle(): void {
   playGain.gain.cancelScheduledValues(now);
   playGain.gain.setValueAtTime(1, now); // reset after any prior fade-out
 
-  // Wheel-of-Fortune click train: fast ticks while "spinning", spreading further
-  // apart as the wheel slows (gap grows with progress²), the final tick landing
-  // on the reveal. Steady volume — a flapper doesn't get quieter as it slows.
-  const start = now + 0.05;
-  for (let t = 0; t < REVEAL_AT - 0.02; ) {
-    const p = t / REVEAL_AT; // 0..1 across the spin
-    scheduleClick(start + t, 0.85);
-    t += 0.03 + 0.34 * p * p; // decelerate: ~0.03s spinning → ~0.37s settling
+  // Steady volume — a flapper doesn't get quieter as it slows.
+  const start = now + START_LEAD_S + SYNC_OFFSET_MS / 1000;
+  let lastAt: number;
+  if (clickOffsets) {
+    // Synced: one tick exactly as each poster gap passes the reticle.
+    for (const off of clickOffsets) scheduleClick(start + off, 0.85);
+    lastAt = clickOffsets[clickOffsets.length - 1];
+  } else {
+    // Fallback wheel (no geometry): fast ticks spreading apart with progress², the
+    // final tick landing on the reveal.
+    let t = 0;
+    for (; t < REVEAL_AT - 0.02; ) {
+      const p = t / REVEAL_AT; // 0..1 across the spin
+      scheduleClick(start + t, 0.85);
+      t += 0.03 + 0.34 * p * p; // decelerate: ~0.03s spinning → ~0.37s settling
+    }
+    lastAt = REVEAL_AT;
   }
 
   if (endTimer !== null) window.clearTimeout(endTimer);
@@ -202,7 +230,7 @@ export function playPickJingle(): void {
   endTimer = window.setTimeout(() => {
     endTimer = null;
     setPlaying(false);
-  }, (REVEAL_AT + TAIL_S) * 1000);
+  }, (lastAt + TAIL_S) * 1000 + 60);
 }
 
 /** Quickly fade out and stop the jingle. Used when the user SKIPS the reel and

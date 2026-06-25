@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"errors"
-	"log"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // enrichConfig tunes the background enrichment worker. All fields are
@@ -90,7 +92,7 @@ func envInt(key string) (int, bool) {
 	}
 	v, err := strconv.Atoi(raw)
 	if err != nil {
-		log.Printf("enrich: invalid %s=%q, using default", key, raw)
+		zlog.Warn().Str("key", key).Str("value", raw).Msg("enrich: invalid env value, using default")
 		return 0, false
 	}
 	return v, true
@@ -111,7 +113,7 @@ func envDuration(key string) (time.Duration, bool) {
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil || d < 0 {
-		log.Printf("enrich: invalid %s=%q, using default", key, raw)
+		zlog.Warn().Str("key", key).Str("value", raw).Msg("enrich: invalid env value, using default")
 		return 0, false
 	}
 	return d, true
@@ -166,6 +168,7 @@ type enrichRunner struct {
 	broker     *eventBroker // optional SSE; nil-safe
 	onEnriched func()       // optional post-enrich hook (stats-cache invalidation); nil-safe
 	cfg        enrichConfig
+	log        zerolog.Logger
 
 	queue    chan int
 	trigger  chan struct{}
@@ -185,11 +188,12 @@ type enrichRunner struct {
 	cancel   context.CancelFunc
 }
 
-func newEnrichRunner(enricher Enricher, broker *eventBroker, cfg enrichConfig) *enrichRunner {
+func newEnrichRunner(enricher Enricher, broker *eventBroker, cfg enrichConfig, log zerolog.Logger) *enrichRunner {
 	return &enrichRunner{
 		enricher: enricher,
 		broker:   broker,
 		cfg:      cfg,
+		log:      log,
 		queue:    make(chan int, cfg.QueueSize),
 		trigger:  make(chan struct{}, 1),
 		inflight: make(map[int]struct{}),
@@ -208,8 +212,14 @@ func (r *enrichRunner) Start(ctx context.Context) {
 	if r.cfg.CastLimit <= 0 {
 		cast = "unlimited"
 	}
-	log.Printf("enrich: worker started (rate=%s, retries=%d, batch=%d, cast=%s, ttl=%s, refresh=%s)",
-		r.cfg.MinInterval, r.cfg.MaxRetries, r.cfg.BatchLimit, cast, r.cfg.TTL, refresh)
+	r.log.Info().
+		Dur("rate", r.cfg.MinInterval).
+		Int("retries", r.cfg.MaxRetries).
+		Int("batch", r.cfg.BatchLimit).
+		Str("cast", cast).
+		Dur("ttl", r.cfg.TTL).
+		Str("refresh", refresh).
+		Msg("enrich worker started")
 
 	r.wg.Add(1)
 	go r.consume(stopCtx)
@@ -249,7 +259,7 @@ func (r *enrichRunner) Enqueue(movieID int) {
 	case r.queue <- movieID:
 	default:
 		r.clearInflight(movieID)
-		log.Printf("enrich: queue full, dropped movie %d (will retry on next scan)", movieID)
+		r.log.Warn().Int("movieID", movieID).Msg("enrich queue full, dropped movie (will retry on next scan)")
 	}
 }
 
@@ -303,7 +313,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 	candidates, err := r.enricher.NeedsEnrichment(ctx, staleBefore, r.cfg.BatchLimit)
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Printf("enrich: needs-enrichment query failed: %v", err)
+			r.log.Error().Err(err).Msg("enrich needs-enrichment query failed")
 		}
 		return
 	}
@@ -311,7 +321,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 		return
 	}
 
-	log.Printf("enrich: draining %d movie(s)", len(candidates))
+	r.log.Info().Int("count", len(candidates)).Msg("enrich draining")
 	var enriched, skipped, failed int
 	for _, c := range candidates {
 		switch r.process(ctx, c.MovieID) {
@@ -322,13 +332,22 @@ func (r *enrichRunner) drain(ctx context.Context) {
 		case outcomeFailed:
 			failed++
 		case outcomeCanceled:
-			log.Printf("enrich: drain interrupted — %d/%d done (%d enriched, %d skipped, %d failed)",
-				enriched+skipped+failed, len(candidates), enriched, skipped, failed)
+			r.log.Warn().
+				Int("done", enriched+skipped+failed).
+				Int("total", len(candidates)).
+				Int("enriched", enriched).
+				Int("skipped", skipped).
+				Int("failed", failed).
+				Msg("enrich drain interrupted")
 			return
 		}
 	}
 	r.flushBatch() // emit the tail of this drain's batch immediately
-	log.Printf("enrich: drain complete — %d enriched, %d skipped, %d failed", enriched, skipped, failed)
+	r.log.Info().
+		Int("enriched", enriched).
+		Int("skipped", skipped).
+		Int("failed", failed).
+		Msg("enrich drain complete")
 }
 
 type enrichOutcome int
@@ -346,16 +365,21 @@ func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 	res, err := r.enricher.EnrichOne(ctx, movieID)
 	switch {
 	case err == nil:
-		log.Printf("enrich: movie %d enriched → tmdb %d (%d genres, %d credits)", movieID, res.TMDBID, res.Genres, res.Credits)
+		r.log.Debug().
+			Int("movieID", movieID).
+			Int("tmdbID", res.TMDBID).
+			Int("genres", res.Genres).
+			Int("credits", res.Credits).
+			Msg("enrich movie enriched")
 		r.recordEnriched(movieID)
 		return outcomeEnriched
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		return outcomeCanceled
 	case errors.Is(err, ErrEnrichNoIMDbID) || errors.Is(err, ErrEnrichNotFound):
-		log.Printf("enrich: skip movie %d: %v", movieID, err)
+		r.log.Debug().Int("movieID", movieID).Err(err).Msg("enrich skip movie")
 		return outcomeSkipped
 	default:
-		log.Printf("enrich: movie %d failed: %v", movieID, err)
+		r.log.Warn().Int("movieID", movieID).Err(err).Msg("enrich movie failed")
 		return outcomeFailed
 	}
 }
@@ -418,6 +442,6 @@ func (r *enrichRunner) broadcastEnrichedBatch(n int) {
 	if r.broker == nil {
 		return
 	}
-	log.Printf("enrich: flushed %d enriched movie(s) → movies:enriched-batch", n)
+	r.log.Debug().Int("count", n).Str("event", "movies:enriched-batch").Msg("enrich flushed batch")
 	r.broker.Broadcast(event{Type: "movies:enriched-batch"})
 }

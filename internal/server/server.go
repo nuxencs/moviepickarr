@@ -80,7 +80,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	h := newHandler(dbConn)
+	h := newHandler(dbConn, rootLog)
 	if h.enrichRunner != nil {
 		h.enrichRunner.Start(ctx)
 	} else {
@@ -177,7 +177,7 @@ func Run(ctx context.Context, cfg Config) error {
 	return nil
 }
 
-func newHandler(dbConn *sql.DB) *handler {
+func newHandler(dbConn *sql.DB, rootLog zerolog.Logger) *handler {
 	userRepo := repository.NewSqliteUserRepository(dbConn)
 	movieRepo := repository.NewSqliteMoviesRepository(dbConn)
 	nextPickerRepo := repository.NewSqliteNextPickerRepository(dbConn)
@@ -195,7 +195,8 @@ func newHandler(dbConn *sql.DB) *handler {
 	var runner *enrichRunner
 	if tmdbCli.apiKey != "" {
 		enrichmentSvc := newEnrichmentService(movieRepo, movieMetadataRepo, movieCreditsRepo, tmdbCli, enrichCfg.CastLimit)
-		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg)
+		enrichLog := rootLog.With().Str("component", "enrich").Logger()
+		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg, enrichLog)
 	}
 
 	h := &handler{

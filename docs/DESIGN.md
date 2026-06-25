@@ -53,7 +53,7 @@ press, color), `--dur-base 0.22s` (state changes, crossfades), `--dur-slow 0.4s`
 (entrances) — plus `--dur-reveal 0.6s` (the hero pick-reveal) and `--dur-spin 6.5s`
 (the slot-machine pick reel, §7). `--dur` remains as a legacy alias of `--dur-base`. Easing: `--ease` (decelerating ease-out, no bounce) for
 entrances, `--ease-exit` (accelerate-away) for exits, `--ease-reveal` (expo) for the
-pick-reveal, `--ease-reel` (easeOutQuad) for the longer pick reel. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
+pick-reveal, `--ease-reel` (easeOutCubic) for the longer pick reel. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
 
 ### Contrast (WCAG AA, non-negotiable)
 `--ink-3` is the floor for body/meta/placeholder text and is tuned to clear **4.5:1**:
@@ -375,9 +375,10 @@ reel only adds anticipation. Only **pool candidates** scroll (every tile is a re
 possibility; never the watched library), and the strip is deduped at the landing seam so
 no poster sits beside an identical copy of itself. Motion is the **measure-then-transition**
 idiom (§6): JS measures the winner tile and glides the track there with a CSS transition
-over `--dur-spin` (6.5s) / `--ease-reel` (a gentle easeOutQuad — `--ease-reveal`'s expo
-front-loading would stall a multi-second spin within ~1s), with a within-tile **jitter** so
-the landing feels live. The `movie:picked` SSE event drives it so **every connected client
+over `--dur-spin` (6.5s) / `--ease-reel` (easeOutCubic — a higher-order ease-out whose
+deceleration tapers off so the reel floats to a stop rather than braking at a constant rate;
+still short of `--ease-reveal`'s expo, whose front-loading would stall a multi-second spin
+within ~1s), with a within-tile **jitter** so the landing feels live. The `movie:picked` SSE event drives it so **every connected client
 spins**, not just the clicker; it skips for a **pool of one** or under reduced motion
 (straight to the reveal) and **resumes** server-relative on a reload while the pick is
 still unrevealed, while the hero **holds its commit** so the reveal never fires mid-spin.

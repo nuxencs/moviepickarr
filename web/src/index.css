@@ -24,10 +24,12 @@
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
-  /* Reel glide: gentler than --ease-reveal (whose expo front-loading would visually
-     stall a long spin within ~1s). easeOutQuad keeps the reel rolling through the
-     jingle body and settles into the payoff. Mirror in pickSpin.ts (resume math). */
-  --ease-reel: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  /* Reel glide: a higher-order ease-out (easeOutCubic) so the deceleration itself
+     tapers off and the reel floats to a stop — easeOutQuad's linear velocity falloff
+     braked at a constant rate and read as a slightly abrupt landing. Still short of
+     --ease-reveal's expo, whose front-loading would visually stall a long spin within
+     ~1s. Mirror the curve order in PickReel.tsx's resume math (1 − (1−t)³). */
+  --ease-reel: cubic-bezier(0.33, 1, 0.68, 1);
 
   /* duration scale — fast = pointer feedback, base = state change + overlay entrances,
      slow = page/section load + chart grow, reveal = the hero pick-reveal */

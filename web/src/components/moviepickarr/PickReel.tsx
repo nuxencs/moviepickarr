@@ -174,10 +174,10 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
     const full = spinDurationMs();
     const remaining = Math.max(150, Math.min(spin.durationMs, full));
     // Resume: enter the easing curve roughly where it would already be, then ease
-    // the rest. easeOutQuad (1 − (1−t)²) here mirrors --ease-reel so the resume
+    // the rest. easeOutCubic (1 − (1−t)³) here mirrors --ease-reel so the resume
     // start position matches the curve the transition will glide along.
     const startFrac = full > 0 ? 1 - remaining / full : 0;
-    const easedStart = 1 - Math.pow(1 - startFrac, 2);
+    const easedStart = 1 - Math.pow(1 - startFrac, 3);
     const startX = easedStart * targetX;
 
     track.style.transition = "none";

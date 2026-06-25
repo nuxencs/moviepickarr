@@ -26,6 +26,16 @@
 - `internal/domain/*`: entities, repository ports, typed domain errors.
 - `internal/{user,movie,nextpicker,settings}`: service-layer use cases.
 
+## Logging
+
+- `internal/logger/logger.go`: builds the root [zerolog](https://github.com/rs/zerolog)
+  logger from `LOG_LEVEL`/`LOG_FORMAT` (JSON for prod, colourised `console` for
+  dev). `server.Run` builds it once, mirrors it to the zerolog global, and injects
+  `component`-tagged sub-loggers into the handler (`http`) and enrichment worker
+  (`enrich`). HTTP access logs use the `fiberzerolog` middleware, ordered after
+  `requestid` so each line carries the request id; the SSE stream is skipped.
+  Full reference: [`LOGGING.md`](LOGGING.md).
+
 ## Infrastructure
 
 - `internal/repository/sqlite.go`: SQLite repository implementations.

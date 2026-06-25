@@ -15,6 +15,7 @@ import (
 	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/rs/zerolog"
 )
 
 func setupEditMovieTest(t *testing.T) (*handler, *fiber.App, *repository.SqliteUserRepository, *repository.SqliteMoviesRepository) {
@@ -30,7 +31,7 @@ func setupEditMovieTest(t *testing.T) (*handler, *fiber.App, *repository.SqliteU
 		t.Fatalf("run migrations: %v", err)
 	}
 
-	h := newHandler(dbConn)
+	h := newHandler(dbConn, zerolog.Nop())
 	t.Cleanup(func() {
 		h.Close()
 		if err := dbConn.Close(); err != nil {

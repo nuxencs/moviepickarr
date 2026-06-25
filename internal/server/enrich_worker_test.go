@@ -4,6 +4,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // countBatchEvents drains a broker client for "movies:enriched-batch" frames
@@ -29,7 +31,7 @@ func newBatchRunner(broker *eventBroker, debounce, maxWait time.Duration) (*enri
 	cfg := defaultEnrichConfig()
 	cfg.BatchDebounce = debounce
 	cfg.BatchMaxWait = maxWait
-	r := newEnrichRunner(nil, broker, cfg)
+	r := newEnrichRunner(nil, broker, cfg, zerolog.Nop())
 
 	var statsInvalidations atomic.Int32
 	r.onEnriched = func() { statsInvalidations.Add(1) }

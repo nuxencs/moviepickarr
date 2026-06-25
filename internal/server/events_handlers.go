@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -35,14 +34,18 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 		eventChannel := h.broker.Subscribe()
 		defer h.broker.Unsubscribe(eventChannel)
 
+		// One sse sub-logger for the whole stream so every write/flush site is
+		// tagged identically (and a future site can't forget the tag).
+		sseLog := h.log.With().Str("subsystem", "sse").Logger()
+
 		// retry: hints the reconnect delay EventSource uses in the window before
 		// the client's own backoff takes over.
 		if _, err := fmt.Fprintf(w, "retry: 3000\nevent: connected\ndata: {\"type\":\"connected\"}\n\n"); err != nil {
-			log.Printf("error writing to client: %v", err)
+			sseLog.Debug().Err(err).Msg("sse client write failed (likely disconnect)")
 			return
 		}
 		if err := w.Flush(); err != nil {
-			log.Printf("error flushing client: %v", err)
+			sseLog.Debug().Err(err).Msg("sse client flush failed (likely disconnect)")
 			return
 		}
 
@@ -59,25 +62,30 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 
 				eventData, err := json.Marshal(e)
 				if err != nil {
-					log.Printf("error marshalling event: %v", err)
+					sseLog.Error().Err(err).Msg("sse event marshal failed")
 					continue
 				}
 
 				if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", eventData); err != nil {
+					sseLog.Debug().Err(err).Msg("sse client write failed (likely disconnect)")
 					return
 				}
 				if err := w.Flush(); err != nil {
+					sseLog.Debug().Err(err).Msg("sse client flush failed (likely disconnect)")
 					return
 				}
 
 			case <-ticker.C:
 				// Comment frame: EventSource ignores `:`-prefixed lines, so this
 				// never reaches the client's message handler — it only keeps the
-				// pipe warm and surfaces dead sockets.
+				// pipe warm and surfaces dead sockets. A failed ping is how we
+				// notice a dead half-open socket, so it is worth a debug line.
 				if _, err := w.WriteString(": ping\n\n"); err != nil {
+					sseLog.Debug().Err(err).Msg("sse heartbeat write failed (likely disconnect)")
 					return
 				}
 				if err := w.Flush(); err != nil {
+					sseLog.Debug().Err(err).Msg("sse heartbeat flush failed (likely disconnect)")
 					return
 				}
 			}

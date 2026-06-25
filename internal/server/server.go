@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,26 +12,34 @@ import (
 	"time"
 
 	"moviepickarr/internal/db"
+	"moviepickarr/internal/logger"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextpicker"
 	"moviepickarr/internal/repository"
 	"moviepickarr/internal/settings"
 	"moviepickarr/internal/user"
 
+	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 )
 
 type Config struct {
 	Port    string
 	DBFile  string
 	WebRoot http.FileSystem
+
+	// Build metadata, surfaced in the startup banner.
+	Version string
+	Commit  string
+	Date    string
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -47,6 +54,17 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.WebRoot == nil {
 		return fmt.Errorf("web root is required")
 	}
+
+	// Build the root logger first so everything below is observable. Mirror it
+	// to the zerolog global (zlog) so package-level call sites — e.g. the env
+	// parsers in enrich_worker — log through the same configured writer.
+	rootLog := logger.New(logger.FromEnv())
+	zlog.Logger = rootLog
+	rootLog.Info().
+		Str("version", cfg.Version).
+		Str("commit", cfg.Commit).
+		Str("built", cfg.Date).
+		Msg("moviepickarr starting")
 
 	if _, err := db.MigrateBoltToSQLite(ctx, cfg.DBFile, cfg.DBFile); err != nil {
 		return err
@@ -66,17 +84,36 @@ func Run(ctx context.Context, cfg Config) error {
 	if h.enrichRunner != nil {
 		h.enrichRunner.Start(ctx)
 	} else {
-		log.Println("enrichment disabled: TMDB_API_KEY not set")
+		rootLog.Info().Msg("enrichment disabled: TMDB_API_KEY not set")
 	}
 
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 
-	app.Use(logger.New(logger.Config{
-		TimeFormat: "2006-01-02 15:04:05",
-		TimeZone:   "Local",
+	httpLog := rootLog.With().Str("component", "http").Logger()
+	// Middleware order is deliberate: requestid sets the X-Request-ID response
+	// header on the way in; fiberzerolog reads it on the way out, so requestid
+	// must precede it. fiberzerolog also sits ahead of recover so a recovered
+	// panic still yields one access-log line carrying the error.
+	app.Use(requestid.New())
+	app.Use(fiberzerolog.New(fiberzerolog.Config{
+		Logger: &httpLog,
+		Fields: []string{
+			fiberzerolog.FieldRequestID,
+			fiberzerolog.FieldIP,
+			fiberzerolog.FieldMethod,
+			fiberzerolog.FieldPath,
+			fiberzerolog.FieldStatus,
+			fiberzerolog.FieldLatency,
+			fiberzerolog.FieldBytesSent,
+			fiberzerolog.FieldError,
+		},
+		Messages: []string{"http server error", "http client error", "http request"},
+		Levels:   []zerolog.Level{zerolog.ErrorLevel, zerolog.WarnLevel, zerolog.InfoLevel},
+		// The SSE stream is long-lived: its "latency" would span the whole
+		// session and it logs one line per open — noise, so skip it.
+		SkipURIs: []string{"/api/v1/events"},
 	}))
 	app.Use(recover.New())
-	app.Use(requestid.New())
 	// Gzip JSON responses and the embedded SPA assets. The SSE stream is excluded:
 	// compression buffers the response body, which would break the per-event flush
 	// that keeps the event stream real-time.
@@ -107,12 +144,12 @@ func Run(ctx context.Context, cfg Config) error {
 	var shutdownOnce sync.Once
 	shutdown := func() {
 		shutdownOnce.Do(func() {
-			log.Println("gracefully shutting down")
+			rootLog.Info().Msg("gracefully shutting down")
 			ctxTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			if err := app.ShutdownWithContext(ctxTimeout); err != nil {
-				log.Printf("shutdown error: %v", err)
+				rootLog.Error().Err(err).Msg("server shutdown error")
 			}
 			// Stop the worker after Fiber has drained (no handler can enqueue)
 			// but before the DB closes (in-flight enrichment still reads it).
@@ -121,7 +158,7 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 			h.Close()
 			if err := dbConn.Close(); err != nil {
-				log.Printf("db close error: %v", err)
+				rootLog.Error().Err(err).Msg("db close error")
 			}
 		})
 	}

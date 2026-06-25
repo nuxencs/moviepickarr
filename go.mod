@@ -3,6 +3,7 @@ module moviepickarr
 go 1.26.0
 
 require (
+	github.com/gofiber/contrib/fiberzerolog v1.0.3
 	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-isatty v0.0.20

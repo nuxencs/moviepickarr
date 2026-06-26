@@ -17,20 +17,22 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	movies, err := h.movieService.List(ctx)
+	// Only pool/stash movies are rendered on the users board, so fetch exactly
+	// those (both status-indexed) instead of loading the entire movies table —
+	// including the ever-growing watched history — only to filter it back down
+	// in Go. The bucketing loop below relies on each row's Status, which the two
+	// status-scoped queries set correctly.
+	pooled, err := h.movieService.Pooled(ctx)
 	if err != nil {
 		return writeError(c, err)
 	}
-
-	// Only pool/stash movies are rendered on the users board. Scope metadata
-	// loading to just those so we don't batch-load (and discard) enriched data
-	// for the ever-growing watched history.
-	visible := make([]*domain.Movie, 0, len(movies))
-	for i := range movies {
-		if movies[i].Status == "pool" || movies[i].Status == "stash" {
-			visible = append(visible, movies[i])
-		}
+	stashed, err := h.movieService.Stashed(ctx)
+	if err != nil {
+		return writeError(c, err)
 	}
+	visible := make([]*domain.Movie, 0, len(pooled)+len(stashed))
+	visible = append(visible, pooled...)
+	visible = append(visible, stashed...)
 
 	meta := h.metaFor(ctx, visible)
 	credits := h.creditsFor(ctx, visible)

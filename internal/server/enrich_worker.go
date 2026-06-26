@@ -250,13 +250,9 @@ func (r *enrichRunner) Stop() {
 // if the queue is full the id is dropped and the next scheduled drain re-picks
 // it up. Dedup avoids queuing an id that is already pending.
 func (r *enrichRunner) Enqueue(movieID int) {
-	r.mu.Lock()
-	if _, ok := r.inflight[movieID]; ok {
-		r.mu.Unlock()
+	if !r.tryClaim(movieID) {
 		return
 	}
-	r.inflight[movieID] = struct{}{}
-	r.mu.Unlock()
 
 	select {
 	case r.queue <- movieID:
@@ -264,6 +260,21 @@ func (r *enrichRunner) Enqueue(movieID int) {
 		r.clearInflight(movieID)
 		r.log.Warn().Int("movieID", movieID).Msg("enrich queue full, dropped movie (will retry on next scan)")
 	}
+}
+
+// tryClaim marks a movie in-flight, reporting false if it was already claimed
+// (queued via Enqueue or being drained). It's the single dedup gate shared by
+// the auto-on-add queue and the backfill drain, so a just-added movie that is
+// both queued and a drain candidate is enriched once, not twice. process()
+// always releases the claim via clearInflight in its defer.
+func (r *enrichRunner) tryClaim(movieID int) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.inflight[movieID]; ok {
+		return false
+	}
+	r.inflight[movieID] = struct{}{}
+	return true
 }
 
 func (r *enrichRunner) clearInflight(movieID int) {
@@ -327,6 +338,13 @@ func (r *enrichRunner) drain(ctx context.Context) {
 	r.log.Info().Int("count", len(candidates)).Msg("enrich draining")
 	var enriched, skipped, failed int
 	for _, c := range candidates {
+		// Skip a candidate already claimed by the auto-on-add queue — consume
+		// will process it once. Claiming here also blocks a concurrent Enqueue
+		// of the same id from double-processing while this drain runs it.
+		if !r.tryClaim(c.MovieID) {
+			skipped++
+			continue
+		}
 		switch r.process(ctx, c.MovieID) {
 		case outcomeEnriched:
 			enriched++

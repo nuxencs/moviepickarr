@@ -29,6 +29,7 @@ type Service interface {
 	Get(ctx context.Context, id int) (*domain.Movie, error)
 	List(ctx context.Context) ([]*domain.Movie, error)
 	Pooled(ctx context.Context) ([]*domain.Movie, error)
+	Stashed(ctx context.Context) ([]*domain.Movie, error)
 	Watched(ctx context.Context) ([]*domain.Movie, error)
 	Current(ctx context.Context) (*domain.Movie, error)
 	PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
@@ -186,6 +187,10 @@ func (s *service) List(ctx context.Context) ([]*domain.Movie, error) {
 
 func (s *service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.FindByStatus(ctx, "pool")
+}
+
+func (s *service) Stashed(ctx context.Context) ([]*domain.Movie, error) {
+	return s.movieRepo.FindByStatus(ctx, "stash")
 }
 
 func (s *service) Watched(ctx context.Context) ([]*domain.Movie, error) {

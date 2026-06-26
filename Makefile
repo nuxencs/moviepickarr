@@ -22,7 +22,7 @@ test:
 build: deps build/web build/app
 
 build/app:
-	go build -o $(BINDIR)/$(BINARY_NAME) main.go
+	go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(GIT_COMMIT)" -o $(BINDIR)/$(BINARY_NAME) main.go
 
 build/web:
 	bun run --cwd ./$(WEB_DIR) build

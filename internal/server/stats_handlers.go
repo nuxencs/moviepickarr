@@ -180,9 +180,12 @@ func (h *handler) setCachedStats(key string, response statsResponse, now time.Ti
 
 func (h *handler) invalidateStatsCache() {
 	h.statsCacheMu.Lock()
-	defer h.statsCacheMu.Unlock()
-
 	clear(h.statsCache)
+	h.statsCacheMu.Unlock()
+
+	// The filter options derive from the same watched metadata/credits, so they
+	// go stale on exactly the same events (watch, edit, enrich, user add/remove).
+	h.invalidateFilterOptionsCache()
 }
 
 func parseStatsWindow(raw string) (statsWindow, error) {
@@ -499,6 +502,13 @@ func buildStatsResponse(
 	actorCounts := make(map[int]*statsPersonCount)
 	releaseYearCounts := make(map[int]int)
 	selectedRange := rangeForSelectedWindow(selectedWindow, now, customRange)
+	// The six preset window ranges depend only on `now`, never on a movie, so
+	// compute them once here rather than recomputing all six (each allocating a
+	// heap time pointer) for every watched movie inside the loop below.
+	presetRanges := make([]statsRange, len(statsWindowOrder))
+	for j := range statsWindowOrder {
+		presetRanges[j] = rangeForPresetWindow(statsWindowOrder[j], now)
+	}
 	selectedWindowCount := 0
 	// The concrete films behind selectedWindowCount, in watch-recency order (the
 	// watched list arrives most-recent-first) — the client renders them as a
@@ -534,7 +544,7 @@ func buildStatsResponse(
 		}
 
 		for j := range statsWindowOrder {
-			if containsTimeRange(watchedAt, now, rangeForPresetWindow(statsWindowOrder[j], now)) {
+			if containsTimeRange(watchedAt, now, presetRanges[j]) {
 				countsByWindow[statsWindowOrder[j]]++
 				// All-time total per member — used purely for a stable row order
 				// so the member list doesn't jump when switching windows.
@@ -705,7 +715,13 @@ func resolveFilterPeople(ids []int, credits creditsByID) []statsFilterPerson {
 	}
 
 	names := make(map[int]string, len(ids))
+	// Stop as soon as every filter id has a name — this is a best-effort label
+	// lookup over the full (~thousands of rows) credits map, and the handful of
+	// filter people are usually found in the first few movies.
 	for _, movieCredits := range credits {
+		if len(names) == len(ids) {
+			break
+		}
 		for i := range movieCredits {
 			if _, found := slices.BinarySearch(ids, movieCredits[i].Person.ID); found {
 				names[movieCredits[i].Person.ID] = movieCredits[i].Person.Name

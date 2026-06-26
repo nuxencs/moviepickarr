@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { Movie, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { FilterOptionsResponse, Movie, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
@@ -26,6 +26,9 @@ interface HttpConfig {
     method?: string;
     body?: RequestBody;
     queryString?: Record<string, Primitive | Primitive[]>;
+    // React Query's per-call AbortSignal; threading it lets superseded requests
+    // (e.g. rapid /stats filter changes under keepPreviousData) cancel in flight.
+    signal?: AbortSignal;
 }
 
 function encodeRFC3986URIComponent(str: string): string {
@@ -53,6 +56,7 @@ export async function HttpClient<T = unknown>(
         method: config.method,
         headers: { Accept: "*/*" },
         credentials: "include",
+        signal: config.signal,
     };
 
     if (config.body) {
@@ -210,6 +214,13 @@ export const APIClient = {
         reveal: () => appClient.Post<void>("api/v1/movies/current/reveal"),
         getWatched: () =>
             appClient.Get<Movie[]>("api/v1/movies/watched"),
+        // Full enriched record (cast/crew/overview/backdrop) for the detail modal;
+        // the list payloads are lean, so the modal lazy-loads this on open.
+        get: (movieID: number, signal?: AbortSignal) =>
+            appClient.Get<Movie>(`api/v1/movies/${movieID}`, { signal }),
+        // Stats filter choices, derived server-side from the watched library.
+        getFilterOptions: (signal?: AbortSignal) =>
+            appClient.Get<FilterOptionsResponse>("api/v1/movies/filter-options", { signal }),
         markWatched: () =>
             appClient.Post<Movie[]>("api/v1/movies/current/watch"),
     },
@@ -224,7 +235,7 @@ export const APIClient = {
             appClient.Get<{id: number, name: string}>("api/v1/settings/next-picker"),
     },
     stats: {
-        get: ({ window, timezone, start, end, genre, actorIds, crewIds, addedByIds, releaseYear, decade }: StatsQuery) =>
+        get: ({ window, timezone, start, end, genre, actorIds, crewIds, addedByIds, releaseYear, decade }: StatsQuery, signal?: AbortSignal) =>
             appClient.Get<StatsResponse>("api/v1/stats", {
                 queryString: {
                     window,
@@ -238,13 +249,14 @@ export const APIClient = {
                     releaseYear,
                     decade,
                 },
+                signal,
             }),
     },
     tmdb: {
-        search: (query: string) =>
+        search: (query: string, signal?: AbortSignal) =>
             appClient.Get<TMDBMovie[]>(
                 "api/v1/tmdb/search",
-                { queryString: { query } }
+                { queryString: { query }, signal }
             ),
     }
 };

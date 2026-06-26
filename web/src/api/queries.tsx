@@ -47,6 +47,26 @@ export const MoviesGetWatchedQueryOptions = () =>
     refetchOnWindowFocus: false
   })
 
+/** Full enriched record (cast/crew/overview) for the detail modal — lazy-loaded
+ *  on open, since the list payloads ship lean. */
+export const MovieDetailQueryOptions = (movieID: number) =>
+  queryOptions({
+    queryKey: MoviesKeys.detail(movieID),
+    queryFn: ({ signal }) => APIClient.movies.get(movieID, signal),
+    refetchOnWindowFocus: false,
+  })
+
+/** Stats filter choices (genres/actors/crew/years/pickers), derived server-side
+ *  from the watched library. Changes only on watch/edit/enrich/user events, so a
+ *  generous staleTime — SSE invalidation refreshes it when it actually changes. */
+export const FilterOptionsQueryOptions = () =>
+  queryOptions({
+    queryKey: MoviesKeys.filterOptions(),
+    queryFn: ({ signal }) => APIClient.movies.getFilterOptions(signal),
+    refetchOnWindowFocus: false,
+    staleTime: 300_000,
+  })
+
 export const SettingsGetPoolLockQueryOptions = () =>
   queryOptions({
     queryKey: SettingsKeys.poolLock(),
@@ -83,8 +103,8 @@ export const StatsGetQueryOptions = (
   const addedByKey = idListKey(addedByIds);
   return queryOptions({
     queryKey: StatsKeys.byWindow(window, timezone, start, end, genre, actorsKey, crewKey, addedByKey, releaseYear, decade),
-    queryFn: () =>
-      APIClient.stats.get({ window, timezone, start, end, genre, actorIds: actorsKey, crewIds: crewKey, addedByIds: addedByKey, releaseYear, decade }),
+    queryFn: ({ signal }) =>
+      APIClient.stats.get({ window, timezone, start, end, genre, actorIds: actorsKey, crewIds: crewKey, addedByIds: addedByKey, releaseYear, decade }, signal),
     // Keep the previous window/filter's result on screen while the next one loads,
     // so the stats body never blanks to "Loading stats…" on an uncached change —
     // the numbers stay mounted and roll (NumberFlow) to the new values instead of

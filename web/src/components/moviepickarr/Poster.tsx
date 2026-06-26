@@ -1,5 +1,5 @@
 import { StarIcon } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 
 import { posterBg, posterUrl, ratingLabel } from "@/components/moviepickarr/lib";
 
@@ -19,7 +19,11 @@ interface PosterProps {
  * available, otherwise a deterministic procedural duotone with the title
  * baked in as an alt-poster overlay. The CSS supplies the sheen + grain.
  */
-export function Poster({ title, hue, posterPath, showTitle = true, voteAverage, className }: PosterProps) {
+// Memoized: all props are primitives, so identical tiles skip re-rendering when
+// a parent re-renders for an unrelated reason (e.g. typing in the watched-grid
+// search box re-runs the list map but the surviving tiles' Poster props are
+// unchanged).
+export const Poster = memo(function Poster({ title, hue, posterPath, showTitle = true, voteAverage, className }: PosterProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -76,4 +80,4 @@ export function Poster({ title, hue, posterPath, showTitle = true, voteAverage, 
       )}
     </div>
   );
-}
+});

@@ -20,6 +20,7 @@ import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { Menu } from "@/components/moviepickarr/Menu";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
+import { UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
 import { toast } from "@/components/ui/toast-api";
 
@@ -83,7 +84,7 @@ export function UsersTab() {
           {usersError ? (
             <p className="empty text-destructive">Failed to load members.</p>
           ) : usersPending ? (
-            <p className="empty">Loading members…</p>
+            <UsersBodySkeleton />
           ) : users && users.length > 0 ? (
             users.map((user) => (
               <Board key={user.userID} user={user} onOpenSearch={() => setSearchUser(user)} />

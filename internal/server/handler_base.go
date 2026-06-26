@@ -34,6 +34,14 @@ type handler struct {
 	statsCacheMu      sync.RWMutex
 	statsCache        map[string]statsCacheEntry
 	statsCacheTTL     time.Duration
+
+	// Filter options (genres/actors/crew/years/pickers for the Stats filter bar)
+	// are derived from the watched library's metadata+credits — the same data
+	// the watched list used to ship inline. A single cached snapshot, invalidated
+	// on the same triggers as the stats cache.
+	filterOptionsMu     sync.RWMutex
+	filterOptionsCache  *filterOptionsResponse
+	filterOptionsExpiry time.Time
 }
 
 func (h *handler) Close() {

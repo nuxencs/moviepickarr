@@ -1,5 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { ExternalLinkIcon, XIcon } from "lucide-react";
 import { Fragment } from "react";
+
+import { MovieDetailQueryOptions } from "@/api/queries";
 
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
 import { backdropBg, backdropUrl, externalLinks, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/moviepickarr/lib";
@@ -41,20 +44,27 @@ function PersonLinks({ people }: { people: CreditPerson[] }) {
 
 /** Rich detail view for a movie: backdrop, poster, metadata, credits, overview, links out. */
 export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => void }) {
-  const hue = hueOf(movie.title);
-  const links = externalLinks(movie);
-  const cast = movie.cast ?? [];
-  const crew = movie.crew ?? [];
+  // The list payloads are lean (no cast/crew/overview/backdrop), so lazy-load the
+  // full record on open. `movie` (the tile's lean object) renders instantly while
+  // the detail loads, then the enriched fields fill in. SSE enrichment events
+  // invalidate this query, so an open modal updates live too.
+  const { data: detail } = useQuery(MovieDetailQueryOptions(movie.movieID));
+  const m = detail ?? movie;
+
+  const hue = hueOf(m.title);
+  const links = externalLinks(m);
+  const cast = m.cast ?? [];
+  const crew = m.crew ?? [];
   const directors = dedupeById(crew.filter((p) => p.job === "Director"));
   const writers = dedupeById(crew.filter((p) => p.job === "Writer" || p.job === "Screenplay"));
-  const heroBg = movie.backdropPath
-    ? `url(${backdropUrl(movie.backdropPath)})`
-    : movie.posterPath
-      ? `url(${posterUrl(movie.posterPath, "w500")})`
+  const heroBg = m.backdropPath
+    ? `url(${backdropUrl(m.backdropPath)})`
+    : m.posterPath
+      ? `url(${posterUrl(m.posterPath, "w500")})`
       : backdropBg(hue);
 
-  const watchedLabel = movie.watchedAt
-    ? `watched ${new Date(movie.watchedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+  const watchedLabel = m.watchedAt
+    ? `watched ${new Date(m.watchedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
     : null;
 
   return (
@@ -70,18 +80,18 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
           <div className="moviemodal__body">
             <div className="moviemodal__poster">
               <Poster
-                title={movie.title}
+                title={m.title}
                 hue={hue}
-                posterPath={movie.posterPath}
-                showTitle={!movie.posterPath}
+                posterPath={m.posterPath}
+                showTitle={!m.posterPath}
               />
             </div>
 
             <div className="moviemodal__info">
-              <h3>{movie.title}</h3>
+              <h3>{m.title}</h3>
               {/* Pass `close` so a genre/year chip plays the modal's exit
                   animation before its /stats navigation (see MetaChips). */}
-              <MetaChips movie={movie} onNavigate={close} />
+              <MetaChips movie={m} onNavigate={close} />
 
               {(directors.length > 0 || writers.length > 0) && (
                 <div className="moviemodal__credits">
@@ -98,11 +108,11 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
                 </div>
               )}
 
-              {movie.tagline && <p className="moviemodal__tag">"{movie.tagline}"</p>}
-              {movie.overview && <p className="moviemodal__overview">{movie.overview}</p>}
+              {m.tagline && <p className="moviemodal__tag">"{m.tagline}"</p>}
+              {m.overview && <p className="moviemodal__overview">{m.overview}</p>}
 
               <div className="moviemodal__by">
-                picked by {movie.addedByName}
+                picked by {m.addedByName}
                 {watchedLabel ? ` · ${watchedLabel}` : ""}
               </div>
 

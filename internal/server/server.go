@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -87,7 +88,15 @@ func Run(ctx context.Context, cfg Config) error {
 		rootLog.Info().Msg("enrichment disabled: TMDB_API_KEY not set")
 	}
 
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+		// Cheap hardening: cap how long a (possibly half-open) client can hold a
+		// connection while sending its request or sitting idle between keep-alive
+		// requests. Deliberately NO WriteTimeout — it would sever the long-lived
+		// /api/v1/events SSE stream mid-response.
+		ReadTimeout: 15 * time.Second,
+		IdleTimeout: 120 * time.Second,
+	})
 
 	// Middleware order is deliberate: requestid sets the X-Request-ID response
 	// header on the way in; fiberzerolog reads it on the way out, so requestid
@@ -132,6 +141,25 @@ func Run(ctx context.Context, cfg Config) error {
 		return writeProblem(c, fiber.StatusNotFound, "not_found", "unknown API endpoint")
 	})
 
+	// Freshness headers for the embedded SPA. Vite emits content-hashed files
+	// under /assets/ (e.g. index-DfysZQP7.css) whose name changes on every
+	// content change, so they're safe to cache forever; everything else
+	// (index.html and the SPA fallback) must stay uncached so a new deploy's
+	// asset URLs are always picked up. This matters because WebRoot is a
+	// go:embed FS, which reports a zero ModTime — the filesystem middleware
+	// below then emits NO freshness signal at all (no Cache-Control, no
+	// Last-Modified, no ETag), so without this every load re-pulls and
+	// re-compresses the whole bundle. The middleware leaves Cache-Control alone
+	// (its MaxAge defaults to 0), so the header set here survives.
+	app.Use("/", func(c *fiber.Ctx) error {
+		if strings.HasPrefix(c.Path(), "/assets/") {
+			c.Set(fiber.HeaderCacheControl, "public, max-age=31536000, immutable")
+		} else {
+			c.Set(fiber.HeaderCacheControl, "no-cache")
+		}
+		return c.Next()
+	})
+
 	// Serve the embedded SPA. NotFoundFile makes unknown paths fall back to
 	// index.html so client-side routes (e.g. /stats, /users) resolve on a hard
 	// refresh or shared deep-link instead of 404ing. Non-API paths only — the
@@ -145,6 +173,15 @@ func Run(ctx context.Context, cfg Config) error {
 	shutdown := func() {
 		shutdownOnce.Do(func() {
 			rootLog.Info().Msg("gracefully shutting down")
+			// Close the event broker FIRST: every SSE stream blocks in a select
+			// on its event channel, and only the broker closing those channels
+			// unwinds them. Closing here lets each stream return so Fiber can
+			// drain immediately — otherwise ShutdownWithContext burns its full
+			// 10s timeout waiting on idle-but-open SSE goroutines (a real tax on
+			// every dev restart). Close is idempotent and marks the broker closed
+			// so a late Subscribe can't re-stall.
+			h.Close()
+
 			ctxTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
@@ -246,6 +283,10 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/movies/current", h.handleGetCurrentMovie)
 	v1.Post("/movies/current/reveal", h.handleRevealCurrentMovie)
 	v1.Get("/movies/watched", h.handleGetWatchedMovies)
+	// Literal /movies/* GETs are registered before the :movieID param route so
+	// they take precedence; the param route serves the lazy detail modal.
+	v1.Get("/movies/filter-options", h.handleGetFilterOptions)
+	v1.Get("/movies/:movieID", h.handleGetMovie)
 	v1.Post("/movies/current/watch", h.handleWatchMovie)
 	v1.Get("/stats", h.handleGetStats)
 

@@ -10,6 +10,15 @@ export const MoviesKeys = {
     listpool: () => [...MoviesKeys.all, "listpool"] as const,
     current: () => [...MoviesKeys.all, "current"] as const,
     listwatched: () => [...MoviesKeys.all, "listwatched"] as const,
+    // Full enriched record (cast/crew/overview) lazy-loaded by the detail modal,
+    // so the list payloads can ship lean. `details()` is the prefix used to
+    // invalidate every open/cached modal on enrichment.
+    details: () => [...MoviesKeys.all, "detail"] as const,
+    detail: (movieID: number) => [...MoviesKeys.details(), movieID] as const,
+    // Stats filter choices (genres/actors/crew/years/pickers), derived
+    // server-side from the watched library — replaces deriving them from the
+    // credits that used to be embedded in the watched list.
+    filterOptions: () => [...MoviesKeys.all, "filterOptions"] as const,
 }
 
 // Client-only state (no endpoint): the in-flight pick-reveal spin descriptor,

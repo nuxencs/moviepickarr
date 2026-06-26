@@ -112,9 +112,11 @@ func toAPIMovie(movie *domain.Movie) movieResponse {
 	return toAPIMovieMeta(movie, nil, nil)
 }
 
-// toAPIMovieMeta builds a response, folding in enriched metadata and credits
-// when present.
-func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata, credits []domain.MovieCredit) movieResponse {
+// toAPIMovieBase builds a response with identity + the tile-level enriched
+// fields the list grids render (poster, rating, release date, runtime, genres).
+// It deliberately omits the heavy modal-only fields (backdrop, tagline, overview,
+// cast, crew); toAPIMovieMeta layers those on for the detail/current paths.
+func toAPIMovieBase(movie *domain.Movie, md *domain.MovieMetadata) movieResponse {
 	resp := movieResponse{
 		ID:          movie.ID,
 		Title:       movie.Title,
@@ -132,13 +134,30 @@ func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata, credits []dom
 		if md.PosterPath != nil {
 			resp.PosterPath = *md.PosterPath
 		}
-		if md.BackdropPath != nil {
-			resp.BackdropPath = *md.BackdropPath
-		}
 		resp.ReleaseDate = md.ReleaseDate
 		resp.Runtime = md.Runtime
 		resp.Genres = md.Genres
 		resp.VoteAverage = md.VoteAverage
+	}
+	return resp
+}
+
+// toAPIMovieLean is the list/tile shape: base fields only, no backdrop/tagline/
+// overview/credits. The watched list ships hundreds of these, so dropping the
+// per-movie credits + prose is the bulk of the payload — the modal lazy-loads
+// the full record from GET /movies/:id when it opens.
+func toAPIMovieLean(movie *domain.Movie, md *domain.MovieMetadata) movieResponse {
+	return toAPIMovieBase(movie, md)
+}
+
+// toAPIMovieMeta builds the full detail response, folding the modal-only
+// metadata (backdrop, tagline, overview) and credits onto the base shape.
+func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata, credits []domain.MovieCredit) movieResponse {
+	resp := toAPIMovieBase(movie, md)
+	if md != nil {
+		if md.BackdropPath != nil {
+			resp.BackdropPath = *md.BackdropPath
+		}
 		resp.Tagline = md.Tagline
 		resp.Overview = md.Overview
 	}
@@ -162,6 +181,14 @@ func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata, credits []dom
 		}
 	}
 	return resp
+}
+
+func toAPIMoviesLean(movies []*domain.Movie, meta metaByID) []movieResponse {
+	result := make([]movieResponse, 0, len(movies))
+	for i := range movies {
+		result = append(result, toAPIMovieLean(movies[i], meta[movies[i].ID]))
+	}
+	return result
 }
 
 func toAPIMoviesMeta(movies []*domain.Movie, meta metaByID, credits creditsByID) []movieResponse {

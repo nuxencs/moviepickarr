@@ -15,6 +15,21 @@ export default defineConfig({
             "@": path.resolve(__dirname, "./src"),
         },
     },
+    build: {
+        rollupOptions: {
+            output: {
+                // Peel the large, rarely-changing libraries into their own cached
+                // chunks so an app-code deploy doesn't bust the whole bundle's
+                // content hash — returning users keep the vendor chunks. App code
+                // and on-demand deps (lucide, sonner, number-flow) stay with the
+                // code that imports them, so route-level lazy chunks carry their own.
+                manualChunks: {
+                    "react-vendor": ["react", "react-dom", "react/jsx-runtime"],
+                    tanstack: ["@tanstack/react-query", "@tanstack/react-router"],
+                },
+            },
+        },
+    },
     server: {
         hmr: {
             overlay: true,

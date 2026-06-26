@@ -224,6 +224,21 @@
      snaps back to the start. */
   @keyframes mg-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
   @media (prefers-reduced-motion: reduce) { .poster__shimmer { animation: none; } }
+
+  /* Skeleton placeholder block — a surface tile with the same shimmer sweep the
+     posters use, so route/data loading states show the page's shape instead of a
+     bare "Loading…" line. Reuses mg-shimmer; honors reduced-motion. */
+  .skel { position: relative; overflow: hidden; background: var(--surface-2); border-radius: var(--r-sm); }
+  .skel::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);
+    animation: mg-shimmer 1.4s ease-in-out infinite;
+  }
+  .skel--poster { aspect-ratio: 2 / 3; border-radius: var(--r-md); width: 100%; }
+  .skelpanels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px 44px; margin-top: 34px; }
+  .skel-railhead { margin: 26px 0 14px; }
+  @media (prefers-reduced-motion: reduce) { .skel::after { animation: none; } }
+  @media (max-width: 720px) { .skelpanels { grid-template-columns: 1fr; } }
   .poster::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
     background: radial-gradient(120% 60% at 50% -10%, rgba(255,255,255,0.14), transparent 55%),
@@ -619,6 +634,14 @@
   .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 28px 18px; }
   .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
   .tile { display: flex; flex-direction: column; gap: 12px; cursor: pointer; }
+  /* The watched library renders every filtered film as real DOM. Let the engine
+     skip layout/paint for off-screen rows (content-visibility); `auto` intrinsic
+     size self-corrects from the real height after first render to avoid scrollbar
+     jump. Scoped to .watch-body so the FLIP-animated pool grid (.tile-grid--pool,
+     whose getBoundingClientRect measurements would break under skipped layout) is
+     untouched — and it's tiny/on-screen anyway. */
+  .watch-body .tile { content-visibility: auto; contain-intrinsic-size: auto 300px; }
+  .watch-body .wrow { content-visibility: auto; contain-intrinsic-size: auto 84px; }
   .tile .poster { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
   .tile:hover .poster,
   .tile:focus-visible .poster { transform: translateY(-5px); box-shadow: 0 26px 44px -22px rgba(0,0,0,0.7); }

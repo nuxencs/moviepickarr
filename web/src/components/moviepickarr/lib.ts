@@ -3,7 +3,7 @@
    poster/backdrop art, deterministic hues, formatting.
    ============================================================ */
 
-import type { CreditPerson, Movie } from "@/types/Response";
+import type { Movie } from "@/types/Response";
 
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
@@ -179,48 +179,9 @@ export interface FilterOptions {
   pickers: PersonOption[];
 }
 
-/**
- * Filter options derived from an already-cached movie list (no endpoint):
- * unique genres sorted A→Z, cast and crew collected into separate lists (each
- * sorted A→Z by name) matching the actors/crew filter split, the unique adders
- * (pickers) A→Z, and unique release years newest-first.
- */
-export function filterOptionsFrom(movies: Movie[]): FilterOptions {
-  const genres = new Set<string>();
-  const actors = new Map<number, PersonOption>();
-  const crew = new Map<number, PersonOption>();
-  const pickers = new Map<number, PersonOption>();
-  const years = new Set<number>();
-
-  // One filter entry per person per list — multiple credits (an actor in twin
-  // roles, a writer-director) still collapse to a single option.
-  const collectInto = (list: Map<number, PersonOption>, people?: CreditPerson[]) => {
-    for (const person of people ?? []) {
-      if (!list.has(person.id)) list.set(person.id, { id: person.id, name: person.name });
-    }
-  };
-
-  for (const movie of movies) {
-    for (const genre of movie.genres ?? []) genres.add(genre);
-    collectInto(actors, movie.cast);
-    collectInto(crew, movie.crew);
-    if (movie.addedByID && !pickers.has(movie.addedByID)) {
-      pickers.set(movie.addedByID, { id: movie.addedByID, name: movie.addedByName });
-    }
-    const year = yearOf(movie.releaseDate);
-    if (year !== undefined) years.add(year);
-  }
-
-  const byName = (a: PersonOption, b: PersonOption) => a.name.localeCompare(b.name);
-
-  return {
-    pickers: [...pickers.values()].sort(byName),
-    genres: [...genres].sort((a, b) => a.localeCompare(b)),
-    actors: [...actors.values()].sort(byName),
-    crew: [...crew.values()].sort(byName),
-    years: [...years].sort((a, b) => b - a),
-  };
-}
+// Filter options are now derived server-side (GET /movies/filter-options) and
+// typed as FilterOptions above — the watched list ships lean (no embedded
+// credits), so they can no longer be rebuilt from a cached movie list here.
 
 /**
  * External links for a movie, derived from its stable ids. Letterboxd resolves

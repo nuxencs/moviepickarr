@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { MoviesGetWatchedQueryOptions, StatsGetQueryOptions } from "@/api/queries";
+import { FilterOptionsQueryOptions, MoviesGetWatchedQueryOptions, StatsGetQueryOptions } from "@/api/queries";
 
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { DateRangePopover } from "@/components/moviepickarr/DateRange";
@@ -20,7 +20,7 @@ import { shortRange } from "@/components/moviepickarr/dateRangeFormat";
 import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 import { FilterBar, FilterSelect } from "@/components/moviepickarr/FilterBar";
 import {
-  filterOptionsFrom,
+  type FilterOptions,
   hasActiveFilters,
   hueOf,
   type MovieFilters,
@@ -32,6 +32,7 @@ import {
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { StatNumber } from "@/components/moviepickarr/numberRoll";
 import { Poster } from "@/components/moviepickarr/Poster";
+import { StatsBodySkeleton } from "@/components/moviepickarr/Skeletons";
 import {
   filtersFromSearch,
   filtersToSearch,
@@ -49,6 +50,10 @@ import type {
 } from "@/types/Response";
 
 import { useFlipRail } from "@/hooks/useFlipRail";
+
+// Stable reference for the pre-load / empty state so the filters useMemo below
+// doesn't recompute on every render while the server options are in flight.
+const EMPTY_FILTER_OPTIONS: FilterOptions = { genres: [], actors: [], crew: [], years: [], pickers: [] };
 
 const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
   { id: "7d", label: "7d" },
@@ -143,6 +148,15 @@ export function StatsTab() {
   // than this component reacting to the search change.
   const [selected, setSelected] = useState<Movie | null>(null);
 
+  // The below-fold panels (leaderboard, weekday/hourly, genres/decades, the two
+  // people rails) mount ~35 NumberFlow web components, each of which measures the
+  // DOM on mount — a chunk of synchronous layout that, profiled, was ~half the
+  // Stats LCP. They're below the fold, so we paint the above-fold KPIs + films
+  // rail first and mount the panels one frame later (off the LCP path). Gated to
+  // the first data arrival only (`panelsReady` latches true), so filter changes —
+  // which keep StatsTab mounted — never re-defer or flicker the panels.
+  const [panelsReady, setPanelsReady] = useState(false);
+
   const win = search.win;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
@@ -168,10 +182,23 @@ export function StatsTab() {
     ),
   );
 
-  // Filter options + watch years come from the already-cached watched list —
-  // the same tiny dataset the Movies tab shows, no extra endpoint.
+  // Filter options (actors/crew/genres/years/pickers) come from a cached
+  // server endpoint that derives them from the watched library — the watched
+  // list itself now ships lean (no embedded credits), so they can't be rebuilt
+  // client-side. Watch years (below) still read the cached watched list, which
+  // keeps the per-movie watch dates.
   const { data: watched } = useQuery(MoviesGetWatchedQueryOptions());
-  const filterOptions = useMemo(() => filterOptionsFrom(watched ?? []), [watched]);
+  const { data: filterOptionsData } = useQuery(FilterOptionsQueryOptions());
+  const filterOptions: FilterOptions = filterOptionsData ?? EMPTY_FILTER_OPTIONS;
+
+  // Once the first stats payload with films is on screen, mount the below-fold
+  // panels on the next frame (see panelsReady). Latches, so it only defers the
+  // initial load.
+  useEffect(() => {
+    if (panelsReady || !stats || (stats.selectedWindowCount ?? 0) === 0) return;
+    const id = requestAnimationFrame(() => setPanelsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, [panelsReady, stats]);
   // Resolve the URL's id lists back into {id, name} chips for the FilterBar.
   const filters = useMemo(() => filtersFromSearch(search, filterOptions), [search, filterOptions]);
   const watchYears = useMemo(() => {
@@ -363,7 +390,7 @@ export function StatsTab() {
       {isError ? (
         <p className="empty text-destructive">Failed to load stats.</p>
       ) : isLoading || !stats ? (
-        <p className="empty">Loading stats…</p>
+        <StatsBodySkeleton />
       ) : (
         <>
           <div className="stat-strip">
@@ -406,7 +433,7 @@ export function StatsTab() {
               information. */}
           <MatchedMoviesRail movies={matchedMovies} count={count} filtered={filtered} onSelect={setSelected} />
 
-          {count > 0 && (
+          {count > 0 && panelsReady && (
             <>
               <PickedByMember rows={stats.watchedByUser} />
 

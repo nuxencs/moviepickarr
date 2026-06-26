@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8"/>
-    <link rel="icon" type="image/jpeg" href="/favicon.ico"/>
+    <link rel="icon" type="image/png" href="/favicon.png"/>
+    <link rel="alternate icon" href="/favicon.ico"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
     <title>moviepickarr</title>
+    <!-- Posters dominate the page's request count; warm the image CDN connection
+         during HTML parse. No crossorigin: <img> loads use the non-CORS socket. -->
+    <link rel="preconnect" href="https://image.tmdb.org"/>
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
     <link

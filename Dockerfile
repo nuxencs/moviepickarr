@@ -31,7 +31,7 @@ COPY --from=web-builder /web/dist ./web/dist
 #ENV GOOS=linux
 #ENV CGO_ENABLED=0
 
-RUN go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o bin/moviepickarr main.go
+RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o bin/moviepickarr main.go
 
 # build runner
 FROM alpine:latest

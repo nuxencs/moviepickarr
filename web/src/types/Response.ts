@@ -62,6 +62,22 @@ export interface Settings {
     poolLocked: boolean;
 }
 
+// A selectable person in the Stats filter bar (actor, crew member, or picker).
+export interface FilterPersonOption {
+    id: number;
+    name: string;
+}
+
+// Stats filter choices, derived server-side from the watched library — the
+// shape consumed by FilterBar (mirrors the old client-side filterOptionsFrom).
+export interface FilterOptionsResponse {
+    genres: string[];
+    actors: FilterPersonOption[];
+    crew: FilterPersonOption[];
+    years: number[];
+    pickers: FilterPersonOption[];
+}
+
 export interface TMDBMovie {
     id: number;
     title: string;

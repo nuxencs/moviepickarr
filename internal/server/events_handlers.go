@@ -32,6 +32,11 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		eventChannel := h.broker.Subscribe()
+		// nil means the broker is closed (server shutting down) — don't open a
+		// stream that would block on a channel that's never fed or closed.
+		if eventChannel == nil {
+			return
+		}
 		defer h.broker.Unsubscribe(eventChannel)
 
 		// One sse sub-logger for the whole stream so every write/flush site is

@@ -520,5 +520,31 @@ func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
+	// Lean payload: the grid tiles render only poster/title/rating/picker, so
+	// this drops the per-movie cast/crew (and backdrop/tagline/overview) that
+	// made up the bulk of the bytes. The detail modal lazy-loads the full record
+	// from GET /movies/:id; Stats reads its actor/crew filter options from
+	// GET /movies/filter-options. Credits are no longer loaded here at all.
+	return c.Status(fiber.StatusOK).JSON(toAPIMoviesLean(movies, h.metaFor(ctx, movies)))
+}
+
+// handleGetMovie returns the full enriched record for one movie — backdrop,
+// tagline, overview and cast/crew — for the detail modal, which lazy-loads it on
+// open rather than carrying credits in every list payload.
+func (h *handler) handleGetMovie(c *fiber.Ctx) error {
+	movieID, ok := parseInt(c.Params("movieID"))
+	if !ok {
+		return writeError(c, fmt.Errorf("%w: movieID path parameter is required", domain.ErrInvalidInput))
+	}
+
+	ctx := c.UserContext()
+	movieRecord, err := h.movieService.Get(ctx, movieID)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	one := []*domain.Movie{movieRecord}
+	meta := h.metaFor(ctx, one)
+	credits := h.creditsFor(ctx, one)
+	return c.Status(fiber.StatusOK).JSON(toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
 }

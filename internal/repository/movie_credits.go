@@ -25,16 +25,23 @@ func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movie
 	defer func() { _ = tx.Rollback() }()
 
 	// Upsert people first so the credit FKs resolve. A person's name/photo can
-	// change on TMDB, so re-enrichment refreshes the shared row.
-	upsertPerson := `
+	// change on TMDB, so re-enrichment refreshes the shared row. Both statements
+	// run ~15-40 times per movie, so prepare each once and reuse it — modernc's
+	// sqlite recompiles the SQL text on every bare ExecContext, and reusing the
+	// compiled statement also shortens the single shared connection's write hold.
+	upsertPerson, err := tx.PrepareContext(ctx, `
 		INSERT INTO people (id, name, profile_path) VALUES (?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name         = excluded.name,
 			profile_path = excluded.profile_path
-	`
+	`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = upsertPerson.Close() }()
 	for i := range credits {
 		p := credits[i].Person
-		if _, err := tx.ExecContext(ctx, upsertPerson, p.ID, p.Name, p.ProfilePath); err != nil {
+		if _, err := upsertPerson.ExecContext(ctx, p.ID, p.Name, p.ProfilePath); err != nil {
 			return err
 		}
 	}
@@ -43,13 +50,17 @@ func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movie
 		return err
 	}
 
-	insertCredit := `
+	insertCredit, err := tx.PrepareContext(ctx, `
 		INSERT INTO movie_credits (movie_id, person_id, kind, "character", job, department, cast_order)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`
+	`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = insertCredit.Close() }()
 	for i := range credits {
 		c := credits[i]
-		if _, err := tx.ExecContext(ctx, insertCredit,
+		if _, err := insertCredit.ExecContext(ctx,
 			movieID, c.Person.ID, c.Kind, c.Character, c.Job, c.Department, c.CastOrder,
 		); err != nil {
 			return err

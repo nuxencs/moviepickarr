@@ -52,6 +52,8 @@ export function useSSE() {
       }
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.details() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.filterOptions() });
       void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.poolLock() });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });
@@ -118,6 +120,8 @@ export function useSSE() {
             case "user:created":
             case "user:deleted":
               void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+              // Pickers are part of the Stats filter options.
+              void queryClient.invalidateQueries({ queryKey: MoviesKeys.filterOptions() });
               void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
               break;
 
@@ -133,6 +137,8 @@ export function useSSE() {
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+              // Refresh any open detail modal for the edited movie.
+              void queryClient.invalidateQueries({ queryKey: MoviesKeys.details() });
               void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
               break;
 
@@ -148,6 +154,10 @@ export function useSSE() {
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+              // Enrichment changes credits/genres/runtime/rating — the inputs to
+              // both the detail modal and the Stats filter options.
+              void queryClient.invalidateQueries({ queryKey: MoviesKeys.details() });
+              void queryClient.invalidateQueries({ queryKey: MoviesKeys.filterOptions() });
               void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
               break;
 
@@ -181,6 +191,8 @@ export function useSSE() {
             case "movie:watched":
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+              // A newly-watched movie enters the watched-derived filter options.
+              void queryClient.invalidateQueries({ queryKey: MoviesKeys.filterOptions() });
               void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
               break;
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -77,6 +78,10 @@ func (c *tmdbClient) Search(ctx context.Context, query string) ([]tmdbMovie, err
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
 	}
+	// Drain any trailing bytes so net/http can return the connection to the idle
+	// pool (keep-alive) instead of closing it — Decode stops at the JSON value's
+	// end and typically leaves a trailing newline unread.
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return payload.Results, nil
 }
@@ -225,6 +230,10 @@ func (c *tmdbClient) doRequest(ctx context.Context, requestURL string, out any) 
 		switch {
 		case resp.StatusCode == http.StatusOK:
 			err := json.NewDecoder(resp.Body).Decode(out)
+			// Drain the trailing bytes before Close so the keep-alive connection
+			// is pooled for the next back-to-back enrichment request rather than
+			// torn down and re-handshaked.
+			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			return err
 		case resp.StatusCode == http.StatusNotFound:

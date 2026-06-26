@@ -225,17 +225,28 @@ Fixes applied: <files touched, or none>
 Verdict: PASS / NEEDS WORK — <one line>
 ```
 
-Then **tear down the servers you started** so you don't leave ports held. A bare
-`pkill -f 'go run main.go'` / `pkill -f vite` isn't enough — both spawn children
-(the compiled Go binary, esbuild) that keep holding the ports after the parent
-dies. Free the ports directly, using the **actual** Vite port you captured in
-Step 1 (not a hard-coded `:5173`) so you kill *your* server and not a pre-existing
-one on a different port:
+Then **tear down the servers you started** so you don't leave ports held. Two
+traps here:
+
+- **Target only the LISTENER — `lsof -ti :PORT -sTCP:LISTEN`.** A bare
+  `lsof -ti :PORT` lists *every* process with a socket on that port — not just the
+  server listening on it, but every **connected client**. The user keeps the app
+  open in a browser, which holds a long-lived **SSE `EventSource`** to `:3030`
+  (`/api/v1/events`), so the browser's PID is in that list and
+  `lsof -ti :3030 | xargs kill` **takes the browser down with the server**.
+  `-sTCP:LISTEN` filters to the listening socket so you only ever kill *your*
+  server, never a client. (This bit us repeatedly — never `kill` by bare port.)
+- **`pkill -f 'go run main.go'` / `pkill -f vite` isn't enough** — both spawn
+  children (the compiled Go binary, esbuild) that keep holding the ports after the
+  parent dies.
+
+Free the ports by listener, using the **actual** Vite port you captured in Step 1
+(not a hard-coded `:5173`) so you kill *your* server and not a pre-existing one:
 
 ```bash
-lsof -ti :3030 | xargs kill -9 2>/dev/null            # Go backend
+lsof -ti :3030 -sTCP:LISTEN | xargs kill -9 2>/dev/null            # Go backend (listener only)
 echo "$VITE_URL" | grep -oE '[0-9]+$' \
-  | xargs -I{} sh -c 'lsof -ti :{} | xargs kill -9' 2>/dev/null   # the Vite port you bound
+  | xargs -I{} sh -c 'lsof -ti :{} -sTCP:LISTEN | xargs kill -9' 2>/dev/null   # the Vite port you bound
 ```
 
 Then confirm the ports are free. **Only tear down what you brought up** — if a

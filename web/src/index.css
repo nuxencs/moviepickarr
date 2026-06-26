@@ -1021,9 +1021,20 @@
   .watch-body { animation: mg-fadeUp var(--dur-base) var(--ease); }
 
   /* movie detail modal */
-  .moviemodal__hero { position: relative; height: 168px; background-size: cover; background-position: center; }
-  .moviemodal__hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, var(--surface), transparent 72%), linear-gradient(95deg, rgba(8,9,14,0.5), transparent 60%); }
-  .moviemodal__close { position: absolute; top: 12px; right: 12px; z-index: 2; background: rgba(8,9,14,0.45); color: #fff; backdrop-filter: blur(6px); }
+  .moviemodal__hero { position: relative; height: 168px; isolation: isolate; background-size: cover; background-position: center; }
+  /* Real backdrop crossfading in over the always-painted procedural duotone —
+     the wide twin of the poster pattern (HeroBackdrop). The scrim ::after and
+     close button sit above it; the img starts faded out and transitions in. */
+  .moviemodal__hero__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transition: opacity var(--dur) var(--ease); }
+  .moviemodal__hero--loading .moviemodal__hero__img { opacity: 0; }
+  .moviemodal__hero__shimmer {
+    position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);
+    animation: mg-shimmer 1.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) { .moviemodal__hero__shimmer { animation: none; } }
+  .moviemodal__hero::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(0deg, var(--surface), transparent 72%), linear-gradient(95deg, rgba(8,9,14,0.5), transparent 60%); }
+  .moviemodal__close { position: absolute; top: 12px; right: 12px; z-index: 3; background: rgba(8,9,14,0.45); color: #fff; backdrop-filter: blur(6px); }
   .moviemodal__close:hover { background: rgba(8,9,14,0.7); color: #fff; border-color: transparent; }
   .moviemodal__body { display: flex; gap: 20px; padding: 0 26px 26px; margin-top: -56px; position: relative; z-index: 1; }
   .moviemodal__poster { width: 120px; flex: none; }

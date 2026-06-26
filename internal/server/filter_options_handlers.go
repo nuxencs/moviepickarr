@@ -1,7 +1,8 @@
 package server
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 	"time"
 
@@ -114,7 +115,9 @@ func sortedStrings(set map[string]struct{}) []string {
 	for s := range set {
 		out = append(out, s)
 	}
-	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	slices.SortFunc(out, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
 	return out
 }
 
@@ -124,12 +127,11 @@ func sortedPeople(byID map[int]string) []filterPersonOption {
 		out = append(out, filterPersonOption{ID: id, Name: name})
 	}
 	// Name A→Z, id as a stable tiebreak for distinct people sharing a name.
-	sort.Slice(out, func(i, j int) bool {
-		li, lj := strings.ToLower(out[i].Name), strings.ToLower(out[j].Name)
-		if li != lj {
-			return li < lj
-		}
-		return out[i].ID < out[j].ID
+	slices.SortFunc(out, func(a, b filterPersonOption) int {
+		return cmp.Or(
+			cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			cmp.Compare(a.ID, b.ID),
+		)
 	})
 	return out
 }
@@ -139,7 +141,8 @@ func sortedYearsDesc(set map[int]struct{}) []int {
 	for y := range set {
 		out = append(out, y)
 	}
-	sort.Sort(sort.Reverse(sort.IntSlice(out)))
+	slices.Sort(out)
+	slices.Reverse(out)
 	return out
 }
 

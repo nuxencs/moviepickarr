@@ -313,7 +313,16 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   jump for free.
 - **Image load:** poster and avatar photos crossfade in over the duotone/initials
   placeholder under an `mg-shimmer` sweep (`.poster__shimmer` / `.avatar__shimmer`) —
-  both reduced-motion-guarded to `animation: none`.
+  both reduced-motion-guarded to `animation: none`. The **movie-modal hero** is the
+  wide twin (`HeroBackdrop` in `MovieModal.tsx`): the procedural `backdropBg(hue)`
+  duotone is painted underneath as the instant first frame, so a slow TMDB CDN fetch
+  never flashes the surface through (pure white in light mode) — then the real backdrop
+  `<img>` crossfades in (`.moviemodal__hero__img` / `--loading` / `__shimmer`).
+- **Skeletons:** the detail modal lazy-loads its heavy fields (overview, credits, cast
+  row) from `GET /movies/:id`; while that's in flight they render `Skeleton`/`SkeletonText`
+  shimmer blocks (`.skel`, reusing `mg-shimmer`) instead of popping in all at once —
+  gated on the query being *pending AND* the field absent, so a full (pool) payload shows
+  its data immediately and a genuinely empty field renders nothing, not a perma-skeleton.
 - **`prefers-reduced-motion`**: the global block zeroes animation/transition *duration
   AND delay* (so staggered reveals don't pop in) and collapses iteration counts.
   Loaders are the one exception — `.mg-spin` keeps spinning (essential motion). Any new

@@ -15,8 +15,29 @@ export type SSEEventType =
   | "settings:next-picker-changed";
 
 export interface SSEEvent<T = unknown> {
+  // Broker-global monotonic sequence number, assigned at broadcast time. The
+  // client uses it for gap detection only (a jump means a dropped frame → one
+  // resync); the server keeps no replay history.
+  seq: number;
   type: SSEEventType;
   data?: T;
+}
+
+// The one-shot handshake (`event: connected`). Not a domain event. epoch detects
+// a server restart; seq is the head at subscribe time (cursor alignment);
+// serverNow seeds the choreography clock offset.
+export interface SSEConnectedFrame {
+  type: "connected";
+  epoch: string;
+  seq: number;
+  serverNow: string;
+}
+
+// The idle keep-alive (`event: heartbeat`). Carries the head seq for passive gap
+// detection and serverNow for clock-offset refresh.
+export interface SSEHeartbeatFrame {
+  seq: number;
+  serverNow: string;
 }
 
 export interface UserCreatedEvent extends SSEEvent<User> {

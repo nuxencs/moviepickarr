@@ -28,6 +28,11 @@ export interface Movie {
     // been confirmed, so a reload after the reveal skips the reel (see pickSpin).
     pickerClientId?: string;
     revealed?: boolean;
+    // candidates is the reel source carried by the movie:picked event (and the
+    // pick mutation response): the pre-pick pool as lean tiles, winner included.
+    // Present only on a pick payload — it makes the reel self-contained so every
+    // client spins regardless of its local pool cache (see buildLiveSpin).
+    candidates?: Movie[];
 
     // Stable external identities — used to build IMDb / TMDB / Letterboxd links.
     tmdbId?: number;

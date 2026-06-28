@@ -25,6 +25,12 @@ const TARGET_TRAIL = 6;
 /** Fallback confirm-countdown when the --dur-confirm token can't be read. */
 const DEFAULT_CONFIRM_MS = 10000;
 
+/** Grace past the server's auto-reveal deadline before a client self-heals a
+ *  (rare) dropped movie:revealed. The server now owns the auto-reveal and fires at
+ *  the confirm deadline, so every client closes off that one broadcast; this local
+ *  timer is only a backstop, offset so the server always wins under normal play. */
+const AUTO_REVEAL_FALLBACK_MS = 5000;
+
 /** How long the settled reel waits for confirmation before auto-revealing. Read
  *  from --dur-confirm so the JS timer and the button's fill animation share one
  *  source of truth. */
@@ -144,12 +150,16 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
     }
   }, [settled, spin.mine]);
 
-  // Once settled, count down to an automatic confirm. Every client runs this so
-  // the reel never hangs — normally the picker's OK (broadcast as movie:revealed)
-  // closes everyone first; if the picker vanished, each client self-heals here.
+  // The SERVER owns the auto-reveal: once a pick settles it broadcasts
+  // movie:revealed at the confirm deadline, so every client closes off that one
+  // broadcast in lockstep — even a backgrounded, timer-throttled tab — instead of
+  // each running its own countdown (whose independent timers desynced the run-out
+  // reveal). This local timer is now only a FALLBACK for a dropped movie:revealed,
+  // offset past the server's deadline so the server normally wins; if it ever
+  // fires, confirm() re-closes the reel locally so it never hangs.
   useEffect(() => {
     if (!settled) return;
-    const t = window.setTimeout(confirm, confirmDurationMs());
+    const t = window.setTimeout(confirm, confirmDurationMs() + AUTO_REVEAL_FALLBACK_MS);
     return () => window.clearTimeout(t);
   }, [settled, confirm]);
 

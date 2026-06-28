@@ -6,7 +6,7 @@ import { MoviesKeys, PickKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/
 import { buildLiveSpin, setActiveSpin, signalRevealed } from "@/components/moviepickarr/pickSpin";
 
 import type { Movie } from "@/types/Response";
-import type { SSEEvent } from "@/types/SSEEvent";
+import type { SSEConnectedFrame, SSEEvent, SSEHeartbeatFrame } from "@/types/SSEEvent";
 
 function baseURL(): string {
   // Empty in dev so the EventSource connects same-origin via the Vite proxy
@@ -32,6 +32,12 @@ export function useSSE() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstConnectRef = useRef(true);
   const closedRef = useRef(false);
+  // Gap-detection cursor: the last seq we processed, and the broker epoch we're
+  // connected to. A jump in seq (live or revealed by a heartbeat) or an epoch
+  // change (server restart) triggers one resync. Persist across reconnects within
+  // a mount; reset on remount (which re-fetches anyway).
+  const lastSeqRef = useRef<number | null>(null);
+  const epochRef = useRef<string | null>(null);
 
   useEffect(() => {
     closedRef.current = false;
@@ -92,8 +98,7 @@ export function useSSE() {
       const eventSource = new EventSource(`${baseURL()}/api/v1/events`);
       eventSourceRef.current = eventSource;
 
-      eventSource.addEventListener("connected", () => {
-        console.log("[SSE] Connected to event stream");
+      eventSource.addEventListener("connected", (event) => {
         // Reset the backoff ladder on the app-level `connected` frame, not on
         // bare transport `open`: an accept-then-drop intermediary (e.g. nginx/LB
         // that 200s then closes a dead upstream during a deploy) fires `open`
@@ -101,12 +106,30 @@ export function useSSE() {
         // ladder at the ~1s floor forever instead of climbing toward the cap.
         reconnectAttemptsRef.current = 0;
         clearReconnectTimer();
+
+        // The handshake aligns our gap-detection cursor and flags a server restart.
+        let frame: SSEConnectedFrame | null = null;
+        try {
+          frame = JSON.parse((event as MessageEvent).data) as SSEConnectedFrame;
+        } catch (error) {
+          console.error("[SSE] Error parsing connected frame:", error);
+        }
+        const restarted =
+          !!frame?.epoch && epochRef.current !== null && epochRef.current !== frame.epoch;
+        if (frame?.epoch) epochRef.current = frame.epoch;
+        console.log(`[SSE] Connected to event stream${restarted ? " (server restarted)" : ""}`);
+
         // Resync on every reconnect — but not the very first connect, since the
         // initial mount queries already fetch fresh state. A reconnect may have
-        // missed events while the socket was down.
+        // missed events while the socket was down (a restart included).
         if (!firstConnectRef.current) {
           resync();
         }
+        // Align the cursor to the head AFTER resync: every event the broker
+        // assigns from here is headSeq+1, so the first live frame isn't read as a
+        // gap. On a restart the broker's seq resets, so this also clears a stale
+        // (higher) lastSeq that would otherwise spuriously trip the detector.
+        if (typeof frame?.seq === "number") lastSeqRef.current = frame.seq;
         firstConnectRef.current = false;
       });
 
@@ -114,6 +137,19 @@ export function useSSE() {
         try {
           const sseEvent: SSEEvent = JSON.parse(event.data);
           // console.log("[SSE] Received event:", sseEvent.type);
+
+          // Gap detection: a jump in seq means a frame was dropped (a full client
+          // buffer). Resync once to heal — then still run this event's own handler
+          // below, so the frame that *revealed* the gap isn't itself lost.
+          if (typeof sseEvent.seq === "number") {
+            if (lastSeqRef.current !== null && sseEvent.seq !== lastSeqRef.current + 1) {
+              console.warn(
+                `[SSE] seq gap: expected ${lastSeqRef.current + 1}, got ${sseEvent.seq}; resyncing`,
+              );
+              resync();
+            }
+            lastSeqRef.current = sseEvent.seq;
+          }
 
           // Map events to query invalidations
           switch (sseEvent.type) {
@@ -162,13 +198,14 @@ export function useSSE() {
               break;
 
             case "movie:picked": {
-              // Start the cross-client reveal spin. Capture the pre-pick pool
-              // snapshot (which still holds the winner) BEFORE invalidating, since
-              // the reel is built from it.
+              // Start the cross-client reveal spin from the event's self-contained
+              // candidates. The pool may be invalidated freely below: the reel no
+              // longer reads it (only the grid-continuity defer remains — see the
+              // `if (!spin)` guard).
               const picked = sseEvent.data as Movie | undefined;
-              const spin = picked
-                ? buildLiveSpin(picked, queryClient.getQueryData<Movie[]>(MoviesKeys.listpool()) ?? [])
-                : null;
+              // The reel candidates ride in the event itself now, so the spin no
+              // longer reads the local pool cache (a client without it still spins).
+              const spin = picked ? buildLiveSpin(picked) : null;
               if (picked) setActiveSpin(queryClient, spin);
               void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
@@ -212,6 +249,26 @@ export function useSSE() {
         }
       });
 
+      eventSource.addEventListener("heartbeat", (event) => {
+        // Passive idle gap check: if the broker's head moved past our cursor while
+        // we sat idle (a frame was dropped), resync and realign. This is what lets
+        // a healthy tab refocus skip its blanket resync (see handleVisibility).
+        try {
+          const frame = JSON.parse((event as MessageEvent).data) as SSEHeartbeatFrame;
+          if (
+            typeof frame.seq === "number" &&
+            lastSeqRef.current !== null &&
+            frame.seq > lastSeqRef.current
+          ) {
+            console.warn(`[SSE] heartbeat gap: head ${frame.seq} > cursor ${lastSeqRef.current}; resyncing`);
+            resync();
+            lastSeqRef.current = frame.seq;
+          }
+        } catch (error) {
+          console.error("[SSE] Error parsing heartbeat frame:", error);
+        }
+      });
+
       eventSource.addEventListener("error", () => {
         // The native error event carries no useful detail. Own the reconnection:
         // close immediately (so native auto-reconnect can't race our backoff) and
@@ -231,16 +288,16 @@ export function useSSE() {
         return;
       }
       // On refocus, a backgrounded tab may have had its connection silently
-      // killed (frozen tab / a dead socket the browser hasn't noticed yet) and/or
-      // missed events. If the stream isn't open, reconnect now and reset the
-      // backoff; either way resync to reconcile anything missed.
+      // killed (frozen tab / a dead socket the browser hasn't noticed yet). If the
+      // stream isn't open, reconnect now and reset the backoff. If it IS open, do
+      // nothing: the heartbeat proved liveness and the seq cursor (live + heartbeat
+      // gap checks) already caught anything missed — a blanket resync here would
+      // just over-fetch on every healthy refocus.
       const es = eventSourceRef.current;
       if (!es || es.readyState !== EventSource.OPEN) {
         reconnectAttemptsRef.current = 0;
         clearReconnectTimer();
         connect();
-      } else {
-        resync();
       }
     };
 

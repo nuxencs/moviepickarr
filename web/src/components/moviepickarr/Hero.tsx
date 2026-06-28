@@ -119,10 +119,10 @@ export function Hero() {
       // No toast here — the reel itself is the pick feedback; a "Movie picked"
       // toast popping while the reel is still spinning just competes with it.
       // Fallback if the clicker's own SSE event drops: start the reel from the
-      // response and pull in the winner + rotated state without the SSE-driven
-      // invalidation. setActiveSpin dedups against the SSE event by pickedAt.
-      const poolSnapshot = queryClient.getQueryData<Movie[]>(MoviesKeys.listpool()) ?? [];
-      const spin = buildLiveSpin(movie, poolSnapshot);
+      // response (which carries its own candidates) and pull in the winner +
+      // rotated state without the SSE-driven invalidation. setActiveSpin dedups
+      // against the SSE event by pickedAt.
+      const spin = buildLiveSpin(movie);
       setActiveSpin(queryClient, spin);
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });

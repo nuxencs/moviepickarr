@@ -42,7 +42,7 @@ func newBatchRunner(broker *eventBroker, debounce, maxWait time.Duration) (*enri
 // and ONE stats-cache invalidation — the heart of the coalescing fix.
 func TestEnrichRunner_DrainCoalescesToSingleBroadcast(t *testing.T) {
 	broker := newEventBroker()
-	client := broker.Subscribe()
+	client, _ := broker.Subscribe()
 	defer broker.Unsubscribe(client)
 
 	// Long debounce so only the explicit drain-tail flush fires, not the timer.
@@ -66,7 +66,7 @@ func TestEnrichRunner_DrainCoalescesToSingleBroadcast(t *testing.T) {
 // must emit exactly one batch once the burst goes quiet.
 func TestEnrichRunner_DebounceTimerEmitsOnce(t *testing.T) {
 	broker := newEventBroker()
-	client := broker.Subscribe()
+	client, _ := broker.Subscribe()
 	defer broker.Unsubscribe(client)
 
 	r, stats := newBatchRunner(broker, 20*time.Millisecond, 500*time.Millisecond)
@@ -87,7 +87,7 @@ func TestEnrichRunner_DebounceTimerEmitsOnce(t *testing.T) {
 // flushBatch with nothing buffered must not broadcast or invalidate.
 func TestEnrichRunner_EmptyFlushIsNoop(t *testing.T) {
 	broker := newEventBroker()
-	client := broker.Subscribe()
+	client, _ := broker.Subscribe()
 	defer broker.Unsubscribe(client)
 
 	r, stats := newBatchRunner(broker, time.Second, time.Second)
@@ -104,7 +104,7 @@ func TestEnrichRunner_EmptyFlushIsNoop(t *testing.T) {
 // Two separated bursts must each emit their own batch.
 func TestEnrichRunner_SeparateBurstsEachFlush(t *testing.T) {
 	broker := newEventBroker()
-	client := broker.Subscribe()
+	client, _ := broker.Subscribe()
 	defer broker.Unsubscribe(client)
 
 	r, stats := newBatchRunner(broker, 5*time.Second, 5*time.Second)

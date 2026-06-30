@@ -353,7 +353,7 @@ func TestHandleMove_NoOpDuplicateSuppressesBroadcast(t *testing.T) {
 		t.Fatalf("create movie: %v", err)
 	}
 
-	client := h.broker.Subscribe()
+	client, _ := h.broker.Subscribe()
 	defer h.broker.Unsubscribe(client)
 
 	// First promote is a real transition → exactly one movie:moved.

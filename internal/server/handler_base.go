@@ -20,6 +20,13 @@ import (
 
 var imdbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
 
+// defaultAutoRevealDelay is how long after a pick the server waits before
+// revealing it itself, if no client confirms. It mirrors the client reel timing —
+// --dur-spin (the reel scroll) + --dur-confirm (the settled OK-button countdown)
+// in web/src/index.css (6.5s + 10s) — so the server fires exactly as the picker's
+// OK-fill completes. Keep the two in sync.
+const defaultAutoRevealDelay = 16500 * time.Millisecond
+
 type handler struct {
 	broker            *eventBroker
 	log               zerolog.Logger
@@ -35,6 +42,16 @@ type handler struct {
 	statsCache        map[string]statsCacheEntry
 	statsCacheTTL     time.Duration
 
+	// Server-owned auto-reveal. When a pick goes unconfirmed, the server reveals
+	// it at autoRevealDelay and broadcasts movie:revealed ONCE, so every client
+	// closes its reel off that single broadcast — even a backgrounded, timer-
+	// throttled tab — instead of each running its own countdown (whose independent
+	// timers desynced the run-out reveal). autoRevealTimer is the pending fire;
+	// autoRevealDelay is configurable so tests can use a short window.
+	autoRevealMu    sync.Mutex
+	autoRevealTimer *time.Timer
+	autoRevealDelay time.Duration
+
 	// Filter options (genres/actors/crew/years/pickers for the Stats filter bar)
 	// are derived from the watched library's metadata+credits — the same data
 	// the watched list used to ship inline. A single cached snapshot, invalidated
@@ -45,10 +62,59 @@ type handler struct {
 }
 
 func (h *handler) Close() {
-	if h == nil || h.broker == nil {
+	if h == nil {
 		return
 	}
-	h.broker.Close()
+	h.cancelAutoReveal()
+	if h.broker != nil {
+		h.broker.Close()
+	}
+}
+
+// scheduleAutoReveal arms (or re-arms) the server-owned auto-reveal for the active
+// pick — see the autoReveal* fields on handler for why the server owns this. A
+// prior pending timer is stopped first; there is only ever one active pick.
+func (h *handler) scheduleAutoReveal() {
+	delay := h.autoRevealDelay
+	if delay <= 0 {
+		delay = defaultAutoRevealDelay
+	}
+	h.autoRevealMu.Lock()
+	defer h.autoRevealMu.Unlock()
+	if h.autoRevealTimer != nil {
+		h.autoRevealTimer.Stop()
+	}
+	h.autoRevealTimer = time.AfterFunc(delay, h.autoReveal)
+}
+
+// cancelAutoReveal stops a pending auto-reveal — a manual confirm won the race, the
+// pick was watched/cleared, or the server is shutting down.
+func (h *handler) cancelAutoReveal() {
+	h.autoRevealMu.Lock()
+	defer h.autoRevealMu.Unlock()
+	if h.autoRevealTimer != nil {
+		h.autoRevealTimer.Stop()
+		h.autoRevealTimer = nil
+	}
+}
+
+// autoReveal fires when the confirm window elapses with no client confirmation. It
+// is idempotent via RevealCurrentPick (a no-op once revealed or cleared), so it
+// races harmlessly with a late manual confirm or a watch.
+func (h *handler) autoReveal() {
+	if ap, flipped := h.movieService.RevealCurrentPick(); flipped {
+		h.broadcastRevealed(ap)
+	}
+}
+
+// broadcastRevealed tells every client to close its reel and reveal the winner in
+// lockstep. Shared by the manual confirm (handleRevealCurrentMovie) and the
+// server-owned auto-reveal so both emit an identical frame.
+func (h *handler) broadcastRevealed(ap movie.ActivePick) {
+	h.broker.Broadcast(event{Type: "movie:revealed", Data: map[string]any{
+		"movieID":  ap.MovieID,
+		"pickedAt": formatTime(&ap.PickedAt),
+	}})
 }
 
 func sanitizeInput(input string) string {

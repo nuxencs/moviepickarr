@@ -249,6 +249,7 @@ func newHandler(dbConn *sql.DB, rootLog zerolog.Logger) *handler {
 		enrichRunner:      runner,
 		statsCache:        make(map[string]statsCacheEntry),
 		statsCacheTTL:     time.Minute,
+		autoRevealDelay:   defaultAutoRevealDelay,
 	}
 
 	// Stats now aggregate enriched metadata/credits, so every successful

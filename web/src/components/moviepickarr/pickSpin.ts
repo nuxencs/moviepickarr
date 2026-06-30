@@ -131,16 +131,20 @@ function uniqueById(movies: Movie[]): Movie[] {
 }
 
 /**
- * Build the spin for a fresh pick — from the movie:picked event (or the
- * clicker's mutation response) plus the pre-pick pool snapshot (which still
- * holds the winner). Returns null when the spin should be skipped: reduced
- * motion, no pick time, or fewer than two candidates (a pool of one isn't
- * really a pick, so it goes straight to the reveal).
+ * Build the spin for a fresh pick — from the movie:picked event (or the clicker's
+ * mutation response), which now carries its own reel candidates (the pre-pick
+ * pool, winner included, with posters). The reel is therefore self-contained: a
+ * client spins even with no pool cached. The winner is re-appended as a fallback,
+ * but `uniqueById` keeps the candidate copy (which carries the poster the bare
+ * payload lacks). Returns null when the spin should be skipped: reduced motion, no
+ * pick time, or fewer than two candidates (a pool of one isn't really a pick, so
+ * it goes straight to the reveal — also the graceful degradation if candidates are
+ * absent, e.g. the server couldn't load the pool).
  */
-export function buildLiveSpin(picked: Movie, poolSnapshot: Movie[]): ActiveSpin | null {
+export function buildLiveSpin(picked: Movie): ActiveSpin | null {
   if (prefersReducedMotion()) return null;
   if (!picked.pickedAt) return null;
-  const candidates = uniqueById([...(poolSnapshot ?? []), picked]);
+  const candidates = uniqueById([...(picked.candidates ?? []), picked]);
   if (candidates.length < 2) return null;
   return {
     pickedAt: picked.pickedAt,

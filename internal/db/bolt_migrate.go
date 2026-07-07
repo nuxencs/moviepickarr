@@ -69,19 +69,20 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 		tmpPath = fmt.Sprintf("%s.tmp-%d", sqlitePath, time.Now().Unix())
 	}
 
-	sqliteDB, err := OpenSQLite(tmpPath)
+	pool, err := OpenSQLite(tmpPath)
 	if err != nil {
 		return false, err
 	}
+	sqliteDB := pool.Write
 
 	if err := RunMigrations(ctx, sqliteDB); err != nil {
-		_ = sqliteDB.Close()
+		_ = pool.Close()
 		return false, err
 	}
 
 	boltDB, err := bolt.Open(boltPath, 0o600, &bolt.Options{ReadOnly: true, Timeout: 1 * time.Second})
 	if err != nil {
-		_ = sqliteDB.Close()
+		_ = pool.Close()
 		return false, err
 	}
 
@@ -117,8 +118,8 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 				ctx,
 				"INSERT INTO users (name, created_at, updated_at) VALUES (?, ?, ?)",
 				user.Name,
-				createdAt,
-				createdAt,
+				ToUnix(createdAt),
+				ToUnix(createdAt),
 			)
 			if err != nil {
 				return err
@@ -201,11 +202,11 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 
 	_ = boltDB.Close()
 	if migrationErr != nil {
-		_ = sqliteDB.Close()
+		_ = pool.Close()
 		return false, migrationErr
 	}
 
-	if err := sqliteDB.Close(); err != nil {
+	if err := pool.Close(); err != nil {
 		return false, err
 	}
 
@@ -275,7 +276,7 @@ func upsertBoltMovie(
 	status string,
 ) error {
 	if existingID, ok := movieIDMap[movie.ID]; ok {
-		_, err := db.ExecContext(ctx, "UPDATE movies SET status = ?, watched_at = ? WHERE id = ?", status, parseTimePtr(movie.WatchedAt), existingID)
+		_, err := db.ExecContext(ctx, "UPDATE movies SET status = ?, watched_at = ? WHERE id = ?", status, watchedAtFor(movie, status), existingID)
 		return err
 	}
 
@@ -288,7 +289,7 @@ func upsertBoltMovie(
 	}
 
 	addedAt := parseTimeOrNow(movie.AddedAt)
-	watchedAt := parseTimePtr(movie.WatchedAt)
+	watchedAt := watchedAtFor(movie, status)
 
 	// The link column was dropped (migration 005); identity lives in imdb_id,
 	// derived from the legacy Bolt link. Enrichment fills the rest later.
@@ -302,7 +303,7 @@ func upsertBoltMovie(
 		"INSERT INTO movies (title, status, added_at, added_by_id, watched_at, imdb_id) VALUES (?, ?, ?, ?, ?, ?)",
 		movie.Title,
 		status,
-		addedAt,
+		ToUnix(addedAt),
 		addedByID,
 		watchedAt,
 		imdbID,
@@ -318,6 +319,20 @@ func upsertBoltMovie(
 
 	movieIDMap[movie.ID] = int(id)
 	return nil
+}
+
+// watchedAtFor yields a watched_at binding that satisfies the schema's
+// status <-> watched_at CHECK: watched rows always get a time (the recorded
+// one, else the added time, else now), everything else stores NULL.
+func watchedAtFor(movie boltMovie, status string) *int64 {
+	if status != "watched" {
+		return nil
+	}
+	if t := parseTimePtr(movie.WatchedAt); t != nil {
+		return ToUnixPtr(t)
+	}
+	t := parseTimeOrNow(movie.AddedAt)
+	return ToUnixPtr(&t)
 }
 
 func parseTimePtr(value string) *time.Time {

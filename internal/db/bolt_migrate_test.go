@@ -170,7 +170,7 @@ func TestMigrateBoltToSQLite(t *testing.T) {
 	defer sqliteDB.Close()
 
 	var userCount int
-	if err := sqliteDB.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount); err != nil {
+	if err := sqliteDB.Read.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount); err != nil {
 		t.Fatalf("user count: %v", err)
 	}
 	if userCount != 2 {
@@ -178,7 +178,7 @@ func TestMigrateBoltToSQLite(t *testing.T) {
 	}
 
 	var movieCount int
-	if err := sqliteDB.QueryRow("SELECT COUNT(*) FROM movies").Scan(&movieCount); err != nil {
+	if err := sqliteDB.Read.QueryRow("SELECT COUNT(*) FROM movies").Scan(&movieCount); err != nil {
 		t.Fatalf("movie count: %v", err)
 	}
 	if movieCount != 4 {
@@ -186,7 +186,7 @@ func TestMigrateBoltToSQLite(t *testing.T) {
 	}
 
 	var poolLocked string
-	if err := sqliteDB.QueryRow("SELECT value FROM settings WHERE key = 'pool_locked'").Scan(&poolLocked); err != nil {
+	if err := sqliteDB.Read.QueryRow("SELECT value FROM settings WHERE key = 'pool_locked'").Scan(&poolLocked); err != nil {
 		t.Fatalf("pool_locked: %v", err)
 	}
 	if poolLocked != "true" {
@@ -194,7 +194,7 @@ func TestMigrateBoltToSQLite(t *testing.T) {
 	}
 
 	var nextPickerID int
-	if err := sqliteDB.QueryRow("SELECT user_id FROM next_picker WHERE id = 1").Scan(&nextPickerID); err != nil {
+	if err := sqliteDB.Read.QueryRow("SELECT user_id FROM next_picker WHERE id = 1").Scan(&nextPickerID); err != nil {
 		t.Fatalf("next_picker: %v", err)
 	}
 	if nextPickerID != 1 {

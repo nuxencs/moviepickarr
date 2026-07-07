@@ -17,12 +17,12 @@ func TestRunMigrations_DropsLinkColumn(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	if err := RunMigrations(ctx, conn); err != nil {
+	if err := RunMigrations(ctx, conn.Write); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 
 	var linkCols int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('movies') WHERE name='link'`).Scan(&linkCols); err != nil {
+	if err := conn.Read.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('movies') WHERE name='link'`).Scan(&linkCols); err != nil {
 		t.Fatal(err)
 	}
 	if linkCols != 0 {
@@ -30,7 +30,7 @@ func TestRunMigrations_DropsLinkColumn(t *testing.T) {
 	}
 
 	var v5 int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=5`).Scan(&v5); err != nil {
+	if err := conn.Read.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=5`).Scan(&v5); err != nil {
 		t.Fatal(err)
 	}
 	if v5 != 1 {
@@ -49,13 +49,13 @@ func TestMigration005_BackfillsIMDbFromLink(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Post-004 movies shape (FK omitted; this test targets only the 005 SQL).
-	if _, err := conn.ExecContext(ctx, `CREATE TABLE movies (
+	if _, err := conn.Write.ExecContext(ctx, `CREATE TABLE movies (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, link TEXT NOT NULL,
 		status TEXT NOT NULL, added_by_id INTEGER NOT NULL, tmdb_id INTEGER, imdb_id TEXT)`); err != nil {
 		t.Fatal(err)
 	}
 	seed := func(title, link string, tmdb *int) {
-		if _, err := conn.ExecContext(ctx,
+		if _, err := conn.Write.ExecContext(ctx,
 			`INSERT INTO movies (title, link, status, added_by_id, tmdb_id) VALUES (?, ?, 'pool', 1, ?)`,
 			title, link, tmdb); err != nil {
 			t.Fatal(err)
@@ -70,13 +70,13 @@ func TestMigration005_BackfillsIMDbFromLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.ExecContext(ctx, string(content)); err != nil {
+	if _, err := conn.Write.ExecContext(ctx, string(content)); err != nil {
 		t.Fatalf("apply 005: %v", err)
 	}
 
 	imdbFor := func(title string) (string, bool) {
 		var v *string
-		if err := conn.QueryRowContext(ctx, `SELECT imdb_id FROM movies WHERE title=?`, title).Scan(&v); err != nil {
+		if err := conn.Read.QueryRowContext(ctx, `SELECT imdb_id FROM movies WHERE title=?`, title).Scan(&v); err != nil {
 			t.Fatal(err)
 		}
 		if v == nil {
@@ -96,7 +96,7 @@ func TestMigration005_BackfillsIMDbFromLink(t *testing.T) {
 	}
 
 	var linkCols int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('movies') WHERE name='link'`).Scan(&linkCols); err != nil {
+	if err := conn.Read.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('movies') WHERE name='link'`).Scan(&linkCols); err != nil {
 		t.Fatal(err)
 	}
 	if linkCols != 0 {

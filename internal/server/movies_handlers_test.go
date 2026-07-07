@@ -27,7 +27,7 @@ func setupEditMovieTest(t *testing.T) (*handler, *fiber.App, *repository.SqliteU
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.RunMigrations(ctx, dbConn); err != nil {
+	if err := db.RunMigrations(ctx, dbConn.Write); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 

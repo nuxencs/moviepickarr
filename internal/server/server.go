@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -71,17 +70,17 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	dbConn, err := db.OpenSQLite(cfg.DBFile)
+	pool, err := db.OpenSQLite(cfg.DBFile)
 	if err != nil {
 		return err
 	}
 
-	if err := db.RunMigrations(ctx, dbConn); err != nil {
-		_ = dbConn.Close()
+	if err := db.RunMigrations(ctx, pool.Write); err != nil {
+		_ = pool.Close()
 		return err
 	}
 
-	h := newHandler(dbConn, rootLog)
+	h := newHandler(pool, rootLog)
 	if h.enrichRunner != nil {
 		h.enrichRunner.Start(ctx)
 	} else {
@@ -194,7 +193,7 @@ func Run(ctx context.Context, cfg Config) error {
 				h.enrichRunner.Stop()
 			}
 			h.Close()
-			if err := dbConn.Close(); err != nil {
+			if err := pool.Close(); err != nil {
 				rootLog.Error().Err(err).Msg("db close error")
 			}
 		})
@@ -214,13 +213,13 @@ func Run(ctx context.Context, cfg Config) error {
 	return nil
 }
 
-func newHandler(dbConn *sql.DB, rootLog zerolog.Logger) *handler {
-	userRepo := repository.NewSqliteUserRepository(dbConn)
-	movieRepo := repository.NewSqliteMoviesRepository(dbConn)
-	nextPickerRepo := repository.NewSqliteNextPickerRepository(dbConn)
-	settingsRepo := repository.NewSqliteSettingsRepository(dbConn)
-	movieMetadataRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
-	movieCreditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
+func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
+	userRepo := repository.NewSqliteUserRepository(pool)
+	movieRepo := repository.NewSqliteMoviesRepository(pool)
+	nextPickerRepo := repository.NewSqliteNextPickerRepository(pool)
+	settingsRepo := repository.NewSqliteSettingsRepository(pool)
+	movieMetadataRepo := repository.NewSqliteMovieMetadataRepository(pool)
+	movieCreditsRepo := repository.NewSqliteMovieCreditsRepository(pool)
 
 	enrichCfg := loadEnrichConfig()
 	limiter := newRateLimiter(enrichCfg.MinInterval)

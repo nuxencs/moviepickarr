@@ -110,7 +110,11 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 	if imdbID != "" {
 		imdbPtr = &imdbID
 	}
-	if err := s.movies.SetExternalIDs(ctx, movieID, &tmdbID, imdbPtr); err != nil {
+	// A conflict means another row already owns this TMDB id (duplicate title
+	// added pre-uniqueness, or two IMDb links resolving to one film). Keep
+	// enriching without the id write: the metadata/credits below still persist
+	// and stamp the row, so it leaves the backlog instead of failing every drain.
+	if err := s.movies.SetExternalIDs(ctx, movieID, &tmdbID, imdbPtr); err != nil && !errors.Is(err, domain.ErrConflict) {
 		return enrichResult{}, err
 	}
 
@@ -243,6 +247,6 @@ func mapDetailsToMetadata(movieID int, d tmdbMovieDetails) domain.MovieMetadata 
 		VoteAverage:  d.VoteAverage,
 		VoteCount:    d.VoteCount,
 		Tagline:      d.Tagline,
-		// EnrichedAt is set by SQL (CURRENT_TIMESTAMP) on upsert.
+		// EnrichedAt is set by SQL (unixepoch()) on upsert.
 	}
 }

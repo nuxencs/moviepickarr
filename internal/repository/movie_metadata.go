@@ -9,15 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"moviepickarr/internal/db"
 	"moviepickarr/internal/domain"
 )
 
 type SqliteMovieMetadataRepository struct {
-	db *sql.DB
+	pool *db.Pool
 }
 
-func NewSqliteMovieMetadataRepository(db *sql.DB) *SqliteMovieMetadataRepository {
-	return &SqliteMovieMetadataRepository{db: db}
+func NewSqliteMovieMetadataRepository(pool *db.Pool) *SqliteMovieMetadataRepository {
+	return &SqliteMovieMetadataRepository{pool: pool}
 }
 
 func scanMetadata(scanner rowScanner) (*domain.MovieMetadata, error) {
@@ -25,7 +26,7 @@ func scanMetadata(scanner rowScanner) (*domain.MovieMetadata, error) {
 	var poster sql.NullString
 	var backdrop sql.NullString
 	var genresJSON string
-	var enrichedAt sql.NullTime
+	var enrichedAt sql.NullInt64
 
 	if err := scanner.Scan(
 		&md.MovieID,
@@ -54,7 +55,7 @@ func scanMetadata(scanner rowScanner) (*domain.MovieMetadata, error) {
 			return nil, err
 		}
 	}
-	md.EnrichedAt = nullTimePtr(enrichedAt)
+	md.EnrichedAt = unixTimePtr(enrichedAt)
 
 	return md, nil
 }
@@ -73,7 +74,7 @@ func (d *SqliteMovieMetadataRepository) UpsertMetadata(ctx context.Context, md d
 		INSERT INTO movie_metadata (
 			movie_id, overview, poster_path, backdrop_path,
 			release_date, runtime, genres, vote_average, vote_count, tagline, enriched_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
 		ON CONFLICT(movie_id) DO UPDATE SET
 			overview      = excluded.overview,
 			poster_path   = excluded.poster_path,
@@ -84,10 +85,10 @@ func (d *SqliteMovieMetadataRepository) UpsertMetadata(ctx context.Context, md d
 			vote_average  = excluded.vote_average,
 			vote_count    = excluded.vote_count,
 			tagline       = excluded.tagline,
-			enriched_at   = CURRENT_TIMESTAMP
+			enriched_at   = unixepoch()
 	`
 
-	_, err = d.db.ExecContext(ctx, query,
+	_, err = d.pool.Write.ExecContext(ctx, query,
 		md.MovieID, md.Overview, md.PosterPath, md.BackdropPath,
 		md.ReleaseDate, md.Runtime, string(genresJSON), md.VoteAverage, md.VoteCount, md.Tagline,
 	)
@@ -112,7 +113,7 @@ func (d *SqliteMovieMetadataRepository) GetMetadata(ctx context.Context, movieID
 		WHERE movie_id = ?
 	`
 
-	md, err := scanMetadata(d.db.QueryRowContext(ctx, query, movieID))
+	md, err := scanMetadata(d.pool.Read.QueryRowContext(ctx, query, movieID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: movie metadata for movie id %d", domain.ErrNotFound, movieID)
 	}
@@ -153,7 +154,7 @@ func (d *SqliteMovieMetadataRepository) GetMetadataByMovieIDs(ctx context.Contex
 		WHERE movie_id IN (%s)
 	`, strings.Join(placeholders, ", "))
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.pool.Read.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +173,7 @@ func (d *SqliteMovieMetadataRepository) GetMetadataByMovieIDs(ctx context.Contex
 
 func (d *SqliteMovieMetadataRepository) MarkEnrichmentStale(ctx context.Context, movieID int) error {
 	query := `UPDATE movie_metadata SET credits_refreshed_at = NULL WHERE movie_id = ?`
-	_, err := d.db.ExecContext(ctx, query, movieID)
+	_, err := d.pool.Write.ExecContext(ctx, query, movieID)
 	return err
 }
 
@@ -189,11 +190,8 @@ func (d *SqliteMovieMetadataRepository) NeedsEnrichment(ctx context.Context, sta
 		LIMIT ?
 	`
 
-	// Bind as a string in SQLite's CURRENT_TIMESTAMP format ("YYYY-MM-DD
-	// HH:MM:SS", UTC) so the comparison against the stored enriched_at text is
-	// exact and free of timezone/separator skew.
-	staleArg := staleBefore.UTC().Format("2006-01-02 15:04:05")
-	rows, err := d.db.QueryContext(ctx, query, staleArg, limit)
+	staleArg := db.ToUnix(staleBefore)
+	rows, err := d.pool.Read.QueryContext(ctx, query, staleArg, limit)
 	if err != nil {
 		return nil, err
 	}

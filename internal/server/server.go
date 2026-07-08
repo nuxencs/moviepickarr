@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -40,6 +41,24 @@ type Config struct {
 	Version string
 	Commit  string
 	Date    string
+}
+
+// dbMaxBackups resolves DB_BACKUP_MAX: how many pre-migration snapshots to
+// keep next to the DB file. 0 disables backups; invalid values fall back to
+// the default with a warning rather than failing startup.
+func dbMaxBackups(log zerolog.Logger) int {
+	const defaultMaxBackups = 3
+	raw := os.Getenv("DB_BACKUP_MAX")
+	if raw == "" {
+		return defaultMaxBackups
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		log.Warn().Str("DB_BACKUP_MAX", raw).Int("default", defaultMaxBackups).
+			Msg("invalid DB_BACKUP_MAX, using default")
+		return defaultMaxBackups
+	}
+	return n
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -80,7 +99,10 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	if err := db.RunMigrations(ctx, pool.Write); err != nil {
+	if err := db.RunMigrationsWithBackup(ctx, pool.Write, db.BackupConfig{
+		Path:       cfg.DBFile,
+		MaxBackups: dbMaxBackups(rootLog),
+	}); err != nil {
 		_ = pool.Close()
 		return err
 	}

@@ -139,6 +139,7 @@ Everything is optional except the TMDB key. Set these as environment variables
 | --- | --- | --- |
 | `TMDB_API_KEY` | Enables posters, cast & metadata-powered stats | *(unset — enrichment off)* |
 | `DB_FILE` | Path to the SQLite database file | `moviepickarr.db` (working dir) |
+| `DB_BACKUP_MAX` | Pre-migration snapshots to keep next to the DB (`0` disables) | `3` |
 | `LOG_LEVEL` | Minimum log level (`trace`…`fatal`) | `info` |
 | `LOG_FORMAT` | `json` (production) or `console` (colourised dev) | `json` |
 | `TMDB_ENRICH_CAST_LIMIT` | How many cast members to store per movie (`0` = all) | `15` |

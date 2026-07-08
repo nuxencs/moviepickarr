@@ -73,6 +73,11 @@
   the migration in the SQLite table-rebuild procedure (FKs off around the tx +
   `foreign_key_check` before commit). Version numbering has a permanent gap at
   `002` (the reverted auth schema; `003` dropped its remnants).
+- Pre-migration backups: when migrations are pending against a previously
+  migrated DB, startup runs `PRAGMA integrity_check` and snapshots the file via
+  `VACUUM INTO` (`<DB_FILE>.vNNN-<utc>.backup`, retention `DB_BACKUP_MAX`,
+  default 3, `0` disables) before applying anything. Fresh installs are never
+  backed up. See `internal/db/backup.go`.
 
 ## API
 

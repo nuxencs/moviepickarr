@@ -1,13 +1,14 @@
 package db
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"embed"
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -60,8 +61,8 @@ func RunMigrationsWithBackup(ctx context.Context, db *sql.DB, backup BackupConfi
 		})
 	}
 
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].version < migrations[j].version
+	slices.SortFunc(migrations, func(a, b migration) int {
+		return cmp.Compare(a.version, b.version)
 	})
 
 	pending := make([]migration, 0, len(migrations))

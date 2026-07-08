@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -108,10 +108,10 @@ func cleanupBackups(path string, maxBackups int) error {
 	}
 
 	// Version is zero-padded and the timestamp is lexicographically ordered, so
-	// a plain descending name sort is newest-first.
-	sort.Sort(sort.Reverse(sort.StringSlice(backups)))
+	// a plain ascending name sort is oldest-first.
+	slices.Sort(backups)
 
-	for _, name := range backups[min(maxBackups, len(backups)):] {
+	for _, name := range backups[:max(len(backups)-maxBackups, 0)] {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
 			return fmt.Errorf("db backup cleanup: %w", err)
 		}

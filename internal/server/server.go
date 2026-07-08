@@ -48,6 +48,11 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Port == "" {
 		cfg.Port = ":3030"
 	}
+	// Resolved after godotenv.Load() above so DB_FILE works from a .env file
+	// too, not just the process environment.
+	if cfg.DBFile == "" {
+		cfg.DBFile = os.Getenv("DB_FILE")
+	}
 	if cfg.DBFile == "" {
 		cfg.DBFile = "moviepickarr.db"
 	}

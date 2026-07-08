@@ -37,8 +37,9 @@ func run() error {
 	}
 
 	return server.Run(context.Background(), server.Config{
-		Port:    ":3030",
-		DBFile:  "moviepickarr.db",
+		Port: ":3030",
+		// DBFile left empty: server.Run resolves DB_FILE (env or .env), then
+		// falls back to "moviepickarr.db" in the working directory.
 		WebRoot: http.FS(webRoot),
 		Version: version,
 		Commit:  commit,

@@ -1,13 +1,14 @@
 package db
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"embed"
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -21,6 +22,15 @@ type migration struct {
 }
 
 func RunMigrations(ctx context.Context, db *sql.DB) error {
+	return RunMigrationsWithBackup(ctx, db, BackupConfig{})
+}
+
+// RunMigrationsWithBackup is RunMigrations plus a pre-migration safety net:
+// when migrations are pending against a previously migrated database, it
+// integrity-checks the file and snapshots it next to the DB before touching
+// the schema. A fresh database (nothing applied yet) is never backed up —
+// there is nothing to lose.
+func RunMigrationsWithBackup(ctx context.Context, db *sql.DB, backup BackupConfig) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INTEGER PRIMARY KEY
@@ -51,20 +61,38 @@ func RunMigrations(ctx context.Context, db *sql.DB) error {
 		})
 	}
 
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].version < migrations[j].version
+	slices.SortFunc(migrations, func(a, b migration) int {
+		return cmp.Compare(a.version, b.version)
 	})
 
+	pending := make([]migration, 0, len(migrations))
+	lastApplied := 0
 	for _, m := range migrations {
 		var applied int
 		err := db.QueryRowContext(ctx, "SELECT 1 FROM schema_migrations WHERE version = ?", m.version).Scan(&applied)
 		if err == nil {
+			if m.version > lastApplied {
+				lastApplied = m.version
+			}
 			continue
 		}
 		if err != sql.ErrNoRows {
 			return err
 		}
+		pending = append(pending, m)
+	}
 
+	if len(pending) == 0 {
+		return nil
+	}
+
+	if backup.MaxBackups > 0 && lastApplied > 0 {
+		if err := backupBeforeMigrations(ctx, db, backup, lastApplied); err != nil {
+			return err
+		}
+	}
+
+	for _, m := range pending {
 		content, err := fs.ReadFile(migrationsFS, filepath.Join("migrations", m.name))
 		if err != nil {
 			return err

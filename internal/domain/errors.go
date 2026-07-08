@@ -11,4 +11,5 @@ var (
 	ErrNoCurrentMovie    = errors.New("no current movie")
 	ErrCurrentMovieExist = errors.New("current movie exists")
 	ErrInvalidState      = errors.New("invalid state")
+	ErrConflict          = errors.New("conflict")
 )

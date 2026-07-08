@@ -163,6 +163,13 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 	}
 
 	if err := h.movieService.SetExternalIDs(ctx, movieRecord.ID, tmdbID, imdbID); err != nil {
+		// The movies_tmdb_id_unique index rejects a second row for the same
+		// film. The stash row was already inserted above, so remove it before
+		// reporting — otherwise every duplicate add leaves an orphan behind.
+		_ = h.movieService.Delete(ctx, movieRecord.ID)
+		if errors.Is(err, domain.ErrConflict) {
+			return writeError(c, fmt.Errorf("%w: movie is already in the library", domain.ErrConflict))
+		}
 		return writeError(c, err)
 	}
 	movieRecord.TMDBID = tmdbID

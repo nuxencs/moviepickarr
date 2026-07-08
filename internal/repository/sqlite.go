@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"moviepickarr/internal/db"
 	"moviepickarr/internal/domain"
 )
 
@@ -14,32 +15,34 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func nullTimePtr(value sql.NullTime) *time.Time {
+// unixTimePtr converts a scanned epoch-seconds column to *time.Time (UTC).
+func unixTimePtr(value sql.NullInt64) *time.Time {
 	if !value.Valid {
 		return nil
 	}
-	return &value.Time
+	t := db.FromUnix(value.Int64)
+	return &t
 }
 
 func scanUser(scanner rowScanner) (*domain.User, error) {
 	user := &domain.User{}
-	var createdAt sql.NullTime
-	var updatedAt sql.NullTime
+	var createdAt sql.NullInt64
+	var updatedAt sql.NullInt64
 
 	if err := scanner.Scan(&user.ID, &user.Name, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 
-	user.CreatedAt = nullTimePtr(createdAt)
-	user.UpdatedAt = nullTimePtr(updatedAt)
+	user.CreatedAt = unixTimePtr(createdAt)
+	user.UpdatedAt = unixTimePtr(updatedAt)
 
 	return user, nil
 }
 
 func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 	movie := &domain.Movie{}
-	var addedAt sql.NullTime
-	var watchedAt sql.NullTime
+	var addedAt sql.NullInt64
+	var watchedAt sql.NullInt64
 	var tmdbID sql.NullInt64
 	var imdbID sql.NullString
 
@@ -57,8 +60,8 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 		return nil, err
 	}
 
-	movie.AddedAt = nullTimePtr(addedAt)
-	movie.WatchedAt = nullTimePtr(watchedAt)
+	movie.AddedAt = unixTimePtr(addedAt)
+	movie.WatchedAt = unixTimePtr(watchedAt)
 	if tmdbID.Valid {
 		v := int(tmdbID.Int64)
 		movie.TMDBID = &v
@@ -71,17 +74,17 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 }
 
 type SqliteUserRepository struct {
-	db *sql.DB
+	pool *db.Pool
 }
 
-func NewSqliteUserRepository(db *sql.DB) *SqliteUserRepository {
-	return &SqliteUserRepository{db: db}
+func NewSqliteUserRepository(pool *db.Pool) *SqliteUserRepository {
+	return &SqliteUserRepository{pool: pool}
 }
 
 func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.User, error) {
 	query := "SELECT id, name, created_at, updated_at FROM users WHERE id = ?"
 
-	user, err := scanUser(d.db.QueryRowContext(ctx, query, id))
+	user, err := scanUser(d.pool.Read.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: user id %d", domain.ErrNotFound, id)
 	}
@@ -95,7 +98,7 @@ func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.Us
 func (d *SqliteUserRepository) List(ctx context.Context) ([]*domain.User, error) {
 	query := "SELECT id, name, created_at, updated_at FROM users ORDER BY created_at ASC"
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.pool.Read.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +119,7 @@ func (d *SqliteUserRepository) List(ctx context.Context) ([]*domain.User, error)
 func (d *SqliteUserRepository) Create(ctx context.Context, name string) (*domain.User, error) {
 	query := "INSERT INTO users (name) VALUES (?)"
 
-	result, err := d.db.ExecContext(ctx, query, name)
+	result, err := d.pool.Write.ExecContext(ctx, query, name)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +135,13 @@ func (d *SqliteUserRepository) Create(ctx context.Context, name string) (*domain
 func (d *SqliteUserRepository) Delete(ctx context.Context, id int) error {
 	query := "DELETE FROM users WHERE id = ?"
 
-	result, err := d.db.ExecContext(ctx, query, id)
+	result, err := d.pool.Write.ExecContext(ctx, query, id)
 	if err != nil {
+		// movies.added_by_id is ON DELETE RESTRICT: a member with movies can't
+		// be deleted, or the group's watch history would silently vanish.
+		if db.IsForeignKeyViolation(err) {
+			return fmt.Errorf("%w: user %d still has movies", domain.ErrConflict, id)
+		}
 		return err
 	}
 
@@ -149,11 +157,11 @@ func (d *SqliteUserRepository) Delete(ctx context.Context, id int) error {
 }
 
 type SqliteMoviesRepository struct {
-	db *sql.DB
+	pool *db.Pool
 }
 
-func NewSqliteMoviesRepository(db *sql.DB) *SqliteMoviesRepository {
-	return &SqliteMoviesRepository{db: db}
+func NewSqliteMoviesRepository(pool *db.Pool) *SqliteMoviesRepository {
+	return &SqliteMoviesRepository{pool: pool}
 }
 
 func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.Movie, error) {
@@ -173,7 +181,7 @@ func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.
 		WHERE m.id = ?
 	`
 
-	movie, err := scanMovie(d.db.QueryRowContext(ctx, query, id))
+	movie, err := scanMovie(d.pool.Read.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, id)
 	}
@@ -201,7 +209,7 @@ func (d *SqliteMoviesRepository) List(ctx context.Context) ([]*domain.Movie, err
 		ORDER BY title DESC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.pool.Read.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +244,7 @@ func (d *SqliteMoviesRepository) FindByUserID(ctx context.Context, userID int) (
 		ORDER BY title DESC
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, userID)
+	rows, err := d.pool.Read.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +298,7 @@ func (d *SqliteMoviesRepository) FindByStatus(ctx context.Context, status string
 		`
 	}
 
-	rows, err := d.db.QueryContext(ctx, query, status)
+	rows, err := d.pool.Read.QueryContext(ctx, query, status)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +334,7 @@ func (d *SqliteMoviesRepository) FindByUserIDAndStatus(ctx context.Context, user
 		ORDER BY title
 	`
 
-	rows, err := d.db.QueryContext(ctx, query, userID, status)
+	rows, err := d.pool.Read.QueryContext(ctx, query, userID, status)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +356,7 @@ func (d *SqliteMoviesRepository) CountByStatus(ctx context.Context, status strin
 	query := "SELECT COUNT(*) FROM movies WHERE status = ?"
 
 	var count int
-	err := d.db.QueryRowContext(ctx, query, status).Scan(&count)
+	err := d.pool.Read.QueryRowContext(ctx, query, status).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -360,7 +368,7 @@ func (d *SqliteMoviesRepository) CountByUserIDAndStatus(ctx context.Context, use
 	query := "SELECT COUNT(*) FROM movies WHERE status = ? AND added_by_id = ?"
 
 	var count int
-	err := d.db.QueryRowContext(ctx, query, status, userID).Scan(&count)
+	err := d.pool.Read.QueryRowContext(ctx, query, status, userID).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -387,7 +395,7 @@ func (d *SqliteMoviesRepository) GetRandomPooled(ctx context.Context) (*domain.M
 		LIMIT 1
 	`
 
-	row := d.db.QueryRowContext(ctx, query)
+	row := d.pool.Read.QueryRowContext(ctx, query)
 	movie, err := scanMovie(row)
 	if err != nil {
 		return nil, err
@@ -414,7 +422,7 @@ func (d *SqliteMoviesRepository) GetCurrent(ctx context.Context) (*domain.Movie,
 		LIMIT 1
 	`
 
-	row := d.db.QueryRowContext(ctx, query)
+	row := d.pool.Read.QueryRowContext(ctx, query)
 	movie, err := scanMovie(row)
 	if err != nil {
 		return nil, err
@@ -429,7 +437,7 @@ func (d *SqliteMoviesRepository) Add(ctx context.Context, title, status string, 
 		VALUES (?, ?, ?)
 	`
 
-	result, err := d.db.ExecContext(ctx, query, title, status, userID)
+	result, err := d.pool.Write.ExecContext(ctx, query, title, status, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -445,8 +453,12 @@ func (d *SqliteMoviesRepository) Add(ctx context.Context, title, status string, 
 func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
 	query := "UPDATE movies SET tmdb_id = ?, imdb_id = ? WHERE id = ?"
 
-	result, err := d.db.ExecContext(ctx, query, tmdbID, imdbID, id)
+	result, err := d.pool.Write.ExecContext(ctx, query, tmdbID, imdbID, id)
 	if err != nil {
+		// movies_tmdb_id_unique: another row already carries this TMDB id.
+		if db.IsUniqueViolation(err) {
+			return fmt.Errorf("%w: another movie already has this tmdb id", domain.ErrConflict)
+		}
 		return err
 	}
 
@@ -464,7 +476,7 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 func (d *SqliteMoviesRepository) UpdateTitle(ctx context.Context, id int, title string) error {
 	query := "UPDATE movies SET title = ? WHERE id = ?"
 
-	result, err := d.db.ExecContext(ctx, query, title, id)
+	result, err := d.pool.Write.ExecContext(ctx, query, title, id)
 	if err != nil {
 		return err
 	}
@@ -483,7 +495,7 @@ func (d *SqliteMoviesRepository) UpdateTitle(ctx context.Context, id int, title 
 func (d *SqliteMoviesRepository) UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error {
 	query := "UPDATE movies SET watched_at = ? WHERE id = ?"
 
-	result, err := d.db.ExecContext(ctx, query, watchedAt, id)
+	result, err := d.pool.Write.ExecContext(ctx, query, db.ToUnix(watchedAt), id)
 	if err != nil {
 		return err
 	}
@@ -502,9 +514,17 @@ func (d *SqliteMoviesRepository) UpdateWatchedAt(ctx context.Context, id int, wa
 func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, status string) error {
 	query := "UPDATE movies SET status = ? WHERE id = ?"
 
-	_, err := d.db.ExecContext(ctx, query, status, id)
+	result, err := d.pool.Write.ExecContext(ctx, query, status, id)
 	if err != nil {
 		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
 	}
 
 	return nil
@@ -513,7 +533,7 @@ func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, statu
 func (d *SqliteMoviesRepository) UpdateStatusIf(ctx context.Context, id int, to, from string) (int64, error) {
 	query := "UPDATE movies SET status = ? WHERE id = ? AND status = ?"
 
-	res, err := d.db.ExecContext(ctx, query, to, id, from)
+	res, err := d.pool.Write.ExecContext(ctx, query, to, id, from)
 	if err != nil {
 		return 0, err
 	}
@@ -538,7 +558,7 @@ func (d *SqliteMoviesRepository) PromoteToPoolIfRoom(ctx context.Context, id, ma
 			) < ?
 	`
 
-	res, err := d.db.ExecContext(ctx, query, id, maxPool)
+	res, err := d.pool.Write.ExecContext(ctx, query, id, maxPool)
 	if err != nil {
 		return 0, err
 	}
@@ -546,12 +566,20 @@ func (d *SqliteMoviesRepository) PromoteToPoolIfRoom(ctx context.Context, id, ma
 	return res.RowsAffected()
 }
 
-func (d *SqliteMoviesRepository) MarkAsWatched(ctx context.Context, id int, time time.Time) error {
+func (d *SqliteMoviesRepository) MarkAsWatched(ctx context.Context, id int, watchedAt time.Time) error {
 	query := "UPDATE movies SET status = 'watched', watched_at = ? WHERE id = ?"
 
-	_, err := d.db.ExecContext(ctx, query, time, id)
+	result, err := d.pool.Write.ExecContext(ctx, query, db.ToUnix(watchedAt), id)
 	if err != nil {
 		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
 	}
 
 	return nil
@@ -560,7 +588,7 @@ func (d *SqliteMoviesRepository) MarkAsWatched(ctx context.Context, id int, time
 func (d *SqliteMoviesRepository) Delete(ctx context.Context, id int) error {
 	query := "DELETE FROM movies WHERE id = ?"
 
-	result, err := d.db.ExecContext(ctx, query, id)
+	result, err := d.pool.Write.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}
@@ -577,11 +605,11 @@ func (d *SqliteMoviesRepository) Delete(ctx context.Context, id int) error {
 }
 
 type SqliteNextPickerRepository struct {
-	db *sql.DB
+	pool *db.Pool
 }
 
-func NewSqliteNextPickerRepository(db *sql.DB) *SqliteNextPickerRepository {
-	return &SqliteNextPickerRepository{db: db}
+func NewSqliteNextPickerRepository(pool *db.Pool) *SqliteNextPickerRepository {
+	return &SqliteNextPickerRepository{pool: pool}
 }
 
 func (d *SqliteNextPickerRepository) Get(ctx context.Context) (*domain.User, error) {
@@ -597,7 +625,7 @@ func (d *SqliteNextPickerRepository) Get(ctx context.Context) (*domain.User, err
 		LIMIT 1
 	`
 
-	user, err := scanUser(d.db.QueryRowContext(ctx, query))
+	user, err := scanUser(d.pool.Read.QueryRowContext(ctx, query))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, sql.ErrNoRows
 	}
@@ -611,7 +639,7 @@ func (d *SqliteNextPickerRepository) Set(ctx context.Context, userID int) error 
 		VALUES (1, ?)
 		ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
 	`
-	_, err := d.db.ExecContext(ctx, query, userID)
+	_, err := d.pool.Write.ExecContext(ctx, query, userID)
 	if err != nil {
 		return err
 	}
@@ -620,17 +648,17 @@ func (d *SqliteNextPickerRepository) Set(ctx context.Context, userID int) error 
 }
 
 type SqliteSettingsRepository struct {
-	db *sql.DB
+	pool *db.Pool
 }
 
-func NewSqliteSettingsRepository(db *sql.DB) *SqliteSettingsRepository {
-	return &SqliteSettingsRepository{db: db}
+func NewSqliteSettingsRepository(pool *db.Pool) *SqliteSettingsRepository {
+	return &SqliteSettingsRepository{pool: pool}
 }
 
 func (d *SqliteSettingsRepository) List(ctx context.Context) ([]*domain.Settings, error) {
 	query := "SELECT key, value FROM settings"
 
-	rows, err := d.db.QueryContext(ctx, query)
+	rows, err := d.pool.Read.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +681,7 @@ func (d *SqliteSettingsRepository) FindByKey(ctx context.Context, key string) (s
 	query := "SELECT value FROM settings WHERE key = ?"
 
 	var value string
-	err := d.db.QueryRowContext(ctx, query, key).Scan(&value)
+	err := d.pool.Read.QueryRowContext(ctx, query, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("%w: setting %s", domain.ErrNotFound, key)
 	}
@@ -670,7 +698,7 @@ func (d *SqliteSettingsRepository) Set(ctx context.Context, key string, value st
 		VALUES (?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value
 	`
-	_, err := d.db.ExecContext(ctx, query, key, value)
+	_, err := d.pool.Write.ExecContext(ctx, query, key, value)
 	if err != nil {
 		return err
 	}

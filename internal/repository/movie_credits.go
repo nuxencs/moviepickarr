@@ -6,19 +6,20 @@ import (
 	"fmt"
 	"strings"
 
+	"moviepickarr/internal/db"
 	"moviepickarr/internal/domain"
 )
 
 type SqliteMovieCreditsRepository struct {
-	db *sql.DB
+	pool *db.Pool
 }
 
-func NewSqliteMovieCreditsRepository(db *sql.DB) *SqliteMovieCreditsRepository {
-	return &SqliteMovieCreditsRepository{db: db}
+func NewSqliteMovieCreditsRepository(pool *db.Pool) *SqliteMovieCreditsRepository {
+	return &SqliteMovieCreditsRepository{pool: pool}
 }
 
 func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movieID int, credits []domain.MovieCredit) error {
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movie
 
 	// Stamp the marker even when credits are empty, so genuinely credit-less
 	// titles stop being backfill candidates.
-	stamp := `UPDATE movie_metadata SET credits_refreshed_at = CURRENT_TIMESTAMP WHERE movie_id = ?`
+	stamp := `UPDATE movie_metadata SET credits_refreshed_at = unixepoch() WHERE movie_id = ?`
 	if _, err := tx.ExecContext(ctx, stamp, movieID); err != nil {
 		return err
 	}
@@ -109,7 +110,7 @@ func (d *SqliteMovieCreditsRepository) GetCreditsByMovieIDs(ctx context.Context,
 		ORDER BY mc.movie_id, mc.kind, mc.cast_order, p.name
 	`, strings.Join(placeholders, ", "))
 
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.pool.Read.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

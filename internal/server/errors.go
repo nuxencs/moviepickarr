@@ -50,6 +50,8 @@ func writeError(c *fiber.Ctx, err error) error {
 		return writeProblem(c, fiber.StatusConflict, "current_movie_exists", err.Error())
 	case errors.Is(err, domain.ErrInvalidState):
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_state", err.Error())
+	case errors.Is(err, domain.ErrConflict):
+		return writeProblem(c, fiber.StatusConflict, "conflict", err.Error())
 	default:
 		return writeProblem(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 	}

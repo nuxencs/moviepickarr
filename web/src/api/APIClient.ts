@@ -99,9 +99,11 @@ export async function HttpClient<T = unknown>(
     }
 
     const response = await window.fetch(`${baseURL()}/${endpoint}`, init);
-    const isJSON = response.headers
-        .get("Content-Type")
-        ?.includes("application/json");
+    const contentType = response.headers.get("Content-Type") ?? "";
+    // Errors arrive as RFC 7807 "application/problem+json", so match the +json
+    // suffix too — a plain "application/json" check misses them.
+    const isJSON =
+        contentType.includes("application/json") || contentType.includes("+json");
 
     if (response.status >= 200 && response.status < 300) {
         if (response.status === 204) {
@@ -125,20 +127,32 @@ export async function HttpClient<T = unknown>(
                 break;
         }
 
-        let reason = response.statusText;
+        let reason = "";
         if (isJSON) {
             const json = await response.json();
-            if ("message" in json) {
+            // problem+json carries the human-readable text in "detail"
+            // (fallback "title"); older shapes used "message".
+            if (typeof json.detail === "string" && json.detail.length) {
+                reason = json.detail as string;
+            } else if (typeof json.message === "string" && json.message.length) {
                 reason = json.message as string;
+            } else if (typeof json.title === "string" && json.title.length) {
+                reason = json.title as string;
             }
         }
 
+        // A server-provided reason is written for humans (e.g. "conflict:
+        // movie is already in the library") — surface it as the message
+        // directly; components toast err.message verbatim.
         if (reason.length) {
-            reason = ` (${reason})`;
+            return Promise.reject(new Error(reason));
         }
 
+        const statusText = response.statusText.length
+            ? ` (${response.statusText})`
+            : "";
         const defaultError = new Error(
-            `HTTP request to ${endpoint} failed with code ${response.status}${reason}`,
+            `HTTP request to ${endpoint} failed with code ${response.status}${statusText}`,
         );
         return Promise.reject(defaultError);
     }

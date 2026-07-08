@@ -43,6 +43,37 @@
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
+### SQLite connections & timestamps (migration `007`)
+
+- `db.OpenSQLite` returns a `db.Pool` with **two handles over one WAL file**: a
+  single-connection `Write` (serializes all mutations) and a small `Read` pool
+  (WAL readers don't block behind the writer). Repos route reads to `Read`,
+  mutations to `Write`; `Pool.Close` runs `PRAGMA optimize` first.
+- Timestamps are stored as **INTEGER unix epoch seconds** (UTC by definition)
+  and must be bound via `db.ToUnix`/`db.ToUnixPtr` — never as a raw
+  `time.Time` (the driver would store TEXT, which the STRICT tables reject
+  outright). Scanning goes through `db.FromUnix` (repos use `unixTimePtr`).
+  Migration `007` converted the three historical text formats and rebuilt
+  `movies`, `users`, and `movie_metadata` as STRICT with: `status <->
+  watched_at` coupling, a partial UNIQUE on `tmdb_id`, a partial UNIQUE on
+  `status = 'current'` (at most one current movie, race-proof), and
+  `added_by_id ON DELETE RESTRICT` (deleting a member with movies is a 409;
+  watch history is never cascaded away). In-SQL stamps use `unixepoch()`
+  (defaults and the enrichment upsert/credits stamp), not CURRENT_TIMESTAMP.
+  The rebuilds preserve the AUTOINCREMENT high-water mark so deleted ids are
+  never reused. Deploy check: `go run scripts/verify_migration_007.go
+  <db-copy>` validates the migration against a copy of a production DB.
+- Constraint errors are matched by driver code, not message text
+  (`db.IsUniqueViolation` / `db.IsForeignKeyViolation`) and surface as
+  `domain.ErrConflict` → HTTP 409: duplicate `tmdbId` adds delete their
+  just-inserted stash row and 409; the enrichment worker treats a tmdb-id
+  conflict as non-fatal (metadata/credits still persist so the row leaves the
+  backlog).
+- Migration files: `-- migrate:fk_off` on the first line makes the runner wrap
+  the migration in the SQLite table-rebuild procedure (FKs off around the tx +
+  `foreign_key_check` before commit). Version numbering has a permanent gap at
+  `002` (the reverted auth schema; `003` dropped its remnants).
+
 ## API
 
 - API served under `/api/v1/*` only.

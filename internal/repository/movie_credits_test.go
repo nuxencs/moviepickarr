@@ -19,7 +19,7 @@ func setupCreditsRepos(t *testing.T) (context.Context, *SqliteMovieCreditsReposi
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.RunMigrations(ctx, dbConn); err != nil {
+	if err := db.RunMigrations(ctx, dbConn.Write); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 	t.Cleanup(func() {

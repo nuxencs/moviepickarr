@@ -267,7 +267,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		log:             rootLog.With().Str("component", "http").Logger(),
 		userService:     user.NewService(userRepo, nextUpRepo),
 		movieService:    movie.NewService(movieRepo),
-		nextUpService:   nextup.NewService(nextUpRepo, userRepo),
+		nextUpService:   nextup.NewService(nextUpRepo, userRepo, movieRepo),
 		settingsService: settings.NewService(settingsRepo),
 		movieMetadata:   movieMetadataRepo,
 		movieCredits:    movieCreditsRepo,

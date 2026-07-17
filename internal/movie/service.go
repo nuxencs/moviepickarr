@@ -15,44 +15,6 @@ import (
 // cannot overshoot it.
 const maxPoolSize = 3
 
-type Service interface {
-	AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error)
-	// MoveToPool promotes a stashed movie into its owner's pool. It is idempotent
-	// (already-pooled is a no-op) and reports whether a real transition happened.
-	MoveToPool(ctx context.Context, id int) (changed bool, err error)
-	// MoveToStash demotes a pooled movie back to the stash. Idempotent; reports
-	// whether a real transition happened.
-	MoveToStash(ctx context.Context, id int) (changed bool, err error)
-	Delete(ctx context.Context, id int) error
-	SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error
-	Update(ctx context.Context, id int, title string, watchedAt *time.Time) (*domain.Movie, error)
-	Get(ctx context.Context, id int) (*domain.Movie, error)
-	List(ctx context.Context) ([]*domain.Movie, error)
-	Pooled(ctx context.Context) ([]*domain.Movie, error)
-	Stashed(ctx context.Context) ([]*domain.Movie, error)
-	Watched(ctx context.Context) ([]*domain.Movie, error)
-	Current(ctx context.Context) (*domain.Movie, error)
-	PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
-	StashedByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
-	// DrawRandom selects a random pooled movie as the current draw. clientID is
-	// the opaque id of the client that initiated the draw (see ActiveDraw) — it
-	// gates who sees the reel's confirm button; "" is acceptable (no drawer).
-	DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error)
-	MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error)
-	// ActiveDraw reports the in-flight draw (movie id + when it was drawn) that
-	// drives the cross-client draw-reveal spin, or ok=false when none is active
-	// (no current movie, or the current movie was already marked watched). It is
-	// in-memory only, consistent with the in-process event broker: a server
-	// restart drops it, which just means a reload won't replay the spin.
-	ActiveDraw() (ActiveDraw, bool)
-	// RevealCurrentDraw marks the active draw as revealed (the drawer confirmed,
-	// or the reel's countdown elapsed). It reports the draw plus whether this call
-	// is the one that flipped it — so the caller broadcasts movie:revealed exactly
-	// once, and a duplicate confirm is a silent no-op. ok=false when there's no
-	// active draw or it was already revealed.
-	RevealCurrentDraw() (ActiveDraw, bool)
-}
-
 // ActiveDraw records the most recent random draw so a reloading client — or one
 // that joined late / dropped the SSE event — can resume the draw-reveal spin
 // instead of jumping straight to the result. Held in memory only.
@@ -68,24 +30,28 @@ type ActiveDraw struct {
 	Revealed bool
 }
 
-type service struct {
+// Service owns the movie lifecycle: stash/pool moves, watched history, the
+// draw, and the in-memory active-draw state behind the cross-client reveal.
+type Service struct {
 	movieRepo domain.MovieRepo
 
 	mu         sync.Mutex
 	activeDraw *ActiveDraw
 }
 
-func NewService(movieRepo domain.MovieRepo) Service {
-	return &service{
+func NewService(movieRepo domain.MovieRepo) *Service {
+	return &Service{
 		movieRepo: movieRepo,
 	}
 }
 
-func (s *service) AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error) {
+func (s *Service) AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error) {
 	return s.movieRepo.Add(ctx, title, "stash", userID)
 }
 
-func (s *service) MoveToPool(ctx context.Context, id int) (bool, error) {
+// MoveToPool promotes a stashed movie into its owner's pool. It is idempotent
+// (already-pooled is a no-op) and reports whether a real transition happened.
+func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
 	n, err := s.movieRepo.PromoteToPoolIfRoom(ctx, id, maxPoolSize)
 	if err != nil {
 		return false, err
@@ -112,7 +78,9 @@ func (s *service) MoveToPool(ctx context.Context, id int) (bool, error) {
 	}
 }
 
-func (s *service) MoveToStash(ctx context.Context, id int) (bool, error) {
+// MoveToStash demotes a pooled movie back to the stash. Idempotent; reports
+// whether a real transition happened.
+func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
 	n, err := s.movieRepo.UpdateStatusIf(ctx, id, "stash", "pool")
 	if err != nil {
 		return false, err
@@ -133,11 +101,11 @@ func (s *service) MoveToStash(ctx context.Context, id int) (bool, error) {
 	return false, domain.ErrInvalidState
 }
 
-func (s *service) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
+func (s *Service) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
 	return s.movieRepo.SetExternalIDs(ctx, id, tmdbID, imdbID)
 }
 
-func (s *service) Delete(ctx context.Context, id int) error {
+func (s *Service) Delete(ctx context.Context, id int) error {
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return err
@@ -154,7 +122,7 @@ func (s *service) Delete(ctx context.Context, id int) error {
 	return nil
 }
 
-func (s *service) Update(ctx context.Context, id int, title string, watchedAt *time.Time) (*domain.Movie, error) {
+func (s *Service) Update(ctx context.Context, id int, title string, watchedAt *time.Time) (*domain.Movie, error) {
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -177,31 +145,31 @@ func (s *service) Update(ctx context.Context, id int, title string, watchedAt *t
 	return s.movieRepo.FindByID(ctx, id)
 }
 
-func (s *service) Get(ctx context.Context, id int) (*domain.Movie, error) {
+func (s *Service) Get(ctx context.Context, id int) (*domain.Movie, error) {
 	return s.movieRepo.FindByID(ctx, id)
 }
 
-func (s *service) List(ctx context.Context) ([]*domain.Movie, error) {
+func (s *Service) List(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.List(ctx)
 }
 
-func (s *service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
+func (s *Service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.FindByStatus(ctx, "pool")
 }
 
-func (s *service) Stashed(ctx context.Context) ([]*domain.Movie, error) {
+func (s *Service) Stashed(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.FindByStatus(ctx, "stash")
 }
 
-func (s *service) Watched(ctx context.Context) ([]*domain.Movie, error) {
+func (s *Service) Watched(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.FindByStatus(ctx, "watched")
 }
 
-func (s *service) Current(ctx context.Context) (*domain.Movie, error) {
+func (s *Service) Current(ctx context.Context) (*domain.Movie, error) {
 	return s.movieRepo.GetCurrent(ctx)
 }
 
-func (s *service) PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {
+func (s *Service) PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {
 	movies, err := s.movieRepo.FindByUserIDAndStatus(ctx, userID, "pool")
 	if err != nil {
 		return nil, err
@@ -210,7 +178,7 @@ func (s *service) PooledByUserID(ctx context.Context, userID int) ([]*domain.Mov
 	return movies, nil
 }
 
-func (s *service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {
+func (s *Service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {
 	movies, err := s.movieRepo.FindByUserIDAndStatus(ctx, userID, "stash")
 	if err != nil {
 		return nil, err
@@ -219,7 +187,10 @@ func (s *service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 	return movies, nil
 }
 
-func (s *service) DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
+// DrawRandom selects a random pooled movie as the current draw. clientID is
+// the opaque id of the client that initiated the draw (see ActiveDraw) — it
+// gates who sees the reel's confirm button; "" is acceptable (no drawer).
+func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
 	pooled, err := s.movieRepo.FindByStatus(ctx, "pool")
 	if err != nil {
 		return nil, err
@@ -254,7 +225,7 @@ func (s *service) DrawRandom(ctx context.Context, clientID string) (*domain.Movi
 	return movie, nil
 }
 
-func (s *service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error) {
+func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error) {
 	current, err := s.movieRepo.GetCurrent(ctx)
 	if err != nil {
 		return nil, err
@@ -281,7 +252,12 @@ func (s *service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 	return current, nil
 }
 
-func (s *service) ActiveDraw() (ActiveDraw, bool) {
+// ActiveDraw reports the in-flight draw (movie id + when it was drawn) that
+// drives the cross-client draw-reveal spin, or ok=false when none is active
+// (no current movie, or the current movie was already marked watched). It is
+// in-memory only, consistent with the in-process event broker: a server
+// restart drops it, which just means a reload won't replay the spin.
+func (s *Service) ActiveDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.activeDraw == nil {
@@ -290,7 +266,12 @@ func (s *service) ActiveDraw() (ActiveDraw, bool) {
 	return *s.activeDraw, true
 }
 
-func (s *service) RevealCurrentDraw() (ActiveDraw, bool) {
+// RevealCurrentDraw marks the active draw as revealed (the drawer confirmed,
+// or the reel's countdown elapsed). It reports the draw plus whether this call
+// is the one that flipped it — so the caller broadcasts movie:revealed exactly
+// once, and a duplicate confirm is a silent no-op. ok=false when there's no
+// active draw or it was already revealed.
+func (s *Service) RevealCurrentDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.activeDraw == nil || s.activeDraw.Revealed {

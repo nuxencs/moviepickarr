@@ -24,7 +24,14 @@
 ## Domain + Use Cases
 
 - `internal/domain/*`: entities, repository ports, typed domain errors.
-- `internal/{user,movie,nextup,settings}`: service-layer use cases.
+- `internal/{user,movie,nextup,settings}`: service-layer use cases. Services
+  are concrete structs (no service interfaces — nothing consumes them
+  polymorphically); the repository ports in `internal/domain` remain the
+  substitution seam for tests.
+- `internal/nextup`: owns the whole next-up rotation. `Get` self-seeds a
+  fresh install with the first roster member; `Advance` passes the turn after
+  a draw (only while the pool still has movies and more than one member
+  exists) and reports whether it moved, so the handler only broadcasts.
 
 ## Logging
 

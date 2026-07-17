@@ -30,10 +30,10 @@ const defaultAutoRevealDelay = 16500 * time.Millisecond
 type handler struct {
 	broker          *eventBroker
 	log             zerolog.Logger
-	userService     user.Service
-	movieService    movie.Service
-	nextUpService   nextup.Service
-	settingsService settings.Service
+	userService     *user.Service
+	movieService    *movie.Service
+	nextUpService   *nextup.Service
+	settingsService *settings.Service
 	movieMetadata   domain.MovieMetadataRepo
 	movieCredits    domain.MovieCreditsRepo
 	tmdb            *tmdbClient

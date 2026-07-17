@@ -60,63 +60,19 @@ func (h *handler) getPooledMovies(ctx context.Context) ([]movieResponse, error) 
 }
 
 func (h *handler) advanceNextUp(ctx context.Context) error {
-	users, err := h.userService.List(ctx)
+	next, changed, err := h.nextUpService.Advance(ctx)
 	if err != nil {
 		return err
 	}
-	if len(users) <= 1 {
-		return nil
+	if changed {
+		h.broker.Broadcast(event{
+			Type: "settings:next-up-changed",
+			Data: map[string]any{
+				"id":   next.ID,
+				"name": next.Name,
+			},
+		})
 	}
-
-	pooled, err := h.movieService.Pooled(ctx)
-	if err != nil {
-		return err
-	}
-	if len(pooled) == 0 {
-		return nil
-	}
-
-	current, err := h.nextUpService.Get(ctx)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			if err := h.initNextUp(ctx); err != nil {
-				return err
-			}
-			current, err = h.nextUpService.Get(ctx)
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	currentIndex := -1
-	for i := range users {
-		if current != nil && users[i].ID == current.ID {
-			currentIndex = i
-			break
-		}
-	}
-
-	nextIndex := 0
-	if currentIndex >= 0 {
-		nextIndex = (currentIndex + 1) % len(users)
-	}
-
-	if err := h.nextUpService.Set(ctx, users[nextIndex].ID); err != nil {
-		return err
-	}
-
-	h.broker.Broadcast(event{
-		Type: "settings:next-up-changed",
-		Data: map[string]any{
-			"id":   users[nextIndex].ID,
-			"name": users[nextIndex].Name,
-		},
-	})
-
 	return nil
 }
 

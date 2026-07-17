@@ -3,8 +3,9 @@
 Deepening pass over the whole codebase (Go backend + web), driven by the
 deep-module vocabulary (module, interface, seam, adapter, depth, locality).
 Seven candidates were identified from two exploration sweeps and each was
-walked through a decision loop. Everything below is a locked decision, not a
-proposal; nothing is built yet.
+walked through a decision loop. All seven shipped on the
+`refactor/deep-modules` branch (2026-07-17), one commit per candidate in the
+build order below, verified in-browser along the way.
 
 Evidence highlights that motivated the pass:
 

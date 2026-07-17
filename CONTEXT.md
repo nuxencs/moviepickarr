@@ -60,6 +60,11 @@ The moment the draw's identity is settled on screen: the client that triggered
 the draw confirms, or the countdown elapses. Until then the reel keeps
 spinning on every client.
 
+**Settle**:
+The reel resting on the winner, awaiting confirmation. The scroll is over but
+the draw is not yet revealed: the drawer sees the OK countdown, everyone else
+waits for the reveal (the confirm, or the server's auto-reveal deadline).
+
 **Watched**:
 A movie the group has finished. Watched history is permanent; it never loses
 its adder and is never cascaded away.

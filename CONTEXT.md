@@ -11,7 +11,7 @@ app draws one at random for movie night.
 **Member**:
 A person in the friend group. Has a personal stash and up to 3 movies in the
 pool.
-_Avoid_: user (survives only in code/API names and the Users tab)
+_Avoid_: user (survives only in code, API names and URLs)
 
 **Roster**:
 The current set of members. Former members can still appear in history as

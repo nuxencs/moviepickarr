@@ -27,8 +27,8 @@ friends. There is no public signup.
   the next movie, the shared pool, and the watched library (searchable by title
   or by who added a movie). Every movie opens a detail view with its overview,
   credits and a cast strip.
-- Users: the members. Each has their pool slots and a searchable stash. New
-  movies are added here.
+- Members: everyone in the group, each with their pool slots and a searchable
+  stash. New movies are added here.
 - Stats: the watch history over a selectable time window. A member leaderboard,
   weekday and hourly activity, hours watched, average rating, top genres,
   most-watched directors and actors, and a release-decades timeline. The whole

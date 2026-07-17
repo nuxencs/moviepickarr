@@ -9,7 +9,7 @@ export type Tab = "movies" | "users" | "stats";
 
 const TABS: { id: Tab; label: string; icon: typeof FilmIcon; path: "/" | "/users" | "/stats" }[] = [
   { id: "movies", label: "Movies", icon: FilmIcon, path: "/" },
-  { id: "users", label: "Users", icon: UsersIcon, path: "/users" },
+  { id: "users", label: "Members", icon: UsersIcon, path: "/users" },
   { id: "stats", label: "Stats", icon: ChartNoAxesColumnIcon, path: "/stats" },
 ];
 

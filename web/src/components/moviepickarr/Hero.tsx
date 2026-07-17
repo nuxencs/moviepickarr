@@ -353,7 +353,7 @@ export function Hero() {
               ""
             ) : draw ? (
               <>
-                Current draw · chosen by <strong className="hero__by">{draw.addedByName}</strong>
+                Current draw · added by <strong className="hero__by">{draw.addedByName}</strong>
               </>
             ) : (
               "No movie selected"

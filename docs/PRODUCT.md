@@ -6,7 +6,7 @@ familiarity beats novelty.
 ## What it is
 A small private web app for a friend group to run a shared
 movie-night rotation. Each member keeps a personal stash of movies and
-promotes up to 3 into a shared pool. The app picks a random movie from the
+promotes up to 3 into a shared pool. The app draws a random movie from the
 pool for movie night, then tracks the watched history and stats. Movies are
 enriched with TMDB metadata (poster, backdrop, runtime, rating, genres, tagline,
 overview, external links, and cast/crew credits).
@@ -17,8 +17,8 @@ not a public or marketing surface. Desktop-first, with a dedicated mobile/touch
 pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
 
 ## Primary surfaces (tabs)
-- Movies: the cinematic hero (current pick, actions, next picker), the pool
-  grid, and the watched library (grid/list, searchable by title or picker). The
+- Movies: the cinematic hero (current draw, actions, next up), the pool
+  grid, and the watched library (grid/list, searchable by title or adder). The
   Movies page stays browse-first; metadata drill-downs live on Stats. A movie's
   detail modal shows "Directed by / Written by" credit lines and a horizontally
   scrollable cast strip (TMDB headshots, billing order); each cast card links to
@@ -34,7 +34,8 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   director and actor rails, and a release-decades timeline. One filter system
   sits under the header: the time presets, the watch-year quick-select (snaps
   the custom window to a calendar year), genre, release year or whole decade
-  (mutually exclusive), "Picked by" (the movie's picker), and multi-select
+  (mutually exclusive), "Picked by" (the movie's adder; the UI label predates
+  the glossary), and multi-select
   Actors / Crew people filters. People filters are any-of within a list and
   AND across filters; actors match cast credits, crew matches any whitelisted
   crew job (so filtering by a director also counts their writer credits).

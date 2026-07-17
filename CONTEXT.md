@@ -2,7 +2,7 @@
 
 A private web app for a friend group to run a shared movie-night
 rotation: everyone stashes movies, promotes a few into a shared pool, and the
-app picks one at random for movie night.
+app draws one at random for movie night.
 
 ## Language
 
@@ -15,53 +15,54 @@ _Avoid_: user (survives only in code/API names and the Users tab)
 
 **Roster**:
 The current set of members. Former members can still appear in history as
-pickers of watched movies.
+adders of watched movies.
 
-**Picker**:
-The member who added a movie. A movie keeps its picker forever, including into
-the watched history and stats ("Picked by").
-_Avoid_: adder, added-by, owner
+**Adder**:
+The member who added a movie. A movie keeps its adder forever, including into
+the watched history and stats ("Added by").
+_Avoid_: picker, picked by, owner
 
-**Next picker**:
-The member whose turn it is to run movie night: mark the current pick watched
-and trigger the next pick. Rotates through the roster after each pick, but only
+**Next up**:
+The member whose turn it is to run movie night: mark the current draw watched
+and trigger the next draw. Rotates through the roster after each draw, but only
 when the pool still has movies left and more than one member exists. A
 convention shown in the hero, not enforced by the app.
+_Avoid_: next picker
 
 ### Movie lifecycle
 
 **Stash**:
-A member's private backlog of movies. Unlimited; not eligible for picking.
+A member's private backlog of movies. Unlimited; not eligible for the draw.
 
 **Pool**:
-The shared set of movies eligible for the next pick. Each member may hold at
+The shared set of movies eligible for the next draw. Each member may hold at
 most 3 movies in it.
 
 **Promote / Demote**:
 Moving a movie from stash to pool, and back. The only transitions a member
 performs by hand.
 
-**Pick**:
-The random selection of one pooled movie for movie night. Exactly one movie
-wins; the rest stay pooled.
-_Avoid_: draw, roll, spin (the spin is the reel animation, not the selection)
+**Draw**:
+The app's random selection of one pooled movie for movie night. Members add
+and promote; only the app draws. Exactly one movie wins; the rest stay pooled.
+_Avoid_: pick, roll, spin (the spin is the reel animation, not the selection)
 
-**Current pick**:
-The picked movie waiting to be watched. At most one exists at a time.
-_Avoid_: current movie
+**Current draw**:
+The drawn movie waiting to be watched. At most one exists at a time.
+_Avoid_: current pick, current movie
 
 **Reel**:
-The slot-machine animation every client plays while a pick is in flight,
+The slot-machine animation every client plays while a draw is in flight,
 spinning across the pool's candidates before landing on the winner.
 
 **Reveal**:
-The moment the pick's identity is settled on screen: the picking client
-confirms, or the countdown elapses. Until then the reel keeps spinning on
-every client.
+The moment the draw's identity is settled on screen: the client that triggered
+the draw confirms, or the countdown elapses. Until then the reel keeps
+spinning on every client.
 
 **Watched**:
 A movie the group has finished. Watched history is permanent; it never loses
-its picker and is never cascaded away.
+its adder and is never cascaded away.
 
 **Watched library**:
 The browsable, searchable grid/list of all watched movies on the Movies tab.

@@ -39,7 +39,7 @@ echo "TMDB_API_KEY=your_key_here" > .env
 ## First steps
 
 Open http://localhost:3030. Add members on the Users tab, stash some movies,
-promote up to 3 per member into the pool, and pick.
+promote up to 3 per member into the pool, and draw.
 
 ## Configuration
 

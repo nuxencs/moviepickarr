@@ -420,9 +420,12 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	payload := toAPIMovie(selectedMovie)
 	// Carry the authoritative draw time so the clicker (whose own SSE event may
 	// drop) and every other client resume the reveal spin from the same instant,
-	// plus the drawer id so each client knows whether to show the confirm button.
+	// the reveal deadline the server will enforce (clients time the confirm
+	// countdown off it), plus the drawer id so each client knows whether to
+	// show the confirm button.
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == selectedMovie.ID {
 		payload.DrawnAt = formatTime(&ap.DrawnAt)
+		payload.RevealAt = formatTime(&ap.RevealAt)
 		payload.DrawClientID = ap.DrawClientID
 	}
 
@@ -441,12 +444,10 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		drawn.Candidates = toAPIMoviesLean(candidateMovies, h.metaFor(ctx, candidateMovies))
 	}
 
+	// The auto-reveal is armed inside DrawRandom: if no client confirms by the
+	// payload's revealAt, the movie service reveals the draw itself and the
+	// OnRevealed hook broadcasts once for everyone.
 	h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
-
-	// Server owns the reveal countdown: if no client confirms within the window,
-	// the server reveals the draw itself (one broadcast for everyone) — see
-	// scheduleAutoReveal.
-	h.scheduleAutoReveal()
 
 	return c.Status(fiber.StatusOK).JSON(drawn)
 }
@@ -470,6 +471,7 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == movieRecord.ID {
 		now := time.Now().UTC()
 		resp.DrawnAt = formatTime(&ap.DrawnAt)
+		resp.RevealAt = formatTime(&ap.RevealAt)
 		resp.ServerNow = formatTime(&now)
 		resp.DrawClientID = ap.DrawClientID
 		resp.Revealed = ap.Revealed
@@ -478,17 +480,12 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 }
 
 // handleRevealCurrentMovie confirms the active draw — the drawer pressed the
-// reel's OK button. It flips the draw to revealed and broadcasts movie:revealed so
-// every client's reel closes in lockstep, and cancels the server's pending
-// auto-reveal (this manual confirm won the race). Idempotent: a second confirm (or
-// a confirm with no active draw) is a quiet 200 with no re-broadcast, so racing
-// clients don't double-fire the reveal.
+// reel's OK button. The movie service owns the whole flip: reveal-once, the
+// timer cancel, and the movie:revealed broadcast (via its OnRevealed hook).
+// Idempotent: a second confirm (or a confirm with no active draw) is a quiet
+// no-op, so racing clients don't double-fire the reveal.
 func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
-	ap, flipped := h.movieService.RevealCurrentDraw()
-	if flipped {
-		h.cancelAutoReveal()
-		h.broadcastRevealed(ap)
-	}
+	h.movieService.RevealCurrentDraw()
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -498,9 +495,7 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// The draw is gone — drop any pending auto-reveal so a stale timer can't fire
-	// against the next draw.
-	h.cancelAutoReveal()
+	// MarkCurrentAsWatched cleared the draw and its pending auto-reveal.
 	h.invalidateStatsCache()
 
 	payload := toAPIMovie(watched)

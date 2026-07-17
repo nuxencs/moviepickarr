@@ -34,10 +34,13 @@ type movieResponse struct {
 	// Draw-reveal coordination. Set only on the movie:drawn event and the
 	// current-movie endpoint, never on list payloads. DrawnAt is when the
 	// current movie was drawn (drives resuming the cross-client reveal spin
-	// after a reload); ServerNow is the server clock at response time so the
-	// client computes elapsed without trusting its own clock. Both omitted when
-	// no draw is active.
+	// after a reload); RevealAt is the server's auto-reveal deadline (clients
+	// time the confirm countdown off it — the server owns the reveal timing);
+	// ServerNow is the server clock at response time so the client computes
+	// elapsed without trusting its own clock. All omitted when no draw is
+	// active.
 	DrawnAt   string `json:"drawnAt,omitempty"`
+	RevealAt  string `json:"revealAt,omitempty"`
 	ServerNow string `json:"serverNow,omitempty"`
 	// DrawClientID is the client that initiated the draw; only that client shows
 	// the reel's confirm button. Revealed reports whether the draw was confirmed,

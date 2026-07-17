@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"moviepickarr/internal/movie"
 	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
@@ -98,7 +99,9 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	}
 
 	var body struct {
-		MovieID    int `json:"movieID"`
+		MovieID    int    `json:"movieID"`
+		DrawnAt    string `json:"drawnAt"`
+		RevealAt   string `json:"revealAt"`
 		Candidates []struct {
 			MovieID    int    `json:"movieID"`
 			PosterPath string `json:"posterPath"`
@@ -106,6 +109,19 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+	// The server owns the reveal timing: the payload carries the auto-reveal
+	// deadline so clients derive the confirm countdown from it.
+	drawnAt, err := time.Parse(time.RFC3339, body.DrawnAt)
+	if err != nil {
+		t.Fatalf("drawnAt not RFC3339: %q (%v)", body.DrawnAt, err)
+	}
+	revealAt, err := time.Parse(time.RFC3339, body.RevealAt)
+	if err != nil {
+		t.Fatalf("revealAt not RFC3339: %q (%v)", body.RevealAt, err)
+	}
+	if !revealAt.After(drawnAt) {
+		t.Fatalf("revealAt %v not after drawnAt %v", revealAt, drawnAt)
 	}
 	if len(body.Candidates) != 3 {
 		t.Fatalf("expected 3 reel candidates (the pre-draw pool), got %d", len(body.Candidates))
@@ -185,7 +201,12 @@ func TestHandleGetRandomMovie_ServerAutoReveals(t *testing.T) {
 
 	ctx := context.Background()
 	h, app, userRepo, movieRepo := setupEditMovieTest(t)
-	h.autoRevealDelay = 60 * time.Millisecond // short window for the test
+	// Short auto-reveal window for the test; the delay now lives in the movie
+	// service's DrawConfig, so swap in a service configured with it.
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		AutoRevealDelay: 60 * time.Millisecond,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
 
 	user, err := userRepo.Create(ctx, "Iris")
 	if err != nil {
@@ -212,7 +233,10 @@ func TestHandleRevealCurrentMovie_CancelsServerAutoReveal(t *testing.T) {
 
 	ctx := context.Background()
 	h, app, userRepo, movieRepo := setupEditMovieTest(t)
-	h.autoRevealDelay = 100 * time.Millisecond
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		AutoRevealDelay: 100 * time.Millisecond,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
 
 	user, err := userRepo.Create(ctx, "Jude")
 	if err != nil {

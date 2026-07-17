@@ -31,7 +31,7 @@ const sseHeartbeatInterval = 15 * time.Second
 // connectedFrame is the one-shot handshake sent when a stream opens. epoch lets a
 // client detect a server restart; seq is the head at subscribe time, so the
 // client aligns its gap-detection cursor; serverNow seeds the choreography clock
-// offset (mirrors the value GET /movies/current returns for the active pick).
+// offset (mirrors the value GET /movies/current returns for the active draw).
 type connectedFrame struct {
 	Type      string `json:"type"`
 	Epoch     string `json:"epoch"`

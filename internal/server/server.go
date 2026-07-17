@@ -15,7 +15,7 @@ import (
 	"moviepickarr/internal/db"
 	"moviepickarr/internal/logger"
 	"moviepickarr/internal/movie"
-	"moviepickarr/internal/nextpicker"
+	"moviepickarr/internal/nextup"
 	"moviepickarr/internal/repository"
 	"moviepickarr/internal/settings"
 	"moviepickarr/internal/user"
@@ -171,7 +171,7 @@ func Run(ctx context.Context, cfg Config) error {
 	// under /assets/ (e.g. index-DfysZQP7.css) whose name changes on every
 	// content change, so they're safe to cache forever; everything else
 	// (index.html and the SPA fallback) must stay uncached so a new deploy's
-	// asset URLs are always picked up. This matters because WebRoot is a
+	// asset URLs are always loaded. This matters because WebRoot is a
 	// go:embed FS, which reports a zero ModTime — the filesystem middleware
 	// below then emits NO freshness signal at all (no Cache-Control, no
 	// Last-Modified, no ETag), so without this every load re-pulls and
@@ -243,7 +243,7 @@ func Run(ctx context.Context, cfg Config) error {
 func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	userRepo := repository.NewSqliteUserRepository(pool)
 	movieRepo := repository.NewSqliteMoviesRepository(pool)
-	nextPickerRepo := repository.NewSqliteNextPickerRepository(pool)
+	nextUpRepo := repository.NewSqliteNextUpRepository(pool)
 	settingsRepo := repository.NewSqliteSettingsRepository(pool)
 	movieMetadataRepo := repository.NewSqliteMovieMetadataRepository(pool)
 	movieCreditsRepo := repository.NewSqliteMovieCreditsRepository(pool)
@@ -263,19 +263,19 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	}
 
 	h := &handler{
-		broker:            broker,
-		log:               rootLog.With().Str("component", "http").Logger(),
-		userService:       user.NewService(userRepo, nextPickerRepo),
-		movieService:      movie.NewService(movieRepo),
-		nextPickerService: nextpicker.NewService(nextPickerRepo, userRepo),
-		settingsService:   settings.NewService(settingsRepo),
-		movieMetadata:     movieMetadataRepo,
-		movieCredits:      movieCreditsRepo,
-		tmdb:              tmdbCli,
-		enrichRunner:      runner,
-		statsCache:        make(map[string]statsCacheEntry),
-		statsCacheTTL:     time.Minute,
-		autoRevealDelay:   defaultAutoRevealDelay,
+		broker:          broker,
+		log:             rootLog.With().Str("component", "http").Logger(),
+		userService:     user.NewService(userRepo, nextUpRepo),
+		movieService:    movie.NewService(movieRepo),
+		nextUpService:   nextup.NewService(nextUpRepo, userRepo),
+		settingsService: settings.NewService(settingsRepo),
+		movieMetadata:   movieMetadataRepo,
+		movieCredits:    movieCreditsRepo,
+		tmdb:            tmdbCli,
+		enrichRunner:    runner,
+		statsCache:      make(map[string]statsCacheEntry),
+		statsCacheTTL:   time.Minute,
+		autoRevealDelay: defaultAutoRevealDelay,
 	}
 
 	// Stats now aggregate enriched metadata/credits, so every successful
@@ -319,7 +319,7 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 
 	v1.Get("/settings/pool-lock", h.handleGetPoolLock)
 	v1.Put("/settings/pool-lock", h.handleSetPoolLock)
-	v1.Get("/settings/next-picker", h.handleGetNextPicker)
+	v1.Get("/settings/next-up", h.handleGetNextUp)
 
 	v1.Get("/tmdb/search", h.handleTMDBSearch)
 }

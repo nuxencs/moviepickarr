@@ -12,10 +12,10 @@ import {
 } from "@/lib/sound";
 
 /**
- * Owns the pick-sound on/off preference (mirrored to localStorage by the sound
+ * Owns the draw-sound on/off preference (mirrored to localStorage by the sound
  * engine) and performs the one-time autoplay unlock. The reel plays the jingle
- * itself (see PickReel) — this provider just gates it and primes playback so
- * SSE-driven clients, which never click Pick, can still play once the visitor
+ * itself (see DrawReel) — this provider just gates it and primes playback so
+ * SSE-driven clients, which never click Draw, can still play once the visitor
  * has interacted with the page.
  */
 export function AudioProvider({ children }: { children: React.ReactNode }) {
@@ -23,7 +23,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [volume, setVol] = useState<number>(() => getVolume());
 
   useEffect(() => {
-    // Start loading the asset now so the first pick's jingle is ready in time.
+    // Start loading the asset now so the first draw's jingle is ready in time.
     preloadJingle();
     // Unlock on the first user gesture anywhere, then detach — autoplay policy
     // only needs to be satisfied once per session.

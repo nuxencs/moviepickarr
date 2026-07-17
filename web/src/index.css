@@ -20,7 +20,7 @@
   --r-lg: 4px;
   --r-xl: 6px;
 
-  /* easing — entrances decelerate, exits accelerate away, the pick-reveal is a confident expo */
+  /* easing — entrances decelerate, exits accelerate away, the draw-reveal is a confident expo */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
@@ -28,17 +28,17 @@
      tapers off and the reel floats to a stop — easeOutQuad's linear velocity falloff
      braked at a constant rate and read as a slightly abrupt landing. Still short of
      --ease-reveal's expo, whose front-loading would visually stall a long spin within
-     ~1s. Mirror the curve order in PickReel.tsx's resume math (1 − (1−t)³). */
+     ~1s. Mirror the curve order in DrawReel.tsx's resume math (1 − (1−t)³). */
   --ease-reel: cubic-bezier(0.33, 1, 0.68, 1);
 
   /* duration scale — fast = pointer feedback, base = state change + overlay entrances,
-     slow = page/section load + chart grow, reveal = the hero pick-reveal */
+     slow = page/section load + chart grow, reveal = the hero draw-reveal */
   --dur-fast: 0.14s;
   --dur-base: 0.22s;
   --dur-slow: 0.4s;
-  --dur-reveal: 0.6s; /* the cinematic pick-reveal (backdrop crossfade + content settle) */
-  --dur-spin: 6.5s; /* the slot-machine pick reel — scroll + decelerate onto the winner, timed to land on the jingle's payoff */
-  --dur-confirm: 10s; /* the settled reel's confirm countdown (OK button fill); read in PickReel for the auto-reveal timer */
+  --dur-reveal: 0.6s; /* the cinematic draw-reveal (backdrop crossfade + content settle) */
+  --dur-spin: 6.5s; /* the slot-machine draw reel — scroll + decelerate onto the winner, timed to land on the jingle's payoff */
+  --dur-confirm: 10s; /* the settled reel's confirm countdown (OK button fill); read in DrawReel for the auto-reveal timer */
   --dur: var(--dur-base); /* legacy alias — prefer the scale above */
 
   /* accent — gold (fixed) */
@@ -187,10 +187,10 @@
    resting (full) value instead of the empty start. */
 @keyframes mg-growBfill { from { width: 0; } }
 @keyframes mg-growHcol { from { height: 0; } }
-/* Pick-reveal: the incoming backdrop fades up with a slow settle-scale; each
+/* Draw-reveal: the incoming backdrop fades up with a slow settle-scale; each
    content slot fades + lifts into place. Transform/opacity only (no reflow). */
 @keyframes mg-bgReveal { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
-@keyframes mg-revealPick { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes mg-revealDraw { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================
    moviepickarr components (ported from the design prototype)
@@ -457,10 +457,10 @@
      and the slide between tabs is the transition below. */
   .tab__ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); transition: left var(--dur) var(--ease), width var(--dur) var(--ease); }
   .nav .iconbtn { border: 1px solid var(--line); }
-  /* Trailing controls (pick-sound + theme) grouped at the right edge of the bar. */
+  /* Trailing controls (draw-sound + theme) grouped at the right edge of the bar. */
   .nav__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
-  /* Pick-sound control: speaker button + a popover holding the mute toggle and
+  /* Draw-sound control: speaker button + a popover holding the mute toggle and
      volume slider (VolumeControl.tsx). Popover mirrors the date-range pattern. */
   .volume { position: relative; display: flex; }
   .volume__pop {
@@ -500,10 +500,10 @@
   /* Fixed-height column: top group (eyebrow + title) stays anchored at the top,
      the tagline/meta/actions group is pushed to the bottom via margin-top:auto.
      min-height holds the worst case (2-line title + 2-line tagline) so the
-     banner never resizes and no row ever moves between picks. */
+     banner never resizes and no row ever moves between draws. */
   .hero__body { flex: 1; min-width: 0; color: #fff; display: flex; flex-direction: column; min-height: var(--hero-body-h); }
   .hero__eyebrow { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,0.7); }
-  /* The picker's name carries the emphasis: brighter + heavier than the rest of
+  /* The adder's name carries the emphasis: brighter + heavier than the rest of
      the eyebrow line, so attribution reads at a glance without new chrome. */
   .hero__by { color: #fff; font-weight: 700; }
   .hero__title { margin: 13px 0 0; font-family: var(--font-display); font-size: clamp(32px, 4.6vw, 54px); font-weight: 700; line-height: 0.98; letter-spacing: -0.02em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -521,26 +521,26 @@
   .hero__meta .metalink:hover { color: #fff; }
   .hero__meta .metachip--link:hover, .hero__meta .metachip--link:focus-visible { color: #fff; }
   .hero__actions { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  /* Pick-reveal: poster + each text slot fade-settle into place, lightly
-     staggered, on the keyed remount when the pick changes (or clears). The §7
+  /* Draw-reveal: poster + each text slot fade-settle into place, lightly
+     staggered, on the keyed remount when the draw changes (or clears). The §7
      fixed box means nothing reflows; reduced-motion zeroes duration AND delay. */
   .hero[data-ready] :is(.hero__poster, .hero__eyebrow, .hero__title, .hero__tag, .hero__meta, .hero__actions) {
-    animation: mg-revealPick var(--dur-reveal) var(--ease-reveal) both;
+    animation: mg-revealDraw var(--dur-reveal) var(--ease-reveal) both;
     animation-delay: calc(var(--i, 0) * 55ms);
   }
-  .hero__nextpick { display: flex; align-items: center; gap: 11px; margin-left: 10px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,0.2); color: #fff; }
-  .hero__nextpick .lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
-  .hero__nextpick .nm { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+  .hero__nextup { display: flex; align-items: center; gap: 11px; margin-left: 10px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,0.2); color: #fff; }
+  .hero__nextup .lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
+  .hero__nextup .nm { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
   @media (max-width: 700px) {
     .hero__inner { flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px 18px 34px; }
     .hero__poster { width: 120px; }
     .hero__body { min-height: 0; }
     .hero__tag { margin-top: 12px; }
-    .hero__nextpick { margin-left: 0; padding-left: 0; border-left: none; }
+    .hero__nextup { margin-left: 0; padding-left: 0; border-left: none; }
   }
   /* Large screens — the hero is the centerpiece, so give it more than the global
      zoom: a taller body (the poster width tracks --hero-body-h automatically),
-     roomier padding, and a higher title ceiling. Still static across picks within
+     roomier padding, and a higher title ceiling. Still static across draws within
      this breakpoint (§7); mirrors the phone step above. */
   @media (min-width: 1728px) {
     .hero { --hero-body-h: 21rem; }
@@ -548,13 +548,13 @@
     .hero__title { font-size: clamp(32px, 4.6vw, 64px); }
   }
 
-  /* ---- Pick reel (slot-machine reveal) ----
+  /* ---- Draw reel (slot-machine reveal) ----
      A takeover overlay inside the hero: a horizontal poster reel scrolls and
      decelerates onto the server-chosen winner, then hands off to the hero
-     pick-reveal. The track's transform is set in JS and glided by a CSS
-     transition (PickReel.tsx); the global reduced-motion block collapses both
+     draw-reveal. The track's transform is set in JS and glided by a CSS
+     transition (DrawReel.tsx); the global reduced-motion block collapses both
      the fade-in and that transition to instant, so it degrades to a clean cut. */
-  .pickreel {
+  .drawreel {
     position: absolute; inset: 0; z-index: 3;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 20px; padding: 24px;
@@ -562,36 +562,36 @@
     backdrop-filter: blur(7px);
     animation: mg-fadeIn var(--dur-base) var(--ease);
   }
-  .pickreel__label { color: rgba(255, 255, 255, 0.7); letter-spacing: 0.22em; }
-  .pickreel__viewport {
+  .drawreel__label { color: rgba(255, 255, 255, 0.7); letter-spacing: 0.22em; }
+  .drawreel__viewport {
     position: relative; width: 100%; max-width: 1100px; overflow: hidden;
     /* Tiles dissolve at the rim instead of hard-clipping. */
     -webkit-mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
     mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
   }
-  .pickreel__track { display: flex; gap: 16px; will-change: transform; }
-  .pickreel__tile { flex: 0 0 132px; }
-  .pickreel__tile .poster { box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.8); }
+  .drawreel__track { display: flex; gap: 16px; will-change: transform; }
+  .drawreel__tile { flex: 0 0 132px; }
+  .drawreel__tile .poster { box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.8); }
   /* Center reticle: a gold seam with inward carets marking where the reel lands. */
-  .pickreel__reticle {
+  .drawreel__reticle {
     position: absolute; top: -2px; bottom: -2px; left: 50%; z-index: 2;
     width: 2px; transform: translateX(-50%); pointer-events: none;
     background: var(--accent);
     box-shadow: 0 0 22px 3px var(--accent-soft);
   }
-  .pickreel__reticle::before,
-  .pickreel__reticle::after {
+  .drawreel__reticle::before,
+  .drawreel__reticle::after {
     content: ""; position: absolute; left: 50%; transform: translateX(-50%);
     border: 7px solid transparent;
   }
-  .pickreel__reticle::before { top: -2px; border-top-color: var(--accent); }
-  .pickreel__reticle::after { bottom: -2px; border-bottom-color: var(--accent); }
+  .drawreel__reticle::before { top: -2px; border-top-color: var(--accent); }
+  .drawreel__reticle::after { bottom: -2px; border-bottom-color: var(--accent); }
   /* Fixed-height control row: the spinning Skip button, the settled OK button, and
      the spectator "Waiting" line are all different heights. Reserving the tallest
      (the OK button) keeps the centered column from reflowing — so the reel doesn't
      shift up when the controls swap on settle. */
-  .pickreel__controls { display: flex; align-items: center; justify-content: center; min-height: 40px; }
-  .pickreel__skip {
+  .drawreel__controls { display: flex; align-items: center; justify-content: center; min-height: 40px; }
+  .drawreel__skip {
     font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
     color: rgba(255, 255, 255, 0.72);
     background: rgba(255, 255, 255, 0.08);
@@ -599,26 +599,26 @@
     border-radius: var(--r-md); padding: 7px 16px; cursor: pointer;
     transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
-  .pickreel__skip:hover { color: #fff; background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.34); }
-  /* Settled reel: the picker's confirm button. It's the gold accent button with a
+  .drawreel__skip:hover { color: #fff; background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.34); }
+  /* Settled reel: the drawer's confirm button. It's the gold accent button with a
      dark sweep that fills left→right over --dur-confirm — a visible countdown.
-     When it fills, PickReel auto-confirms (same token drives the JS timer), so the
+     When it fills, DrawReel auto-confirms (same token drives the JS timer), so the
      reel never hangs. The label stays above the sweep for constant legibility. */
-  .pickreel__ok { position: relative; overflow: hidden; min-width: 132px; justify-content: center; }
-  .pickreel__ok-fill {
+  .drawreel__ok { position: relative; overflow: hidden; min-width: 132px; justify-content: center; }
+  .drawreel__ok-fill {
     position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
     background: rgba(0, 0, 0, 0.22); pointer-events: none;
     animation: mg-okfill var(--dur-confirm) linear forwards;
   }
-  .pickreel__ok-label { position: relative; z-index: 1; }
-  .pickreel__waiting {
+  .drawreel__ok-label { position: relative; z-index: 1; }
+  .drawreel__waiting {
     font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
     color: rgba(255, 255, 255, 0.6);
   }
   @keyframes mg-okfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   @media (max-width: 700px) {
-    .pickreel { gap: 14px; padding: 16px; }
-    .pickreel__tile { flex-basis: 96px; }
+    .drawreel { gap: 14px; padding: 16px; }
+    .drawreel__tile { flex-basis: 96px; }
   }
 
   .block { animation: mg-fadeUp var(--dur-slow) var(--ease); }
@@ -785,14 +785,14 @@
   .statitem__top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); }
   .statitem__top svg { color: var(--accent); }
   .statitem__top span { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
-  /* Fixed 2-line height (bottom-aligned) so a wrapping top-picker name never
+  /* Fixed 2-line height (bottom-aligned) so a wrapping top-adder name never
      changes the strip height — the page no longer jumps between windows. */
   .statitem__val { font-size: 29px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.05; height: 2.1em; display: flex; align-items: flex-end; overflow: hidden; }
   .statitem__val.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
   /* NumberFlow's box carries internal mask padding round(0.25em/2,1px) below the
      glyph — at this fixed 29px value size exactly 4px CSS-px (zoom-invariant). The
      value cell is align-items:flex-end, which aligns box bottoms (not baselines),
-     so the numeral floats 4px above where the plain-text values (Top picker /
+     so the numeral floats 4px above where the plain-text values (Top adder /
      Busiest day) land. Pull it down so numbers and names share one baseline.
      NOTE: this comp is only needed because of flex-end box alignment. Inline
      NumberFlows (the .statitem__sub runtime + .statsec__title count) baseline-align

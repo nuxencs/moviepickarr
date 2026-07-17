@@ -10,7 +10,7 @@ import {
 } from "@/api/queries";
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
-import { Avatar, PickerTag, Rating } from "@/components/moviepickarr/Bits";
+import { Avatar, AdderTag, Rating } from "@/components/moviepickarr/Bits";
 import {
   dateTimeParts,
   hueOf,
@@ -36,7 +36,7 @@ export function MoviesTab() {
   const { data: isLocked } = useQuery(SettingsGetPoolLockQueryOptions());
 
   // FLIP enter/exit + glide for the pool grid — the same hook the Stats rails
-  // use. Tiles fade in when a movie is added/promoted, fade out when it's picked
+  // use. Tiles fade in when a movie is added/promoted, fade out when it's drawn
   // (on reel-land), moved to the stash, or deleted; survivors glide to close the
   // gap. `poolEntries` includes a just-removed tile until its exit finishes, so
   // the grid render maps over it (not `pooled`) and gates on its length.
@@ -134,7 +134,7 @@ export function MoviesTab() {
                 <div className="t-meta">
                   <span className="t-title">{movie.title}</span>
                   <div className="t-sub">
-                    <PickerTag name={movie.addedByName} />
+                    <AdderTag name={movie.addedByName} />
                   </div>
                 </div>
               </article>
@@ -169,8 +169,8 @@ export function MoviesTab() {
               <SearchIcon />
               <input
                 name="watched-search"
-                aria-label="Search watched films by title or picker"
-                placeholder="Search by title or picker…"
+                aria-label="Search watched films by title or adder"
+                placeholder="Search by title or adder…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -244,7 +244,7 @@ function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
 
   const year = yearOf(movie.releaseDate);
   const runtime = runtimeLabel(movie.runtime);
-  const sub = [year, runtime, `picked by ${movie.addedByName}`].filter(Boolean).join(" · ");
+  const sub = [year, runtime, `added by ${movie.addedByName}`].filter(Boolean).join(" · ");
 
   return (
     <>

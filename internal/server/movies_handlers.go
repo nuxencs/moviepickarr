@@ -59,7 +59,7 @@ func (h *handler) getPooledMovies(ctx context.Context) ([]movieResponse, error) 
 	return toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
 }
 
-func (h *handler) advanceNextPicker(ctx context.Context) error {
+func (h *handler) advanceNextUp(ctx context.Context) error {
 	users, err := h.userService.List(ctx)
 	if err != nil {
 		return err
@@ -76,13 +76,13 @@ func (h *handler) advanceNextPicker(ctx context.Context) error {
 		return nil
 	}
 
-	current, err := h.nextPickerService.Get(ctx)
+	current, err := h.nextUpService.Get(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			if err := h.initNextPicker(ctx); err != nil {
+			if err := h.initNextUp(ctx); err != nil {
 				return err
 			}
-			current, err = h.nextPickerService.Get(ctx)
+			current, err = h.nextUpService.Get(ctx)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
@@ -105,12 +105,12 @@ func (h *handler) advanceNextPicker(ctx context.Context) error {
 		nextIndex = (currentIndex + 1) % len(users)
 	}
 
-	if err := h.nextPickerService.Set(ctx, users[nextIndex].ID); err != nil {
+	if err := h.nextUpService.Set(ctx, users[nextIndex].ID); err != nil {
 		return err
 	}
 
 	h.broker.Broadcast(event{
-		Type: "settings:next-picker-changed",
+		Type: "settings:next-up-changed",
 		Data: map[string]any{
 			"id":   users[nextIndex].ID,
 			"name": users[nextIndex].Name,
@@ -431,12 +431,12 @@ func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(movies)
 }
 
-// pickedPayload is the movie:picked wire shape: the winning movie plus the reel
-// candidates (the pre-pick pool as lean tiles, winner included). Carrying the
+// drawnPayload is the movie:drawn wire shape: the winning movie plus the reel
+// candidates (the pre-draw pool as lean tiles, winner included). Carrying the
 // candidates makes the reel self-contained — every client renders the full spin
 // regardless of whether it has the pool cached — and decouples the reel from each
 // client's local pool snapshot.
-type pickedPayload struct {
+type drawnPayload struct {
 	movieResponse
 	Candidates []movieResponse `json:"candidates"`
 }
@@ -444,55 +444,55 @@ type pickedPayload struct {
 func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 
-	// The client identifies itself so only the picker sees the reel's confirm
-	// button. Optional + best-effort: a malformed/absent body just means no picker
+	// The client identifies itself so only the drawer sees the reel's confirm
+	// button. Optional + best-effort: a malformed/absent body just means no drawer
 	// (every client's reel then auto-reveals on its countdown).
 	var body struct {
 		ClientID string `json:"clientId"`
 	}
 	_ = c.BodyParser(&body)
 
-	selectedMovie, err := h.movieService.PickRandom(ctx, sanitizeInput(body.ClientID))
+	selectedMovie, err := h.movieService.DrawRandom(ctx, sanitizeInput(body.ClientID))
 	if err != nil {
 		return writeError(c, err)
 	}
 
-	if err := h.advanceNextPicker(ctx); err != nil {
-		h.log.Error().Err(err).Msg("failed to advance next picker")
+	if err := h.advanceNextUp(ctx); err != nil {
+		h.log.Error().Err(err).Msg("failed to advance next up")
 	}
 
 	payload := toAPIMovie(selectedMovie)
-	// Carry the authoritative pick time so the clicker (whose own SSE event may
+	// Carry the authoritative draw time so the clicker (whose own SSE event may
 	// drop) and every other client resume the reveal spin from the same instant,
-	// plus the picker id so each client knows whether to show the confirm button.
-	if ap, ok := h.movieService.ActivePick(); ok && ap.MovieID == selectedMovie.ID {
-		payload.PickedAt = formatTime(&ap.PickedAt)
-		payload.PickerClientID = ap.PickerClientID
+	// plus the drawer id so each client knows whether to show the confirm button.
+	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == selectedMovie.ID {
+		payload.DrawnAt = formatTime(&ap.DrawnAt)
+		payload.DrawClientID = ap.DrawClientID
 	}
 
-	// Reel candidates = the pre-pick pool (winner + the rest) as lean tiles WITH
-	// posters, reconstructed from the post-pick pool plus the winner. The winner
+	// Reel candidates = the pre-draw pool (winner + the rest) as lean tiles WITH
+	// posters, reconstructed from the post-draw pool plus the winner. The winner
 	// must carry a poster here because the reel lands on it: toAPIMovie(selected)
 	// alone has none (no metadata), so the tiles — not the bare payload — supply it.
-	// Best-effort: the pick already succeeded, so a pool-load failure must not fail
+	// Best-effort: the draw already succeeded, so a pool-load failure must not fail
 	// the response — it just omits candidates and the client falls back to its
 	// local pool cache (the pre-self-contained behaviour).
-	picked := pickedPayload{movieResponse: payload}
+	drawn := drawnPayload{movieResponse: payload}
 	if pooled, err := h.movieService.Pooled(ctx); err != nil {
-		h.log.Warn().Err(err).Msg("failed to load pool for pick candidates (reel falls back to client pool cache)")
+		h.log.Warn().Err(err).Msg("failed to load pool for draw candidates (reel falls back to client pool cache)")
 	} else {
 		candidateMovies := append([]*domain.Movie{selectedMovie}, pooled...)
-		picked.Candidates = toAPIMoviesLean(candidateMovies, h.metaFor(ctx, candidateMovies))
+		drawn.Candidates = toAPIMoviesLean(candidateMovies, h.metaFor(ctx, candidateMovies))
 	}
 
-	h.broker.Broadcast(event{Type: "movie:picked", Data: picked})
+	h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
 
 	// Server owns the reveal countdown: if no client confirms within the window,
-	// the server reveals the pick itself (one broadcast for everyone) — see
+	// the server reveals the draw itself (one broadcast for everyone) — see
 	// scheduleAutoReveal.
 	h.scheduleAutoReveal()
 
-	return c.Status(fiber.StatusOK).JSON(picked)
+	return c.Status(fiber.StatusOK).JSON(drawn)
 }
 
 func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
@@ -508,27 +508,27 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 	meta := h.metaFor(ctx, []*domain.Movie{movieRecord})
 	credits := h.creditsFor(ctx, []*domain.Movie{movieRecord})
 	resp := toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
-	// When this movie is the active pick, hand the client the timing it needs to
-	// resume the reveal spin after a reload: when it was picked, plus the server
+	// When this movie is the active draw, hand the client the timing it needs to
+	// resume the reveal spin after a reload: when it was drawn, plus the server
 	// clock now (so elapsed is computed server-relative, free of client skew).
-	if ap, ok := h.movieService.ActivePick(); ok && ap.MovieID == movieRecord.ID {
+	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == movieRecord.ID {
 		now := time.Now().UTC()
-		resp.PickedAt = formatTime(&ap.PickedAt)
+		resp.DrawnAt = formatTime(&ap.DrawnAt)
 		resp.ServerNow = formatTime(&now)
-		resp.PickerClientID = ap.PickerClientID
+		resp.DrawClientID = ap.DrawClientID
 		resp.Revealed = ap.Revealed
 	}
 	return c.Status(fiber.StatusOK).JSON(resp)
 }
 
-// handleRevealCurrentMovie confirms the active pick — the picker pressed the
-// reel's OK button. It flips the pick to revealed and broadcasts movie:revealed so
+// handleRevealCurrentMovie confirms the active draw — the drawer pressed the
+// reel's OK button. It flips the draw to revealed and broadcasts movie:revealed so
 // every client's reel closes in lockstep, and cancels the server's pending
 // auto-reveal (this manual confirm won the race). Idempotent: a second confirm (or
-// a confirm with no active pick) is a quiet 200 with no re-broadcast, so racing
+// a confirm with no active draw) is a quiet 200 with no re-broadcast, so racing
 // clients don't double-fire the reveal.
 func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
-	ap, flipped := h.movieService.RevealCurrentPick()
+	ap, flipped := h.movieService.RevealCurrentDraw()
 	if flipped {
 		h.cancelAutoReveal()
 		h.broadcastRevealed(ap)
@@ -542,8 +542,8 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// The pick is gone — drop any pending auto-reveal so a stale timer can't fire
-	// against the next pick.
+	// The draw is gone — drop any pending auto-reveal so a stale timer can't fire
+	// against the next draw.
 	h.cancelAutoReveal()
 	h.invalidateStatsCache()
 
@@ -560,7 +560,7 @@ func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// Lean payload: the grid tiles render only poster/title/rating/picker, so
+	// Lean payload: the grid tiles render only poster/title/rating/adder, so
 	// this drops the per-movie cast/crew (and backdrop/tagline/overview) that
 	// made up the bulk of the bytes. The detail modal lazy-loads the full record
 	// from GET /movies/:id; Stats reads its actor/crew filter options from

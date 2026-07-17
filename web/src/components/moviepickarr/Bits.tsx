@@ -82,7 +82,7 @@ export function Rating({ voteAverage }: { voteAverage?: number }) {
 }
 
 /** A small avatar + name tag used as a tile sublabel. */
-export function PickerTag({ name, size = 20 }: { name: string; size?: number }) {
+export function AdderTag({ name, size = 20 }: { name: string; size?: number }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
       <Avatar name={name} size={size} />

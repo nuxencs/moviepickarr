@@ -56,7 +56,7 @@ export const MovieDetailQueryOptions = (movieID: number) =>
     refetchOnWindowFocus: false,
   })
 
-/** Stats filter choices (genres/actors/crew/years/pickers), derived server-side
+/** Stats filter choices (genres/actors/crew/years/adders), derived server-side
  *  from the watched library. Changes only on watch/edit/enrich/user events, so a
  *  generous staleTime — SSE invalidation refreshes it when it actually changes. */
 export const FilterOptionsQueryOptions = () =>
@@ -74,10 +74,10 @@ export const SettingsGetPoolLockQueryOptions = () =>
     refetchOnWindowFocus: false
   })
 
-export const SettingsGetNextPickerQueryOptions = () =>
+export const SettingsGetNextUpQueryOptions = () =>
   queryOptions({
-    queryKey: SettingsKeys.nextPicker(),
-    queryFn: () => APIClient.settings.getNextPicker(),
+    queryKey: SettingsKeys.nextUp(),
+    queryFn: () => APIClient.settings.getNextUp(),
     refetchOnWindowFocus: false
   })
 

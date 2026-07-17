@@ -175,7 +175,7 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
               ) : null}
 
               <div className="moviemodal__by">
-                picked by {m.addedByName}
+                added by {m.addedByName}
                 {watchedLabel ? ` · ${watchedLabel}` : ""}
               </div>
 

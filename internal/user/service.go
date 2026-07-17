@@ -16,14 +16,14 @@ type Service interface {
 }
 
 type service struct {
-	userRepo       domain.UserRepo
-	nextPickerRepo domain.NextPickerRepo
+	userRepo   domain.UserRepo
+	nextUpRepo domain.NextUpRepo
 }
 
-func NewService(userRepo domain.UserRepo, nextPickerRepo domain.NextPickerRepo) Service {
+func NewService(userRepo domain.UserRepo, nextUpRepo domain.NextUpRepo) Service {
 	return &service{
-		userRepo:       userRepo,
-		nextPickerRepo: nextPickerRepo,
+		userRepo:   userRepo,
+		nextUpRepo: nextUpRepo,
 	}
 }
 
@@ -33,10 +33,10 @@ func (s *service) Create(ctx context.Context, name string) (*domain.User, error)
 		return nil, err
 	}
 
-	_, err = s.nextPickerRepo.Get(ctx)
+	_, err = s.nextUpRepo.Get(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			if setErr := s.nextPickerRepo.Set(ctx, user.ID); setErr != nil {
+			if setErr := s.nextUpRepo.Set(ctx, user.ID); setErr != nil {
 				return nil, setErr
 			}
 		} else {

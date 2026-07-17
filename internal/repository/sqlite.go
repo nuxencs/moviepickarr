@@ -604,22 +604,22 @@ func (d *SqliteMoviesRepository) Delete(ctx context.Context, id int) error {
 	return nil
 }
 
-type SqliteNextPickerRepository struct {
+type SqliteNextUpRepository struct {
 	pool *db.Pool
 }
 
-func NewSqliteNextPickerRepository(pool *db.Pool) *SqliteNextPickerRepository {
-	return &SqliteNextPickerRepository{pool: pool}
+func NewSqliteNextUpRepository(pool *db.Pool) *SqliteNextUpRepository {
+	return &SqliteNextUpRepository{pool: pool}
 }
 
-func (d *SqliteNextPickerRepository) Get(ctx context.Context) (*domain.User, error) {
+func (d *SqliteNextUpRepository) Get(ctx context.Context) (*domain.User, error) {
 	query := `
 		SELECT 
 		    u.id,
 			u.name,
 			u.created_at,
 			u.updated_at
-		FROM next_picker n
+		FROM next_up n
 		JOIN users u ON n.user_id = u.id
 		WHERE n.id = 1
 		LIMIT 1
@@ -633,9 +633,9 @@ func (d *SqliteNextPickerRepository) Get(ctx context.Context) (*domain.User, err
 	return user, nil
 }
 
-func (d *SqliteNextPickerRepository) Set(ctx context.Context, userID int) error {
+func (d *SqliteNextUpRepository) Set(ctx context.Context, userID int) error {
 	query := `
-		INSERT INTO next_picker (id, user_id)
+		INSERT INTO next_up (id, user_id)
 		VALUES (1, ?)
 		ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
 	`

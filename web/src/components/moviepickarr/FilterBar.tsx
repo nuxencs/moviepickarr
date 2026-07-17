@@ -50,9 +50,9 @@ function FilterChipMenu<T extends string | number>({
   active,
   choices,
   isSelected,
-  onPick,
+  onSelect,
   onClear,
-  closeOnPick,
+  closeOnSelect,
   multiselectable = false,
   searchable = false,
 }: {
@@ -62,10 +62,10 @@ function FilterChipMenu<T extends string | number>({
   active: boolean;
   choices: FilterChoice<T>[];
   isSelected: (value: T) => boolean;
-  onPick: (value: T) => void;
+  onSelect: (value: T) => void;
   onClear: () => void;
-  /** Single-select closes on pick; multi-select stays open for more toggles. */
-  closeOnPick: boolean;
+  /** Single-select closes on select; multi-select stays open for more toggles. */
+  closeOnSelect: boolean;
   multiselectable?: boolean;
   searchable?: boolean;
 }) {
@@ -157,9 +157,9 @@ function FilterChipMenu<T extends string | number>({
 
   useEffect(() => () => clearTimer(), []);
 
-  const pick = (next: T) => {
-    onPick(next);
-    if (closeOnPick) requestClose("select");
+  const select = (next: T) => {
+    onSelect(next);
+    if (closeOnSelect) requestClose("select");
   };
 
   const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -277,7 +277,7 @@ function FilterChipMenu<T extends string | number>({
                   role="option"
                   aria-selected={selected}
                   className={`mg-menu__item${choice.kind ? ` filtermenu__item--${choice.kind}` : ""}`}
-                  onClick={() => pick(choice.value)}
+                  onClick={() => select(choice.value)}
                 >
                   {multiselectable && (
                     // Fixed-width check slot: selection reads as a mark, not
@@ -333,15 +333,15 @@ export function FilterSelect<T extends string | number>({
       searchable={searchable}
       isSelected={(v) => v === value}
       // Re-selecting the active option toggles the filter off.
-      onPick={(v) => onChange(v === value ? null : v)}
+      onSelect={(v) => onChange(v === value ? null : v)}
       onClear={() => onChange(null)}
-      closeOnPick
+      closeOnSelect
     />
   );
 }
 
 /**
- * Chip-trigger multi-select filter (the Actors/Crew people lists). Picking
+ * Chip-trigger multi-select filter (the Actors/Crew people lists). Choosing
  * toggles membership and keeps the menu open for more; the chip shows the
  * lone selection's name or a count ("Actors · 2"); the clear X clears the
  * whole group.
@@ -380,7 +380,7 @@ export function FilterMultiSelect<T extends string | number>({
       searchable={searchable}
       multiselectable
       isSelected={(v) => values.includes(v)}
-      onPick={(v) => {
+      onSelect={(v) => {
         if (values.includes(v)) {
           onChange(values.filter((x) => x !== v));
         } else if (values.length < MAX_SELECTED) {
@@ -388,7 +388,7 @@ export function FilterMultiSelect<T extends string | number>({
         }
       }}
       onClear={() => onChange([])}
-      closeOnPick={false}
+      closeOnSelect={false}
     />
   );
 }
@@ -398,9 +398,9 @@ const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 
 /**
  * The Release-year chip: a single-select dropdown that groups the available
- * years under selectable decade headers. Picking a decade ("1990s") filters the
- * whole decade; picking a year filters that exact year; the two are mutually
- * exclusive — picking one clears the other, and re-picking the active value
+ * years under selectable decade headers. Choosing a decade ("1990s") filters the
+ * whole decade; choosing a year filters that exact year; the two are mutually
+ * exclusive — choosing one clears the other, and re-choosing the active value
  * clears it. Values are kind-tagged (`d:`/`y:`) so a decade and a same-numbered
  * year never collide in the listbox.
  */
@@ -442,7 +442,7 @@ function ReleaseYearSelect({
       active={active}
       choices={choices}
       isSelected={(v) => v === activeValue}
-      onPick={(v) => {
+      onSelect={(v) => {
         const n = Number(v.slice(2));
         if (v.startsWith("d:")) {
           onChange({ decade: decade === n ? null : n, year: null });
@@ -451,7 +451,7 @@ function ReleaseYearSelect({
         }
       }}
       onClear={() => onChange({ year: null, decade: null })}
-      closeOnPick
+      closeOnSelect
     />
   );
 }
@@ -480,7 +480,7 @@ export function FilterBar({
   const personChoices = (people: PersonOption[]): FilterChoice<number>[] =>
     people.map((p) => ({ value: p.id, label: p.name }));
 
-  // Map picked ids back to {id, name} pairs, preferring the option list and
+  // Map selected ids back to {id, name} pairs, preferring the option list and
   // falling back to the already-selected entry (so names survive a person
   // dropping out of a refetched list).
   const toPersonFilters = (ids: number[], people: PersonOption[], selected: PersonFilter[]) =>
@@ -518,12 +518,12 @@ export function FilterBar({
         onChange={(ids) => onChange({ ...value, crew: toPersonFilters(ids, options.crew, value.crew) })}
       />
       <FilterMultiSelect
-        label="Picked by"
-        searchable={options.pickers.length >= SEARCHABLE_FROM}
-        values={value.pickers.map((p) => p.id)}
-        valueLabels={new Map(value.pickers.map((p) => [p.id, p.name]))}
-        choices={personChoices(options.pickers)}
-        onChange={(ids) => onChange({ ...value, pickers: toPersonFilters(ids, options.pickers, value.pickers) })}
+        label="Added by"
+        searchable={options.adders.length >= SEARCHABLE_FROM}
+        values={value.adders.map((p) => p.id)}
+        valueLabels={new Map(value.adders.map((p) => [p.id, p.name]))}
+        choices={personChoices(options.adders)}
+        onChange={(ids) => onChange({ ...value, adders: toPersonFilters(ids, options.adders, value.adders) })}
       />
       <ReleaseYearSelect
         label={yearLabel}

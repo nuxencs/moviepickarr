@@ -39,13 +39,13 @@ function MonthView({
   base,
   range,
   hover,
-  onPick,
+  onSelect,
   onHover,
 }: {
   base: Date;
   range: DayRange;
   hover: Date | null;
-  onPick: (d: Date) => void;
+  onSelect: (d: Date) => void;
   onHover: (d: Date) => void;
 }) {
   const y = base.getFullYear();
@@ -83,7 +83,7 @@ function MonthView({
               type="button"
               key={i}
               className={cls.join(" ")}
-              onClick={() => onPick(c.date)}
+              onClick={() => onSelect(c.date)}
               onMouseEnter={() => onHover(c.date)}
             >
               {c.date.getDate()}
@@ -157,7 +157,7 @@ export function DateRangePopover({
     };
   }, [onDismiss, triggerRef]);
 
-  const pick = (date: Date) => {
+  const select = (date: Date) => {
     setRange((r) => {
       if (!r.start || (r.start && r.end)) return { start: date, end: null };
       if (dayKey(date) < dayKey(r.start)) return { start: date, end: r.start };
@@ -186,8 +186,8 @@ export function DateRangePopover({
         </button>
       </div>
       <div className="daterange__months" onMouseLeave={() => setHover(null)}>
-        <MonthView base={base} range={range} hover={hover} onPick={pick} onHover={setHover} />
-        <MonthView base={addMonths(base, 1)} range={range} hover={hover} onPick={pick} onHover={setHover} />
+        <MonthView base={base} range={range} hover={hover} onSelect={select} onHover={setHover} />
+        <MonthView base={addMonths(base, 1)} range={range} hover={hover} onSelect={select} onHover={setHover} />
       </div>
       <div className="daterange__foot">
         <span className="daterange__range">{fmtRange(range.start, range.end)}</span>

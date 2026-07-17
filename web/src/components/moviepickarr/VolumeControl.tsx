@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAudio } from "@/components/audio-context";
 
-import { isJinglePlaying, onJingleChange, playPickJingle, stopPickJingle } from "@/lib/sound";
+import { isJinglePlaying, onJingleChange, playDrawJingle, stopDrawJingle } from "@/lib/sound";
 
 /**
- * Pick-sound control: a speaker button that opens a small popover holding a mute
- * toggle, a volume slider, and a play/stop button to audition the pick jingle.
+ * Draw-sound control: a speaker button that opens a small popover holding a mute
+ * toggle, a volume slider, and a play/stop button to audition the draw jingle.
  * Both the on/off state and the 0..1 volume persist to localStorage (see
  * sound.ts). Closes on Escape / outside click, mirroring the date-range popover
  * pattern.
@@ -50,20 +50,20 @@ export function VolumeControl() {
         type="button"
         className="iconbtn"
         onClick={() => setOpen((o) => !o)}
-        aria-label="Pick sound settings"
+        aria-label="Draw sound settings"
         aria-expanded={open}
-        title="Pick sound"
+        title="Draw sound"
       >
         <LevelIcon />
       </button>
 
       {open && (
-        <div className="volume__pop" role="group" aria-label="Pick sound">
+        <div className="volume__pop" role="group" aria-label="Draw sound">
           <button
             type="button"
             className="iconbtn"
             onClick={toggleSound}
-            aria-label={soundEnabled ? "Mute pick sound" : "Unmute pick sound"}
+            aria-label={soundEnabled ? "Mute draw sound" : "Unmute draw sound"}
             aria-pressed={!soundEnabled}
             title={soundEnabled ? "Mute" : "Unmute"}
           >
@@ -77,15 +77,15 @@ export function VolumeControl() {
             step={1}
             value={pct}
             onChange={(e) => setVolume(Number(e.target.value) / 100)}
-            aria-label="Pick sound volume"
+            aria-label="Draw sound volume"
             aria-valuetext={`${pct}%`}
           />
           <span className="volume__pct">{pct}%</span>
-          {/* Play/stop the pick jingle so you can hear it without waiting for a pick. */}
+          {/* Play/stop the draw jingle so you can hear it without waiting for a draw. */}
           <button
             type="button"
             className="iconbtn"
-            onClick={() => (jinglePlaying ? stopPickJingle() : playPickJingle())}
+            onClick={() => (jinglePlaying ? stopDrawJingle() : playDrawJingle())}
             aria-label={jinglePlaying ? "Stop jingle" : "Play jingle"}
             title={jinglePlaying ? "Stop" : "Play jingle"}
           >

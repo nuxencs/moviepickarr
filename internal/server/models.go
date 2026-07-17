@@ -31,19 +31,19 @@ type movieResponse struct {
 	AddedByName string `json:"addedByName"`
 	WatchedAt   string `json:"watchedAt"`
 
-	// Pick-reveal coordination. Set only on the movie:picked event and the
-	// current-movie endpoint, never on list payloads. PickedAt is when the
-	// current movie was picked (drives resuming the cross-client reveal spin
+	// Draw-reveal coordination. Set only on the movie:drawn event and the
+	// current-movie endpoint, never on list payloads. DrawnAt is when the
+	// current movie was drawn (drives resuming the cross-client reveal spin
 	// after a reload); ServerNow is the server clock at response time so the
 	// client computes elapsed without trusting its own clock. Both omitted when
-	// no pick is active.
-	PickedAt  string `json:"pickedAt,omitempty"`
+	// no draw is active.
+	DrawnAt   string `json:"drawnAt,omitempty"`
 	ServerNow string `json:"serverNow,omitempty"`
-	// PickerClientID is the client that initiated the pick; only that client shows
-	// the reel's confirm button. Revealed reports whether the pick was confirmed,
+	// DrawClientID is the client that initiated the draw; only that client shows
+	// the reel's confirm button. Revealed reports whether the draw was confirmed,
 	// so a reload after the reveal shows the result instead of re-opening the reel.
-	PickerClientID string `json:"pickerClientId,omitempty"`
-	Revealed       bool   `json:"revealed,omitempty"`
+	DrawClientID string `json:"drawClientId,omitempty"`
+	Revealed     bool   `json:"revealed,omitempty"`
 
 	// Stable external identities, exposed so the frontend can build links to
 	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).

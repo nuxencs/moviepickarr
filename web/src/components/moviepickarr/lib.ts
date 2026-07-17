@@ -138,8 +138,8 @@ export interface MovieFilters {
   crew: PersonFilter[];
   year: number | null;
   decade: number | null;
-  /** Adders/pickers of the movie — any-of, matched against `addedByID`. */
-  pickers: PersonFilter[];
+  /** Adders of the movie — any-of, matched against `addedByID`. */
+  adders: PersonFilter[];
 }
 
 /** The everything-passes filter state — handy as `useState` initial value. */
@@ -149,7 +149,7 @@ export const NO_FILTERS: MovieFilters = {
   crew: [],
   year: null,
   decade: null,
-  pickers: [],
+  adders: [],
 };
 
 /** Whether any filter is set (drives the stats empty copy). */
@@ -160,7 +160,7 @@ export function hasActiveFilters(filters: MovieFilters): boolean {
     filters.crew.length > 0 ||
     filters.year !== null ||
     filters.decade !== null ||
-    filters.pickers.length > 0
+    filters.adders.length > 0
   );
 }
 
@@ -176,7 +176,7 @@ export interface FilterOptions {
   crew: PersonOption[];
   years: number[];
   /** The members who added the movies, by id, sorted A→Z by name. */
-  pickers: PersonOption[];
+  adders: PersonOption[];
 }
 
 // Filter options are now derived server-side (GET /movies/filter-options) and

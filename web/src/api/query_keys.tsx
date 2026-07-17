@@ -15,27 +15,27 @@ export const MoviesKeys = {
     // invalidate every open/cached modal on enrichment.
     details: () => [...MoviesKeys.all, "detail"] as const,
     detail: (movieID: number) => [...MoviesKeys.details(), movieID] as const,
-    // Stats filter choices (genres/actors/crew/years/pickers), derived
+    // Stats filter choices (genres/actors/crew/years/adders), derived
     // server-side from the watched library — replaces deriving them from the
     // credits that used to be embedded in the watched list.
     filterOptions: () => [...MoviesKeys.all, "filterOptions"] as const,
 }
 
-// Client-only state (no endpoint): the in-flight pick-reveal spin descriptor,
-// set via setQueryData by the SSE handler / pick mutation and read by the Hero.
-// `revealed` is the cross-client close signal — the picker's confirm (or the
-// countdown) broadcasts movie:revealed; useSSE stows the pickedAt here and the
-// Hero closes the reel for that pick.
-export const PickKeys = {
-    all: ["pick"] as const,
-    active: () => [...PickKeys.all, "active"] as const,
-    revealed: () => [...PickKeys.all, "revealed"] as const,
+// Client-only state (no endpoint): the in-flight draw-reveal spin descriptor,
+// set via setQueryData by the SSE handler / draw mutation and read by the Hero.
+// `revealed` is the cross-client close signal — the drawer's confirm (or the
+// countdown) broadcasts movie:revealed; useSSE stows the drawnAt here and the
+// Hero closes the reel for that draw.
+export const DrawKeys = {
+    all: ["draw"] as const,
+    active: () => [...DrawKeys.all, "active"] as const,
+    revealed: () => [...DrawKeys.all, "revealed"] as const,
 }
 
 export const SettingsKeys = {
     all: ["settings"] as const,
     poolLock: () => [...SettingsKeys.all, "poolLock"] as const,
-    nextPicker: () => [...SettingsKeys.all, "nextPicker"] as const,
+    nextUp: () => [...SettingsKeys.all, "nextUp"] as const,
 }
 
 export const StatsKeys = {

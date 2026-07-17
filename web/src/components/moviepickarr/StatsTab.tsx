@@ -53,7 +53,7 @@ import { useFlipRail } from "@/hooks/useFlipRail";
 
 // Stable reference for the pre-load / empty state so the filters useMemo below
 // doesn't recompute on every render while the server options are in flight.
-const EMPTY_FILTER_OPTIONS: FilterOptions = { genres: [], actors: [], crew: [], years: [], pickers: [] };
+const EMPTY_FILTER_OPTIONS: FilterOptions = { genres: [], actors: [], crew: [], years: [], adders: [] };
 
 const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
   { id: "7d", label: "7d" },
@@ -96,48 +96,48 @@ function topHour(items: StatsHourCount[]) {
 export function StatsTab() {
   const search = useSearch({ from: "/stats" });
   const navigate = useNavigate({ from: "/stats" });
-  const [showPicker, setShowPicker] = useState(false);
-  // The custom-range popover shares the floating-surface exit motion: closePicker
+  const [showRange, setShowRange] = useState(false);
+  // The custom-range popover shares the floating-surface exit motion: closeRange
   // flags it closing (so CSS plays daterange--closing), restores focus to the
   // trigger, then unmounts after exitDelayMs() — the same lockstep the Menu/Modal
   // use, and 0ms under reduced motion.
-  const [pickerClosing, setPickerClosing] = useState(false);
-  const pickerClosingRef = useRef(false);
-  const pickerTimer = useRef<number | null>(null);
-  const pickerId = useId();
+  const [rangeClosing, setRangeClosing] = useState(false);
+  const rangeClosingRef = useRef(false);
+  const rangeTimer = useRef<number | null>(null);
+  const rangeId = useId();
   const customRef = useRef<HTMLButtonElement>(null);
 
-  const closePicker = useCallback((restoreFocus: boolean, after?: () => void) => {
-    if (pickerClosingRef.current) return;
-    pickerClosingRef.current = true;
-    setPickerClosing(true);
+  const closeRange = useCallback((restoreFocus: boolean, after?: () => void) => {
+    if (rangeClosingRef.current) return;
+    rangeClosingRef.current = true;
+    setRangeClosing(true);
     if (restoreFocus) customRef.current?.focus();
-    if (pickerTimer.current !== null) window.clearTimeout(pickerTimer.current);
-    pickerTimer.current = window.setTimeout(() => {
-      pickerClosingRef.current = false;
-      pickerTimer.current = null;
-      setPickerClosing(false);
-      setShowPicker(false);
+    if (rangeTimer.current !== null) window.clearTimeout(rangeTimer.current);
+    rangeTimer.current = window.setTimeout(() => {
+      rangeClosingRef.current = false;
+      rangeTimer.current = null;
+      setRangeClosing(false);
+      setShowRange(false);
       after?.();
     }, exitDelayMs());
   }, []);
 
   // Hard-hide without the exit animation (when the view changes out from under the
-  // popover — picking another preset or a watch year). Resets the closing guard so
+  // popover — choosing another preset or a watch year). Resets the closing guard so
   // a later open isn't blocked.
-  const hidePickerNow = useCallback(() => {
-    if (pickerTimer.current !== null) {
-      window.clearTimeout(pickerTimer.current);
-      pickerTimer.current = null;
+  const hideRangeNow = useCallback(() => {
+    if (rangeTimer.current !== null) {
+      window.clearTimeout(rangeTimer.current);
+      rangeTimer.current = null;
     }
-    pickerClosingRef.current = false;
-    setPickerClosing(false);
-    setShowPicker(false);
+    rangeClosingRef.current = false;
+    setRangeClosing(false);
+    setShowRange(false);
   }, []);
 
   useEffect(
     () => () => {
-      if (pickerTimer.current !== null) window.clearTimeout(pickerTimer.current);
+      if (rangeTimer.current !== null) window.clearTimeout(rangeTimer.current);
     },
     [],
   );
@@ -176,13 +176,13 @@ export function StatsTab() {
       search.genre || undefined,
       search.actors,
       search.crew,
-      search.pickers,
+      search.adders,
       search.year || undefined,
       search.decade || undefined,
     ),
   );
 
-  // Filter options (actors/crew/genres/years/pickers) come from a cached
+  // Filter options (actors/crew/genres/years/adders) come from a cached
   // server endpoint that derives them from the watched library — the watched
   // list itself now ships lean (no embedded credits), so they can't be rebuilt
   // client-side. Watch years (below) still read the cached watched list, which
@@ -246,7 +246,7 @@ export function StatsTab() {
     navigate({ search: (prev) => ({ ...prev, ...filtersToSearch(next) }) });
 
   const onWatchYear = (year: number | null) => {
-    hidePickerNow();
+    hideRangeNow();
     if (year === null) {
       navigate({ search: (prev) => ({ ...prev, win: "all-time", start: "", end: "" }) });
       return;
@@ -290,23 +290,23 @@ export function StatsTab() {
 
   const onWin = (id: StatsWindow) => {
     if (id === "custom") {
-      if (showPicker && !pickerClosingRef.current) {
-        closePicker(true);
+      if (showRange && !rangeClosingRef.current) {
+        closeRange(true);
       } else {
         // Open — or interrupt an in-flight close and re-open, so a fast re-click
         // during the exit fade isn't swallowed. Clearing the timer is load-bearing:
         // otherwise the original close timer still fires and slams it shut again.
-        if (pickerTimer.current !== null) {
-          window.clearTimeout(pickerTimer.current);
-          pickerTimer.current = null;
+        if (rangeTimer.current !== null) {
+          window.clearTimeout(rangeTimer.current);
+          rangeTimer.current = null;
         }
-        pickerClosingRef.current = false;
-        setPickerClosing(false);
-        setShowPicker(true);
+        rangeClosingRef.current = false;
+        setRangeClosing(false);
+        setShowRange(true);
       }
       return;
     }
-    hidePickerNow();
+    hideRangeNow();
     navigate({ search: (prev) => ({ ...prev, win: id, start: "", end: "" }) });
   };
 
@@ -337,10 +337,10 @@ export function StatsTab() {
                   key={w.id}
                   type="button"
                   ref={isCustom ? customRef : undefined}
-                  data-active={win === w.id || (isCustom && showPicker)}
+                  data-active={win === w.id || (isCustom && showRange)}
                   aria-haspopup={isCustom ? "dialog" : undefined}
-                  aria-expanded={isCustom ? showPicker : undefined}
-                  aria-controls={isCustom && showPicker ? pickerId : undefined}
+                  aria-expanded={isCustom ? showRange : undefined}
+                  aria-controls={isCustom && showRange ? rangeId : undefined}
                   onClick={() => onWin(w.id)}
                 >
                   {w.calendar && <CalendarDaysIcon />}
@@ -349,15 +349,15 @@ export function StatsTab() {
               );
             })}
           </div>
-          {showPicker && (
+          {showRange && (
             <DateRangePopover
-              id={pickerId}
+              id={rangeId}
               triggerRef={customRef}
-              closing={pickerClosing}
+              closing={rangeClosing}
               initial={customRange}
-              onDismiss={closePicker}
+              onDismiss={closeRange}
               onApply={(r) =>
-                closePicker(true, () =>
+                closeRange(true, () =>
                   navigate({
                     search: (prev) => ({
                       ...prev,
@@ -415,7 +415,7 @@ export function StatsTab() {
               sub="TMDB average"
               mono
             />
-            <StatItem icon={<TrophyIcon size={15} />} label="Top picker" value={topUser?.name ?? "—"} sub={<MovieCount value={topUser?.count ?? 0} animateOnMount />} />
+            <StatItem icon={<TrophyIcon size={15} />} label="Top adder" value={topUser?.name ?? "—"} sub={<MovieCount value={topUser?.count ?? 0} animateOnMount />} />
             <StatItem icon={<CalendarDaysIcon size={15} />} label="Busiest day" value={topDay?.name ?? "—"} sub={<MovieCount value={topDay?.count ?? 0} animateOnMount />} />
             <StatItem
               icon={<Clock3Icon size={15} />}
@@ -435,7 +435,7 @@ export function StatsTab() {
 
           {count > 0 && panelsReady && (
             <>
-              <PickedByMember rows={stats.watchedByUser} />
+              <AddedByMember rows={stats.watchedByUser} />
 
               <div className="two-col">
                 <WeekdayActivity rows={stats.weekdayActivity} />
@@ -570,7 +570,7 @@ function StatItem({
   );
 }
 
-function PickedByMember({ rows }: { rows: StatsNamedCount[] }) {
+function AddedByMember({ rows }: { rows: StatsNamedCount[] }) {
   const max = Math.max(...rows.map((r) => r.count), 1);
   // FLIP the leaderboard: when a window change reranks members, the rows glide to
   // their new rank rather than snapping; new members pop in, dropped ones fade
@@ -578,7 +578,7 @@ function PickedByMember({ rows }: { rows: StatsNamedCount[] }) {
   const { containerRef, entries, itemProps } = useFlipRail<StatsNamedCount>(rows, (r) => r.name);
   return (
     <section className="statsec">
-      <h3 className="statsec__title">Picked by member</h3>
+      <h3 className="statsec__title">Added by member</h3>
       {entries.length === 0 ? (
         <p className="empty">No watched movies in this window.</p>
       ) : (

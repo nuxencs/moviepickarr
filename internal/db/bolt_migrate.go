@@ -38,9 +38,12 @@ type boltMovie struct {
 }
 
 type boltSettings struct {
-	PoolLocked     bool   `json:"poolLocked"`
-	NextPickerID   string `json:"nextPickerID"`
-	NextPickerName string `json:"nextPickerName"`
+	PoolLocked bool `json:"poolLocked"`
+	// JSON tags stay on the legacy Bolt keys (nextPickerID/nextPickerName): they
+	// mirror what the pre-rename app wrote to disk, so the one-time import must
+	// still read them. Only the Go-side names move to the next-up vocabulary.
+	NextUpID   string `json:"nextPickerID"`
+	NextUpName string `json:"nextPickerName"`
 }
 
 const (
@@ -189,9 +192,9 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 			return err
 		}
 
-		if settings.NextPickerID != "" {
-			if nextID := userIDMap[settings.NextPickerID]; nextID != 0 {
-				if _, err := sqliteDB.ExecContext(ctx, "UPDATE next_picker SET user_id = ? WHERE id = 1", nextID); err != nil {
+		if settings.NextUpID != "" {
+			if nextID := userIDMap[settings.NextUpID]; nextID != 0 {
+				if _, err := sqliteDB.ExecContext(ctx, "UPDATE next_up SET user_id = ? WHERE id = 1", nextID); err != nil {
 					return err
 				}
 			}

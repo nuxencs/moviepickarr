@@ -93,6 +93,10 @@ func TestRunMigrationsWithBackup_PendingCreatesBackup(t *testing.T) {
 			enriched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			credits_refreshed_at TIMESTAMP,
 			FOREIGN KEY (movie_id) REFERENCES movies(id) ON UPDATE CASCADE ON DELETE CASCADE)`,
+		`CREATE TABLE next_picker (
+			id INTEGER PRIMARY KEY CHECK (id = 1), user_id INTEGER,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL)`,
+		`INSERT INTO next_picker (id, user_id) VALUES (1, NULL)`,
 		`INSERT INTO users (id, name) VALUES (1, 'alice')`,
 		`INSERT INTO movies (title, status, added_at, added_by_id) VALUES
 			('pre-backup', 'pool', '2026-06-27 11:20:58', 1)`,

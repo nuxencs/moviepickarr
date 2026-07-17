@@ -10,7 +10,7 @@ import (
 
 	"moviepickarr/internal/domain"
 	"moviepickarr/internal/movie"
-	"moviepickarr/internal/nextpicker"
+	"moviepickarr/internal/nextup"
 	"moviepickarr/internal/settings"
 	"moviepickarr/internal/user"
 
@@ -20,29 +20,29 @@ import (
 
 var imdbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
 
-// defaultAutoRevealDelay is how long after a pick the server waits before
+// defaultAutoRevealDelay is how long after a draw the server waits before
 // revealing it itself, if no client confirms. It mirrors the client reel timing —
 // --dur-spin (the reel scroll) + --dur-confirm (the settled OK-button countdown)
-// in web/src/index.css (6.5s + 10s) — so the server fires exactly as the picker's
+// in web/src/index.css (6.5s + 10s) — so the server fires exactly as the drawer's
 // OK-fill completes. Keep the two in sync.
 const defaultAutoRevealDelay = 16500 * time.Millisecond
 
 type handler struct {
-	broker            *eventBroker
-	log               zerolog.Logger
-	userService       user.Service
-	movieService      movie.Service
-	nextPickerService nextpicker.Service
-	settingsService   settings.Service
-	movieMetadata     domain.MovieMetadataRepo
-	movieCredits      domain.MovieCreditsRepo
-	tmdb              *tmdbClient
-	enrichRunner      *enrichRunner
-	statsCacheMu      sync.RWMutex
-	statsCache        map[string]statsCacheEntry
-	statsCacheTTL     time.Duration
+	broker          *eventBroker
+	log             zerolog.Logger
+	userService     user.Service
+	movieService    movie.Service
+	nextUpService   nextup.Service
+	settingsService settings.Service
+	movieMetadata   domain.MovieMetadataRepo
+	movieCredits    domain.MovieCreditsRepo
+	tmdb            *tmdbClient
+	enrichRunner    *enrichRunner
+	statsCacheMu    sync.RWMutex
+	statsCache      map[string]statsCacheEntry
+	statsCacheTTL   time.Duration
 
-	// Server-owned auto-reveal. When a pick goes unconfirmed, the server reveals
+	// Server-owned auto-reveal. When a draw goes unconfirmed, the server reveals
 	// it at autoRevealDelay and broadcasts movie:revealed ONCE, so every client
 	// closes its reel off that single broadcast — even a backgrounded, timer-
 	// throttled tab — instead of each running its own countdown (whose independent
@@ -52,7 +52,7 @@ type handler struct {
 	autoRevealTimer *time.Timer
 	autoRevealDelay time.Duration
 
-	// Filter options (genres/actors/crew/years/pickers for the Stats filter bar)
+	// Filter options (genres/actors/crew/years/adders for the Stats filter bar)
 	// are derived from the watched library's metadata+credits — the same data
 	// the watched list used to ship inline. A single cached snapshot, invalidated
 	// on the same triggers as the stats cache.
@@ -72,8 +72,8 @@ func (h *handler) Close() {
 }
 
 // scheduleAutoReveal arms (or re-arms) the server-owned auto-reveal for the active
-// pick — see the autoReveal* fields on handler for why the server owns this. A
-// prior pending timer is stopped first; there is only ever one active pick.
+// draw — see the autoReveal* fields on handler for why the server owns this. A
+// prior pending timer is stopped first; there is only ever one active draw.
 func (h *handler) scheduleAutoReveal() {
 	delay := h.autoRevealDelay
 	if delay <= 0 {
@@ -88,7 +88,7 @@ func (h *handler) scheduleAutoReveal() {
 }
 
 // cancelAutoReveal stops a pending auto-reveal — a manual confirm won the race, the
-// pick was watched/cleared, or the server is shutting down.
+// draw was watched/cleared, or the server is shutting down.
 func (h *handler) cancelAutoReveal() {
 	h.autoRevealMu.Lock()
 	defer h.autoRevealMu.Unlock()
@@ -99,10 +99,10 @@ func (h *handler) cancelAutoReveal() {
 }
 
 // autoReveal fires when the confirm window elapses with no client confirmation. It
-// is idempotent via RevealCurrentPick (a no-op once revealed or cleared), so it
+// is idempotent via RevealCurrentDraw (a no-op once revealed or cleared), so it
 // races harmlessly with a late manual confirm or a watch.
 func (h *handler) autoReveal() {
-	if ap, flipped := h.movieService.RevealCurrentPick(); flipped {
+	if ap, flipped := h.movieService.RevealCurrentDraw(); flipped {
 		h.broadcastRevealed(ap)
 	}
 }
@@ -110,10 +110,10 @@ func (h *handler) autoReveal() {
 // broadcastRevealed tells every client to close its reel and reveal the winner in
 // lockstep. Shared by the manual confirm (handleRevealCurrentMovie) and the
 // server-owned auto-reveal so both emit an identical frame.
-func (h *handler) broadcastRevealed(ap movie.ActivePick) {
+func (h *handler) broadcastRevealed(ap movie.ActiveDraw) {
 	h.broker.Broadcast(event{Type: "movie:revealed", Data: map[string]any{
-		"movieID":  ap.MovieID,
-		"pickedAt": formatTime(&ap.PickedAt),
+		"movieID": ap.MovieID,
+		"drawnAt": formatTime(&ap.DrawnAt),
 	}})
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// filterPersonOption is one selectable person (actor, crew member, or picker) in
+// filterPersonOption is one selectable person (actor, crew member, or adder) in
 // the Stats filter bar — id plus display name.
 type filterPersonOption struct {
 	ID   int    `json:"id"`
@@ -23,11 +23,11 @@ type filterPersonOption struct {
 // filterOptionsFrom() that used to rebuild these from the credits embedded in
 // every /movies/watched payload — so that payload can now ship lean.
 type filterOptionsResponse struct {
-	Genres  []string             `json:"genres"`  // A→Z
-	Actors  []filterPersonOption `json:"actors"`  // A→Z by name
-	Crew    []filterPersonOption `json:"crew"`    // A→Z by name
-	Years   []int                `json:"years"`   // release years, newest first
-	Pickers []filterPersonOption `json:"pickers"` // A→Z by name
+	Genres []string             `json:"genres"` // A→Z
+	Actors []filterPersonOption `json:"actors"` // A→Z by name
+	Crew   []filterPersonOption `json:"crew"`   // A→Z by name
+	Years  []int                `json:"years"`  // release years, newest first
+	Adders []filterPersonOption `json:"adders"` // A→Z by name
 }
 
 func (h *handler) handleGetFilterOptions(c *fiber.Ctx) error {
@@ -63,13 +63,13 @@ func (h *handler) handleGetFilterOptions(c *fiber.Ctx) error {
 
 // buildFilterOptions mirrors the old client-side filterOptionsFrom(watched):
 // unique genres, the distinct cast and crew people (split, matching the
-// actors/crew filter split), the distinct pickers, and the distinct release
+// actors/crew filter split), the distinct adders, and the distinct release
 // years — each in the same display order the UI expects.
 func buildFilterOptions(watched []*domain.Movie, meta metaByID, credits creditsByID) filterOptionsResponse {
 	genres := make(map[string]struct{})
 	actors := make(map[int]string)
 	crew := make(map[int]string)
-	pickers := make(map[int]string)
+	adders := make(map[int]string)
 	years := make(map[int]struct{})
 
 	for i := range watched {
@@ -83,8 +83,8 @@ func buildFilterOptions(watched []*domain.Movie, meta metaByID, credits creditsB
 			}
 		}
 		if watched[i].AddedByID != 0 {
-			if _, ok := pickers[watched[i].AddedByID]; !ok {
-				pickers[watched[i].AddedByID] = watched[i].AddedByName
+			if _, ok := adders[watched[i].AddedByID]; !ok {
+				adders[watched[i].AddedByID] = watched[i].AddedByName
 			}
 		}
 		for _, credit := range credits[watched[i].ID] {
@@ -102,11 +102,11 @@ func buildFilterOptions(watched []*domain.Movie, meta metaByID, credits creditsB
 	}
 
 	return filterOptionsResponse{
-		Genres:  sortedStrings(genres),
-		Actors:  sortedPeople(actors),
-		Crew:    sortedPeople(crew),
-		Years:   sortedYearsDesc(years),
-		Pickers: sortedPeople(pickers),
+		Genres: sortedStrings(genres),
+		Actors: sortedPeople(actors),
+		Crew:   sortedPeople(crew),
+		Years:  sortedYearsDesc(years),
+		Adders: sortedPeople(adders),
 	}
 }
 

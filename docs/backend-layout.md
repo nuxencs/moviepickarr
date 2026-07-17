@@ -24,7 +24,7 @@
 ## Domain + Use Cases
 
 - `internal/domain/*`: entities, repository ports, typed domain errors.
-- `internal/{user,movie,nextpicker,settings}`: service-layer use cases.
+- `internal/{user,movie,nextup,settings}`: service-layer use cases.
 
 ## Logging
 
@@ -178,7 +178,7 @@ the optional, combinable filters `genre` (case-insensitive name), `actorIds` /
 `crewIds` (comma-separated positive TMDB person ids, ≤25 each, deduped +
 sorted server-side; `actorIds` match cast credits, `crewIds` match crew
 credits — any whitelisted job, since crew rows are job-whitelisted at ingest),
-`addedByIds` (comma-separated user ids of the movie's adder/picker, any-of),
+`addedByIds` (comma-separated user ids of the movie's adder, any-of),
 and either `releaseYear` (exact year, 1870–2100) or `decade` (its floor — a
 multiple of 10 in the same range, so `1990` ⇒ 1990–1999; mutually exclusive with
 `releaseYear`). People lists are **any-of within a list and
@@ -188,8 +188,8 @@ subset; movies that were never enriched fail any active filter (their
 genre/year/people are unknown). One exception by design: `watchedByUser`
 always carries a **row per roster member**, zeroed when nothing of theirs
 matches — members never vanish from the leaderboard under any window or
-filter. (Pickers no longer on the roster keep their historical rows only
-while their picks pass the active filters.) The roster comes from
+filter. (Adders no longer on the roster keep their historical rows only
+while their added movies pass the active filters.) The roster comes from
 `userService.List`, so user create/delete both invalidate the stats cache.
 
 The response also returns `matchedMovieIDs` — the ids of the films behind

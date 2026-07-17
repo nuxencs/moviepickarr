@@ -100,7 +100,7 @@ func TestBuildStatsResponse_WindowCountsAndSelectedBreakdown(t *testing.T) {
 		}
 	}
 
-	// Every all-time picker is present every window (Cara watched 31d ago, so
+	// Every all-time adder is present every window (Cara watched 31d ago, so
 	// she's 0 in the 30d window but still listed), ordered by stable all-time
 	// total (Alice 4, Bob 2, Cara 1) — not the window count — so rows don't jump
 	// when switching ranges. "Future" (future-dated) and "Nobody" (unwatched)
@@ -328,7 +328,7 @@ func TestBuildStatsCacheKey(t *testing.T) {
 		t.Fatalf("decade key must differ from the same-numbered year key")
 	}
 
-	// The added-by (picker) filter is its own key segment too.
+	// The added-by (adder) filter is its own key segment too.
 	gotAddedBy := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{AddedByIDs: []int{10, 20}})
 	wantAddedBy := "30d|UTC||||||0|0|10,20"
 	if gotAddedBy != wantAddedBy {
@@ -520,7 +520,7 @@ func TestBuildStatsResponse_Filters(t *testing.T) {
 
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
 	movies, meta, credits := statsEnrichedFixture(now)
-	// The member roster: Dana has never picked anything; everyone still keeps
+	// The member roster: Dana has never added anything; everyone still keeps
 	// a leaderboard row under every filter (zero when nothing matches).
 	members := []string{"Alice", "Bob", "Cara", "Dana"}
 
@@ -720,7 +720,7 @@ func TestBuildStatsResponse_AddedByFilter(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
-	// Distinct picker (added-by) ids; no metadata needed — added-by gates on the
+	// Distinct adder (added-by) ids; no metadata needed — added-by gates on the
 	// movie itself, independent of enrichment.
 	movies := []*domain.Movie{
 		{ID: 1, Title: "A", AddedByID: 10, AddedByName: "Alice", WatchedAt: new(now.Add(-1 * time.Hour))},
@@ -735,10 +735,10 @@ func TestBuildStatsResponse_AddedByFilter(t *testing.T) {
 		wantTotal int
 		wantIDs   []int
 	}{
-		{name: "no picker filter keeps all", filters: statsFilters{}, wantTotal: 3, wantIDs: []int{1, 2, 3}},
-		{name: "single picker (any-of)", filters: statsFilters{AddedByIDs: []int{10}}, wantTotal: 2, wantIDs: []int{1, 3}},
-		{name: "two pickers union", filters: statsFilters{AddedByIDs: []int{10, 20}}, wantTotal: 3, wantIDs: []int{1, 2, 3}},
-		{name: "picker with no picks", filters: statsFilters{AddedByIDs: []int{99}}, wantTotal: 0, wantIDs: []int{}},
+		{name: "no adder filter keeps all", filters: statsFilters{}, wantTotal: 3, wantIDs: []int{1, 2, 3}},
+		{name: "single adder (any-of)", filters: statsFilters{AddedByIDs: []int{10}}, wantTotal: 2, wantIDs: []int{1, 3}},
+		{name: "two adders union", filters: statsFilters{AddedByIDs: []int{10, 20}}, wantTotal: 3, wantIDs: []int{1, 2, 3}},
+		{name: "adder with no adds", filters: statsFilters{AddedByIDs: []int{99}}, wantTotal: 0, wantIDs: []int{}},
 	}
 
 	for _, tc := range cases {
@@ -761,7 +761,7 @@ func TestBuildStatsResponse_MembersAlwaysListed(t *testing.T) {
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
 	movies, meta, credits := statsEnrichedFixture(now)
 
-	// Dana is on the roster but has never picked; Cara's only movie is
+	// Dana is on the roster but has never added; Cara's only movie is
 	// unenriched and fails the actor filter. Both keep zero rows — members
 	// never vanish from the leaderboard, whatever the window or filters.
 	// Blank roster names are skipped rather than rendered as empty rows.

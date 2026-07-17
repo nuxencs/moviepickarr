@@ -38,11 +38,11 @@ export function UsersTab() {
   const createMutation = useMutation({
     mutationFn: () => APIClient.users.create(name.trim()),
     onSuccess: () => {
-      toast.success(`User ${name.trim()} created`);
+      toast.success(`Member ${name.trim()} created`);
       setName("");
     },
     onError: () => {
-      toast.error("Failed to create user");
+      toast.error("Failed to create member");
       setName("");
     },
   });
@@ -75,7 +75,7 @@ export function UsersTab() {
             </label>
             <button type="submit" className="btn btn--accent" disabled={!name.trim() || createMutation.isPending}>
               <PlusIcon />
-              Add user
+              Add member
             </button>
           </form>
         </div>
@@ -126,8 +126,8 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
 
   const deleteUserMutation = useMutation({
     mutationFn: () => APIClient.users.delete(user.userID),
-    onSuccess: () => toast.success(`User ${user.name} deleted`),
-    onError: () => toast.error("Failed to delete user"),
+    onSuccess: () => toast.success(`Member ${user.name} deleted`),
+    onError: () => toast.error("Failed to delete member"),
   });
 
   // Demote a pooled movie back to the stash. The move endpoint is directional
@@ -143,7 +143,7 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
         isOpen={deleteOpen}
         onClose={toggleDelete}
         onConfirm={() => deleteUserMutation.mutate()}
-        title="Delete user"
+        title="Delete member"
         description={`Delete ${user.name}? This cannot be undone.`}
         confirmText="Delete"
       />
@@ -158,7 +158,7 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
             </div>
           </div>
         </div>
-        <button type="button" className="iconbtn iconbtn--danger" onClick={toggleDelete} aria-label="Delete user">
+        <button type="button" className="iconbtn iconbtn--danger" onClick={toggleDelete} aria-label="Delete member">
           <Trash2Icon />
         </button>
       </div>

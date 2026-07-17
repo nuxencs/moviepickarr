@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import {
@@ -8,18 +8,12 @@ import {
   MoviesGetPoolQueryOptions,
   SettingsGetNextUpQueryOptions,
 } from "@/api/queries";
-import { MoviesKeys, DrawKeys, SettingsKeys } from "@/api/query_keys";
+import { MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
+import { drawAwaitingReveal } from "@/components/moviepickarr/drawMachine";
 import { DrawReel } from "@/components/moviepickarr/DrawReel";
-import {
-  type ActiveSpin,
-  buildLiveSpin,
-  buildResumeSpin,
-  clearActiveSpin,
-  drawAwaitingReveal,
-  setActiveSpin,
-} from "@/components/moviepickarr/drawSpin";
+import { drawStore, resolveDrawEnv } from "@/components/moviepickarr/drawStore";
 import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
@@ -63,11 +57,11 @@ function Backdrop({ bg, revealId }: { bg: string; revealId: number }) {
   );
 }
 
-// Draws already turned into a reel this page session. Module-level (not component
-// state) so it survives Hero remounts — leaving and returning to the Movies tab
-// must NOT replay a spin that already ran — while still resetting on a full page
-// reload, so a genuine reload can resume an in-flight spin.
-const handledDraws = new Set<string>();
+// Stable senders for the reel. Module scope, so a Hero re-render never resets
+// DrawReel's internal state via a changed prop identity; the draw machine
+// behind them owns dedup and reveal-once, so duplicate sends are silent.
+const reportScrollDone = () => drawStore.send({ type: "SCROLL_DONE" });
+const confirmDraw = () => drawStore.send({ type: "CONFIRM", source: "local" });
 
 /**
  * Full-bleed cinematic banner for the current draw (Movies tab only).
@@ -80,26 +74,11 @@ export function Hero() {
   const { data: pooled } = useQuery(MoviesGetPoolQueryOptions());
   const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());
 
-  // Reactive read of the cross-client spin signal, set via setQueryData by the
-  // SSE handler (movie:drawn) and the draw mutation below.
-  const { data: activeSpin } = useQuery<ActiveSpin | null>({
-    queryKey: DrawKeys.active(),
-    queryFn: () => null,
-    staleTime: Infinity,
-    gcTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
-
-  // Cross-client close signal: the drawnAt of a draw that was revealed (the
-  // drawer confirmed, or a countdown filled), set by the useSSE movie:revealed
-  // handler. When it matches the in-flight spin, this client closes its reel too.
-  const { data: revealSignal } = useQuery<string | null>({
-    queryKey: DrawKeys.revealed(),
-    queryFn: () => null,
-    staleTime: Infinity,
-    gcTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
+  // The draw machine drives the reel: phase + spin descriptor come from the
+  // store singleton, fed by useSSE (movie:drawn / movie:revealed) and the draw
+  // mutation below. The machine owns dedup, resume, and reveal-once.
+  const drawState = useSyncExternalStore(drawStore.subscribe, drawStore.getState);
+  const spinning = drawState.phase !== "idle";
 
   // Held from the moment the action button is clicked until the hero has actually
   // moved on. The POST resolves (and isPending drops) before the transition lands —
@@ -118,17 +97,13 @@ export function Hero() {
     onSuccess: (movie) => {
       // No toast here — the reel itself is the draw feedback; a "Movie drawn"
       // toast popping while the reel is still spinning just competes with it.
-      // Fallback if the clicker's own SSE event drops: start the reel from the
-      // response (which carries its own candidates) and pull in the winner +
-      // rotated state without the SSE-driven invalidation. setActiveSpin dedups
-      // against the SSE event by drawnAt.
-      const spin = buildLiveSpin(movie);
-      setActiveSpin(queryClient, spin);
+      // Fallback if the clicker's own SSE event drops: feed the machine from
+      // the response (which carries its own candidates). The machine dedups
+      // against the SSE event by drawnAt and owns the pool-refresh timing
+      // (held until the reel lands; immediate when no reel will play).
+      drawStore.send({ type: "DRAWN", movie });
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
-      // Hold the pool refresh until the reel lands (see onLand) so the pool grid
-      // doesn't drop the winner mid-spin and spoil the result. No reel → now.
-      if (!spin) void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
     },
     onError: () => {
       setDrawing(false);
@@ -157,78 +132,24 @@ export function Hero() {
 
   const [shown, setShown] = useState<Movie | null>(null);
   const [revealId, setRevealId] = useState(0);
-  // Reel state: `spinning` mounts the takeover overlay; `spinDescriptor` is the
-  // spin it renders (held locally so it survives clearing the shared signal on
-  // land). `committed` is the last draw we revealed, so an unrelated pool refetch
-  // re-running the commit effect can't replay the reveal. (`handledDraws`, which
-  // stops a re-render or a tab-switch remount from restarting a spin, is
-  // module-level so it outlives this component's mount.)
-  const [spinning, setSpinning] = useState(false);
-  const [spinDescriptor, setSpinDescriptor] = useState<ActiveSpin | null>(null);
+  // The last draw committed to the hero, so an unrelated refetch re-running
+  // the commit effect can't replay the reveal (see the sameDraw guard below).
   const committed = useRef<Movie | null | undefined>(undefined);
-  // Mirrors of the latest values, so the stable `reveal` callback (held by
-  // DrawReel across renders and by the SSE-signal effect) reads current state.
-  // `revealedDraw` is the drawnAt already handed off, so reveal() runs once per
-  // draw no matter which trigger fires first (OK press, countdown, or SSE).
-  const spinDescriptorRef = useRef<ActiveSpin | null>(null);
-  spinDescriptorRef.current = spinDescriptor;
-  const currentRef = useRef<Movie | null | undefined>(current);
-  currentRef.current = current;
-  const revealedDrawRef = useRef<string | null>(null);
 
-  // Close the reel and hand off to the hero reveal — once per draw. A "local"
-  // trigger (the drawer's OK, or any client's countdown self-heal) also tells the
-  // server, which broadcasts movie:revealed so the other clients close in step; a
-  // "remote" trigger IS that broadcast, so it doesn't echo back. The winner's
-  // backdrop (preloaded during the spin) is decoded while the reel still covers
-  // the hero, then the reel drops + the reveal commits in ONE batched render — so
-  // no placeholder frame leaks through between the reel closing and the reveal.
-  const reveal = useCallback(
-    (source: "local" | "remote") => {
-      const desc = spinDescriptorRef.current;
-      if (!desc || revealedDrawRef.current === desc.drawnAt) return;
-      revealedDrawRef.current = desc.drawnAt;
-      if (source === "local") void APIClient.movies.reveal().catch(() => {});
-      const next = currentRef.current ?? null;
-      const finish = () => {
-        committed.current = next;
-        setShown(next);
-        setRevealId((n) => n + 1);
-        setSpinning(false);
-        clearActiveSpin(queryClient);
-        void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
-      };
-      const url = next?.backdropPath ? backdropUrl(next.backdropPath) : null;
-      if (url) {
-        const img = new Image();
-        img.src = url;
-        img.decode().then(finish, finish);
-      } else {
-        finish();
-      }
-    },
-    [queryClient],
-  );
-  // Stable zero-arg confirm handler for the reel (a fresh arrow each render would
-  // reset DrawReel's countdown timer on every Hero re-render).
-  const confirmLocal = useCallback(() => reveal("local"), [reveal]);
-
-  // A movie:revealed signal for the in-flight draw (the drawer confirmed, or a
-  // countdown filled on some client) closes this client's reel too.
-  useEffect(() => {
-    if (revealSignal && spinDescriptor && revealSignal === spinDescriptor.drawnAt) {
-      reveal("remote");
-    }
-  }, [revealSignal, spinDescriptor, reveal]);
-
-  // Start the reel when a spin signal arrives (SSE draw / clicker fallback).
-  // Declared before the commit effect so its handledDraws write lands first.
-  useEffect(() => {
-    if (!activeSpin || handledDraws.has(activeSpin.drawnAt)) return;
-    handledDraws.add(activeSpin.drawnAt);
-    setSpinDescriptor(activeSpin);
-    setSpinning(true);
-  }, [activeSpin]);
+  // Reveal handoff: the machine bumps commitSeq once the winner's backdrop has
+  // decoded, in the SAME store update that drops the reel (phase → idle).
+  // Committing during render (React's adjust-state-on-change pattern) keeps
+  // the reel unmount and the hero reveal in one paint — no placeholder frame
+  // leaks through. Initialized to the current seq so a Hero remount (tab
+  // switch) never replays a reveal that already committed. The assignments are
+  // idempotent, so a re-invoked render pass is harmless.
+  const [seenCommitSeq, setSeenCommitSeq] = useState(drawState.commitSeq);
+  if (drawState.commitSeq !== seenCommitSeq) {
+    setSeenCommitSeq(drawState.commitSeq);
+    committed.current = current;
+    setShown(current ?? null);
+    setRevealId((n) => n + 1);
+  }
 
   // The draw we actually display lags `current`: when the draw changes we preload
   // + decode its backdrop first, then commit the new draw AND bump `revealId`
@@ -242,23 +163,19 @@ export function Hero() {
 
     const next = current ?? null;
 
-    // Reload mid-spin: resume the reel from the time that's left, before
-    // committing, so the winner never flashes ahead of it. Decided once per draw.
-    // The window check needs only `current`; building the reel needs the pool, so
-    // hold the commit until the pool has loaded.
-    if (next?.drawnAt && !handledDraws.has(next.drawnAt)) {
-      if (drawAwaitingReveal(next)) {
+    // Reload mid-spin: hand the pending draw to the machine before committing,
+    // so the winner never flashes ahead of the reel. The machine dedups draws
+    // it already handled (drawState.seen). The reveal-pending check needs only
+    // `current`; building the reel needs the pool, so hold the commit until
+    // the pool has loaded. An already-revealed draw is still sent — the
+    // machine marks it handled and the commit below shows the result directly.
+    if (next?.drawnAt && !drawState.seen.includes(next.drawnAt)) {
+      if (drawAwaitingReveal(next, resolveDrawEnv())) {
         if (pooled === undefined) return;
-        handledDraws.add(next.drawnAt);
-        const resume = buildResumeSpin(next, pooled);
-        if (resume) {
-          setSpinDescriptor(resume);
-          setSpinning(true);
-          return;
-        }
-      } else {
-        handledDraws.add(next.drawnAt);
+        drawStore.send({ type: "RESUME", current: next, pool: pooled });
+        return; // the store subscription re-renders with the spin (or as seen)
       }
+      drawStore.send({ type: "RESUME", current: next, pool: pooled ?? [] });
     }
 
     // Only (re)reveal when the draw IDENTITY changes. Comparing object reference
@@ -308,8 +225,8 @@ export function Hero() {
     };
     // The sameDraw guard above stops this from replaying the reveal on no-op
     // refetches (serverNow churn, enrichment, resync), so it re-animates only when
-    // the draw actually changes; the pool/spin deps just re-run the resume check.
-  }, [isLoading, current, spinning, pooled]);
+    // the draw actually changes; the pool/seen deps just re-run the resume check.
+  }, [isLoading, current, spinning, pooled, drawState.seen]);
 
   // Release the marking busy-state once the watched draw has left the hero (shown
   // cleared by the commit effect above), so the action button goes Marking… → Draw
@@ -426,11 +343,12 @@ export function Hero() {
         </div>
       </div>
 
-      {spinning && spinDescriptor && (
+      {spinning && drawState.spin && (
         <DrawReel
-          key={spinDescriptor.drawnAt}
-          spin={spinDescriptor}
-          onConfirm={confirmLocal}
+          key={drawState.spin.drawnAt}
+          spin={drawState.spin}
+          onScrollDone={reportScrollDone}
+          onConfirm={confirmDraw}
         />
       )}
     </section>

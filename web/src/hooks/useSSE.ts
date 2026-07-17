@@ -1,9 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
-import { MoviesKeys, DrawKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
-import { buildLiveSpin, setActiveSpin, signalRevealed } from "@/components/moviepickarr/drawSpin";
+import { drawStore } from "@/components/moviepickarr/drawStore";
 
 import type { Movie } from "@/types/Response";
 import type { SSEConnectedFrame, SSEEvent, SSEHeartbeatFrame } from "@/types/SSEEvent";
@@ -51,9 +51,9 @@ export function useSSE() {
       void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
       // Skip the pool refresh while a draw-reveal spin is in flight: the post-draw
       // pool no longer holds the winner, so refetching it mid-spin would drop the
-      // winner tile from the grid and spoil the reveal. The Hero refreshes the pool
-      // when the reel lands. Mirrors the `if (!spin)` guard in the movie:drawn case.
-      if (!queryClient.getQueryData(DrawKeys.active())) {
+      // winner tile from the grid and spoil the reveal. The draw machine releases
+      // the pool itself when the reel lands.
+      if (drawStore.getState().phase === "idle") {
         void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
       }
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
@@ -198,30 +198,24 @@ export function useSSE() {
               break;
 
             case "movie:drawn": {
-              // Start the cross-client reveal spin from the event's self-contained
-              // candidates. The pool may be invalidated freely below: the reel no
-              // longer reads it (only the grid-continuity defer remains — see the
-              // `if (!spin)` guard).
-              const drawn = sseEvent.data as Movie | undefined;
-              // The reel candidates ride in the event itself now, so the spin no
-              // longer reads the local pool cache (a client without it still spins).
-              const spin = drawn ? buildLiveSpin(drawn) : null;
-              if (drawn) setActiveSpin(queryClient, spin);
+              // Feed the draw machine from the event's self-contained candidates.
+              // It dedups against the clicker's own mutation response by drawnAt,
+              // and owns the pool-refresh timing: held until the reel lands (so
+              // the grid doesn't drop the winner mid-spin and spoil it), released
+              // immediately when no reel will play.
+              const drawnMovie = sseEvent.data as Movie | undefined;
+              if (drawnMovie) drawStore.send({ type: "DRAWN", movie: drawnMovie });
               void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
               void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
-              // When a reel will play, hold the pool refresh until it lands (the Hero
-              // does it on land) so the pool grid doesn't drop the winner mid-spin
-              // and spoil it. No reel → refresh now.
-              if (!spin) void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
               break;
             }
 
             case "movie:revealed": {
-              // The drawer confirmed (or the reel's countdown filled). Signal the
-              // matching drawnAt so every client's Hero closes its reel together.
+              // The drawer confirmed, or the server's reveal deadline fired. The
+              // machine closes the matching reel on every client at once.
               const data = sseEvent.data as { drawnAt?: string } | undefined;
-              if (data?.drawnAt) signalRevealed(queryClient, data.drawnAt);
+              if (data?.drawnAt) drawStore.send({ type: "REVEALED", drawnAt: data.drawnAt });
               break;
             }
 

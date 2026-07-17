@@ -425,7 +425,7 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	// show the confirm button.
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == selectedMovie.ID {
 		payload.DrawnAt = formatTime(&ap.DrawnAt)
-		payload.RevealAt = formatTime(&ap.RevealAt)
+		payload.RevealAt = formatTimePrecise(ap.RevealAt)
 		payload.DrawClientID = ap.DrawClientID
 	}
 
@@ -471,7 +471,7 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == movieRecord.ID {
 		now := time.Now().UTC()
 		resp.DrawnAt = formatTime(&ap.DrawnAt)
-		resp.RevealAt = formatTime(&ap.RevealAt)
+		resp.RevealAt = formatTimePrecise(ap.RevealAt)
 		resp.ServerNow = formatTime(&now)
 		resp.DrawClientID = ap.DrawClientID
 		resp.Revealed = ap.Revealed

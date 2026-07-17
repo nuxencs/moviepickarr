@@ -21,17 +21,6 @@ export const MoviesKeys = {
     filterOptions: () => [...MoviesKeys.all, "filterOptions"] as const,
 }
 
-// Client-only state (no endpoint): the in-flight draw-reveal spin descriptor,
-// set via setQueryData by the SSE handler / draw mutation and read by the Hero.
-// `revealed` is the cross-client close signal — the drawer's confirm (or the
-// countdown) broadcasts movie:revealed; useSSE stows the drawnAt here and the
-// Hero closes the reel for that draw.
-export const DrawKeys = {
-    all: ["draw"] as const,
-    active: () => [...DrawKeys.all, "active"] as const,
-    revealed: () => [...DrawKeys.all, "revealed"] as const,
-}
-
 export const SettingsKeys = {
     all: ["settings"] as const,
     poolLock: () => [...SettingsKeys.all, "poolLock"] as const,

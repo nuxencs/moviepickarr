@@ -99,14 +99,20 @@ export function createDrawStore(deps: DrawStoreDeps): DrawStore {
   };
 }
 
-export const drawStore = createDrawStore({
-  resolveEnv: () => ({
+/** The live environment snapshot — also used by the Hero to run pure machine
+ *  helpers (drawAwaitingReveal) outside a dispatch. */
+export function resolveDrawEnv(): DrawEnv {
+  return {
     spinDurationMs: spinDurationMs(),
     reducedMotion: prefersReducedMotion(),
     clientId: getClientId(),
     confirmFallbackMs: 10_000,
     fallbackGraceMs: 5_000,
-  }),
+  };
+}
+
+export const drawStore = createDrawStore({
+  resolveEnv: resolveDrawEnv,
   postReveal: () => APIClient.movies.reveal(),
   decodeBackdrop: (path) => {
     const url = backdropUrl(path);

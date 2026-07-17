@@ -95,6 +95,15 @@ func formatTime(value *time.Time) string {
 	return value.UTC().Format(timeFormat)
 }
 
+// formatTimePrecise keeps sub-second precision (RFC3339Nano). Used for
+// revealAt: the client derives the confirm countdown from revealAt − drawnAt,
+// and second-truncating both would jitter that window by up to ±0.5s per
+// draw. drawnAt itself stays second-precision — it is the draw's identity
+// string and must remain byte-identical across every payload that carries it.
+func formatTimePrecise(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
 // movieLink derives the effective link from the movie's stable identity,
 // preferring IMDb, then TMDB. Returns "" if the movie has no identity (every
 // row carries an id post-enrichment, so this is effectively unreachable).

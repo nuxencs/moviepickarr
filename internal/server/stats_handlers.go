@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -136,13 +135,10 @@ func buildStatsCacheKey(selectedWindow statsWindow, timezone string, customRange
 		end = customRange.EndDate
 	}
 
-	// Genre matching is case-insensitive, so the key lowercases it — "Action"
-	// and "action" hit the same entry. The people lists are sorted and deduped
-	// at parse time, so equivalent selections serialize to the same segment.
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%d|%d|%s",
-		selectedWindow, timezone, start, end,
-		strings.ToLower(filters.Genre), joinIDs(filters.ActorIDs), joinIDs(filters.CrewIDs),
-		filters.ReleaseYear, filters.ReleaseDecade, joinIDs(filters.AddedByIDs))
+	// The filter segment comes from the filters value itself, which owns the
+	// genre fold shared with the matcher (see statsFilters).
+	return fmt.Sprintf("%s|%s|%s|%s|%s",
+		selectedWindow, timezone, start, end, filters.cacheKeySegment())
 }
 
 func (h *handler) getCachedStats(key string, now time.Time) (statsResponse, bool) {
@@ -225,165 +221,6 @@ func resolveStatsLocation(raw string) (*time.Location, string, error) {
 	}
 
 	return location, timezone, nil
-}
-
-// statsFilters narrows the stats computation to a subset of the watched
-// library. Zero values mean "no filter". The people lists are any-of within a
-// list and AND-ed across lists (and with genre/year).
-type statsFilters struct {
-	Genre         string // case-insensitive genre name
-	ActorIDs      []int  // TMDB person ids, sorted+deduped; matched against cast credits
-	CrewIDs       []int  // TMDB person ids, sorted+deduped; matched against crew credits
-	ReleaseYear   int    // exact release year; mutually exclusive with ReleaseDecade
-	ReleaseDecade int    // decade floor (1990 ⇒ [1990, 1999]); mutually exclusive with ReleaseYear
-	AddedByIDs    []int  // user ids of the movie's adder, sorted+deduped (any-of)
-}
-
-func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw, addedByRaw string) (statsFilters, error) {
-	// Clone: the raw value is fiber's zero-copy view of the request buffer,
-	// but the genre echo outlives the handler inside the stats cache.
-	filters := statsFilters{Genre: strings.Clone(strings.TrimSpace(genreRaw))}
-	if len(filters.Genre) > statsMaxGenreLength {
-		return statsFilters{}, fmt.Errorf("%w: genre exceeds %d characters", domain.ErrInvalidInput, statsMaxGenreLength)
-	}
-
-	var err error
-	if filters.ActorIDs, err = parseIDList("actorIds", actorsRaw); err != nil {
-		return statsFilters{}, err
-	}
-	if filters.CrewIDs, err = parseIDList("crewIds", crewRaw); err != nil {
-		return statsFilters{}, err
-	}
-	if filters.AddedByIDs, err = parseIDList("addedByIds", addedByRaw); err != nil {
-		return statsFilters{}, err
-	}
-
-	yearRaw = strings.TrimSpace(yearRaw)
-	if yearRaw != "" {
-		v, err := strconv.Atoi(yearRaw)
-		if err != nil || v < statsMinReleaseYear || v > statsMaxReleaseYear {
-			return statsFilters{}, fmt.Errorf("%w: invalid releaseYear %q (expected %d-%d)",
-				domain.ErrInvalidInput, yearRaw, statsMinReleaseYear, statsMaxReleaseYear)
-		}
-		filters.ReleaseYear = v
-	}
-
-	// A decade selection ("1990s") is the alternative to an exact year — the UI
-	// offers one or the other, so reject both at once rather than guess.
-	decadeRaw = strings.TrimSpace(decadeRaw)
-	if decadeRaw != "" {
-		if filters.ReleaseYear != 0 {
-			return statsFilters{}, fmt.Errorf("%w: releaseYear and decade are mutually exclusive", domain.ErrInvalidInput)
-		}
-		v, err := strconv.Atoi(decadeRaw)
-		if err != nil || v%10 != 0 || v < statsMinReleaseYear || v > statsMaxReleaseYear {
-			return statsFilters{}, fmt.Errorf("%w: invalid decade %q (expected a multiple of 10 in %d-%d)",
-				domain.ErrInvalidInput, decadeRaw, statsMinReleaseYear, statsMaxReleaseYear)
-		}
-		filters.ReleaseDecade = v
-	}
-
-	return filters, nil
-}
-
-// parseIDList parses a comma-separated list of positive TMDB person ids into
-// the canonical sorted-and-deduped form — "6384,530" and "530,6384,530" both
-// yield [530 6384], so equivalent selections share one cache key. Empty input
-// returns nil (never an empty slice) so the filters echo can omit the field.
-func parseIDList(param, raw string) ([]int, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, nil
-	}
-
-	parts := strings.Split(raw, ",")
-	if len(parts) > statsMaxPeopleFilterIDs {
-		return nil, fmt.Errorf("%w: %s exceeds %d ids", domain.ErrInvalidInput, param, statsMaxPeopleFilterIDs)
-	}
-	ids := make([]int, 0, len(parts))
-	for _, part := range parts {
-		v, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || v <= 0 {
-			return nil, fmt.Errorf("%w: invalid %s %q (expected comma-separated positive integers)", domain.ErrInvalidInput, param, raw)
-		}
-		ids = append(ids, v)
-	}
-
-	slices.Sort(ids)
-	return slices.Compact(ids), nil
-}
-
-// joinIDs serializes a canonical id list for the cache key; empty → "".
-func joinIDs(ids []int) string {
-	if len(ids) == 0 {
-		return ""
-	}
-	parts := make([]string, len(ids))
-	for i, id := range ids {
-		parts[i] = strconv.Itoa(id)
-	}
-	return strings.Join(parts, ",")
-}
-
-// movieMatchesStatsFilters reports whether a watched movie passes the active
-// filters. Unenriched movies (no metadata/credits) fail any active filter —
-// their genre/year/people are unknown, and guessing would skew the stats.
-func movieMatchesStatsFilters(md *domain.MovieMetadata, credits []domain.MovieCredit, filters statsFilters) bool {
-	if filters.Genre != "" {
-		// ToLower (not EqualFold): the cache key folds the genre with ToLower,
-		// and the two relations differ on exotic runes (U+0130 "İ" lowercases
-		// to "i" but has no simple case folding). Matching with the same fold
-		// keeps "same cache key" ⇒ "same match set".
-		want := strings.ToLower(filters.Genre)
-		if md == nil || !slices.ContainsFunc(md.Genres, func(genre string) bool {
-			return strings.ToLower(genre) == want
-		}) {
-			return false
-		}
-	}
-	if filters.ReleaseYear != 0 && releaseYearOf(md) != filters.ReleaseYear {
-		return false
-	}
-	if filters.ReleaseDecade != 0 {
-		if y := releaseYearOf(md); y < filters.ReleaseDecade || y >= filters.ReleaseDecade+10 {
-			return false
-		}
-	}
-	// People filters are any-of within a list, AND-ed across lists. Crew rows
-	// are already whitelisted to a handful of jobs at ingest, so crewIds need
-	// no job check here.
-	if len(filters.ActorIDs) > 0 && !creditsContainPerson(credits, domain.CreditKindCast, filters.ActorIDs) {
-		return false
-	}
-	if len(filters.CrewIDs) > 0 && !creditsContainPerson(credits, domain.CreditKindCrew, filters.CrewIDs) {
-		return false
-	}
-	return true
-}
-
-// creditsContainPerson reports whether any credit of the given kind references
-// one of the (sorted) person ids.
-func creditsContainPerson(credits []domain.MovieCredit, kind string, ids []int) bool {
-	return slices.ContainsFunc(credits, func(c domain.MovieCredit) bool {
-		if c.Kind != kind {
-			return false
-		}
-		_, found := slices.BinarySearch(ids, c.Person.ID)
-		return found
-	})
-}
-
-// releaseYearOf extracts the year from the metadata's "YYYY-MM-DD" release
-// date, or 0 when the metadata or date is absent/unparseable.
-func releaseYearOf(md *domain.MovieMetadata) int {
-	if md == nil || len(md.ReleaseDate) < 4 {
-		return 0
-	}
-	year, err := strconv.Atoi(md.ReleaseDate[:4])
-	if err != nil {
-		return 0
-	}
-	return year
 }
 
 type customDateRange struct {
@@ -527,11 +364,11 @@ func buildStatsResponse(
 		movieCredits := credits[watched[i].ID]
 		// Filters narrow EVERY aggregate — countsByWindow and the all-time
 		// member ordering included — to the matching subset.
-		if !movieMatchesStatsFilters(md, movieCredits, filters) {
+		if !filters.matches(md, movieCredits) {
 			continue
 		}
 		// Added-by is a movie-level filter (not metadata), so it gates here rather
-		// than in movieMatchesStatsFilters — any-of across the selected adders.
+		// than in statsFilters.matches — any-of across the selected adders.
 		if len(filters.AddedByIDs) > 0 && !slices.Contains(filters.AddedByIDs, watched[i].AddedByID) {
 			continue
 		}
@@ -649,7 +486,7 @@ func buildStatsResponse(
 			LongestTitle:   longestTitle,
 		},
 		AverageRating:    averageRating,
-		Filters:          buildFiltersEcho(filters, meta, credits),
+		Filters:          filters.echo(meta, credits),
 		CustomRangeStart: customRangeStart(customRange),
 		CustomRangeEnd:   customRangeEnd(customRange),
 	}
@@ -671,69 +508,6 @@ func tallyPerson(counts map[int]*statsPersonCount, credit domain.MovieCredit) {
 		counts[credit.Person.ID] = entry
 	}
 	entry.Count++
-}
-
-// buildFiltersEcho echoes the active filters back, resolving each person
-// filter to a display name from any credit row that references them and the
-// genre to its stored canonical casing (matching is case-insensitive, and the
-// cache key folds case — canonicalizing keeps the echo identical across cache
-// hits).
-func buildFiltersEcho(filters statsFilters, meta metaByID, credits creditsByID) statsFiltersEcho {
-	echo := statsFiltersEcho{
-		Genre:         filters.Genre,
-		Actors:        resolveFilterPeople(filters.ActorIDs, credits),
-		Crew:          resolveFilterPeople(filters.CrewIDs, credits),
-		ReleaseYear:   filters.ReleaseYear,
-		ReleaseDecade: filters.ReleaseDecade,
-	}
-	if echo.Genre != "" {
-		// Same ToLower fold as the matcher and the cache key.
-		want := strings.ToLower(echo.Genre)
-	genres:
-		for _, md := range meta {
-			if md == nil {
-				continue
-			}
-			for _, genre := range md.Genres {
-				if strings.ToLower(genre) == want {
-					echo.Genre = genre
-					break genres
-				}
-			}
-		}
-	}
-	return echo
-}
-
-// resolveFilterPeople maps filter ids (already sorted, so the echo order is
-// deterministic across cache hits) to display names from any credit row that
-// references them. Ids with no credit row keep an empty name — the client
-// carries its own labels for those.
-func resolveFilterPeople(ids []int, credits creditsByID) []statsFilterPerson {
-	if len(ids) == 0 {
-		return nil
-	}
-
-	names := make(map[int]string, len(ids))
-	// Stop as soon as every filter id has a name — this is a best-effort label
-	// lookup over the full (~thousands of rows) credits map, and the handful of
-	// filter people are usually found in the first few movies.
-	for _, movieCredits := range credits {
-		if len(names) == len(ids) {
-			break
-		}
-		for i := range movieCredits {
-			if _, found := slices.BinarySearch(ids, movieCredits[i].Person.ID); found {
-				names[movieCredits[i].Person.ID] = movieCredits[i].Person.Name
-			}
-		}
-	}
-
-	people := make([]statsFilterPerson, len(ids))
-	for i, id := range ids {
-		people[i] = statsFilterPerson{PersonID: id, Name: names[id]}
-	}
-	return people
 }
 
 func customRangeStart(customRange *customDateRange) string {

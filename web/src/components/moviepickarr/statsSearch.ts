@@ -36,6 +36,36 @@ export interface StatsSearch {
   decade: number;
 }
 
+/**
+ * The wire-facing stats filter selection: exactly what GET /stats filters by,
+ * in id form. ONE value travels from the URL search through the query key to
+ * the request (see StatsGetQueryOptions, whose canonical serializer feeds
+ * both) — adding a filter dimension means extending this type, the codec
+ * here, the chip, and the wire field, instead of threading a new positional
+ * parameter through every layer.
+ */
+export interface StatsFilters {
+  genre?: string;
+  actorIds?: number[];
+  crewIds?: number[];
+  addedByIds?: number[];
+  releaseYear?: number;
+  /** Decade floor (1990 ⇒ 1990–1999); mutually exclusive with releaseYear. */
+  decade?: number;
+}
+
+/** Project the URL search onto the wire filter value (empty → undefined). */
+export function statsFiltersFromSearch(search: StatsSearch): StatsFilters {
+  return {
+    genre: search.genre || undefined,
+    actorIds: search.actors,
+    crewIds: search.crew,
+    addedByIds: search.adders,
+    releaseYear: search.year || undefined,
+    decade: search.decade || undefined,
+  };
+}
+
 /** Default value of every param — also the strip-from-URL target (router.tsx). */
 export const statsSearchDefaults: StatsSearch = {
   win: DEFAULT_WINDOW,

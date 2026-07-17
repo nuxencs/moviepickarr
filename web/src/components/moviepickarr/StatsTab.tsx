@@ -37,6 +37,7 @@ import {
   filtersFromSearch,
   filtersToSearch,
   rangeFromSearch,
+  statsFiltersFromSearch,
   ymd,
 } from "@/components/moviepickarr/statsSearch";
 
@@ -168,18 +169,7 @@ export function StatsTab() {
       : {};
 
   const { data: stats, isLoading, isError } = useQuery(
-    StatsGetQueryOptions(
-      win,
-      timezone,
-      apiRange.start,
-      apiRange.end,
-      search.genre || undefined,
-      search.actors,
-      search.crew,
-      search.adders,
-      search.year || undefined,
-      search.decade || undefined,
-    ),
+    StatsGetQueryOptions(win, timezone, apiRange, statsFiltersFromSearch(search)),
   );
 
   // Filter options (actors/crew/genres/years/adders) come from a cached

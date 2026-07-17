@@ -29,8 +29,15 @@ export const SettingsKeys = {
 
 export const StatsKeys = {
     all: ["stats"] as const,
-    // actorsKey/crewKey are the canonical comma-joined id lists (sorted in
-    // StatsGetQueryOptions), so selection order can't split the cache.
-    byWindow: (window: string, timezone: string, start?: string, end?: string, genre?: string, actorsKey?: string, crewKey?: string, addedByKey?: string, releaseYear?: number, decade?: number) =>
-      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? "", "genre", genre ?? "", "actors", actorsKey ?? "", "crew", crewKey ?? "", "addedBy", addedByKey ?? "", "releaseYear", releaseYear ?? 0, "decade", decade ?? 0] as const,
+    // The filter segment arrives pre-canonicalized (comma-joined sorted id
+    // lists) from StatsGetQueryOptions' one serializer, so selection order
+    // can't split the cache and the key always matches the request sent.
+    byWindow: (
+        window: string,
+        timezone: string,
+        start: string | undefined,
+        end: string | undefined,
+        f: { genre?: string; actorIds?: string; crewIds?: string; addedByIds?: string; releaseYear?: number; decade?: number },
+    ) =>
+      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? "", "genre", f.genre ?? "", "actors", f.actorIds ?? "", "crew", f.crewIds ?? "", "addedBy", f.addedByIds ?? "", "releaseYear", f.releaseYear ?? 0, "decade", f.decade ?? 0] as const,
 }

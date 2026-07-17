@@ -3,6 +3,8 @@ import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 import { APIClient } from "@/api/APIClient";
 import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
+import type { StatsFilters } from "@/components/moviepickarr/statsSearch";
+
 import type { StatsWindow } from "@/types/Response";
 
 export const UsersGetAllQueryOptions = () =>
@@ -89,22 +91,23 @@ const idListKey = (ids?: number[]) =>
 export const StatsGetQueryOptions = (
   window: StatsWindow,
   timezone: string,
-  start?: string,
-  end?: string,
-  genre?: string,
-  actorIds?: number[],
-  crewIds?: number[],
-  addedByIds?: number[],
-  releaseYear?: number,
-  decade?: number,
+  range: { start?: string; end?: string },
+  filters: StatsFilters,
 ) => {
-  const actorsKey = idListKey(actorIds);
-  const crewKey = idListKey(crewIds);
-  const addedByKey = idListKey(addedByIds);
+  // The ONE serialization of the filter value: the query key and the request
+  // both read it, so a cache entry can never disagree with what was fetched.
+  const canonical = {
+    genre: filters.genre,
+    actorIds: idListKey(filters.actorIds),
+    crewIds: idListKey(filters.crewIds),
+    addedByIds: idListKey(filters.addedByIds),
+    releaseYear: filters.releaseYear,
+    decade: filters.decade,
+  };
   return queryOptions({
-    queryKey: StatsKeys.byWindow(window, timezone, start, end, genre, actorsKey, crewKey, addedByKey, releaseYear, decade),
+    queryKey: StatsKeys.byWindow(window, timezone, range.start, range.end, canonical),
     queryFn: ({ signal }) =>
-      APIClient.stats.get({ window, timezone, start, end, genre, actorIds: actorsKey, crewIds: crewKey, addedByIds: addedByKey, releaseYear, decade }, signal),
+      APIClient.stats.get({ window, timezone, start: range.start, end: range.end, ...canonical }, signal),
     // Keep the previous window/filter's result on screen while the next one loads,
     // so the stats body never blanks to "Loading stats…" on an uncached change —
     // the numbers stay mounted and roll (NumberFlow) to the new values instead of

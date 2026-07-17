@@ -51,12 +51,12 @@ func (h *handler) creditsFor(ctx context.Context, movies []*domain.Movie) credit
 	return credits
 }
 
-func (h *handler) getPooledMovies(ctx context.Context) ([]movieResponse, error) {
+func (h *handler) getPooledMovies(ctx context.Context) ([]fullMovie, error) {
 	movies, err := h.movieService.Pooled(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
+	return toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
 }
 
 func (h *handler) advanceNextUp(ctx context.Context) error {
@@ -131,7 +131,7 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 	movieRecord.TMDBID = tmdbID
 	movieRecord.IMDbID = imdbID
 
-	payload := toAPIMovie(movieRecord)
+	payload := toFullMovieBare(movieRecord)
 	h.broker.Broadcast(event{Type: "movie:added", Data: payload})
 
 	if h.enrichRunner != nil {
@@ -157,7 +157,7 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
 }
 
 func (h *handler) handleEditMovie(c *fiber.Ctx) error {
@@ -245,7 +245,7 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 		}
 	}
 
-	payload := toAPIMovie(updatedMovie)
+	payload := toFullMovieBare(updatedMovie)
 	h.broker.Broadcast(event{Type: "movie:updated", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
@@ -298,7 +298,7 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
 }
 
 func (h *handler) handleMove(c *fiber.Ctx) error {
@@ -393,8 +393,8 @@ func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {
 // regardless of whether it has the pool cached — and decouples the reel from each
 // client's local pool snapshot.
 type drawnPayload struct {
-	movieResponse
-	Candidates []movieResponse `json:"candidates"`
+	fullMovie
+	Candidates []leanMovieTile `json:"candidates"`
 }
 
 func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
@@ -417,7 +417,7 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		h.log.Error().Err(err).Msg("failed to advance next up")
 	}
 
-	payload := toAPIMovie(selectedMovie)
+	payload := toFullMovieBare(selectedMovie)
 	// Carry the authoritative draw time so the clicker (whose own SSE event may
 	// drop) and every other client resume the reveal spin from the same instant,
 	// the reveal deadline the server will enforce (clients time the confirm
@@ -431,17 +431,17 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 
 	// Reel candidates = the pre-draw pool (winner + the rest) as lean tiles WITH
 	// posters, reconstructed from the post-draw pool plus the winner. The winner
-	// must carry a poster here because the reel lands on it: toAPIMovie(selected)
+	// must carry a poster here because the reel lands on it: toFullMovieBare(selected)
 	// alone has none (no metadata), so the tiles — not the bare payload — supply it.
 	// Best-effort: the draw already succeeded, so a pool-load failure must not fail
 	// the response — it just omits candidates and the client falls back to its
 	// local pool cache (the pre-self-contained behaviour).
-	drawn := drawnPayload{movieResponse: payload}
+	drawn := drawnPayload{fullMovie: payload}
 	if pooled, err := h.movieService.Pooled(ctx); err != nil {
 		h.log.Warn().Err(err).Msg("failed to load pool for draw candidates (reel falls back to client pool cache)")
 	} else {
 		candidateMovies := append([]*domain.Movie{selectedMovie}, pooled...)
-		drawn.Candidates = toAPIMoviesLean(candidateMovies, h.metaFor(ctx, candidateMovies))
+		drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(ctx, candidateMovies))
 	}
 
 	// The auto-reveal is armed inside DrawRandom: if no client confirms by the
@@ -464,7 +464,7 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 
 	meta := h.metaFor(ctx, []*domain.Movie{movieRecord})
 	credits := h.creditsFor(ctx, []*domain.Movie{movieRecord})
-	resp := toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
+	resp := toFullMovie(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
 	// When this movie is the active draw, hand the client the timing it needs to
 	// resume the reveal spin after a reload: when it was drawn, plus the server
 	// clock now (so elapsed is computed server-relative, free of client skew).
@@ -498,7 +498,7 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 	// MarkCurrentAsWatched cleared the draw and its pending auto-reveal.
 	h.invalidateStatsCache()
 
-	payload := toAPIMovie(watched)
+	payload := toFullMovieBare(watched)
 	h.broker.Broadcast(event{Type: "movie:watched", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
@@ -516,7 +516,7 @@ func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
 	// made up the bulk of the bytes. The detail modal lazy-loads the full record
 	// from GET /movies/:id; Stats reads its actor/crew filter options from
 	// GET /movies/filter-options. Credits are no longer loaded here at all.
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesLean(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(ctx, movies)))
 }
 
 // handleGetMovie returns the full enriched record for one movie — backdrop,
@@ -537,5 +537,5 @@ func (h *handler) handleGetMovie(c *fiber.Ctx) error {
 	one := []*domain.Movie{movieRecord}
 	meta := h.metaFor(ctx, one)
 	credits := h.creditsFor(ctx, one)
-	return c.Status(fiber.StatusOK).JSON(toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
+	return c.Status(fiber.StatusOK).JSON(toFullMovie(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
 }

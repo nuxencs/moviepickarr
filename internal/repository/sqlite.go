@@ -164,24 +164,46 @@ func NewSqliteMoviesRepository(pool *db.Pool) *SqliteMoviesRepository {
 	return &SqliteMoviesRepository{pool: pool}
 }
 
-func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.Movie, error) {
-	query := `
-		SELECT
-			m.id,
-			m.title,
-			m.status,
-			m.added_at,
-			m.added_by_id,
-			u.name,
-			m.watched_at,
-			m.tmdb_id,
-			m.imdb_id
-		FROM movies m
-		JOIN users u ON m.added_by_id = u.id
-		WHERE m.id = ?
-	`
+// movieSelect is THE movies projection — every movie read starts from this
+// exact select (movie columns + the adder's name) and scans via scanMovie.
+// Adding a movie column is one edit here plus one in scanMovie; the query
+// methods below only append their WHERE/ORDER BY tails.
+const movieSelect = `
+	SELECT
+		m.id,
+		m.title,
+		m.status,
+		m.added_at,
+		m.added_by_id,
+		u.name,
+		m.watched_at,
+		m.tmdb_id,
+		m.imdb_id
+	FROM movies m
+	JOIN users u ON m.added_by_id = u.id`
 
-	movie, err := scanMovie(d.pool.Read.QueryRowContext(ctx, query, id))
+// queryMovies runs a movieSelect-based query and scans the full result set.
+func (d *SqliteMoviesRepository) queryMovies(ctx context.Context, query string, args ...any) ([]*domain.Movie, error) {
+	rows, err := d.pool.Read.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	movies := make([]*domain.Movie, 0)
+	for rows.Next() {
+		movie, err := scanMovie(rows)
+		if err != nil {
+			return nil, err
+		}
+		movies = append(movies, movie)
+	}
+
+	return movies, rows.Err()
+}
+
+func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.Movie, error) {
+	movie, err := scanMovie(d.pool.Read.QueryRowContext(ctx, movieSelect+" WHERE m.id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, id)
 	}
@@ -193,163 +215,25 @@ func (d *SqliteMoviesRepository) FindByID(ctx context.Context, id int) (*domain.
 }
 
 func (d *SqliteMoviesRepository) List(ctx context.Context) ([]*domain.Movie, error) {
-	query := `
-		SELECT
-			m.id,
-			m.title,
-			m.status,
-			m.added_at,
-			m.added_by_id,
-			u.name,
-			m.watched_at,
-			m.tmdb_id,
-			m.imdb_id
-		FROM movies m
-		JOIN users u ON m.added_by_id = u.id
-		ORDER BY title DESC
-	`
-
-	rows, err := d.pool.Read.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	movies := make([]*domain.Movie, 0)
-	for rows.Next() {
-		movie, err := scanMovie(rows)
-		if err != nil {
-			return nil, err
-		}
-		movies = append(movies, movie)
-	}
-	return movies, nil
+	return d.queryMovies(ctx, movieSelect+" ORDER BY title DESC")
 }
 
 func (d *SqliteMoviesRepository) FindByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {
-	query := `
-		SELECT
-			m.id,
-			m.title,
-			m.status,
-			m.added_at,
-			m.added_by_id,
-			u.name,
-			m.watched_at,
-			m.tmdb_id,
-			m.imdb_id
-		FROM movies m
-		JOIN users u ON m.added_by_id = u.id
-		WHERE m.added_by_id = ?
-		ORDER BY title DESC
-	`
-
-	rows, err := d.pool.Read.QueryContext(ctx, query, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	movies := make([]*domain.Movie, 0)
-	for rows.Next() {
-		movie, err := scanMovie(rows)
-		if err != nil {
-			return nil, err
-		}
-		movies = append(movies, movie)
-	}
-
-	return movies, nil
+	return d.queryMovies(ctx, movieSelect+" WHERE m.added_by_id = ? ORDER BY title DESC", userID)
 }
 
 func (d *SqliteMoviesRepository) FindByStatus(ctx context.Context, status string) ([]*domain.Movie, error) {
-	query := `
-		SELECT
-			m.id,
-			m.title,
-			m.status,
-			m.added_at,
-			m.added_by_id,
-			u.name,
-			m.watched_at,
-			m.tmdb_id,
-			m.imdb_id
-		FROM movies m
-		JOIN users u ON m.added_by_id = u.id
-		WHERE m.status = ?
-		ORDER BY title
-	`
+	// The watched library reads in watch-recency order; everything else is a
+	// plain title sort.
+	order := " ORDER BY title"
 	if status == "watched" {
-		query = `
-			SELECT
-				m.id,
-				m.title,
-				m.status,
-				m.added_at,
-				m.added_by_id,
-				u.name,
-				m.watched_at,
-				m.tmdb_id,
-				m.imdb_id
-			FROM movies m
-			JOIN users u ON m.added_by_id = u.id
-			WHERE m.status = ?
-			ORDER BY m.watched_at DESC, m.title
-		`
+		order = " ORDER BY m.watched_at DESC, m.title"
 	}
-
-	rows, err := d.pool.Read.QueryContext(ctx, query, status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	movies := make([]*domain.Movie, 0)
-	for rows.Next() {
-		movie, err := scanMovie(rows)
-		if err != nil {
-			return nil, err
-		}
-		movies = append(movies, movie)
-	}
-
-	return movies, nil
+	return d.queryMovies(ctx, movieSelect+" WHERE m.status = ?"+order, status)
 }
 
 func (d *SqliteMoviesRepository) FindByUserIDAndStatus(ctx context.Context, userID int, status string) ([]*domain.Movie, error) {
-	query := `
-		SELECT
-			m.id,
-			m.title,
-			m.status,
-			m.added_at,
-			m.added_by_id,
-			u.name,
-			m.watched_at,
-			m.tmdb_id,
-			m.imdb_id
-		FROM movies m
-		JOIN users u ON m.added_by_id = u.id
-		WHERE m.added_by_id = ? AND m.status = ?
-		ORDER BY title
-	`
-
-	rows, err := d.pool.Read.QueryContext(ctx, query, userID, status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	movies := make([]*domain.Movie, 0)
-	for rows.Next() {
-		movie, err := scanMovie(rows)
-		if err != nil {
-			return nil, err
-		}
-		movies = append(movies, movie)
-	}
-
-	return movies, nil
+	return d.queryMovies(ctx, movieSelect+" WHERE m.added_by_id = ? AND m.status = ? ORDER BY title", userID, status)
 }
 
 func (d *SqliteMoviesRepository) CountByStatus(ctx context.Context, status string) (int, error) {
@@ -377,25 +261,7 @@ func (d *SqliteMoviesRepository) CountByUserIDAndStatus(ctx context.Context, use
 }
 
 func (d *SqliteMoviesRepository) GetRandomPooled(ctx context.Context) (*domain.Movie, error) {
-	query := `
-		SELECT
-			m.id,
-			m.title,
-			m.status,
-			m.added_at,
-			m.added_by_id,
-			u.name,
-			m.watched_at,
-			m.tmdb_id,
-			m.imdb_id
-		FROM movies m
-		JOIN users u ON m.added_by_id = u.id
-		WHERE m.status = 'pool'
-		ORDER BY RANDOM()
-		LIMIT 1
-	`
-
-	row := d.pool.Read.QueryRowContext(ctx, query)
+	row := d.pool.Read.QueryRowContext(ctx, movieSelect+" WHERE m.status = 'pool' ORDER BY RANDOM() LIMIT 1")
 	movie, err := scanMovie(row)
 	if err != nil {
 		return nil, err
@@ -405,24 +271,7 @@ func (d *SqliteMoviesRepository) GetRandomPooled(ctx context.Context) (*domain.M
 }
 
 func (d *SqliteMoviesRepository) GetCurrent(ctx context.Context) (*domain.Movie, error) {
-	query := `
-		SELECT
-			m.id,
-			m.title,
-			m.status,
-			m.added_at,
-			m.added_by_id,
-			u.name,
-			m.watched_at,
-			m.tmdb_id,
-			m.imdb_id
-		FROM movies m
-		JOIN users u ON m.added_by_id = u.id
-		WHERE m.status = 'current'
-		LIMIT 1
-	`
-
-	row := d.pool.Read.QueryRowContext(ctx, query)
+	row := d.pool.Read.QueryRowContext(ctx, movieSelect+" WHERE m.status = 'current' LIMIT 1")
 	movie, err := scanMovie(row)
 	if err != nil {
 		return nil, err

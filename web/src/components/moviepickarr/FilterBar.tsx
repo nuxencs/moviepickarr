@@ -11,13 +11,14 @@ import {
   useState,
 } from "react";
 
-import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 import {
   type FilterOptions,
   type MovieFilters,
   type PersonFilter,
   type PersonOption,
 } from "@/components/moviepickarr/lib";
+
+import { useDismissible } from "@/hooks/useDismissible";
 
 export interface FilterChoice<T extends string | number> {
   value: T;
@@ -69,15 +70,13 @@ function FilterChipMenu<T extends string | number>({
   multiselectable?: boolean;
   searchable?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [closing, setClosing] = useState(false);
   const [query, setQuery] = useState("");
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const closingRef = useRef(false);
-  const timerRef = useRef<number | null>(null);
   const menuId = useId();
+
+  const { open, closing, show, dismiss } = useDismissible({ restoreFocusTo: triggerRef });
   // Unique anchor ident so the dropdown can tether to THIS chip — and flip to
   // its right edge on narrow screens — via CSS anchor positioning where it is
   // supported. Older engines fall back to the plain left-aligned drop (below).
@@ -86,34 +85,16 @@ function FilterChipMenu<T extends string | number>({
   const q = query.trim().toLowerCase();
   const visible = q ? choices.filter((c) => c.label.toLowerCase().includes(q)) : choices;
 
-  const clearTimer = () => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
   const openMenu = useCallback(() => {
-    clearTimer();
-    closingRef.current = false;
-    setClosing(false);
     setQuery("");
-    setOpen(true);
-  }, []);
+    show();
+  }, [show]);
 
-  const requestClose = useCallback((reason: CloseReason) => {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    setClosing(true);
-    // Mirror the Menu: every dismissal but an outside click refocuses the chip.
-    if (reason !== "outside") triggerRef.current?.focus();
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      closingRef.current = false;
-      setClosing(false);
-      setOpen(false);
-    }, exitDelayMs());
-  }, []);
+  // Mirror the Menu: every dismissal but an outside click refocuses the chip.
+  const requestClose = useCallback(
+    (reason: CloseReason) => dismiss({ restoreFocus: reason !== "outside" }),
+    [dismiss],
+  );
 
   // Focus the search field (when present) or the selected/first option on open.
   useLayoutEffect(() => {
@@ -155,7 +136,6 @@ function FilterChipMenu<T extends string | number>({
     };
   }, [open, closing, requestClose]);
 
-  useEffect(() => () => clearTimer(), []);
 
   const select = (next: T) => {
     onSelect(next);
@@ -206,7 +186,7 @@ function FilterChipMenu<T extends string | number>({
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}
           disabled={choices.length === 0 && !active}
-          onClick={() => (open && !closingRef.current ? requestClose("trigger") : openMenu())}
+          onClick={() => (open && !closing ? requestClose("trigger") : openMenu())}
           onKeyDown={(e) => {
             if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
               e.preventDefault();

@@ -17,7 +17,6 @@ import { FilterOptionsQueryOptions, MoviesGetWatchedQueryOptions, StatsGetQueryO
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { DateRangePopover } from "@/components/moviepickarr/DateRange";
 import { shortRange } from "@/components/moviepickarr/dateRangeFormat";
-import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 import { FilterBar, FilterSelect } from "@/components/moviepickarr/FilterBar";
 import {
   type FilterOptions,
@@ -50,6 +49,7 @@ import type {
   StatsYearCount,
 } from "@/types/Response";
 
+import { useDismissible } from "@/hooks/useDismissible";
 import { useFlipRail } from "@/hooks/useFlipRail";
 
 // Stable reference for the pre-load / empty state so the filters useMemo below
@@ -97,50 +97,20 @@ function topHour(items: StatsHourCount[]) {
 export function StatsTab() {
   const search = useSearch({ from: "/stats" });
   const navigate = useNavigate({ from: "/stats" });
-  const [showRange, setShowRange] = useState(false);
-  // The custom-range popover shares the floating-surface exit motion: closeRange
-  // flags it closing (so CSS plays daterange--closing), restores focus to the
-  // trigger, then unmounts after exitDelayMs() — the same lockstep the Menu/Modal
-  // use, and 0ms under reduced motion.
-  const [rangeClosing, setRangeClosing] = useState(false);
-  const rangeClosingRef = useRef(false);
-  const rangeTimer = useRef<number | null>(null);
   const rangeId = useId();
   const customRef = useRef<HTMLButtonElement>(null);
 
-  const closeRange = useCallback((restoreFocus: boolean, after?: () => void) => {
-    if (rangeClosingRef.current) return;
-    rangeClosingRef.current = true;
-    setRangeClosing(true);
-    if (restoreFocus) customRef.current?.focus();
-    if (rangeTimer.current !== null) window.clearTimeout(rangeTimer.current);
-    rangeTimer.current = window.setTimeout(() => {
-      rangeClosingRef.current = false;
-      rangeTimer.current = null;
-      setRangeClosing(false);
-      setShowRange(false);
-      after?.();
-    }, exitDelayMs());
-  }, []);
+  // The custom-range popover rides the shared dismissal machine (closing plays
+  // the CSS daterange--closing exit, focus returns to the trigger, unmount
+  // after exitDelayMs — the same lockstep as the Menu/Modal). hideNow is the
+  // hard-hide for when the view changes out from under the popover.
+  const range = useDismissible({ restoreFocusTo: customRef });
+  const { dismiss: dismissRange } = range;
 
-  // Hard-hide without the exit animation (when the view changes out from under the
-  // popover — choosing another preset or a watch year). Resets the closing guard so
-  // a later open isn't blocked.
-  const hideRangeNow = useCallback(() => {
-    if (rangeTimer.current !== null) {
-      window.clearTimeout(rangeTimer.current);
-      rangeTimer.current = null;
-    }
-    rangeClosingRef.current = false;
-    setRangeClosing(false);
-    setShowRange(false);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (rangeTimer.current !== null) window.clearTimeout(rangeTimer.current);
-    },
-    [],
+  // Adapter for DateRangePopover's (restoreFocus, after?) dismiss signature.
+  const closeRange = useCallback(
+    (restoreFocus: boolean, after?: () => void) => dismissRange({ restoreFocus, after }),
+    [dismissRange],
   );
 
   // The modal is local state. A genre/year chip inside it is a same-route
@@ -236,7 +206,7 @@ export function StatsTab() {
     navigate({ search: (prev) => ({ ...prev, ...filtersToSearch(next) }) });
 
   const onWatchYear = (year: number | null) => {
-    hideRangeNow();
+    range.hideNow();
     if (year === null) {
       navigate({ search: (prev) => ({ ...prev, win: "all-time", start: "", end: "" }) });
       return;
@@ -280,23 +250,17 @@ export function StatsTab() {
 
   const onWin = (id: StatsWindow) => {
     if (id === "custom") {
-      if (showRange && !rangeClosingRef.current) {
+      if (range.open && !range.closing) {
         closeRange(true);
       } else {
-        // Open — or interrupt an in-flight close and re-open, so a fast re-click
-        // during the exit fade isn't swallowed. Clearing the timer is load-bearing:
-        // otherwise the original close timer still fires and slams it shut again.
-        if (rangeTimer.current !== null) {
-          window.clearTimeout(rangeTimer.current);
-          rangeTimer.current = null;
-        }
-        rangeClosingRef.current = false;
-        setRangeClosing(false);
-        setShowRange(true);
+        // Open — or interrupt an in-flight close and re-open, so a fast
+        // re-click during the exit fade isn't swallowed (show() clears the
+        // pending close timer).
+        range.show();
       }
       return;
     }
-    hideRangeNow();
+    range.hideNow();
     navigate({ search: (prev) => ({ ...prev, win: id, start: "", end: "" }) });
   };
 
@@ -327,10 +291,10 @@ export function StatsTab() {
                   key={w.id}
                   type="button"
                   ref={isCustom ? customRef : undefined}
-                  data-active={win === w.id || (isCustom && showRange)}
+                  data-active={win === w.id || (isCustom && range.open)}
                   aria-haspopup={isCustom ? "dialog" : undefined}
-                  aria-expanded={isCustom ? showRange : undefined}
-                  aria-controls={isCustom && showRange ? rangeId : undefined}
+                  aria-expanded={isCustom ? range.open : undefined}
+                  aria-controls={isCustom && range.open ? rangeId : undefined}
                   onClick={() => onWin(w.id)}
                 >
                   {w.calendar && <CalendarDaysIcon />}
@@ -339,11 +303,11 @@ export function StatsTab() {
               );
             })}
           </div>
-          {showRange && (
+          {range.open && (
             <DateRangePopover
               id={rangeId}
               triggerRef={customRef}
-              closing={rangeClosing}
+              closing={range.closing}
               initial={customRange}
               onDismiss={closeRange}
               onApply={(r) =>

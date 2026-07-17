@@ -124,8 +124,8 @@ func TestMigrateBoltToSQLite(t *testing.T) {
 		}
 
 		settings := boltSettings{
-			PoolLocked:   true,
-			NextPickerID: "user-1",
+			PoolLocked: true,
+			NextUpID:   "user-1",
 		}
 		encodedSettings, err := json.Marshal(settings)
 		if err != nil {
@@ -193,11 +193,11 @@ func TestMigrateBoltToSQLite(t *testing.T) {
 		t.Fatalf("expected pool_locked true, got %q", poolLocked)
 	}
 
-	var nextPickerID int
-	if err := sqliteDB.Read.QueryRow("SELECT user_id FROM next_picker WHERE id = 1").Scan(&nextPickerID); err != nil {
-		t.Fatalf("next_picker: %v", err)
+	var nextUpID int
+	if err := sqliteDB.Read.QueryRow("SELECT user_id FROM next_up WHERE id = 1").Scan(&nextUpID); err != nil {
+		t.Fatalf("next_up: %v", err)
 	}
-	if nextPickerID != 1 {
-		t.Fatalf("expected next_picker user_id 1, got %d", nextPickerID)
+	if nextUpID != 1 {
+		t.Fatalf("expected next_up user_id 1, got %d", nextUpID)
 	}
 }

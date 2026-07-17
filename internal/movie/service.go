@@ -34,35 +34,35 @@ type Service interface {
 	Current(ctx context.Context) (*domain.Movie, error)
 	PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
 	StashedByUserID(ctx context.Context, userID int) ([]*domain.Movie, error)
-	// PickRandom selects a random pooled movie as the current pick. clientID is
-	// the opaque id of the client that initiated the pick (see ActivePick) — it
-	// gates who sees the reel's confirm button; "" is acceptable (no picker).
-	PickRandom(ctx context.Context, clientID string) (*domain.Movie, error)
+	// DrawRandom selects a random pooled movie as the current draw. clientID is
+	// the opaque id of the client that initiated the draw (see ActiveDraw) — it
+	// gates who sees the reel's confirm button; "" is acceptable (no drawer).
+	DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error)
 	MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error)
-	// ActivePick reports the in-flight pick (movie id + when it was picked) that
-	// drives the cross-client pick-reveal spin, or ok=false when none is active
+	// ActiveDraw reports the in-flight draw (movie id + when it was drawn) that
+	// drives the cross-client draw-reveal spin, or ok=false when none is active
 	// (no current movie, or the current movie was already marked watched). It is
 	// in-memory only, consistent with the in-process event broker: a server
 	// restart drops it, which just means a reload won't replay the spin.
-	ActivePick() (ActivePick, bool)
-	// RevealCurrentPick marks the active pick as revealed (the picker confirmed,
-	// or the reel's countdown elapsed). It reports the pick plus whether this call
+	ActiveDraw() (ActiveDraw, bool)
+	// RevealCurrentDraw marks the active draw as revealed (the drawer confirmed,
+	// or the reel's countdown elapsed). It reports the draw plus whether this call
 	// is the one that flipped it — so the caller broadcasts movie:revealed exactly
 	// once, and a duplicate confirm is a silent no-op. ok=false when there's no
-	// active pick or it was already revealed.
-	RevealCurrentPick() (ActivePick, bool)
+	// active draw or it was already revealed.
+	RevealCurrentDraw() (ActiveDraw, bool)
 }
 
-// ActivePick records the most recent random pick so a reloading client — or one
-// that joined late / dropped the SSE event — can resume the pick-reveal spin
+// ActiveDraw records the most recent random draw so a reloading client — or one
+// that joined late / dropped the SSE event — can resume the draw-reveal spin
 // instead of jumping straight to the result. Held in memory only.
-type ActivePick struct {
-	MovieID  int
-	PickedAt time.Time
-	// PickerClientID is the client that clicked Pick. Only that client shows the
-	// reel's confirm button; everyone else's reel closes when the pick is revealed.
-	PickerClientID string
-	// Revealed flips true once the pick has been confirmed (picker pressed the
+type ActiveDraw struct {
+	MovieID int
+	DrawnAt time.Time
+	// DrawClientID is the client that clicked Draw. Only that client shows the
+	// reel's confirm button; everyone else's reel closes when the draw is revealed.
+	DrawClientID string
+	// Revealed flips true once the draw has been confirmed (drawer pressed the
 	// button or its countdown filled). A reload then shows the result directly
 	// instead of re-opening the reel.
 	Revealed bool
@@ -72,7 +72,7 @@ type service struct {
 	movieRepo domain.MovieRepo
 
 	mu         sync.Mutex
-	activePick *ActivePick
+	activeDraw *ActiveDraw
 }
 
 func NewService(movieRepo domain.MovieRepo) Service {
@@ -219,7 +219,7 @@ func (s *service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 	return movies, nil
 }
 
-func (s *service) PickRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
+func (s *service) DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
 	pooled, err := s.movieRepo.FindByStatus(ctx, "pool")
 	if err != nil {
 		return nil, err
@@ -235,7 +235,7 @@ func (s *service) PickRandom(ctx context.Context, clientID string) (*domain.Movi
 	}
 
 	if current != nil {
-		return nil, domain.ErrCurrentMovieExist
+		return nil, domain.ErrCurrentDrawExists
 	}
 
 	movie, err := s.movieRepo.GetRandomPooled(ctx)
@@ -248,7 +248,7 @@ func (s *service) PickRandom(ctx context.Context, clientID string) (*domain.Movi
 	}
 
 	s.mu.Lock()
-	s.activePick = &ActivePick{MovieID: movie.ID, PickedAt: time.Now().UTC(), PickerClientID: clientID}
+	s.activeDraw = &ActiveDraw{MovieID: movie.ID, DrawnAt: time.Now().UTC(), DrawClientID: clientID}
 	s.mu.Unlock()
 
 	return movie, nil
@@ -261,7 +261,7 @@ func (s *service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 	}
 
 	if current == nil {
-		return nil, domain.ErrNoCurrentMovie
+		return nil, domain.ErrNoCurrentDraw
 	}
 
 	watchedAt := time.Now().UTC()
@@ -269,10 +269,10 @@ func (s *service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 		return nil, err
 	}
 
-	// The pick is done — clear the active spin so a reload now shows the result
+	// The draw is done — clear the active spin so a reload now shows the result
 	// directly rather than replaying the reel.
 	s.mu.Lock()
-	s.activePick = nil
+	s.activeDraw = nil
 	s.mu.Unlock()
 
 	current.Status = "watched"
@@ -281,21 +281,21 @@ func (s *service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 	return current, nil
 }
 
-func (s *service) ActivePick() (ActivePick, bool) {
+func (s *service) ActiveDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activePick == nil {
-		return ActivePick{}, false
+	if s.activeDraw == nil {
+		return ActiveDraw{}, false
 	}
-	return *s.activePick, true
+	return *s.activeDraw, true
 }
 
-func (s *service) RevealCurrentPick() (ActivePick, bool) {
+func (s *service) RevealCurrentDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activePick == nil || s.activePick.Revealed {
-		return ActivePick{}, false
+	if s.activeDraw == nil || s.activeDraw.Revealed {
+		return ActiveDraw{}, false
 	}
-	s.activePick.Revealed = true
-	return *s.activePick, true
+	s.activeDraw.Revealed = true
+	return *s.activeDraw, true
 }

@@ -329,7 +329,7 @@ func TestMarkEnrichmentStale_RetriggersNeedsEnrichment(t *testing.T) {
 		t.Fatalf("enriched movie should not be a candidate")
 	}
 
-	// Identity changed: the cleared marker makes the next drain re-pick the
+	// Identity changed: the cleared marker makes the next drain re-select the
 	// movie even when the in-memory enqueue is lost.
 	if err := meta.MarkEnrichmentStale(ctx, id); err != nil {
 		t.Fatalf("mark stale: %v", err)

@@ -1,4 +1,4 @@
-package nextpicker
+package nextup
 
 import (
 	"context"
@@ -12,26 +12,26 @@ type Service interface {
 }
 
 type service struct {
-	nextPickerRepo domain.NextPickerRepo
-	userRepo       domain.UserRepo
+	nextUpRepo domain.NextUpRepo
+	userRepo   domain.UserRepo
 }
 
-func NewService(nextPickerRepo domain.NextPickerRepo, userRepo domain.UserRepo) Service {
+func NewService(nextUpRepo domain.NextUpRepo, userRepo domain.UserRepo) Service {
 	return &service{
-		nextPickerRepo: nextPickerRepo,
-		userRepo:       userRepo,
+		nextUpRepo: nextUpRepo,
+		userRepo:   userRepo,
 	}
 }
 
 func (s *service) Get(ctx context.Context) (*domain.User, error) {
-	nextPicker, err := s.nextPickerRepo.Get(ctx)
+	nextUp, err := s.nextUpRepo.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return nextPicker, nil
+	return nextUp, nil
 }
 
 func (s *service) Set(ctx context.Context, userID int) error {
-	return s.nextPickerRepo.Set(ctx, userID)
+	return s.nextUpRepo.Set(ctx, userID)
 }

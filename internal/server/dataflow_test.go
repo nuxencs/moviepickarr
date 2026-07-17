@@ -65,8 +65,8 @@ func TestEventBroker_SubscribeReturnsCurrentHead(t *testing.T) {
 	}
 }
 
-// Delta 2: a pick carries self-contained reel candidates (the pre-pick pool,
-// winner included) on BOTH the HTTP response and the movie:picked broadcast, so
+// Delta 2: a draw carries self-contained reel candidates (the pre-draw pool,
+// winner included) on BOTH the HTTP response and the movie:drawn broadcast, so
 // every client renders the full reel without consulting its local pool cache.
 func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	t.Parallel()
@@ -108,7 +108,7 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	if len(body.Candidates) != 3 {
-		t.Fatalf("expected 3 reel candidates (the pre-pick pool), got %d", len(body.Candidates))
+		t.Fatalf("expected 3 reel candidates (the pre-draw pool), got %d", len(body.Candidates))
 	}
 	winnerInCandidates := false
 	for _, c := range body.Candidates {
@@ -123,21 +123,21 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	// The broadcast carries the same self-contained payload, with a seq assigned.
 	select {
 	case e := <-client:
-		if e.Type != "movie:picked" {
-			t.Fatalf("expected movie:picked broadcast, got %q", e.Type)
+		if e.Type != "movie:drawn" {
+			t.Fatalf("expected movie:drawn broadcast, got %q", e.Type)
 		}
 		if e.Seq == 0 {
 			t.Fatal("broadcast seq was not assigned")
 		}
-		pp, ok := e.Data.(pickedPayload)
+		pp, ok := e.Data.(drawnPayload)
 		if !ok {
-			t.Fatalf("event data is %T, want pickedPayload", e.Data)
+			t.Fatalf("event data is %T, want drawnPayload", e.Data)
 		}
 		if len(pp.Candidates) != 3 {
 			t.Fatalf("broadcast candidates = %d, want 3", len(pp.Candidates))
 		}
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("no movie:picked broadcast received")
+		t.Fatal("no movie:drawn broadcast received")
 	}
 }
 
@@ -160,7 +160,7 @@ func countEvents(client chan event, typ string, within time.Duration) int {
 	}
 }
 
-func seedPoolAndPick(t *testing.T, app *fiber.App, movieRepo *repository.SqliteMoviesRepository, userID int, titles ...string) {
+func seedPoolAndDraw(t *testing.T, app *fiber.App, movieRepo *repository.SqliteMoviesRepository, userID int, titles ...string) {
 	t.Helper()
 	ctx := context.Background()
 	for _, title := range titles {
@@ -172,12 +172,12 @@ func seedPoolAndPick(t *testing.T, app *fiber.App, movieRepo *repository.SqliteM
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req, -1)
 	if err != nil || resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("pick: err=%v status=%v", err, resp.StatusCode)
+		t.Fatalf("draw: err=%v status=%v", err, resp.StatusCode)
 	}
 }
 
 // Delta fix: the server OWNS the auto-reveal. With no client confirmation, it
-// reveals the pick itself and broadcasts movie:revealed after autoRevealDelay — so
+// reveals the draw itself and broadcasts movie:revealed after autoRevealDelay — so
 // every client (even a backgrounded, timer-throttled tab) closes off one broadcast
 // rather than its own countdown.
 func TestHandleGetRandomMovie_ServerAutoReveals(t *testing.T) {
@@ -195,13 +195,13 @@ func TestHandleGetRandomMovie_ServerAutoReveals(t *testing.T) {
 	client, _ := h.broker.Subscribe()
 	defer h.broker.Unsubscribe(client)
 
-	seedPoolAndPick(t, app, movieRepo, user.ID, "Drive", "Collateral")
+	seedPoolAndDraw(t, app, movieRepo, user.ID, "Drive", "Collateral")
 
 	if got := countEvents(client, "movie:revealed", 500*time.Millisecond); got < 1 {
 		t.Fatalf("server did not auto-reveal: expected a movie:revealed broadcast, got %d", got)
 	}
-	if ap, ok := h.movieService.ActivePick(); !ok || !ap.Revealed {
-		t.Fatalf("active pick not marked revealed after auto-reveal (ok=%v)", ok)
+	if ap, ok := h.movieService.ActiveDraw(); !ok || !ap.Revealed {
+		t.Fatalf("active draw not marked revealed after auto-reveal (ok=%v)", ok)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestHandleRevealCurrentMovie_CancelsServerAutoReveal(t *testing.T) {
 	client, _ := h.broker.Subscribe()
 	defer h.broker.Unsubscribe(client)
 
-	seedPoolAndPick(t, app, movieRepo, user.ID, "Sicario", "Arrival")
+	seedPoolAndDraw(t, app, movieRepo, user.ID, "Sicario", "Arrival")
 
 	// Confirm well within the 100ms window → cancels the pending auto-reveal.
 	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)

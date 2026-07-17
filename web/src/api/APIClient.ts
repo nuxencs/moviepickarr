@@ -218,13 +218,13 @@ export const APIClient = {
     },
     movies: {
         getPooled: () => appClient.Get<Movie[]>("api/v1/movies/pool"),
-        // Identify the picker so only this client shows the reel's confirm button.
+        // Identify the drawer so only this client shows the reel's confirm button.
         getRandom: () =>
             appClient.Post<Movie>("api/v1/movies/random", {
                 body: { clientId: getClientId() },
             }),
         getCurrent: () => appClient.Get<Movie>("api/v1/movies/current"),
-        // Confirm the pick — closes the reel for every client (via movie:revealed).
+        // Confirm the draw — closes the reel for every client (via movie:revealed).
         reveal: () => appClient.Post<void>("api/v1/movies/current/reveal"),
         getWatched: () =>
             appClient.Get<Movie[]>("api/v1/movies/watched"),
@@ -245,8 +245,8 @@ export const APIClient = {
             }),
         getLock: () =>
             appClient.Get<boolean>("api/v1/settings/pool-lock"),
-        getNextPicker: () =>
-            appClient.Get<{id: number, name: string}>("api/v1/settings/next-picker"),
+        getNextUp: () =>
+            appClient.Get<{id: number, name: string}>("api/v1/settings/next-up"),
     },
     stats: {
         get: ({ window, timezone, start, end, genre, actorIds, crewIds, addedByIds, releaseYear, decade }: StatsQuery, signal?: AbortSignal) =>

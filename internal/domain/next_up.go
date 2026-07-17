@@ -2,7 +2,7 @@ package domain
 
 import "context"
 
-type NextPickerRepo interface {
+type NextUpRepo interface {
 	Get(ctx context.Context) (*User, error)
 	Set(ctx context.Context, userID int) error
 }

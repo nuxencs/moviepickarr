@@ -106,7 +106,7 @@ func (r *testMovieRepo) MarkAsWatched(_ context.Context, id int, watchedAt time.
 }
 
 // GetRandomPooled returns a deterministic pool movie (lowest id) so the tests
-// can assert on the picked id without flaking on map iteration order.
+// can assert on the drawn id without flaking on map iteration order.
 func (r *testMovieRepo) GetRandomPooled(context.Context) (*domain.Movie, error) {
 	best := -1
 	for id, m := range r.movies {
@@ -132,7 +132,7 @@ func (r *testMovieRepo) GetCurrent(context.Context) (*domain.Movie, error) {
 }
 func (r *testMovieRepo) Delete(context.Context, int) error { panic("unexpected call") }
 
-func TestActivePickLifecycle(t *testing.T) {
+func TestActiveDrawLifecycle(t *testing.T) {
 	t.Parallel()
 
 	repo := &testMovieRepo{
@@ -144,54 +144,54 @@ func TestActivePickLifecycle(t *testing.T) {
 	svc := NewService(repo)
 	ctx := context.Background()
 
-	if _, ok := svc.ActivePick(); ok {
-		t.Fatal("expected no active pick before any pick")
+	if _, ok := svc.ActiveDraw(); ok {
+		t.Fatal("expected no active draw before any draw")
 	}
 
-	picked, err := svc.PickRandom(ctx, "client-abc")
+	drawn, err := svc.DrawRandom(ctx, "client-abc")
 	if err != nil {
-		t.Fatalf("PickRandom: unexpected error: %v", err)
+		t.Fatalf("DrawRandom: unexpected error: %v", err)
 	}
 
-	ap, ok := svc.ActivePick()
+	ap, ok := svc.ActiveDraw()
 	if !ok {
-		t.Fatal("expected an active pick after PickRandom")
+		t.Fatal("expected an active draw after DrawRandom")
 	}
-	if ap.MovieID != picked.ID {
-		t.Fatalf("active pick movie = %d, want %d", ap.MovieID, picked.ID)
+	if ap.MovieID != drawn.ID {
+		t.Fatalf("active draw movie = %d, want %d", ap.MovieID, drawn.ID)
 	}
-	if ap.PickedAt.IsZero() {
-		t.Fatal("expected a non-zero pickedAt")
+	if ap.DrawnAt.IsZero() {
+		t.Fatal("expected a non-zero drawnAt")
 	}
-	if ap.PickerClientID != "client-abc" {
-		t.Fatalf("picker client id = %q, want %q", ap.PickerClientID, "client-abc")
+	if ap.DrawClientID != "client-abc" {
+		t.Fatalf("draw client id = %q, want %q", ap.DrawClientID, "client-abc")
 	}
 	if ap.Revealed {
-		t.Fatal("expected a fresh pick to be unrevealed")
+		t.Fatal("expected a fresh draw to be unrevealed")
 	}
 
-	// First reveal flips it and reports the pick; a second is a no-op so the
+	// First reveal flips it and reports the draw; a second is a no-op so the
 	// handler broadcasts movie:revealed exactly once.
-	revealed, flipped := svc.RevealCurrentPick()
+	revealed, flipped := svc.RevealCurrentDraw()
 	if !flipped {
-		t.Fatal("expected the first reveal to flip the pick")
+		t.Fatal("expected the first reveal to flip the draw")
 	}
-	if revealed.MovieID != picked.ID {
-		t.Fatalf("revealed movie = %d, want %d", revealed.MovieID, picked.ID)
+	if revealed.MovieID != drawn.ID {
+		t.Fatalf("revealed movie = %d, want %d", revealed.MovieID, drawn.ID)
 	}
-	if _, flippedAgain := svc.RevealCurrentPick(); flippedAgain {
+	if _, flippedAgain := svc.RevealCurrentDraw(); flippedAgain {
 		t.Fatal("expected a second reveal to be a no-op")
 	}
-	if ap, ok := svc.ActivePick(); !ok || !ap.Revealed {
-		t.Fatal("expected the active pick to remain, now marked revealed")
+	if ap, ok := svc.ActiveDraw(); !ok || !ap.Revealed {
+		t.Fatal("expected the active draw to remain, now marked revealed")
 	}
 
 	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
 		t.Fatalf("MarkCurrentAsWatched: unexpected error: %v", err)
 	}
 
-	if _, ok := svc.ActivePick(); ok {
-		t.Fatal("expected the active pick to be cleared after marking watched")
+	if _, ok := svc.ActiveDraw(); ok {
+		t.Fatal("expected the active draw to be cleared after marking watched")
 	}
 }
 

@@ -6,13 +6,13 @@ export type SSEEventType =
   | "movie:added"
   | "movie:deleted"
   | "movie:moved"
-  | "movie:picked"
+  | "movie:drawn"
   | "movie:revealed"
   | "movie:watched"
   | "movie:updated"
   | "movies:enriched-batch"
   | "settings:pool-lock-changed"
-  | "settings:next-picker-changed";
+  | "settings:next-up-changed";
 
 export interface SSEEvent<T = unknown> {
   // Broker-global monotonic sequence number, assigned at broadcast time. The
@@ -60,13 +60,13 @@ export interface MovieMovedEvent extends SSEEvent<User> {
   type: "movie:moved";
 }
 
-export interface MoviePickedEvent extends SSEEvent<Movie> {
-  type: "movie:picked";
+export interface MovieDrawnEvent extends SSEEvent<Movie> {
+  type: "movie:drawn";
 }
 
-// The picker confirmed (or the reel's countdown filled): every client closes its
-// reel and reveals the pick in lockstep. Carries just enough to match the spin.
-export interface MovieRevealedEvent extends SSEEvent<{ movieID: number; pickedAt: string }> {
+// The drawer confirmed (or the reel's countdown filled): every client closes its
+// reel and reveals the draw in lockstep. Carries just enough to match the spin.
+export interface MovieRevealedEvent extends SSEEvent<{ movieID: number; drawnAt: string }> {
   type: "movie:revealed";
 }
 
@@ -89,6 +89,6 @@ export interface PoolLockChangedEvent extends SSEEvent<Settings> {
   type: "settings:pool-lock-changed";
 }
 
-export interface NextPickerChangedEvent extends SSEEvent<Settings> {
-  type: "settings:next-picker-changed";
+export interface NextUpChangedEvent extends SSEEvent<Settings> {
+  type: "settings:next-up-changed";
 }

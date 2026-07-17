@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
 import {
   type ActiveSpin,
   reelEaseOutput,
   reelEaseTimeAt,
   spinDurationMs,
-} from "@/components/moviepickarr/pickSpin";
+} from "@/components/moviepickarr/drawSpin";
+import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
 
 import type { Movie } from "@/types/Response";
 
-import { isAudioRunning, playPickJingle } from "@/lib/sound";
+import { isAudioRunning, playDrawJingle } from "@/lib/sound";
 
 /** Roughly how many decoy tiles to scroll before the winner — enough for a long
- *  spin, while the per-pick cap keeps the DOM light (no virtualization needed). */
+ *  spin, while the per-draw cap keeps the DOM light (no virtualization needed). */
 const TARGET_LEAD = 48;
 
 /** Trailing tiles past the winner. Enough to overflow the viewport's right rim
@@ -41,23 +41,23 @@ function confirmDurationMs(): number {
   return Number.isFinite(secs) && secs > 0 ? Math.round(secs * 1000) : DEFAULT_CONFIRM_MS;
 }
 
-interface PickReelProps {
+interface DrawReelProps {
   spin: ActiveSpin;
-  /** Called once when the pick is confirmed — the picker pressed OK, or the
+  /** Called once when the draw is confirmed — the drawer pressed OK, or the
    *  settled reel's countdown filled. The Hero closes the reel for every client
-   *  (broadcasting movie:revealed) and hands off to its own pick-reveal. */
+   *  (broadcasting movie:revealed) and hands off to its own draw-reveal. */
   onConfirm: () => void;
 }
 
 /**
- * The slot-machine pick reveal: a horizontal reel of pool-candidate posters that
+ * The slot-machine draw reveal: a horizontal reel of pool-candidate posters that
  * scrolls and decelerates onto the server-chosen winner, then *settles* and waits
- * for confirmation rather than auto-closing. The picker sees an OK button whose
+ * for confirmation rather than auto-closing. The drawer sees an OK button whose
  * fill counts down ~10s; pressing it (or letting it fill) closes the reel for
  * everyone. Motion is a JS-measured target + a CSS transition — the same
  * "measure then transition" idiom as the FLIP rails — so no animation library.
  */
-export function PickReel({ spin, onConfirm }: PickReelProps) {
+export function DrawReel({ spin, onConfirm }: DrawReelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const winnerRef = useRef<HTMLDivElement>(null);
@@ -70,7 +70,7 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
   // The reel has scrolled to rest on the winner and now awaits confirmation.
   const [settled, setSettled] = useState(false);
 
-  // Built once per pick (pickedAt identity). The pool repeats in its natural
+  // Built once per draw (drawnAt identity). The pool repeats in its natural
   // order for a long run, then the winner, then a few trailing tiles so the
   // winner isn't the very last cell.
   const { strip, winnerIndex } = useMemo(() => {
@@ -93,7 +93,7 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
     for (let i = 1; i <= TARGET_TRAIL; i++) trail.push(cands[(winnerAt + i) % cands.length]);
     return { strip: [...lead, winner, ...trail], winnerIndex: lead.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spin.pickedAt]);
+  }, [spin.drawnAt]);
 
   // The reel has rested on the winner; show the confirm controls + start the
   // countdown. Does NOT close — that waits for confirm().
@@ -130,7 +130,7 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
   }, [spin]);
 
   // Keyboard: while scrolling, Escape skips ahead; once settled, Escape confirms
-  // (the picker only — spectators can't close the reel for everyone).
+  // (the drawer only — spectators can't close the reel for everyone).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -150,7 +150,7 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
     }
   }, [settled, spin.mine]);
 
-  // The SERVER owns the auto-reveal: once a pick settles it broadcasts
+  // The SERVER owns the auto-reveal: once a draw settles it broadcasts
   // movie:revealed at the confirm deadline, so every client closes off that one
   // broadcast in lockstep — even a backgrounded, timer-throttled tab — instead of
   // each running its own countdown (whose independent timers desynced the run-out
@@ -163,7 +163,7 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
     return () => window.clearTimeout(t);
   }, [settled, confirm]);
 
-  // Measure the winner tile, pick a within-tile landing offset (jitter, so it can
+  // Measure the winner tile, draw a within-tile landing offset (jitter, so it can
   // rest near a border for excitement while the reticle still sits over it), then
   // glide the track to that offset with the reel easing — and settle on arrival.
   useLayoutEffect(() => {
@@ -200,7 +200,7 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
     track.style.transition = `transform ${remaining}ms var(--ease-reel)`;
     track.style.transform = `translate3d(${targetX}px, 0, 0)`;
 
-    // Pick-sound sync: a click each time a poster gap crosses the reticle. As the
+    // Draw-sound sync: a click each time a poster gap crosses the reticle. As the
     // track slides startX→targetX, each gap reaches viewport centre at translateX =
     // vpCenter − gap; invert the reel easing per gap so the click train decelerates
     // on the exact curve the posters ride. Computed here (where the geometry lives)
@@ -219,10 +219,10 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
       }
       clickTimes.sort((a, b) => a - b);
     }
-    // Fresh pick: always sound (its context resumes off the click that started it).
+    // Fresh draw: always sound (its context resumes off the click that started it).
     // Reload-resume: only join if audio is already running — a cold reload's context
     // is suspended, and scheduling onto it would replay the clicks shifted out of sync.
-    if (spin.live || isAudioRunning()) playPickJingle(clickTimes);
+    if (spin.live || isAudioRunning()) playDrawJingle(clickTimes);
 
     const onEnd = (e: TransitionEvent) => {
       if (e.propertyName === "transform") settle();
@@ -238,12 +238,12 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
   }, []);
 
   return (
-    <div className="pickreel" role="dialog" aria-modal="true" aria-label="Picking a random movie">
-      <div className="pickreel__label eyebrow">{settled ? "Your pick" : "Picking…"}</div>
-      <div className="pickreel__viewport" ref={viewportRef}>
-        <div className="pickreel__track" ref={trackRef}>
+    <div className="drawreel" role="dialog" aria-modal="true" aria-label="Drawing a random movie">
+      <div className="drawreel__label eyebrow">{settled ? "Your draw" : "Drawing…"}</div>
+      <div className="drawreel__viewport" ref={viewportRef}>
+        <div className="drawreel__track" ref={trackRef}>
           {strip.map((m, i) => (
-            <div className="pickreel__tile" key={i} ref={i === winnerIndex ? winnerRef : undefined}>
+            <div className="drawreel__tile" key={i} ref={i === winnerIndex ? winnerRef : undefined}>
               <Poster
                 title={m.title}
                 hue={hueOf(m.title)}
@@ -254,22 +254,22 @@ export function PickReel({ spin, onConfirm }: PickReelProps) {
             </div>
           ))}
         </div>
-        <div className="pickreel__reticle" aria-hidden="true" />
+        <div className="drawreel__reticle" aria-hidden="true" />
       </div>
 
-      <div className="pickreel__controls">
+      <div className="drawreel__controls">
         {!settled ? (
-          <button type="button" className="pickreel__skip" ref={skipRef} onClick={skip}>
+          <button type="button" className="drawreel__skip" ref={skipRef} onClick={skip}>
             Skip
           </button>
         ) : spin.mine ? (
-          <button type="button" className="btn btn--accent pickreel__ok" ref={confirmRef} onClick={confirm}>
-            <span className="pickreel__ok-fill" aria-hidden="true" />
-            <span className="pickreel__ok-label">OK</span>
+          <button type="button" className="btn btn--accent drawreel__ok" ref={confirmRef} onClick={confirm}>
+            <span className="drawreel__ok-fill" aria-hidden="true" />
+            <span className="drawreel__ok-label">OK</span>
           </button>
         ) : (
-          <div className="pickreel__waiting" role="status">
-            Waiting for the picker…
+          <div className="drawreel__waiting" role="status">
+            Waiting for the drawer…
           </div>
         )}
       </div>

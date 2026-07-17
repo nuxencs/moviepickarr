@@ -247,8 +247,8 @@ func (r *enrichRunner) Stop() {
 }
 
 // Enqueue schedules a single movie for enrichment (auto-on-add). Non-blocking:
-// if the queue is full the id is dropped and the next scheduled drain re-picks
-// it up. Dedup avoids queuing an id that is already pending.
+// if the queue is full the id is dropped and the next scheduled drain re-selects
+// it. Dedup avoids queuing an id that is already pending.
 func (r *enrichRunner) Enqueue(movieID int) {
 	if !r.tryClaim(movieID) {
 		return

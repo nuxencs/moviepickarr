@@ -6,27 +6,27 @@ import { APIClient } from "@/api/APIClient";
 import {
   MoviesGetCurrentQueryOptions,
   MoviesGetPoolQueryOptions,
-  SettingsGetNextPickerQueryOptions,
+  SettingsGetNextUpQueryOptions,
 } from "@/api/queries";
-import { MoviesKeys, PickKeys, SettingsKeys } from "@/api/query_keys";
+import { MoviesKeys, DrawKeys, SettingsKeys } from "@/api/query_keys";
 
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
-import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/moviepickarr/lib";
-import { PickReel } from "@/components/moviepickarr/PickReel";
+import { DrawReel } from "@/components/moviepickarr/DrawReel";
 import {
   type ActiveSpin,
   buildLiveSpin,
   buildResumeSpin,
   clearActiveSpin,
-  pickAwaitingReveal,
+  drawAwaitingReveal,
   setActiveSpin,
-} from "@/components/moviepickarr/pickSpin";
+} from "@/components/moviepickarr/drawSpin";
+import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie } from "@/types/Response";
 
-/** Stagger index for the pick-reveal; each slot settles a touch after the last. */
+/** Stagger index for the draw-reveal; each slot settles a touch after the last. */
 const ri = (i: number) => ({ "--i": i }) as CSSProperties;
 
 /**
@@ -63,38 +63,38 @@ function Backdrop({ bg, revealId }: { bg: string; revealId: number }) {
   );
 }
 
-// Picks already turned into a reel this page session. Module-level (not component
+// Draws already turned into a reel this page session. Module-level (not component
 // state) so it survives Hero remounts — leaving and returning to the Movies tab
 // must NOT replay a spin that already ran — while still resetting on a full page
 // reload, so a genuine reload can resume an in-flight spin.
-const handledPicks = new Set<string>();
+const handledDraws = new Set<string>();
 
 /**
- * Full-bleed cinematic banner for the current pick (Movies tab only).
- * Absorbs the old NextPicker: it carries the Mark-Watched / Pick-Random
- * actions and the next-picker chip.
+ * Full-bleed cinematic banner for the current draw (Movies tab only).
+ * Absorbs the old next-up panel: it carries the Mark-Watched / Draw-Random
+ * actions and the next-up chip.
  */
 export function Hero() {
   const queryClient = useQueryClient();
   const { data: current, isLoading } = useQuery(MoviesGetCurrentQueryOptions());
   const { data: pooled } = useQuery(MoviesGetPoolQueryOptions());
-  const { data: nextPicker } = useQuery(SettingsGetNextPickerQueryOptions());
+  const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());
 
   // Reactive read of the cross-client spin signal, set via setQueryData by the
-  // SSE handler (movie:picked) and the pick mutation below.
+  // SSE handler (movie:drawn) and the draw mutation below.
   const { data: activeSpin } = useQuery<ActiveSpin | null>({
-    queryKey: PickKeys.active(),
+    queryKey: DrawKeys.active(),
     queryFn: () => null,
     staleTime: Infinity,
     gcTime: Infinity,
     refetchOnWindowFocus: false,
   });
 
-  // Cross-client close signal: the pickedAt of a pick that was revealed (the
-  // picker confirmed, or a countdown filled), set by the useSSE movie:revealed
+  // Cross-client close signal: the drawnAt of a draw that was revealed (the
+  // drawer confirmed, or a countdown filled), set by the useSSE movie:revealed
   // handler. When it matches the in-flight spin, this client closes its reel too.
   const { data: revealSignal } = useQuery<string | null>({
-    queryKey: PickKeys.revealed(),
+    queryKey: DrawKeys.revealed(),
     queryFn: () => null,
     staleTime: Infinity,
     gcTime: Infinity,
@@ -103,47 +103,47 @@ export function Hero() {
 
   // Held from the moment the action button is clicked until the hero has actually
   // moved on. The POST resolves (and isPending drops) before the transition lands —
-  // for `marking`, before the current-pick refetch; for `picking`, before the reel
+  // for `marking`, before the current-draw refetch; for `drawing`, before the reel
   // takes over (set in an effect, a frame later) or the no-reel refetch commits — so
   // without these the button flashes back to its resting label in that gap instead of
   // settling straight on the next state.
   const [marking, setMarking] = useState(false);
-  const [picking, setPicking] = useState(false);
+  const [drawing, setDrawing] = useState(false);
 
-  const pickMutation = useMutation({
+  const drawMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
-    // Hold the button busy from the click; released only once the new pick is
-    // revealed (see the `picking` effect below).
-    onMutate: () => setPicking(true),
+    // Hold the button busy from the click; released only once the new draw is
+    // revealed (see the `drawing` effect below).
+    onMutate: () => setDrawing(true),
     onSuccess: (movie) => {
-      // No toast here — the reel itself is the pick feedback; a "Movie picked"
+      // No toast here — the reel itself is the draw feedback; a "Movie drawn"
       // toast popping while the reel is still spinning just competes with it.
       // Fallback if the clicker's own SSE event drops: start the reel from the
       // response (which carries its own candidates) and pull in the winner +
       // rotated state without the SSE-driven invalidation. setActiveSpin dedups
-      // against the SSE event by pickedAt.
+      // against the SSE event by drawnAt.
       const spin = buildLiveSpin(movie);
       setActiveSpin(queryClient, spin);
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
-      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });
+      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
       // Hold the pool refresh until the reel lands (see onLand) so the pool grid
       // doesn't drop the winner mid-spin and spoil the result. No reel → now.
       if (!spin) void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
     },
     onError: () => {
-      setPicking(false);
-      toast.error("Failed to pick a random movie");
+      setDrawing(false);
+      toast.error("Failed to draw a random movie");
     },
   });
 
   const watchMutation = useMutation({
     mutationFn: () => APIClient.movies.markWatched(),
-    // Hold the button busy from the click; released only once the watched pick
+    // Hold the button busy from the click; released only once the watched draw
     // actually leaves the hero (see the `marking` effect below).
     onMutate: () => setMarking(true),
     onSuccess: () => {
       toast.success("Marked as watched");
-      // Clear the current pick ourselves instead of waiting on the SSE
+      // Clear the current draw ourselves instead of waiting on the SSE
       // movie:watched round-trip — keeps the hero transition snappy and self-
       // sufficient if the stream lags. (The SSE event still re-invalidates; the
       // duplicate refetch is a harmless no-op once current is already null.)
@@ -159,25 +159,25 @@ export function Hero() {
   const [revealId, setRevealId] = useState(0);
   // Reel state: `spinning` mounts the takeover overlay; `spinDescriptor` is the
   // spin it renders (held locally so it survives clearing the shared signal on
-  // land). `committed` is the last pick we revealed, so an unrelated pool refetch
-  // re-running the commit effect can't replay the reveal. (`handledPicks`, which
+  // land). `committed` is the last draw we revealed, so an unrelated pool refetch
+  // re-running the commit effect can't replay the reveal. (`handledDraws`, which
   // stops a re-render or a tab-switch remount from restarting a spin, is
   // module-level so it outlives this component's mount.)
   const [spinning, setSpinning] = useState(false);
   const [spinDescriptor, setSpinDescriptor] = useState<ActiveSpin | null>(null);
   const committed = useRef<Movie | null | undefined>(undefined);
   // Mirrors of the latest values, so the stable `reveal` callback (held by
-  // PickReel across renders and by the SSE-signal effect) reads current state.
-  // `revealedPick` is the pickedAt already handed off, so reveal() runs once per
-  // pick no matter which trigger fires first (OK press, countdown, or SSE).
+  // DrawReel across renders and by the SSE-signal effect) reads current state.
+  // `revealedDraw` is the drawnAt already handed off, so reveal() runs once per
+  // draw no matter which trigger fires first (OK press, countdown, or SSE).
   const spinDescriptorRef = useRef<ActiveSpin | null>(null);
   spinDescriptorRef.current = spinDescriptor;
   const currentRef = useRef<Movie | null | undefined>(current);
   currentRef.current = current;
-  const revealedPickRef = useRef<string | null>(null);
+  const revealedDrawRef = useRef<string | null>(null);
 
-  // Close the reel and hand off to the hero reveal — once per pick. A "local"
-  // trigger (the picker's OK, or any client's countdown self-heal) also tells the
+  // Close the reel and hand off to the hero reveal — once per draw. A "local"
+  // trigger (the drawer's OK, or any client's countdown self-heal) also tells the
   // server, which broadcasts movie:revealed so the other clients close in step; a
   // "remote" trigger IS that broadcast, so it doesn't echo back. The winner's
   // backdrop (preloaded during the spin) is decoded while the reel still covers
@@ -186,8 +186,8 @@ export function Hero() {
   const reveal = useCallback(
     (source: "local" | "remote") => {
       const desc = spinDescriptorRef.current;
-      if (!desc || revealedPickRef.current === desc.pickedAt) return;
-      revealedPickRef.current = desc.pickedAt;
+      if (!desc || revealedDrawRef.current === desc.drawnAt) return;
+      revealedDrawRef.current = desc.drawnAt;
       if (source === "local") void APIClient.movies.reveal().catch(() => {});
       const next = currentRef.current ?? null;
       const finish = () => {
@@ -210,28 +210,28 @@ export function Hero() {
     [queryClient],
   );
   // Stable zero-arg confirm handler for the reel (a fresh arrow each render would
-  // reset PickReel's countdown timer on every Hero re-render).
+  // reset DrawReel's countdown timer on every Hero re-render).
   const confirmLocal = useCallback(() => reveal("local"), [reveal]);
 
-  // A movie:revealed signal for the in-flight pick (the picker confirmed, or a
+  // A movie:revealed signal for the in-flight draw (the drawer confirmed, or a
   // countdown filled on some client) closes this client's reel too.
   useEffect(() => {
-    if (revealSignal && spinDescriptor && revealSignal === spinDescriptor.pickedAt) {
+    if (revealSignal && spinDescriptor && revealSignal === spinDescriptor.drawnAt) {
       reveal("remote");
     }
   }, [revealSignal, spinDescriptor, reveal]);
 
-  // Start the reel when a spin signal arrives (SSE pick / clicker fallback).
-  // Declared before the commit effect so its handledPicks write lands first.
+  // Start the reel when a spin signal arrives (SSE draw / clicker fallback).
+  // Declared before the commit effect so its handledDraws write lands first.
   useEffect(() => {
-    if (!activeSpin || handledPicks.has(activeSpin.pickedAt)) return;
-    handledPicks.add(activeSpin.pickedAt);
+    if (!activeSpin || handledDraws.has(activeSpin.drawnAt)) return;
+    handledDraws.add(activeSpin.drawnAt);
     setSpinDescriptor(activeSpin);
     setSpinning(true);
   }, [activeSpin]);
 
-  // The pick we actually display lags `current`: when the pick changes we preload
-  // + decode its backdrop first, then commit the new pick AND bump `revealId`
+  // The draw we actually display lags `current`: when the draw changes we preload
+  // + decode its backdrop first, then commit the new draw AND bump `revealId`
   // together — so the backdrop crossfade and the staggered content reveal land in
   // the same frame, never flash blank, and the loading placeholder never gets its
   // own reveal cycle (revealId stays 0 until ready). While the reel spins the
@@ -243,13 +243,13 @@ export function Hero() {
     const next = current ?? null;
 
     // Reload mid-spin: resume the reel from the time that's left, before
-    // committing, so the winner never flashes ahead of it. Decided once per pick.
+    // committing, so the winner never flashes ahead of it. Decided once per draw.
     // The window check needs only `current`; building the reel needs the pool, so
     // hold the commit until the pool has loaded.
-    if (next?.pickedAt && !handledPicks.has(next.pickedAt)) {
-      if (pickAwaitingReveal(next)) {
+    if (next?.drawnAt && !handledDraws.has(next.drawnAt)) {
+      if (drawAwaitingReveal(next)) {
         if (pooled === undefined) return;
-        handledPicks.add(next.pickedAt);
+        handledDraws.add(next.drawnAt);
         const resume = buildResumeSpin(next, pooled);
         if (resume) {
           setSpinDescriptor(resume);
@@ -257,27 +257,27 @@ export function Hero() {
           return;
         }
       } else {
-        handledPicks.add(next.pickedAt);
+        handledDraws.add(next.drawnAt);
       }
     }
 
-    // Only (re)reveal when the pick IDENTITY changes. Comparing object reference
-    // (relying on TanStack structural sharing) is too fragile: the current-pick
+    // Only (re)reveal when the draw IDENTITY changes. Comparing object reference
+    // (relying on TanStack structural sharing) is too fragile: the current-draw
     // endpoint stamps a fresh `serverNow` on every request, so a no-op refetch —
     // the SSE resync on tab refocus, or an enrichment update — returns a
-    // structurally-different object for the SAME pick. That churns the reference
+    // structurally-different object for the SAME draw. That churns the reference
     // and would replay the whole reveal (backdrop crossfade + staggered content)
-    // on every tab switch. Key on pickedAt + movieID, which are stable for a given
-    // pick, instead. `committed.current === undefined` means nothing has committed
+    // on every tab switch. Key on drawnAt + movieID, which are stable for a given
+    // draw, instead. `committed.current === undefined` means nothing has committed
     // yet — distinct from a committed empty state (null).
-    const samePick =
+    const sameDraw =
       committed.current !== undefined &&
-      (current?.pickedAt ?? null) === (committed.current?.pickedAt ?? null) &&
+      (current?.drawnAt ?? null) === (committed.current?.drawnAt ?? null) &&
       (current?.movieID ?? null) === (committed.current?.movieID ?? null);
-    if (samePick) {
-      // Same pick, possibly churned metadata: refresh the shown object so any
+    if (sameDraw) {
+      // Same draw, possibly churned metadata: refresh the shown object so any
       // late-arriving fields land, but DON'T bump revealId — the hero must stay
-      // static across tab switches and never re-animate for an unchanged pick.
+      // static across tab switches and never re-animate for an unchanged draw.
       committed.current = current;
       setShown(next);
       return;
@@ -286,10 +286,10 @@ export function Hero() {
     let cancelled = false;
     const commit = () => {
       if (cancelled) return;
-      // Claim the pick only when the reveal actually lands — NOT synchronously
+      // Claim the draw only when the reveal actually lands — NOT synchronously
       // before the async backdrop decode. onLand invalidates the pool, so this
       // effect re-runs (pooled dep) and its cleanup cancels the in-flight decode;
-      // if `committed` had already claimed the pick, the guard above would skip
+      // if `committed` had already claimed the draw, the guard above would skip
       // the re-commit and the hero would stay stuck on the previous frame.
       committed.current = current;
       setShown(next);
@@ -306,33 +306,33 @@ export function Hero() {
     return () => {
       cancelled = true;
     };
-    // The samePick guard above stops this from replaying the reveal on no-op
+    // The sameDraw guard above stops this from replaying the reveal on no-op
     // refetches (serverNow churn, enrichment, resync), so it re-animates only when
-    // the pick actually changes; the pool/spin deps just re-run the resume check.
+    // the draw actually changes; the pool/spin deps just re-run the resume check.
   }, [isLoading, current, spinning, pooled]);
 
-  // Release the marking busy-state once the watched pick has left the hero (shown
-  // cleared by the commit effect above), so the action button goes Marking… → Pick
+  // Release the marking busy-state once the watched draw has left the hero (shown
+  // cleared by the commit effect above), so the action button goes Marking… → Draw
   // random movie with no flash back to "Mark as watched" in between.
   useEffect(() => {
     if (marking && !shown) setMarking(false);
   }, [marking, shown]);
 
-  // Mirror of the above for the pick flow: release the picking busy-state once the
-  // new pick is revealed (shown set), so the button goes Picking… → Mark as watched
-  // with no flash back to "Pick random movie" in the pre-reel frame or the no-reel gap.
+  // Mirror of the above for the draw flow: release the drawing busy-state once the
+  // new draw is revealed (shown set), so the button goes Drawing… → Mark as watched
+  // with no flash back to "Draw random movie" in the pre-reel frame or the no-reel gap.
   useEffect(() => {
-    if (picking && shown) setPicking(false);
-  }, [picking, shown]);
+    if (drawing && shown) setDrawing(false);
+  }, [drawing, shown]);
 
-  const pick = shown;
-  // False until the first pick (or confirmed-empty) has committed after its
+  const draw = shown;
+  // False until the first draw (or confirmed-empty) has committed after its
   // backdrop decoded. While loading we render a quiet banner shell — no
-  // placeholder copy ("Pick next movie") flashing before the real pick.
+  // placeholder copy ("Draw next movie") flashing before the real draw.
   const ready = revealId > 0;
-  const hue = hueOf(pick?.title ?? "moviepickarr");
-  const bg = pick?.backdropPath ? `url(${backdropUrl(pick.backdropPath)})` : backdropBg(hue);
-  const canPick = !pick && (pooled?.length ?? 0) > 0;
+  const hue = hueOf(draw?.title ?? "moviepickarr");
+  const bg = draw?.backdropPath ? `url(${backdropUrl(draw.backdropPath)})` : backdropBg(hue);
+  const canDraw = !draw && (pooled?.length ?? 0) > 0;
 
   return (
     <section className="hero" data-ready={revealId > 0 ? "" : undefined}>
@@ -340,10 +340,10 @@ export function Hero() {
       <div className="hero__inner">
         <div className="hero__poster" key={`p-${revealId}`} style={ri(0)}>
           <Poster
-            title={pick?.title ?? "No pick yet"}
+            title={draw?.title ?? "No draw yet"}
             hue={hue}
-            posterPath={pick?.posterPath}
-            showTitle={ready && !pick?.posterPath}
+            posterPath={draw?.posterPath}
+            showTitle={ready && !draw?.posterPath}
           />
         </div>
 
@@ -351,9 +351,9 @@ export function Hero() {
           <div className="hero__eyebrow eyebrow" style={ri(1)}>
             {!ready ? (
               ""
-            ) : pick ? (
+            ) : draw ? (
               <>
-                Current pick · chosen by <strong className="hero__by">{pick.addedByName}</strong>
+                Current draw · added by <strong className="hero__by">{draw.addedByName}</strong>
               </>
             ) : (
               "No movie selected"
@@ -361,38 +361,38 @@ export function Hero() {
           </div>
 
           <h2 className="hero__title" style={ri(2)}>
-            {!ready ? "" : (pick?.title ?? "Pick next movie")}
+            {!ready ? "" : (draw?.title ?? "Draw next movie")}
           </h2>
 
           {/* Tagline + meta slots are always rendered (reserved height in CSS) so
-              the banner never re-lays-out as the pick / its metadata changes. */}
+              the banner never re-lays-out as the draw / its metadata changes. */}
           <p className="hero__tag" style={ri(3)}>
             {!ready
               ? null
-              : pick?.tagline
-                ? `"${pick.tagline}"`
-                : pick
+              : draw?.tagline
+                ? `"${draw.tagline}"`
+                : draw
                   ? null
                   : (pooled?.length ?? 0) > 0
-                    ? "The pool is stocked. Spin for a random pick."
+                    ? "The pool is stocked. Spin for a random draw."
                     : "Add movies to the pool to get started."}
           </p>
 
           <div className="hero__meta" style={ri(4)}>
-            {ready && pick && <MetaChips movie={pick} links={externalLinks(pick)} />}
+            {ready && draw && <MetaChips movie={draw} links={externalLinks(draw)} />}
           </div>
 
           <div className="hero__actions" style={ri(5)}>
             {ready &&
-              (marking || picking ? (
-                // Held from the click until the transition settles (the watched pick
-                // leaves the hero, or the new pick is revealed), so the button never
-                // regresses to its resting label mid-transition. See `marking`/`picking`.
+              (marking || drawing ? (
+                // Held from the click until the transition settles (the watched draw
+                // leaves the hero, or the new draw is revealed), so the button never
+                // regresses to its resting label mid-transition. See `marking`/`drawing`.
                 <button type="button" className="btn btn--accent" disabled aria-busy="true">
                   <Loader2Icon className="animate-spin mg-spin" />
-                  {marking ? "Marking…" : "Picking…"}
+                  {marking ? "Marking…" : "Drawing…"}
                 </button>
-              ) : pick ? (
+              ) : draw ? (
                 <button
                   type="button"
                   className="btn btn--accent"
@@ -405,20 +405,20 @@ export function Hero() {
                 <button
                   type="button"
                   className="btn btn--accent"
-                  onClick={() => pickMutation.mutate()}
-                  disabled={!canPick}
+                  onClick={() => drawMutation.mutate()}
+                  disabled={!canDraw}
                 >
                   <ShuffleIcon />
-                  Pick random movie
+                  Draw random movie
                 </button>
               ))}
 
-            {ready && nextPicker?.name && (
-              <div className="hero__nextpick">
-                <Avatar name={nextPicker.name} size={30} />
+            {ready && nextUp?.name && (
+              <div className="hero__nextup">
+                <Avatar name={nextUp.name} size={30} />
                 <div>
-                  <div className="lab">Next picker</div>
-                  <div className="nm">{nextPicker.name}</div>
+                  <div className="lab">Next up</div>
+                  <div className="nm">{nextUp.name}</div>
                 </div>
               </div>
             )}
@@ -427,8 +427,8 @@ export function Hero() {
       </div>
 
       {spinning && spinDescriptor && (
-        <PickReel
-          key={spinDescriptor.pickedAt}
+        <DrawReel
+          key={spinDescriptor.drawnAt}
           spin={spinDescriptor}
           onConfirm={confirmLocal}
         />

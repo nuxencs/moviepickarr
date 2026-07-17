@@ -11,7 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func (h *handler) initNextPicker(ctx context.Context) error {
+func (h *handler) initNextUp(ctx context.Context) error {
 	users, err := h.userService.List(ctx)
 	if err != nil {
 		return err
@@ -20,7 +20,7 @@ func (h *handler) initNextPicker(ctx context.Context) error {
 		return nil
 	}
 
-	return h.nextPickerService.Set(ctx, users[0].ID)
+	return h.nextUpService.Set(ctx, users[0].ID)
 }
 
 func (h *handler) handleSetPoolLock(c *fiber.Ctx) error {
@@ -51,16 +51,16 @@ func (h *handler) handleGetPoolLock(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(poolLocked)
 }
 
-func (h *handler) handleGetNextPicker(c *fiber.Ctx) error {
+func (h *handler) handleGetNextUp(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 
-	nextPicker, err := h.nextPickerService.Get(ctx)
+	nextUp, err := h.nextUpService.Get(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			if err := h.initNextPicker(ctx); err != nil {
+			if err := h.initNextUp(ctx); err != nil {
 				return writeError(c, err)
 			}
-			nextPicker, err = h.nextPickerService.Get(ctx)
+			nextUp, err = h.nextUpService.Get(ctx)
 			if errors.Is(err, sql.ErrNoRows) {
 				return c.Status(fiber.StatusOK).JSON(fiber.Map{"id": 0, "name": ""})
 			}
@@ -71,7 +71,7 @@ func (h *handler) handleGetNextPicker(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"id":   nextPicker.ID,
-		"name": nextPicker.Name,
+		"id":   nextUp.ID,
+		"name": nextUp.Name,
 	})
 }

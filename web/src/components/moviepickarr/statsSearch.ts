@@ -31,7 +31,7 @@ export interface StatsSearch {
   genre: string;
   actors: number[];
   crew: number[];
-  pickers: number[];
+  adders: number[];
   year: number;
   decade: number;
 }
@@ -44,7 +44,7 @@ export const statsSearchDefaults: StatsSearch = {
   genre: "",
   actors: [],
   crew: [],
-  pickers: [],
+  adders: [],
   year: 0,
   decade: 0,
 };
@@ -83,7 +83,7 @@ export function validateStatsSearch(search: Record<string, unknown>): StatsSearc
     genre: typeof search.genre === "string" ? search.genre : "",
     actors: idList(search.actors),
     crew: idList(search.crew),
-    pickers: idList(search.pickers),
+    adders: idList(search.adders),
     year,
     decade,
   };
@@ -131,19 +131,19 @@ export function filtersFromSearch(search: StatsSearch, options: FilterOptions): 
     decade: search.decade || null,
     actors: people(search.actors, options.actors),
     crew: people(search.crew, options.crew),
-    pickers: people(search.pickers, options.pickers),
+    adders: people(search.adders, options.adders),
   };
 }
 
 /** Serialize a FilterBar MovieFilters change back into URL search params. */
 export function filtersToSearch(
   f: MovieFilters,
-): Pick<StatsSearch, "genre" | "actors" | "crew" | "pickers" | "year" | "decade"> {
+): Pick<StatsSearch, "genre" | "actors" | "crew" | "adders" | "year" | "decade"> {
   return {
     genre: f.genre ?? "",
     actors: f.actors.map((p) => p.id),
     crew: f.crew.map((p) => p.id),
-    pickers: f.pickers.map((p) => p.id),
+    adders: f.adders.map((p) => p.id),
     year: f.year ?? 0,
     decade: f.decade ?? 0,
   };

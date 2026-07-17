@@ -17,20 +17,20 @@ export interface Movie {
     addedByName: string;
     watchedAt?: string;
 
-    // Pick-reveal coordination — present only on the current-movie endpoint and
-    // the movie:picked event. pickedAt is when the current movie was picked;
+    // Draw-reveal coordination — present only on the current-movie endpoint and
+    // the movie:drawn event. drawnAt is when the current movie was drawn;
     // serverNow is the server clock at fetch time, so the client computes the
-    // reveal spin's elapsed time without trusting its own clock (see PickReel).
-    pickedAt?: string;
+    // reveal spin's elapsed time without trusting its own clock (see DrawReel).
+    drawnAt?: string;
     serverNow?: string;
-    // pickerClientId is the client that initiated the pick — only that client
-    // shows the reel's confirm (OK) button. revealed reports whether the pick has
-    // been confirmed, so a reload after the reveal skips the reel (see pickSpin).
-    pickerClientId?: string;
+    // drawClientId is the client that initiated the draw — only that client
+    // shows the reel's confirm (OK) button. revealed reports whether the draw has
+    // been confirmed, so a reload after the reveal skips the reel (see drawSpin).
+    drawClientId?: string;
     revealed?: boolean;
-    // candidates is the reel source carried by the movie:picked event (and the
-    // pick mutation response): the pre-pick pool as lean tiles, winner included.
-    // Present only on a pick payload — it makes the reel self-contained so every
+    // candidates is the reel source carried by the movie:drawn event (and the
+    // draw mutation response): the pre-draw pool as lean tiles, winner included.
+    // Present only on a draw payload — it makes the reel self-contained so every
     // client spins regardless of its local pool cache (see buildLiveSpin).
     candidates?: Movie[];
 
@@ -67,7 +67,7 @@ export interface Settings {
     poolLocked: boolean;
 }
 
-// A selectable person in the Stats filter bar (actor, crew member, or picker).
+// A selectable person in the Stats filter bar (actor, crew member, or adder).
 export interface FilterPersonOption {
     id: number;
     name: string;
@@ -80,7 +80,7 @@ export interface FilterOptionsResponse {
     actors: FilterPersonOption[];
     crew: FilterPersonOption[];
     years: number[];
-    pickers: FilterPersonOption[];
+    adders: FilterPersonOption[];
 }
 
 export interface TMDBMovie {

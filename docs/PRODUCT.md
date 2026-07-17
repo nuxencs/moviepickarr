@@ -23,8 +23,8 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   detail modal shows "Directed by / Written by" credit lines and a horizontally
   scrollable cast strip (TMDB headshots, billing order); each cast card links to
   the person's TMDB page.
-- Users: members, each with their pool slots (max 3) and a searchable stash;
-  add via TMDB search.
+- Members: each with their pool slots (max 3) and a searchable stash; add via
+  TMDB search.
 - Stats: watch stats over a time window (member leaderboard where every member
   always has a row, zero or not, whatever the window or filters; weekday and
   hourly activity; custom date range), plus a TMDB deep-dive over the watched

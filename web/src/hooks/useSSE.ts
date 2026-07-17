@@ -1,9 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
-import { MoviesKeys, PickKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+import { MoviesKeys, DrawKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
-import { buildLiveSpin, setActiveSpin, signalRevealed } from "@/components/moviepickarr/pickSpin";
+import { buildLiveSpin, setActiveSpin, signalRevealed } from "@/components/moviepickarr/drawSpin";
 
 import type { Movie } from "@/types/Response";
 import type { SSEConnectedFrame, SSEEvent, SSEHeartbeatFrame } from "@/types/SSEEvent";
@@ -49,11 +49,11 @@ export function useSSE() {
     // know *what* it missed, only to re-read the live truth.
     const resync = () => {
       void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
-      // Skip the pool refresh while a pick-reveal spin is in flight: the post-pick
+      // Skip the pool refresh while a draw-reveal spin is in flight: the post-draw
       // pool no longer holds the winner, so refetching it mid-spin would drop the
       // winner tile from the grid and spoil the reveal. The Hero refreshes the pool
-      // when the reel lands. Mirrors the `if (!spin)` guard in the movie:picked case.
-      if (!queryClient.getQueryData(PickKeys.active())) {
+      // when the reel lands. Mirrors the `if (!spin)` guard in the movie:drawn case.
+      if (!queryClient.getQueryData(DrawKeys.active())) {
         void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
       }
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
@@ -62,7 +62,7 @@ export function useSSE() {
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.filterOptions() });
       void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.poolLock() });
-      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });
+      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
     };
 
     const clearReconnectTimer = () => {
@@ -156,7 +156,7 @@ export function useSSE() {
             case "user:created":
             case "user:deleted":
               void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
-              // Pickers are part of the Stats filter options.
+              // Adders are part of the Stats filter options.
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.filterOptions() });
               void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
               break;
@@ -197,19 +197,19 @@ export function useSSE() {
               void queryClient.invalidateQueries({ queryKey: StatsKeys.all });
               break;
 
-            case "movie:picked": {
+            case "movie:drawn": {
               // Start the cross-client reveal spin from the event's self-contained
               // candidates. The pool may be invalidated freely below: the reel no
               // longer reads it (only the grid-continuity defer remains — see the
               // `if (!spin)` guard).
-              const picked = sseEvent.data as Movie | undefined;
+              const drawn = sseEvent.data as Movie | undefined;
               // The reel candidates ride in the event itself now, so the spin no
               // longer reads the local pool cache (a client without it still spins).
-              const spin = picked ? buildLiveSpin(picked) : null;
-              if (picked) setActiveSpin(queryClient, spin);
+              const spin = drawn ? buildLiveSpin(drawn) : null;
+              if (drawn) setActiveSpin(queryClient, spin);
               void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
               void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
-              void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });
+              void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
               // When a reel will play, hold the pool refresh until it lands (the Hero
               // does it on land) so the pool grid doesn't drop the winner mid-spin
               // and spoil it. No reel → refresh now.
@@ -218,10 +218,10 @@ export function useSSE() {
             }
 
             case "movie:revealed": {
-              // The picker confirmed (or the reel's countdown filled). Signal the
-              // matching pickedAt so every client's Hero closes its reel together.
-              const data = sseEvent.data as { pickedAt?: string } | undefined;
-              if (data?.pickedAt) signalRevealed(queryClient, data.pickedAt);
+              // The drawer confirmed (or the reel's countdown filled). Signal the
+              // matching drawnAt so every client's Hero closes its reel together.
+              const data = sseEvent.data as { drawnAt?: string } | undefined;
+              if (data?.drawnAt) signalRevealed(queryClient, data.drawnAt);
               break;
             }
 
@@ -237,8 +237,8 @@ export function useSSE() {
               void queryClient.invalidateQueries({ queryKey: SettingsKeys.poolLock() });
               break;
 
-            case "settings:next-picker-changed":
-              void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextPicker() });
+            case "settings:next-up-changed":
+              void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
               break;
 
             default:

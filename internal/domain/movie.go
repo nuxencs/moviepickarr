@@ -91,7 +91,7 @@ type MovieMetadataRepo interface {
 	// (periodic refresh), or whose credits were never ingested (credits
 	// backfill). Results are capped at limit.
 	NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]EnrichmentCandidate, error)
-	// MarkEnrichmentStale clears the credits marker so NeedsEnrichment re-picks
+	// MarkEnrichmentStale clears the credits marker so NeedsEnrichment re-selects
 	// the movie on the next drain. Used when a movie's external identity
 	// changes: the enrich queue is in-memory, so without this backstop a lost
 	// enqueue would leave the previous film's metadata and credits in place

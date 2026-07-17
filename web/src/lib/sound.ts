@@ -1,8 +1,8 @@
 /* ============================================================
-   moviepickarr — pick-reveal sound effect engine.
+   moviepickarr — draw-reveal sound effect engine.
 
-   One jingle, played when the slot-machine reel starts on a FRESH pick (see
-   PickReel). The jingle is SYNTHESIZED at runtime with the native Web Audio API
+   One jingle, played when the slot-machine reel starts on a FRESH draw (see
+   DrawReel). The jingle is SYNTHESIZED at runtime with the native Web Audio API
    (no library, no audio file — nothing to license or bundle): a decelerating
    click train (a Wheel-of-Fortune flapper — fast ticks while spinning, slowing
    as it settles to a stop on the reveal). The deceleration itself is the payoff
@@ -10,7 +10,7 @@
 
    The AudioProvider owns the on/off preference (mirrored to localStorage) and
    the one-time autoplay "unlock" (an AudioContext resume on the first gesture),
-   so SSE-driven clients that didn't click Pick can still play once the visitor
+   so SSE-driven clients that didn't click Draw can still play once the visitor
    has interacted with the page at all.
    ============================================================ */
 
@@ -21,8 +21,8 @@ const VOLUME_KEY = "mp-volume";
 const DEFAULT_VOLUME = 0.5;
 
 /** When the fallback wheel settles, in seconds from start. Only used when no
- *  geometry-synced schedule is supplied (e.g. the popover preview) — a fresh pick
- *  passes exact gap-crossing times instead (see playPickJingle / PickReel). */
+ *  geometry-synced schedule is supplied (e.g. the popover preview) — a fresh draw
+ *  passes exact gap-crossing times instead (see playDrawJingle / DrawReel). */
 const REVEAL_AT = 6.4;
 /** Tiny tail after the final click — total ≈ last click + this. */
 const TAIL_S = 0.15;
@@ -158,7 +158,7 @@ export function onJingleChange(cb: (p: boolean) => void): () => void {
 }
 
 /** Kick off context + buffer creation early (from the AudioProvider) so the
- *  first pick's jingle starts the instant the reel does. */
+ *  first draw's jingle starts the instant the reel does. */
 export function preloadJingle(): void {
   ensureGraph();
 }
@@ -186,17 +186,17 @@ export function unlockAudio(): void {
 
 /** Whether audio is unlocked and actively running — i.e. clicks scheduled now will
  *  fire when scheduled, not strand on a suspended context that resumes later (and
- *  replays them out of sync). PickReel uses this to gate a reload-resume's sound. */
+ *  replays them out of sync). DrawReel uses this to gate a reload-resume's sound. */
 export function isAudioRunning(): boolean {
   return !!ctx && ctx.state === "running";
 }
 
-/** Play the pick sound from the top. No-op when sound is off.
+/** Play the draw sound from the top. No-op when sound is off.
  *  - With `clickOffsets` (seconds from start): a geometry-synced click per poster
- *    gap crossing the reticle (computed by PickReel from the live motion). An empty
+ *    gap crossing the reticle (computed by DrawReel from the live motion). An empty
  *    array is an explicit "nothing to play" (e.g. a resume that already settled).
  *  - Without it (the popover preview): a self-contained decelerating wheel. */
-export function playPickJingle(clickOffsets?: number[]): void {
+export function playDrawJingle(clickOffsets?: number[]): void {
   if (!isSoundEnabled()) return;
   if (clickOffsets && clickOffsets.length === 0) return;
   if (!ensureGraph() || !ctx || !playGain) return;
@@ -235,7 +235,7 @@ export function playPickJingle(clickOffsets?: number[]): void {
 
 /** Quickly fade out and stop the jingle. Used when the user SKIPS the reel and
  *  from the popover stop button. */
-export function stopPickJingle(): void {
+export function stopDrawJingle(): void {
   if (endTimer !== null) {
     window.clearTimeout(endTimer);
     endTimer = null;

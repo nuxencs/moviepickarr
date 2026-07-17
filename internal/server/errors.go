@@ -44,10 +44,10 @@ func writeError(c *fiber.Ctx, err error) error {
 		return writeProblem(c, fiber.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, domain.ErrPoolLimitReached):
 		return writeProblem(c, fiber.StatusConflict, "pool_limit_reached", err.Error())
-	case errors.Is(err, domain.ErrNoCurrentMovie):
-		return writeProblem(c, fiber.StatusBadRequest, "no_current_movie", err.Error())
-	case errors.Is(err, domain.ErrCurrentMovieExist):
-		return writeProblem(c, fiber.StatusConflict, "current_movie_exists", err.Error())
+	case errors.Is(err, domain.ErrNoCurrentDraw):
+		return writeProblem(c, fiber.StatusBadRequest, "no_current_draw", err.Error())
+	case errors.Is(err, domain.ErrCurrentDrawExists):
+		return writeProblem(c, fiber.StatusConflict, "current_draw_exists", err.Error())
 	case errors.Is(err, domain.ErrInvalidState):
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_state", err.Error())
 	case errors.Is(err, domain.ErrConflict):

@@ -236,7 +236,7 @@ type statsFilters struct {
 	CrewIDs       []int  // TMDB person ids, sorted+deduped; matched against crew credits
 	ReleaseYear   int    // exact release year; mutually exclusive with ReleaseDecade
 	ReleaseDecade int    // decade floor (1990 ⇒ [1990, 1999]); mutually exclusive with ReleaseYear
-	AddedByIDs    []int  // user ids of the movie's adder/picker, sorted+deduped (any-of)
+	AddedByIDs    []int  // user ids of the movie's adder, sorted+deduped (any-of)
 }
 
 func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw, addedByRaw string) (statsFilters, error) {
@@ -531,7 +531,7 @@ func buildStatsResponse(
 			continue
 		}
 		// Added-by is a movie-level filter (not metadata), so it gates here rather
-		// than in movieMatchesStatsFilters — any-of across the selected pickers.
+		// than in movieMatchesStatsFilters — any-of across the selected adders.
 		if len(filters.AddedByIDs) > 0 && !slices.Contains(filters.AddedByIDs, watched[i].AddedByID) {
 			continue
 		}
@@ -600,11 +600,11 @@ func buildStatsResponse(
 		}
 	}
 
-	// Seed every member AND every all-time picker into the window map (0 when
+	// Seed every member AND every all-time adder into the window map (0 when
 	// nothing of theirs matches the window or the active filters) so rows
 	// never appear/disappear — not between ranges, and not under drill-downs.
-	// Members cover the roster (including someone yet to pick); the all-time
-	// pickers keep history visible for names no longer on the roster.
+	// Members cover the roster (including someone yet to add); the all-time
+	// adders keep history visible for names no longer on the roster.
 	for _, name := range members {
 		if strings.TrimSpace(name) == "" {
 			continue

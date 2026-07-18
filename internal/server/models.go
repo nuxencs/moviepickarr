@@ -14,12 +14,16 @@ type settingsResponse struct {
 	PoolLocked bool `json:"poolLocked"`
 }
 
+// The Members boards render tile-level data only (poster, title, rating) and
+// the movie modal lazy-loads its full record from GET /movies/:id, so the
+// board payloads ship as leanMovieTile — the same lean-list win as the watched
+// list, and it also skips the per-request credits batch-load on the read path.
 type userResponse struct {
-	ID          int                  `json:"userID"`
-	Name        string               `json:"name"`
-	CurrentPool map[string]fullMovie `json:"currentPool"`
-	Stash       map[string]fullMovie `json:"stash"`
-	CreatedAt   string               `json:"createdAt"`
+	ID          int                      `json:"userID"`
+	Name        string                   `json:"name"`
+	CurrentPool map[string]leanMovieTile `json:"currentPool"`
+	Stash       map[string]leanMovieTile `json:"stash"`
+	CreatedAt   string                   `json:"createdAt"`
 }
 
 // The movie wire shape comes in exactly two payload classes, enforced by the
@@ -219,20 +223,20 @@ func toFullMovies(movies []*domain.Movie, meta metaByID, credits creditsByID) []
 	return result
 }
 
-func fullMoviesToMap(movies []*domain.Movie, meta metaByID, credits creditsByID) map[string]fullMovie {
-	result := make(map[string]fullMovie, len(movies))
+func leanTilesToMap(movies []*domain.Movie, meta metaByID) map[string]leanMovieTile {
+	result := make(map[string]leanMovieTile, len(movies))
 	for i := range movies {
-		result[strconv.Itoa(movies[i].ID)] = toFullMovie(movies[i], meta[movies[i].ID], credits[movies[i].ID])
+		result[strconv.Itoa(movies[i].ID)] = toLeanTile(movies[i], meta[movies[i].ID])
 	}
 	return result
 }
 
-func toAPIUserMeta(user *domain.User, poolMovies, stashMovies []*domain.Movie, meta metaByID, credits creditsByID) userResponse {
+func toAPIUserMeta(user *domain.User, poolMovies, stashMovies []*domain.Movie, meta metaByID) userResponse {
 	return userResponse{
 		ID:          user.ID,
 		Name:        user.Name,
-		CurrentPool: fullMoviesToMap(poolMovies, meta, credits),
-		Stash:       fullMoviesToMap(stashMovies, meta, credits),
+		CurrentPool: leanTilesToMap(poolMovies, meta),
+		Stash:       leanTilesToMap(stashMovies, meta),
 		CreatedAt:   formatTime(user.CreatedAt),
 	}
 }

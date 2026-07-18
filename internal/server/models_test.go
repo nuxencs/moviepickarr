@@ -182,3 +182,48 @@ func TestMovieLinkDerivation(t *testing.T) {
 		})
 	}
 }
+
+// The Members boards ship lean tiles: even a fully enriched, credited movie
+// must serialize without the modal-only fields (backdrop/tagline/overview/
+// cast/crew). The board grids read tile data only; the modal lazy-loads the
+// full record from GET /movies/:id. Assert against the marshaled userResponse
+// so a type regressed back to fullMovie is caught here, not on the wire.
+func TestToAPIUserMeta_ShipsLeanTiles(t *testing.T) {
+	t.Parallel()
+
+	tmdb := 603
+	user := &domain.User{ID: 1, Name: "Alice"}
+	pool := []*domain.Movie{{ID: 7, Title: "The Matrix", TMDBID: &tmdb, AddedByID: 1}}
+
+	poster, backdrop := "/p.jpg", "/b.jpg"
+	meta := metaByID{7: &domain.MovieMetadata{
+		MovieID:      7,
+		PosterPath:   &poster,
+		BackdropPath: &backdrop,
+		ReleaseDate:  "1999-03-30",
+		Runtime:      136,
+		Genres:       []string{"Action", "Sci-Fi"},
+		VoteAverage:  8.2,
+		Tagline:      "Free your mind.",
+		Overview:     "A hacker learns the truth.",
+	}}
+
+	resp := toAPIUserMeta(user, pool, nil, meta)
+	respJSON, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Tile fields survive.
+	for _, want := range []string{`"posterPath":"/p.jpg"`, `"runtime":136`, `"voteAverage":8.2`} {
+		if !strings.Contains(string(respJSON), want) {
+			t.Fatalf("expected tile field %s in %s", want, respJSON)
+		}
+	}
+	// Modal-only fields are structurally absent from the board payload.
+	for _, key := range []string{"backdropPath", "tagline", "overview", "cast", "crew"} {
+		if strings.Contains(string(respJSON), `"`+key+`"`) {
+			t.Fatalf("expected %q omitted from lean board tile, got %s", key, respJSON)
+		}
+	}
+}

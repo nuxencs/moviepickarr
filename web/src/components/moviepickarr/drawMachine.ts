@@ -1,5 +1,5 @@
 /* ============================================================
-   moviepickarr — the Draw machine.
+   moviepickarr: the Draw machine.
 
    One pure state machine owns the client side of a draw: identity + dedup
    (an SSE event and the drawer's own mutation response describe the same
@@ -8,7 +8,7 @@
 
        reduce(state, event, env) -> [state, commands]
 
-   No DOM, no timers, no fetches — environment reads arrive as the `env`
+   No DOM, no timers, no fetches: environment reads arrive as the `env`
    snapshot and side effects leave as command data, so every rule in here is
    testable with plain values (see drawMachine.test.ts). drawStore executes
    the commands and adapts React/SSE/the API to the machine; DrawReel and the
@@ -35,7 +35,7 @@ export interface DrawEnv {
   /** Reel scroll length (the --dur-spin token). */
   spinDurationMs: number;
   reducedMotion: boolean;
-  /** This browser's stable client id — decides `mine` (who gets the OK). */
+  /** This browser's stable client id: decides `mine` (who gets the OK). */
   clientId: string;
   /** Confirm-countdown length when a payload carries no revealAt. */
   confirmFallbackMs: number;
@@ -46,7 +46,7 @@ export interface DrawEnv {
 
 /** The reel descriptor a spin renders. Immutable per draw. */
 export interface SpinDescriptor {
-  /** Server draw time (RFC3339) — the identity of this draw. */
+  /** Server draw time (RFC3339): the identity of this draw. */
   drawnAt: string;
   /** The movie the reel must land on. */
   winnerId: number;
@@ -54,12 +54,12 @@ export interface SpinDescriptor {
   candidates: Movie[];
   /** How long THIS client scrolls: full duration fresh, remaining on resume. */
   durationMs: number;
-  /** Fresh draw (true) vs reload-resume (false) — gates the draw sound. */
+  /** Fresh draw (true) vs reload-resume (false): gates the draw sound. */
   live: boolean;
   /** Whether THIS client initiated the draw (shows the OK button). */
   mine: boolean;
   /** Settled confirm-countdown length, derived from the server's revealAt
-   *  deadline — the OK fill and the self-heal fallback both time off it. */
+   *  deadline: the OK fill and the self-heal fallback both time off it. */
   confirmMs: number;
 }
 
@@ -69,7 +69,7 @@ export interface DrawState {
   phase: DrawPhase;
   /** The in-flight spin; null only in idle. */
   spin: SpinDescriptor | null;
-  /** drawnAt of every draw already handled this page session — dedups the
+  /** drawnAt of every draw already handled this page session: dedups the
    *  SSE event against the mutation response, and stops a tab-switch remount
    *  from replaying a spin that already ran. */
   seen: readonly string[];
@@ -86,7 +86,7 @@ export const initialDrawState: DrawState = {
 };
 
 export type DrawEvent =
-  /** A draw happened — from the movie:drawn SSE event or the drawer's own
+  /** A draw happened, from the movie:drawn SSE event or the drawer's own
    *  mutation response (whichever lands first; the other dedups). */
   | { type: "DRAWN"; movie: Movie }
   /** Reload with a pending draw: current movie + the (post-draw) pool. */
@@ -103,11 +103,11 @@ export type DrawEvent =
 
 export type DrawCommand =
   /** Tell the server the draw is confirmed (POST reveal). Emitted exactly
-   *  once per draw, only for a local confirm — a remote one IS the server. */
+   *  once per draw, only for a local confirm: a remote one IS the server. */
   | { cmd: "postReveal" }
   /** Decode the winner's backdrop; completion comes back as DECODE_DONE. */
   | { cmd: "decode"; drawnAt: string; backdropPath: string | null }
-  /** Refresh the pool cache — held until the reel lands so the grid doesn't
+  /** Refresh the pool cache: held until the reel lands so the grid doesn't
    *  drop the winner mid-spin and spoil the result. */
   | { cmd: "invalidatePool" }
   | { cmd: "scheduleFallback"; afterMs: number }
@@ -130,7 +130,7 @@ function uniqueById(movies: Movie[]): Movie[] {
 
 /** Confirm-countdown length: time left to the server's revealAt deadline once
  *  the scroll (durationMs) has run, measured from `reference` (drawnAt for a
- *  fresh draw, serverNow for a resume — both server clocks, so client skew
+ *  fresh draw, serverNow for a resume: both server clocks, so client skew
  *  never enters). Clamped to at least a second so the OK fill stays visible
  *  even when the deadline is imminent; missing/bad revealAt falls back. */
 function confirmWindowMs(reference: string, revealAt: string | undefined, durationMs: number, env: DrawEnv): number {
@@ -141,7 +141,7 @@ function confirmWindowMs(reference: string, revealAt: string | undefined, durati
   return env.confirmFallbackMs;
 }
 
-/** Whether a current movie still has a reel pending — drawn but not yet
+/** Whether a current movie still has a reel pending: drawn but not yet
  *  revealed. Lets a reload decide, from the current movie alone (before the
  *  pool loads), whether to hold the hero commit for a resume. */
 export function drawAwaitingReveal(current: Movie, env: DrawEnv): boolean {
@@ -151,7 +151,7 @@ export function drawAwaitingReveal(current: Movie, env: DrawEnv): boolean {
 
 /** The spin for a fresh draw. Null when the spin should be skipped: reduced
  *  motion, no draw time, or fewer than two candidates (a pool of one isn't
- *  really a draw — and the graceful degradation if candidates are absent). */
+ *  really a draw, and the graceful degradation if candidates are absent). */
 function buildLiveSpin(drawn: Movie, env: DrawEnv): SpinDescriptor | null {
   if (env.reducedMotion || !drawn.drawnAt) return null;
   const candidates = uniqueById([...(drawn.candidates ?? []), drawn]);
@@ -190,6 +190,16 @@ function buildResumeSpin(current: Movie, pool: Movie[], env: DrawEnv): SpinDescr
   };
 }
 
+/** The self-heal fallback: a backstop confirm that fires just past the server's
+ *  reveal deadline (revealAt + grace) in case a movie:revealed frame is dropped.
+ *  Anchored to the DRAW (scheduled at spin start over the full scroll + confirm
+ *  window), not to the settle, so skipping the scroll (which only fast-forwards
+ *  the visuals) can't pull the fallback in ahead of the server's on-time
+ *  broadcast and reveal early. Any confirm (OK / remote reveal) cancels it. */
+function scheduleFallback(spin: SpinDescriptor, env: DrawEnv): DrawCommand {
+  return { cmd: "scheduleFallback", afterMs: spin.durationMs + spin.confirmMs + env.fallbackGraceMs };
+}
+
 export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawState, DrawCommand[]] {
   switch (event.type) {
     case "DRAWN": {
@@ -202,7 +212,7 @@ export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawS
         // holds the pool refresh back, so release it right away.
         return [{ ...state, seen }, [{ cmd: "invalidatePool" }]];
       }
-      return [{ phase: "spinning", spin, seen, commitSeq: state.commitSeq }, NONE];
+      return [{ phase: "spinning", spin, seen, commitSeq: state.commitSeq }, [scheduleFallback(spin, env)]];
     }
 
     case "RESUME": {
@@ -211,24 +221,22 @@ export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawS
       const seen = [...state.seen, current.drawnAt];
       const spin = buildResumeSpin(current, event.pool, env);
       // No reel to resume: mark the draw handled so the hero commits the
-      // result directly. The pool is already fresh on a reload — no refresh.
+      // result directly. The pool is already fresh on a reload: no refresh.
       if (!spin) return [{ ...state, seen }, NONE];
-      return [{ phase: "spinning", spin, seen, commitSeq: state.commitSeq }, NONE];
+      return [{ phase: "spinning", spin, seen, commitSeq: state.commitSeq }, [scheduleFallback(spin, env)]];
     }
 
     case "SCROLL_DONE": {
       if (state.phase !== "spinning" || !state.spin) return [state, NONE];
-      // The server owns the reveal: it broadcasts movie:revealed at the
-      // confirm deadline. The scheduled fallback only self-heals a dropped
-      // frame, offset past the deadline so the server always wins normally.
-      return [
-        { ...state, phase: "settled" },
-        [{ cmd: "scheduleFallback", afterMs: state.spin.confirmMs + env.fallbackGraceMs }],
-      ];
+      // The server owns the reveal: it broadcasts movie:revealed at the confirm
+      // deadline, and every client closes off that one frame. The self-heal
+      // fallback was already scheduled at spin start (draw-anchored, so a skip
+      // can't pull it early), so settling just flips the phase.
+      return [{ ...state, phase: "settled" }, NONE];
     }
 
     case "CONFIRM": {
-      // The reveal-once flip — THE guard. Everything funnels through here:
+      // The reveal-once flip, THE guard. Everything funnels through here:
       // the drawer's OK, the fallback timer, and the server's broadcast (as
       // source "remote", possibly while the reel is still scrolling). Any
       // later confirm finds the phase already past settled and does nothing.

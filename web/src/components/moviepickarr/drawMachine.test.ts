@@ -65,7 +65,9 @@ describe("DRAWN", () => {
   it("starts a spin with the winner, deduped candidates, and full duration", () => {
     const [state, commands] = reduce(initialDrawState, { type: "DRAWN", movie: drawn() }, env());
     expect(state.phase).toBe("spinning");
-    expect(commands).toEqual([]);
+    // The self-heal fallback is scheduled up front, draw-anchored: full scroll
+    // (6.5s) + confirm window (10s) + grace (5s) = 21.5s past spin start.
+    expect(commands).toEqual([{ cmd: "scheduleFallback", afterMs: 21_500 }]);
     expect(state.spin).toMatchObject({
       drawnAt: T0,
       winnerId: 1,
@@ -139,6 +141,13 @@ describe("RESUME", () => {
     expect(state.spin!.confirmMs).toBe(10_000);
   });
 
+  it("schedules the draw-anchored self-heal fallback on resume", () => {
+    const [, commands] = reduce(initialDrawState, { type: "RESUME", current: current(), pool }, env());
+    // remaining scroll 4.5s + confirm 10s + grace 5s = 19.5s: the same absolute
+    // revealAt + grace deadline as a fresh draw, measured from serverNow.
+    expect(commands).toEqual([{ cmd: "scheduleFallback", afterMs: 19_500 }]);
+  });
+
   it("snaps to the settled winner when the scroll already elapsed", () => {
     const late = current({ serverNow: T0_PLUS(8000) });
     const [state] = reduce(initialDrawState, { type: "RESUME", current: late, pool }, env());
@@ -174,10 +183,12 @@ describe("RESUME", () => {
 });
 
 describe("settle and reveal", () => {
-  it("SCROLL_DONE settles and schedules the self-heal fallback past the deadline", () => {
+  it("SCROLL_DONE settles without rescheduling the fallback (it is draw-anchored)", () => {
     const [state, commands] = reduce(spinning(), { type: "SCROLL_DONE" }, env());
     expect(state.phase).toBe("settled");
-    expect(commands).toEqual([{ cmd: "scheduleFallback", afterMs: 15_000 }]);
+    // The fallback was scheduled at spin start, so an early skip (an early
+    // SCROLL_DONE) can't pull it in: settling emits no new timer.
+    expect(commands).toEqual([]);
   });
 
   it("a local confirm posts the reveal and decodes the winner's backdrop", () => {

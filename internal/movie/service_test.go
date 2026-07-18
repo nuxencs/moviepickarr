@@ -320,6 +320,52 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 	}
 }
 
+// A draw's auto-reveal timer belongs to THAT draw. time.AfterFunc can't
+// un-fire a callback that already triggered, so a stale deadline that runs
+// after its draw was watched and replaced must not reveal the replacement.
+func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
+	t.Parallel()
+
+	ft := &fakeTimer{}
+	var revealed []ActiveDraw
+	svc := NewService(poolRepo(), DrawConfig{
+		StartTimer: ft.start,
+		OnRevealed: func(ap ActiveDraw) { revealed = append(revealed, ap) },
+	})
+	ctx := context.Background()
+
+	// Draw A and grab the exact callback armed for it, before a later draw can
+	// overwrite the fake timer's captured fn.
+	drawA, err := svc.DrawRandom(ctx, "c1")
+	if err != nil {
+		t.Fatalf("DrawRandom A: %v", err)
+	}
+	fireA := ft.fn
+
+	// A is watched (clearing the draw), then a fresh draw B takes the slot.
+	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
+		t.Fatalf("MarkCurrentAsWatched: %v", err)
+	}
+	drawB, err := svc.DrawRandom(ctx, "c2")
+	if err != nil {
+		t.Fatalf("DrawRandom B: %v", err)
+	}
+	if drawB.ID == drawA.ID {
+		t.Fatalf("test setup: expected B (%d) to differ from A (%d)", drawB.ID, drawA.ID)
+	}
+
+	// A's deadline was cancelled by the watch, but simulate its already-triggered
+	// callback running now, after B is active. It must not touch B.
+	fireA()
+
+	if len(revealed) != 0 {
+		t.Fatalf("stale auto-reveal fired OnRevealed %d time(s); must not reveal the replacement draw", len(revealed))
+	}
+	if ap, ok := svc.ActiveDraw(); !ok || ap.Revealed {
+		t.Fatal("draw B must remain unrevealed after draw A's stale timer fired")
+	}
+}
+
 func TestUpdateRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	t.Parallel()
 

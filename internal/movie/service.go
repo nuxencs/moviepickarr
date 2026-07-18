@@ -18,7 +18,7 @@ const maxPoolSize = 3
 // DefaultAutoRevealDelay is how long after a draw the reveal fires by itself
 // when no client confirms. The server owns this deadline outright: it rides
 // every draw payload as `revealAt`, and clients derive their confirm
-// countdown from it — there is no client-side copy to keep in sync.
+// countdown from it: there is no client-side copy to keep in sync.
 const DefaultAutoRevealDelay = 16500 * time.Millisecond
 
 // ActiveDraw records the most recent random draw so a reloading client — or one
@@ -29,7 +29,7 @@ const DefaultAutoRevealDelay = 16500 * time.Millisecond
 type ActiveDraw struct {
 	MovieID int
 	DrawnAt time.Time
-	// RevealAt is the server's auto-reveal deadline — the instant the reveal
+	// RevealAt is the server's auto-reveal deadline: the instant the reveal
 	// fires by itself if no client confirms first. Clients time the confirm
 	// countdown off it (revealAt − serverNow, immune to client clock skew).
 	RevealAt time.Time
@@ -51,14 +51,14 @@ type DrawConfig struct {
 	// StartTimer schedules fn once after d and returns a stop func. Nil uses
 	// time.AfterFunc; tests inject their own to drive the deadline by hand.
 	StartTimer func(d time.Duration, fn func()) (stop func())
-	// OnRevealed observes every reveal flip — manual confirm or auto-reveal —
+	// OnRevealed observes every reveal flip (manual confirm or auto-reveal)
 	// exactly once per draw. The server wires it to the movie:revealed
 	// broadcast so every client closes its reel off one frame.
 	OnRevealed func(ActiveDraw)
 }
 
 // Service owns the movie lifecycle: stash/pool moves, watched history, and the
-// whole draw lifecycle — the in-memory active draw, the auto-reveal deadline
+// whole draw lifecycle: the in-memory active draw, the auto-reveal deadline
 // and its timer, and the reveal-once flip behind the cross-client reveal.
 type Service struct {
 	movieRepo domain.MovieRepo
@@ -67,6 +67,10 @@ type Service struct {
 	mu             sync.Mutex
 	activeDraw     *ActiveDraw
 	stopAutoReveal func()
+	// drawGen counts draws so an auto-reveal timer can confine itself to the
+	// draw it was armed for: a watch + fresh draw bumps it, so a stale timer
+	// that already fired reveals nothing instead of the replacement draw.
+	drawGen uint64
 }
 
 func NewService(movieRepo domain.MovieRepo, drawCfg DrawConfig) *Service {
@@ -93,18 +97,19 @@ func (s *Service) Close() {
 }
 
 // armAutoRevealLocked (re)arms the auto-reveal for the active draw. There is
-// only ever one active draw, so a prior pending timer is stopped first.
-// Callers hold s.mu.
-func (s *Service) armAutoRevealLocked() {
+// only ever one active draw, so a prior pending timer is stopped first. The
+// timer is bound to gen (the draw's generation) so that when it fires it only
+// reveals that draw, never one that replaced it. Callers hold s.mu.
+func (s *Service) armAutoRevealLocked(gen uint64) {
 	s.cancelAutoRevealLocked()
 	s.stopAutoReveal = s.drawCfg.StartTimer(s.drawCfg.AutoRevealDelay, func() {
-		// Idempotent via RevealCurrentDraw: a late manual confirm or a watch
-		// races harmlessly with the deadline.
-		s.RevealCurrentDraw()
+		// Guarded by gen: a late manual confirm, a watch, or a watch-then-redraw
+		// all leave this deadline a harmless no-op.
+		s.revealActive(gen, true)
 	})
 }
 
-// cancelAutoRevealLocked stops a pending auto-reveal — a manual confirm won
+// cancelAutoRevealLocked stops a pending auto-reveal: a manual confirm won
 // the race, the draw was watched, or the server is shutting down. Callers
 // hold s.mu.
 func (s *Service) cancelAutoRevealLocked() {
@@ -257,7 +262,7 @@ func (s *Service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 }
 
 // DrawRandom selects a random pooled movie as the current draw. clientID is
-// the opaque id of the client that initiated the draw (see ActiveDraw) — it
+// the opaque id of the client that initiated the draw (see ActiveDraw). It
 // gates who sees the reel's confirm button; "" is acceptable (no drawer).
 func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
 	pooled, err := s.movieRepo.FindByStatus(ctx, "pool")
@@ -289,13 +294,14 @@ func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movi
 
 	drawnAt := time.Now().UTC()
 	s.mu.Lock()
+	s.drawGen++
 	s.activeDraw = &ActiveDraw{
 		MovieID:      movie.ID,
 		DrawnAt:      drawnAt,
 		RevealAt:     drawnAt.Add(s.drawCfg.AutoRevealDelay),
 		DrawClientID: clientID,
 	}
-	s.armAutoRevealLocked()
+	s.armAutoRevealLocked(s.drawGen)
 	s.mu.Unlock()
 
 	return movie, nil
@@ -316,7 +322,7 @@ func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 		return nil, err
 	}
 
-	// The draw is done — clear the active spin (and its pending auto-reveal,
+	// The draw is done: clear the active spin (and its pending auto-reveal,
 	// so a stale timer can't fire against the next draw) so a reload now shows
 	// the result directly rather than replaying the reel.
 	s.mu.Lock()
@@ -332,7 +338,7 @@ func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 
 // ActiveDraw reports the in-flight draw (movie id + when it was drawn) that
 // drives the cross-client draw-reveal spin, or ok=false when none is active
-// (no current movie, or the current movie was already marked watched). It is
+// (no current draw, or the current draw was already marked watched). It is
 // in-memory only, consistent with the in-process event broker: a server
 // restart drops it, which just means a reload won't replay the spin.
 func (s *Service) ActiveDraw() (ActiveDraw, bool) {
@@ -344,15 +350,25 @@ func (s *Service) ActiveDraw() (ActiveDraw, bool) {
 	return *s.activeDraw, true
 }
 
-// RevealCurrentDraw marks the active draw as revealed — the drawer confirmed,
+// RevealCurrentDraw marks the active draw as revealed: the drawer confirmed,
 // or the auto-reveal deadline fired. The flip happens at most once per draw:
 // the winning call cancels the pending timer and notifies OnRevealed exactly
 // once; a duplicate confirm is a silent no-op. It reports the draw plus
 // whether this call flipped it; ok=false when there's no active draw or it
 // was already revealed.
 func (s *Service) RevealCurrentDraw() (ActiveDraw, bool) {
+	return s.revealActive(0, false)
+}
+
+// revealActive flips the active draw to revealed, cancels its pending timer,
+// and notifies OnRevealed exactly once. When requireGen is set it only
+// proceeds while the active draw is still generation gen (the draw the
+// auto-reveal timer was armed for) so a stale deadline can't reveal a
+// replacement. Manual confirms pass requireGen=false: they target whatever
+// draw is current.
+func (s *Service) revealActive(gen uint64, requireGen bool) (ActiveDraw, bool) {
 	s.mu.Lock()
-	if s.activeDraw == nil || s.activeDraw.Revealed {
+	if s.activeDraw == nil || s.activeDraw.Revealed || (requireGen && s.drawGen != gen) {
 		s.mu.Unlock()
 		return ActiveDraw{}, false
 	}

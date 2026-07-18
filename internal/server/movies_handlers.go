@@ -157,7 +157,9 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
+	// A Members board path: tile-level data only, so ship lean tiles and skip
+	// the credits batch-load (the modal lazy-loads its full record instead).
+	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(ctx, movies)))
 }
 
 func (h *handler) handleEditMovie(c *fiber.Ctx) error {
@@ -298,7 +300,9 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
+	// A Members board path: tile-level data only, so ship lean tiles and skip
+	// the credits batch-load (the modal lazy-loads its full record instead).
+	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(ctx, movies)))
 }
 
 func (h *handler) handleMove(c *fiber.Ctx) error {
@@ -370,7 +374,7 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 	}
 
 	combined := append(append([]*domain.Movie{}, updatedPool...), updatedStash...)
-	updatedUser := toAPIUserMeta(userRecord, updatedPool, updatedStash, h.metaFor(ctx, combined), h.creditsFor(ctx, combined))
+	updatedUser := toAPIUserMeta(userRecord, updatedPool, updatedStash, h.metaFor(ctx, combined))
 	if changed {
 		h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
 	}

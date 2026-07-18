@@ -34,38 +34,40 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 	visible = append(visible, pooled...)
 	visible = append(visible, stashed...)
 
+	// Boards render tile-level data only, so build lean tiles and skip the
+	// credits batch-load (GetCreditsByMovieIDs over every board movie) — a
+	// read-path saving on its own, on top of the smaller wire payload.
 	meta := h.metaFor(ctx, visible)
-	credits := h.creditsFor(ctx, visible)
-	poolByUser := make(map[int]map[string]fullMovie)
-	stashByUser := make(map[int]map[string]fullMovie)
+	poolByUser := make(map[int]map[string]leanMovieTile)
+	stashByUser := make(map[int]map[string]leanMovieTile)
 
 	for i := range visible {
-		apiMovie := toFullMovie(visible[i], meta[visible[i].ID], credits[visible[i].ID])
+		tile := toLeanTile(visible[i], meta[visible[i].ID])
 		key := strconv.Itoa(visible[i].ID)
 
 		if visible[i].Status == "pool" {
 			if poolByUser[visible[i].AddedByID] == nil {
-				poolByUser[visible[i].AddedByID] = map[string]fullMovie{}
+				poolByUser[visible[i].AddedByID] = map[string]leanMovieTile{}
 			}
-			poolByUser[visible[i].AddedByID][key] = apiMovie
+			poolByUser[visible[i].AddedByID][key] = tile
 			continue
 		}
 
 		if stashByUser[visible[i].AddedByID] == nil {
-			stashByUser[visible[i].AddedByID] = map[string]fullMovie{}
+			stashByUser[visible[i].AddedByID] = map[string]leanMovieTile{}
 		}
-		stashByUser[visible[i].AddedByID][key] = apiMovie
+		stashByUser[visible[i].AddedByID][key] = tile
 	}
 
 	response := make([]userResponse, 0, len(users))
 	for i := range users {
 		currentPool := poolByUser[users[i].ID]
 		if currentPool == nil {
-			currentPool = map[string]fullMovie{}
+			currentPool = map[string]leanMovieTile{}
 		}
 		stash := stashByUser[users[i].ID]
 		if stash == nil {
-			stash = map[string]fullMovie{}
+			stash = map[string]leanMovieTile{}
 		}
 
 		response = append(response, userResponse{
@@ -106,8 +108,8 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 	payload := userResponse{
 		ID:          createdUser.ID,
 		Name:        createdUser.Name,
-		CurrentPool: map[string]fullMovie{},
-		Stash:       map[string]fullMovie{},
+		CurrentPool: map[string]leanMovieTile{},
+		Stash:       map[string]leanMovieTile{},
 		CreatedAt:   formatTime(createdUser.CreatedAt),
 	}
 

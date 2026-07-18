@@ -11,8 +11,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 import { effectiveZoom } from "@/components/moviepickarr/zoom";
+
+import { useDismissible } from "@/hooks/useDismissible";
 
 export interface MenuAction {
   label: string;
@@ -55,47 +56,29 @@ const MARGIN = 8;
  * the trigger never sits focused behind a dialog where Enter would reopen the menu.
  */
 export function Menu({ actions, label, icon, align = "end", className }: MenuProps) {
-  const [open, setOpen] = useState(false);
-  const [closing, setClosing] = useState(false);
   const [placement, setPlacement] = useState<Placement | null>(null);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const closingRef = useRef(false);
-  const timerRef = useRef<number | null>(null);
   const menuId = useId();
 
-  const clearTimer = () => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
+  const { open, closing, show, dismiss } = useDismissible({
+    restoreFocusTo: triggerRef,
+    onClosed: () => setPlacement(null),
+  });
 
   const openMenu = useCallback(() => {
-    clearTimer();
-    closingRef.current = false;
-    setClosing(false);
     setPlacement(null);
-    setOpen(true);
-  }, []);
+    show();
+  }, [show]);
 
-  const requestClose = useCallback((reason: CloseReason) => {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    setClosing(true);
-    // Return focus to the trigger for every dismissal except an outside click.
-    // On select this runs synchronously before the action's Modal mounts, so the
-    // Modal adopts the trigger as opener and immediately traps focus inside.
-    if (reason !== "outside") triggerRef.current?.focus();
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      closingRef.current = false;
-      setClosing(false);
-      setOpen(false);
-      setPlacement(null);
-    }, exitDelayMs());
-  }, []);
+  // Return focus to the trigger for every dismissal except an outside click.
+  // On select this runs synchronously before the action's Modal mounts, so the
+  // Modal adopts the trigger as opener and immediately traps focus inside.
+  const requestClose = useCallback(
+    (reason: CloseReason) => dismiss({ restoreFocus: reason !== "outside" }),
+    [dismiss],
+  );
 
   const place = useCallback(() => {
     const trigger = triggerRef.current;
@@ -163,8 +146,6 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
     };
   }, [open, closing, place, requestClose]);
 
-  useEffect(() => () => clearTimer(), []);
-
   const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End", "Tab"].includes(e.key)) return;
     const items = Array.from(
@@ -199,7 +180,7 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => (open && !closingRef.current ? requestClose("trigger") : openMenu())}
+        onClick={() => (open && !closing ? requestClose("trigger") : openMenu())}
         onKeyDown={(e) => {
           if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
             e.preventDefault();

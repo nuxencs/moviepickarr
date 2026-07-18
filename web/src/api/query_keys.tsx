@@ -21,17 +21,6 @@ export const MoviesKeys = {
     filterOptions: () => [...MoviesKeys.all, "filterOptions"] as const,
 }
 
-// Client-only state (no endpoint): the in-flight draw-reveal spin descriptor,
-// set via setQueryData by the SSE handler / draw mutation and read by the Hero.
-// `revealed` is the cross-client close signal — the drawer's confirm (or the
-// countdown) broadcasts movie:revealed; useSSE stows the drawnAt here and the
-// Hero closes the reel for that draw.
-export const DrawKeys = {
-    all: ["draw"] as const,
-    active: () => [...DrawKeys.all, "active"] as const,
-    revealed: () => [...DrawKeys.all, "revealed"] as const,
-}
-
 export const SettingsKeys = {
     all: ["settings"] as const,
     poolLock: () => [...SettingsKeys.all, "poolLock"] as const,
@@ -40,8 +29,15 @@ export const SettingsKeys = {
 
 export const StatsKeys = {
     all: ["stats"] as const,
-    // actorsKey/crewKey are the canonical comma-joined id lists (sorted in
-    // StatsGetQueryOptions), so selection order can't split the cache.
-    byWindow: (window: string, timezone: string, start?: string, end?: string, genre?: string, actorsKey?: string, crewKey?: string, addedByKey?: string, releaseYear?: number, decade?: number) =>
-      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? "", "genre", genre ?? "", "actors", actorsKey ?? "", "crew", crewKey ?? "", "addedBy", addedByKey ?? "", "releaseYear", releaseYear ?? 0, "decade", decade ?? 0] as const,
+    // The filter segment arrives pre-canonicalized (comma-joined sorted id
+    // lists) from StatsGetQueryOptions' one serializer, so selection order
+    // can't split the cache and the key always matches the request sent.
+    byWindow: (
+        window: string,
+        timezone: string,
+        start: string | undefined,
+        end: string | undefined,
+        f: { genre?: string; actorIds?: string; crewIds?: string; addedByIds?: string; releaseYear?: number; decade?: number },
+    ) =>
+      [...StatsKeys.all, "window", window, "tz", timezone, "start", start ?? "", "end", end ?? "", "genre", f.genre ?? "", "actors", f.actorIds ?? "", "crew", f.crewIds ?? "", "addedBy", f.addedByIds ?? "", "releaseYear", f.releaseYear ?? 0, "decade", f.decade ?? 0] as const,
 }

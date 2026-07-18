@@ -15,7 +15,7 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 	movie := domain.Movie{ID: 7, Title: "The Matrix", TMDBID: &tmdb}
 
 	// Without metadata: enriched fields stay zero and serialize as omitted.
-	bare := toAPIMovieMeta(&movie, nil, nil)
+	bare := toFullMovie(&movie, nil, nil)
 	if bare.PosterPath != "" || bare.Runtime != 0 || bare.Genres != nil {
 		t.Fatalf("expected no enriched fields, got %+v", bare)
 	}
@@ -58,7 +58,7 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 		Tagline:     "Free your mind.",
 		Overview:    "A hacker learns the truth.",
 	}
-	got := toAPIMovieMeta(&movie, md, nil)
+	got := toFullMovie(&movie, md, nil)
 	if got.PosterPath != "/p.jpg" || got.Runtime != 136 || got.VoteAverage != 8.2 {
 		t.Fatalf("scalar fold mismatch: %+v", got)
 	}
@@ -118,7 +118,7 @@ func TestToAPIMovieMeta_FoldsCredits(t *testing.T) {
 		},
 	}
 
-	got := toAPIMovieMeta(&movie, nil, credits)
+	got := toFullMovie(&movie, nil, credits)
 	if len(got.Cast) != 2 || len(got.Crew) != 1 {
 		t.Fatalf("expected 2 cast + 1 crew, got %d/%d", len(got.Cast), len(got.Crew))
 	}

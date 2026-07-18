@@ -36,23 +36,23 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 
 	meta := h.metaFor(ctx, visible)
 	credits := h.creditsFor(ctx, visible)
-	poolByUser := make(map[int]map[string]movieResponse)
-	stashByUser := make(map[int]map[string]movieResponse)
+	poolByUser := make(map[int]map[string]fullMovie)
+	stashByUser := make(map[int]map[string]fullMovie)
 
 	for i := range visible {
-		apiMovie := toAPIMovieMeta(visible[i], meta[visible[i].ID], credits[visible[i].ID])
+		apiMovie := toFullMovie(visible[i], meta[visible[i].ID], credits[visible[i].ID])
 		key := strconv.Itoa(visible[i].ID)
 
 		if visible[i].Status == "pool" {
 			if poolByUser[visible[i].AddedByID] == nil {
-				poolByUser[visible[i].AddedByID] = map[string]movieResponse{}
+				poolByUser[visible[i].AddedByID] = map[string]fullMovie{}
 			}
 			poolByUser[visible[i].AddedByID][key] = apiMovie
 			continue
 		}
 
 		if stashByUser[visible[i].AddedByID] == nil {
-			stashByUser[visible[i].AddedByID] = map[string]movieResponse{}
+			stashByUser[visible[i].AddedByID] = map[string]fullMovie{}
 		}
 		stashByUser[visible[i].AddedByID][key] = apiMovie
 	}
@@ -61,11 +61,11 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 	for i := range users {
 		currentPool := poolByUser[users[i].ID]
 		if currentPool == nil {
-			currentPool = map[string]movieResponse{}
+			currentPool = map[string]fullMovie{}
 		}
 		stash := stashByUser[users[i].ID]
 		if stash == nil {
-			stash = map[string]movieResponse{}
+			stash = map[string]fullMovie{}
 		}
 
 		response = append(response, userResponse{
@@ -106,8 +106,8 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 	payload := userResponse{
 		ID:          createdUser.ID,
 		Name:        createdUser.Name,
-		CurrentPool: map[string]movieResponse{},
-		Stash:       map[string]movieResponse{},
+		CurrentPool: map[string]fullMovie{},
+		Stash:       map[string]fullMovie{},
 		CreatedAt:   formatTime(createdUser.CreatedAt),
 	}
 

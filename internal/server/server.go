@@ -263,11 +263,13 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	}
 
 	h := &handler{
-		broker:          broker,
-		log:             rootLog.With().Str("component", "http").Logger(),
-		userService:     user.NewService(userRepo, nextUpRepo),
-		movieService:    movie.NewService(movieRepo),
-		nextUpService:   nextup.NewService(nextUpRepo, userRepo),
+		broker:      broker,
+		log:         rootLog.With().Str("component", "http").Logger(),
+		userService: user.NewService(userRepo, nextUpRepo),
+		movieService: movie.NewService(movieRepo, movie.DrawConfig{
+			OnRevealed: revealBroadcaster(broker),
+		}),
+		nextUpService:   nextup.NewService(nextUpRepo, userRepo, movieRepo),
 		settingsService: settings.NewService(settingsRepo),
 		movieMetadata:   movieMetadataRepo,
 		movieCredits:    movieCreditsRepo,
@@ -275,7 +277,6 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		enrichRunner:    runner,
 		statsCache:      make(map[string]statsCacheEntry),
 		statsCacheTTL:   time.Minute,
-		autoRevealDelay: defaultAutoRevealDelay,
 	}
 
 	// Stats now aggregate enriched metadata/credits, so every successful

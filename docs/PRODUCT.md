@@ -34,8 +34,7 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   director and actor rails, and a release-decades timeline. One filter system
   sits under the header: the time presets, the watch-year quick-select (snaps
   the custom window to a calendar year), genre, release year or whole decade
-  (mutually exclusive), "Picked by" (the movie's adder; the UI label predates
-  the glossary), and multi-select
+  (mutually exclusive), "Added by" (the movie's adder), and multi-select
   Actors / Crew people filters. People filters are any-of within a list and
   AND across filters; actors match cast credits, crew matches any whitelisted
   crew job (so filtering by a director also counts their writer credits).

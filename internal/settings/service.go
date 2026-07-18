@@ -8,20 +8,17 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-type Service interface {
-	GetPoolLock(ctx context.Context) (bool, error)
-	SetPoolLock(ctx context.Context, value bool) error
-}
-
-type service struct {
+// Service hides the settings key names and their string encoding behind typed
+// accessors.
+type Service struct {
 	settingsRepo domain.SettingsRepo
 }
 
-func NewService(settingsRepo domain.SettingsRepo) Service {
-	return &service{settingsRepo: settingsRepo}
+func NewService(settingsRepo domain.SettingsRepo) *Service {
+	return &Service{settingsRepo: settingsRepo}
 }
 
-func (s *service) GetPoolLock(ctx context.Context) (bool, error) {
+func (s *Service) GetPoolLock(ctx context.Context) (bool, error) {
 	poolLock, err := s.settingsRepo.FindByKey(ctx, "pool_locked")
 	if err != nil {
 		return false, err
@@ -30,6 +27,6 @@ func (s *service) GetPoolLock(ctx context.Context) (bool, error) {
 	return strconv.ParseBool(poolLock)
 }
 
-func (s *service) SetPoolLock(ctx context.Context, value bool) error {
+func (s *Service) SetPoolLock(ctx context.Context, value bool) error {
 	return s.settingsRepo.Set(ctx, "pool_locked", fmt.Sprint(value))
 }

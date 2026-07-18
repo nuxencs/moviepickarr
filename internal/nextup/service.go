@@ -2,36 +2,114 @@ package nextup
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"moviepickarr/internal/domain"
 )
 
-type Service interface {
-	Get(ctx context.Context) (*domain.User, error)
-	Set(ctx context.Context, userID int) error
+// poolCounter is the one slice of the movie repository the rotation rule
+// needs: next up only advances while the pool still has movies. Narrowed
+// consumer-side so tests fake one method, not the whole MovieRepo.
+type poolCounter interface {
+	CountByStatus(ctx context.Context, status string) (int, error)
 }
 
-type service struct {
+// Service owns the next-up rotation: whose turn it is to run movie night, and
+// when the turn passes. The rotation is a convention shown in the hero, not
+// enforced by the app: every rule about it lives here.
+type Service struct {
 	nextUpRepo domain.NextUpRepo
 	userRepo   domain.UserRepo
+	pool       poolCounter
 }
 
-func NewService(nextUpRepo domain.NextUpRepo, userRepo domain.UserRepo) Service {
-	return &service{
+func NewService(nextUpRepo domain.NextUpRepo, userRepo domain.UserRepo, pool poolCounter) *Service {
+	return &Service{
 		nextUpRepo: nextUpRepo,
 		userRepo:   userRepo,
+		pool:       pool,
 	}
 }
 
-func (s *service) Get(ctx context.Context) (*domain.User, error) {
+// Get returns the member whose turn it is. A fresh install has no next up
+// yet, so Get seeds it with the first roster member before answering;
+// sql.ErrNoRows therefore means the roster itself is empty.
+func (s *Service) Get(ctx context.Context) (*domain.User, error) {
 	nextUp, err := s.nextUpRepo.Get(ctx)
-	if err != nil {
+	if err == nil {
+		return nextUp, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 
-	return nextUp, nil
+	users, err := s.userRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	if err := s.nextUpRepo.Set(ctx, users[0].ID); err != nil {
+		return nil, err
+	}
+
+	return s.nextUpRepo.Get(ctx)
 }
 
-func (s *service) Set(ctx context.Context, userID int) error {
+func (s *Service) Set(ctx context.Context, userID int) error {
 	return s.nextUpRepo.Set(ctx, userID)
+}
+
+// Advance passes the turn to the next roster member, in roster order, called
+// after each draw. The turn only moves while the pool still has movies left
+// and more than one member exists; otherwise it reports changed=false and the
+// current member keeps the turn. A next up who has left the roster hands the
+// turn to the first member.
+func (s *Service) Advance(ctx context.Context) (next *domain.User, changed bool, err error) {
+	users, err := s.userRepo.List(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(users) <= 1 {
+		return nil, false, nil
+	}
+
+	pooled, err := s.pool.CountByStatus(ctx, "pool")
+	if err != nil {
+		return nil, false, err
+	}
+	if pooled == 0 {
+		return nil, false, nil
+	}
+
+	current, err := s.Get(ctx)
+	if err != nil {
+		// Get self-seeds, so no rows here means an empty roster, unreachable
+		// behind the len(users) guard, but harmless to treat as a no-op.
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	currentIndex := -1
+	for i := range users {
+		if users[i].ID == current.ID {
+			currentIndex = i
+			break
+		}
+	}
+
+	nextIndex := 0
+	if currentIndex >= 0 {
+		nextIndex = (currentIndex + 1) % len(users)
+	}
+
+	if err := s.nextUpRepo.Set(ctx, users[nextIndex].ID); err != nil {
+		return nil, false, err
+	}
+
+	return users[nextIndex], true, nil
 }

@@ -5,10 +5,15 @@ session:
 
 ```bash
 make dev          # live dev: Vite + Go, split-screen
-make test         # run the Go test suite
+make test         # run both suites: go test -race + vitest
 make lint         # lint Go + frontend
 make precommit    # format + fix + lint before committing
 ```
+
+`make test` runs the Go suite (`go test -race`) and the frontend vitest suite
+(the pure reducers: `drawMachine`, `sseConnection`, `sseInvalidations`). Both
+also run in CI on every push and pull request (`.github/workflows/ci.yml`). To
+run just the web tests, use `bun run test` from `web/`.
 
 Vite hot-reloads the frontend only. After Go changes, restart the backend pane
 before verifying anything.

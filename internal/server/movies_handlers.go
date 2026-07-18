@@ -51,72 +51,28 @@ func (h *handler) creditsFor(ctx context.Context, movies []*domain.Movie) credit
 	return credits
 }
 
-func (h *handler) getPooledMovies(ctx context.Context) ([]movieResponse, error) {
+func (h *handler) getPooledMovies(ctx context.Context) ([]fullMovie, error) {
 	movies, err := h.movieService.Pooled(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
+	return toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
 }
 
 func (h *handler) advanceNextUp(ctx context.Context) error {
-	users, err := h.userService.List(ctx)
+	next, changed, err := h.nextUpService.Advance(ctx)
 	if err != nil {
 		return err
 	}
-	if len(users) <= 1 {
-		return nil
+	if changed {
+		h.broker.Broadcast(event{
+			Type: "settings:next-up-changed",
+			Data: map[string]any{
+				"id":   next.ID,
+				"name": next.Name,
+			},
+		})
 	}
-
-	pooled, err := h.movieService.Pooled(ctx)
-	if err != nil {
-		return err
-	}
-	if len(pooled) == 0 {
-		return nil
-	}
-
-	current, err := h.nextUpService.Get(ctx)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			if err := h.initNextUp(ctx); err != nil {
-				return err
-			}
-			current, err = h.nextUpService.Get(ctx)
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	currentIndex := -1
-	for i := range users {
-		if current != nil && users[i].ID == current.ID {
-			currentIndex = i
-			break
-		}
-	}
-
-	nextIndex := 0
-	if currentIndex >= 0 {
-		nextIndex = (currentIndex + 1) % len(users)
-	}
-
-	if err := h.nextUpService.Set(ctx, users[nextIndex].ID); err != nil {
-		return err
-	}
-
-	h.broker.Broadcast(event{
-		Type: "settings:next-up-changed",
-		Data: map[string]any{
-			"id":   users[nextIndex].ID,
-			"name": users[nextIndex].Name,
-		},
-	})
-
 	return nil
 }
 
@@ -175,7 +131,7 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 	movieRecord.TMDBID = tmdbID
 	movieRecord.IMDbID = imdbID
 
-	payload := toAPIMovie(movieRecord)
+	payload := toFullMovieBare(movieRecord)
 	h.broker.Broadcast(event{Type: "movie:added", Data: payload})
 
 	if h.enrichRunner != nil {
@@ -201,7 +157,7 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
 }
 
 func (h *handler) handleEditMovie(c *fiber.Ctx) error {
@@ -289,7 +245,7 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 		}
 	}
 
-	payload := toAPIMovie(updatedMovie)
+	payload := toFullMovieBare(updatedMovie)
 	h.broker.Broadcast(event{Type: "movie:updated", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
@@ -342,7 +298,7 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesMeta(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)))
 }
 
 func (h *handler) handleMove(c *fiber.Ctx) error {
@@ -437,8 +393,8 @@ func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {
 // regardless of whether it has the pool cached — and decouples the reel from each
 // client's local pool snapshot.
 type drawnPayload struct {
-	movieResponse
-	Candidates []movieResponse `json:"candidates"`
+	fullMovie
+	Candidates []leanMovieTile `json:"candidates"`
 }
 
 func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
@@ -461,36 +417,37 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		h.log.Error().Err(err).Msg("failed to advance next up")
 	}
 
-	payload := toAPIMovie(selectedMovie)
+	payload := toFullMovieBare(selectedMovie)
 	// Carry the authoritative draw time so the clicker (whose own SSE event may
 	// drop) and every other client resume the reveal spin from the same instant,
-	// plus the drawer id so each client knows whether to show the confirm button.
+	// the reveal deadline the server will enforce (clients time the confirm
+	// countdown off it), plus the drawer id so each client knows whether to
+	// show the confirm button.
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == selectedMovie.ID {
 		payload.DrawnAt = formatTime(&ap.DrawnAt)
+		payload.RevealAt = formatTimePrecise(ap.RevealAt)
 		payload.DrawClientID = ap.DrawClientID
 	}
 
 	// Reel candidates = the pre-draw pool (winner + the rest) as lean tiles WITH
 	// posters, reconstructed from the post-draw pool plus the winner. The winner
-	// must carry a poster here because the reel lands on it: toAPIMovie(selected)
+	// must carry a poster here because the reel lands on it: toFullMovieBare(selected)
 	// alone has none (no metadata), so the tiles — not the bare payload — supply it.
 	// Best-effort: the draw already succeeded, so a pool-load failure must not fail
 	// the response — it just omits candidates and the client falls back to its
 	// local pool cache (the pre-self-contained behaviour).
-	drawn := drawnPayload{movieResponse: payload}
+	drawn := drawnPayload{fullMovie: payload}
 	if pooled, err := h.movieService.Pooled(ctx); err != nil {
 		h.log.Warn().Err(err).Msg("failed to load pool for draw candidates (reel falls back to client pool cache)")
 	} else {
 		candidateMovies := append([]*domain.Movie{selectedMovie}, pooled...)
-		drawn.Candidates = toAPIMoviesLean(candidateMovies, h.metaFor(ctx, candidateMovies))
+		drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(ctx, candidateMovies))
 	}
 
+	// The auto-reveal is armed inside DrawRandom: if no client confirms by the
+	// payload's revealAt, the movie service reveals the draw itself and the
+	// OnRevealed hook broadcasts once for everyone.
 	h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
-
-	// Server owns the reveal countdown: if no client confirms within the window,
-	// the server reveals the draw itself (one broadcast for everyone) — see
-	// scheduleAutoReveal.
-	h.scheduleAutoReveal()
 
 	return c.Status(fiber.StatusOK).JSON(drawn)
 }
@@ -507,13 +464,14 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 
 	meta := h.metaFor(ctx, []*domain.Movie{movieRecord})
 	credits := h.creditsFor(ctx, []*domain.Movie{movieRecord})
-	resp := toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
+	resp := toFullMovie(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
 	// When this movie is the active draw, hand the client the timing it needs to
 	// resume the reveal spin after a reload: when it was drawn, plus the server
 	// clock now (so elapsed is computed server-relative, free of client skew).
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == movieRecord.ID {
 		now := time.Now().UTC()
 		resp.DrawnAt = formatTime(&ap.DrawnAt)
+		resp.RevealAt = formatTimePrecise(ap.RevealAt)
 		resp.ServerNow = formatTime(&now)
 		resp.DrawClientID = ap.DrawClientID
 		resp.Revealed = ap.Revealed
@@ -522,17 +480,12 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 }
 
 // handleRevealCurrentMovie confirms the active draw — the drawer pressed the
-// reel's OK button. It flips the draw to revealed and broadcasts movie:revealed so
-// every client's reel closes in lockstep, and cancels the server's pending
-// auto-reveal (this manual confirm won the race). Idempotent: a second confirm (or
-// a confirm with no active draw) is a quiet 200 with no re-broadcast, so racing
-// clients don't double-fire the reveal.
+// reel's OK button. The movie service owns the whole flip: reveal-once, the
+// timer cancel, and the movie:revealed broadcast (via its OnRevealed hook).
+// Idempotent: a second confirm (or a confirm with no active draw) is a quiet
+// no-op, so racing clients don't double-fire the reveal.
 func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
-	ap, flipped := h.movieService.RevealCurrentDraw()
-	if flipped {
-		h.cancelAutoReveal()
-		h.broadcastRevealed(ap)
-	}
+	h.movieService.RevealCurrentDraw()
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -542,12 +495,10 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// The draw is gone — drop any pending auto-reveal so a stale timer can't fire
-	// against the next draw.
-	h.cancelAutoReveal()
+	// MarkCurrentAsWatched cleared the draw and its pending auto-reveal.
 	h.invalidateStatsCache()
 
-	payload := toAPIMovie(watched)
+	payload := toFullMovieBare(watched)
 	h.broker.Broadcast(event{Type: "movie:watched", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
@@ -565,7 +516,7 @@ func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
 	// made up the bulk of the bytes. The detail modal lazy-loads the full record
 	// from GET /movies/:id; Stats reads its actor/crew filter options from
 	// GET /movies/filter-options. Credits are no longer loaded here at all.
-	return c.Status(fiber.StatusOK).JSON(toAPIMoviesLean(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(ctx, movies)))
 }
 
 // handleGetMovie returns the full enriched record for one movie — backdrop,
@@ -586,5 +537,5 @@ func (h *handler) handleGetMovie(c *fiber.Ctx) error {
 	one := []*domain.Movie{movieRecord}
 	meta := h.metaFor(ctx, one)
 	credits := h.creditsFor(ctx, one)
-	return c.Status(fiber.StatusOK).JSON(toAPIMovieMeta(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
+	return c.Status(fiber.StatusOK).JSON(toFullMovie(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
 }

@@ -881,7 +881,7 @@ func TestMovieMatchesStatsFilters_Unenriched(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			// nil metadata + nil credits = never enriched.
-			if got := movieMatchesStatsFilters(nil, nil, tc.filters); got != tc.want {
+			if got := tc.filters.matches(nil, nil); got != tc.want {
 				t.Fatalf("expected %v, got %v", tc.want, got)
 			}
 		})

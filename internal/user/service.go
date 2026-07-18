@@ -8,26 +8,24 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-type Service interface {
-	Create(ctx context.Context, name string) (*domain.User, error)
-	Delete(ctx context.Context, id int) error
-	Get(ctx context.Context, id int) (*domain.User, error)
-	List(ctx context.Context) ([]*domain.User, error)
-}
-
-type service struct {
+// Service owns member management. Creation also seeds the next-up rotation on
+// a fresh roster (see Create).
+type Service struct {
 	userRepo   domain.UserRepo
 	nextUpRepo domain.NextUpRepo
 }
 
-func NewService(userRepo domain.UserRepo, nextUpRepo domain.NextUpRepo) Service {
-	return &service{
+func NewService(userRepo domain.UserRepo, nextUpRepo domain.NextUpRepo) *Service {
+	return &Service{
 		userRepo:   userRepo,
 		nextUpRepo: nextUpRepo,
 	}
 }
 
-func (s *service) Create(ctx context.Context, name string) (*domain.User, error) {
+// Create adds a member to the roster. The first member ever created becomes
+// next up immediately, so the rotation has a starting point before the first
+// draw.
+func (s *Service) Create(ctx context.Context, name string) (*domain.User, error) {
 	user, err := s.userRepo.Create(ctx, name)
 	if err != nil {
 		return nil, err
@@ -47,15 +45,15 @@ func (s *service) Create(ctx context.Context, name string) (*domain.User, error)
 	return user, nil
 }
 
-func (s *service) Delete(ctx context.Context, id int) error {
+func (s *Service) Delete(ctx context.Context, id int) error {
 	return s.userRepo.Delete(ctx, id)
 }
 
-func (s *service) Get(ctx context.Context, id int) (*domain.User, error) {
+func (s *Service) Get(ctx context.Context, id int) (*domain.User, error) {
 	return s.userRepo.FindByID(ctx, id)
 }
 
-func (s *service) List(ctx context.Context) ([]*domain.User, error) {
+func (s *Service) List(ctx context.Context) ([]*domain.User, error) {
 	users, err := s.userRepo.List(ctx)
 	if err != nil {
 		return nil, err

@@ -68,7 +68,7 @@ How levels are used in this codebase:
 | `debug` | high-volume / expected-noise detail | per-movie enrich result, batch flush, SSE write/flush failure (normal on client disconnect) |
 | `info` | lifecycle & access | startup banner, worker started, drain start/summary, graceful shutdown, 2xx/3xx requests |
 | `warn` | recoverable / degraded | invalid env value (default used), enrich queue full, single movie enrich failure, drain interrupted, non-fatal metadata/credits load failure, 4xx requests |
-| `error` | operation failed, process continues | needs-enrichment query failure, SSE marshal failure, next-picker advance failure, shutdown/db-close errors, 5xx requests |
+| `error` | operation failed, process continues | needs-enrichment query failure, SSE marshal failure, next up advance failure, shutdown/db-close errors, 5xx requests |
 | `fatal` | unrecoverable startup failure only | `main`'s `run()` error — logs then `os.Exit(1)` |
 
 **Never call `Fatal` inside a handler or the worker** — it skips graceful

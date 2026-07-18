@@ -15,14 +15,24 @@ type settingsResponse struct {
 }
 
 type userResponse struct {
-	ID          int                      `json:"userID"`
-	Name        string                   `json:"name"`
-	CurrentPool map[string]movieResponse `json:"currentPool"`
-	Stash       map[string]movieResponse `json:"stash"`
-	CreatedAt   string                   `json:"createdAt"`
+	ID          int                  `json:"userID"`
+	Name        string               `json:"name"`
+	CurrentPool map[string]fullMovie `json:"currentPool"`
+	Stash       map[string]fullMovie `json:"stash"`
+	CreatedAt   string               `json:"createdAt"`
 }
 
-type movieResponse struct {
+// The movie wire shape comes in exactly two payload classes, enforced by the
+// type system: a handler returning []leanMovieTile CANNOT accidentally ship
+// credits or prose, so the lean list payloads (the 196→16 KB watched-list
+// win) are guarded by the compiler instead of by review.
+
+// leanMovieTile is the list/tile class: identity + the tile-level enriched
+// fields the grids render (poster, rating, release date, runtime, genres).
+// The watched list ships hundreds of these, so the heavy modal-only fields
+// (backdrop, tagline, overview, credits) are structurally absent: the modal
+// lazy-loads the fullMovie from GET /movies/:id when it opens.
+type leanMovieTile struct {
 	ID          int    `json:"movieID"`
 	Title       string `json:"title"`
 	Link        string `json:"link"`
@@ -31,13 +41,39 @@ type movieResponse struct {
 	AddedByName string `json:"addedByName"`
 	WatchedAt   string `json:"watchedAt"`
 
+	// Stable external identities, exposed so the frontend can build links to
+	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).
+	// Omitted when the movie carries no such id.
+	TMDBID *int   `json:"tmdbId,omitempty"`
+	IMDbID string `json:"imdbId,omitempty"`
+
+	// Enriched TMDB tile fields. All optional: a movie may not be enriched
+	// yet (enrichment is async), so these are omitted when absent and the
+	// frontend degrades gracefully (placeholder poster, hidden chips).
+	// posterPath is a raw TMDB path (e.g. "/abc.jpg"); the frontend builds
+	// the image URL.
+	PosterPath  string   `json:"posterPath,omitempty"`
+	ReleaseDate string   `json:"releaseDate,omitempty"`
+	Runtime     int      `json:"runtime,omitempty"`
+	Genres      []string `json:"genres,omitempty"`
+	VoteAverage float64  `json:"voteAverage,omitempty"`
+}
+
+// fullMovie is the detail class: everything on the tile plus the draw
+// coordination fields, the modal-only metadata, and the credits. Served by
+// the current/pool/detail/board paths; JSON-flattened via the embedding.
+type fullMovie struct {
+	leanMovieTile
+
 	// Draw-reveal coordination. Set only on the movie:drawn event and the
-	// current-movie endpoint, never on list payloads. DrawnAt is when the
-	// current movie was drawn (drives resuming the cross-client reveal spin
-	// after a reload); ServerNow is the server clock at response time so the
-	// client computes elapsed without trusting its own clock. Both omitted when
-	// no draw is active.
+	// current-movie endpoint. DrawnAt is when the current movie was drawn
+	// (drives resuming the cross-client reveal spin after a reload); RevealAt
+	// is the server's auto-reveal deadline (clients time the confirm
+	// countdown off it: the server owns the reveal timing); ServerNow is the
+	// server clock at response time so the client computes elapsed without
+	// trusting its own clock. All omitted when no draw is active.
 	DrawnAt   string `json:"drawnAt,omitempty"`
+	RevealAt  string `json:"revealAt,omitempty"`
 	ServerNow string `json:"serverNow,omitempty"`
 	// DrawClientID is the client that initiated the draw; only that client shows
 	// the reel's confirm button. Revealed reports whether the draw was confirmed,
@@ -45,24 +81,10 @@ type movieResponse struct {
 	DrawClientID string `json:"drawClientId,omitempty"`
 	Revealed     bool   `json:"revealed,omitempty"`
 
-	// Stable external identities, exposed so the frontend can build links to
-	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).
-	// Omitted when the movie carries no such id.
-	TMDBID *int   `json:"tmdbId,omitempty"`
-	IMDbID string `json:"imdbId,omitempty"`
-
-	// Enriched TMDB metadata. All optional — a movie may not be enriched yet
-	// (enrichment is async), so these are omitted when absent and the frontend
-	// degrades gracefully (placeholder poster, hidden chips). Poster/backdrop
-	// are raw TMDB paths (e.g. "/abc.jpg"); the frontend builds the image URL.
-	PosterPath   string   `json:"posterPath,omitempty"`
-	BackdropPath string   `json:"backdropPath,omitempty"`
-	ReleaseDate  string   `json:"releaseDate,omitempty"`
-	Runtime      int      `json:"runtime,omitempty"`
-	Genres       []string `json:"genres,omitempty"`
-	VoteAverage  float64  `json:"voteAverage,omitempty"`
-	Tagline      string   `json:"tagline,omitempty"`
-	Overview     string   `json:"overview,omitempty"`
+	// Modal-only enriched metadata; raw TMDB path for the backdrop.
+	BackdropPath string `json:"backdropPath,omitempty"`
+	Tagline      string `json:"tagline,omitempty"`
+	Overview     string `json:"overview,omitempty"`
 
 	// Trimmed TMDB credits: top-billed cast (in billing order) and
 	// whitelisted crew jobs. Omitted until the movie's credits are ingested.
@@ -92,6 +114,15 @@ func formatTime(value *time.Time) string {
 	return value.UTC().Format(timeFormat)
 }
 
+// formatTimePrecise keeps sub-second precision (RFC3339Nano). Used for
+// revealAt: the client derives the confirm countdown from revealAt − drawnAt,
+// and second-truncating both would jitter that window by up to ±0.5s per
+// draw. drawnAt itself stays second-precision: it is the draw's identity
+// string and must remain byte-identical across every payload that carries it.
+func formatTimePrecise(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
 // movieLink derives the effective link from the movie's stable identity,
 // preferring IMDb, then TMDB. Returns "" if the movie has no identity (every
 // row carries an id post-enrichment, so this is effectively unreachable).
@@ -105,19 +136,9 @@ func movieLink(movie *domain.Movie) string {
 	return ""
 }
 
-// toAPIMovie builds a response without enriched metadata or credits. Used for
-// SSE broadcast payloads, where the frontend refetches enriched data from the
-// GET endpoints rather than reading the event body.
-func toAPIMovie(movie *domain.Movie) movieResponse {
-	return toAPIMovieMeta(movie, nil, nil)
-}
-
-// toAPIMovieBase builds a response with identity + the tile-level enriched
-// fields the list grids render (poster, rating, release date, runtime, genres).
-// It deliberately omits the heavy modal-only fields (backdrop, tagline, overview,
-// cast, crew); toAPIMovieMeta layers those on for the detail/current paths.
-func toAPIMovieBase(movie *domain.Movie, md *domain.MovieMetadata) movieResponse {
-	resp := movieResponse{
+// toLeanTile builds the tile-class response.
+func toLeanTile(movie *domain.Movie, md *domain.MovieMetadata) leanMovieTile {
+	tile := leanMovieTile{
 		ID:          movie.ID,
 		Title:       movie.Title,
 		Link:        movieLink(movie),
@@ -128,32 +149,24 @@ func toAPIMovieBase(movie *domain.Movie, md *domain.MovieMetadata) movieResponse
 		TMDBID:      movie.TMDBID,
 	}
 	if movie.IMDbID != nil {
-		resp.IMDbID = *movie.IMDbID
+		tile.IMDbID = *movie.IMDbID
 	}
 	if md != nil {
 		if md.PosterPath != nil {
-			resp.PosterPath = *md.PosterPath
+			tile.PosterPath = *md.PosterPath
 		}
-		resp.ReleaseDate = md.ReleaseDate
-		resp.Runtime = md.Runtime
-		resp.Genres = md.Genres
-		resp.VoteAverage = md.VoteAverage
+		tile.ReleaseDate = md.ReleaseDate
+		tile.Runtime = md.Runtime
+		tile.Genres = md.Genres
+		tile.VoteAverage = md.VoteAverage
 	}
-	return resp
+	return tile
 }
 
-// toAPIMovieLean is the list/tile shape: base fields only, no backdrop/tagline/
-// overview/credits. The watched list ships hundreds of these, so dropping the
-// per-movie credits + prose is the bulk of the payload — the modal lazy-loads
-// the full record from GET /movies/:id when it opens.
-func toAPIMovieLean(movie *domain.Movie, md *domain.MovieMetadata) movieResponse {
-	return toAPIMovieBase(movie, md)
-}
-
-// toAPIMovieMeta builds the full detail response, folding the modal-only
-// metadata (backdrop, tagline, overview) and credits onto the base shape.
-func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata, credits []domain.MovieCredit) movieResponse {
-	resp := toAPIMovieBase(movie, md)
+// toFullMovie builds the detail-class response, folding the modal-only
+// metadata (backdrop, tagline, overview) and credits onto the tile.
+func toFullMovie(movie *domain.Movie, md *domain.MovieMetadata, credits []domain.MovieCredit) fullMovie {
+	resp := fullMovie{leanMovieTile: toLeanTile(movie, md)}
 	if md != nil {
 		if md.BackdropPath != nil {
 			resp.BackdropPath = *md.BackdropPath
@@ -183,26 +196,33 @@ func toAPIMovieMeta(movie *domain.Movie, md *domain.MovieMetadata, credits []dom
 	return resp
 }
 
-func toAPIMoviesLean(movies []*domain.Movie, meta metaByID) []movieResponse {
-	result := make([]movieResponse, 0, len(movies))
+// toFullMovieBare builds a detail-class response without enriched metadata or
+// credits. Used for SSE broadcast payloads, where the frontend refetches
+// enriched data from the GET endpoints rather than reading the event body.
+func toFullMovieBare(movie *domain.Movie) fullMovie {
+	return toFullMovie(movie, nil, nil)
+}
+
+func toLeanTiles(movies []*domain.Movie, meta metaByID) []leanMovieTile {
+	result := make([]leanMovieTile, 0, len(movies))
 	for i := range movies {
-		result = append(result, toAPIMovieLean(movies[i], meta[movies[i].ID]))
+		result = append(result, toLeanTile(movies[i], meta[movies[i].ID]))
 	}
 	return result
 }
 
-func toAPIMoviesMeta(movies []*domain.Movie, meta metaByID, credits creditsByID) []movieResponse {
-	result := make([]movieResponse, 0, len(movies))
+func toFullMovies(movies []*domain.Movie, meta metaByID, credits creditsByID) []fullMovie {
+	result := make([]fullMovie, 0, len(movies))
 	for i := range movies {
-		result = append(result, toAPIMovieMeta(movies[i], meta[movies[i].ID], credits[movies[i].ID]))
+		result = append(result, toFullMovie(movies[i], meta[movies[i].ID], credits[movies[i].ID]))
 	}
 	return result
 }
 
-func moviesToMapMeta(movies []*domain.Movie, meta metaByID, credits creditsByID) map[string]movieResponse {
-	result := make(map[string]movieResponse, len(movies))
+func fullMoviesToMap(movies []*domain.Movie, meta metaByID, credits creditsByID) map[string]fullMovie {
+	result := make(map[string]fullMovie, len(movies))
 	for i := range movies {
-		result[strconv.Itoa(movies[i].ID)] = toAPIMovieMeta(movies[i], meta[movies[i].ID], credits[movies[i].ID])
+		result[strconv.Itoa(movies[i].ID)] = toFullMovie(movies[i], meta[movies[i].ID], credits[movies[i].ID])
 	}
 	return result
 }
@@ -211,8 +231,8 @@ func toAPIUserMeta(user *domain.User, poolMovies, stashMovies []*domain.Movie, m
 	return userResponse{
 		ID:          user.ID,
 		Name:        user.Name,
-		CurrentPool: moviesToMapMeta(poolMovies, meta, credits),
-		Stash:       moviesToMapMeta(stashMovies, meta, credits),
+		CurrentPool: fullMoviesToMap(poolMovies, meta, credits),
+		Stash:       fullMoviesToMap(stashMovies, meta, credits),
 		CreatedAt:   formatTime(user.CreatedAt),
 	}
 }

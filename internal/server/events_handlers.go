@@ -92,6 +92,28 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 		ticker := time.NewTicker(sseHeartbeatInterval)
 		defer ticker.Stop()
 
+		// writeEvent serialises one domain event to the stream. A marshal error
+		// skips that event (logged, non-fatal); a write/flush error is fatal to
+		// the stream and unwinds to the deferred Unsubscribe.
+		writeEvent := func(e event) error {
+			eventData, err := json.Marshal(e)
+			if err != nil {
+				sseLog.Error().Err(err).Msg("sse event marshal failed")
+				return nil
+			}
+			// id: persists the seq in the browser; the client also reads it from
+			// the JSON body for gap detection.
+			if _, err := fmt.Fprintf(w, "id: %d\nevent: message\ndata: %s\n\n", e.Seq, eventData); err != nil {
+				sseLog.Debug().Err(err).Msg("sse client write failed (likely disconnect)")
+				return err
+			}
+			if err := w.Flush(); err != nil {
+				sseLog.Debug().Err(err).Msg("sse client flush failed (likely disconnect)")
+				return err
+			}
+			return nil
+		}
+
 		for {
 			select {
 			case e, ok := <-eventChannel:
@@ -99,25 +121,22 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 					// Broker closed the channel (Unsubscribe or server shutdown).
 					return
 				}
-
-				eventData, err := json.Marshal(e)
-				if err != nil {
-					sseLog.Error().Err(err).Msg("sse event marshal failed")
-					continue
-				}
-
-				// id: persists the seq in the browser; the client also reads it from
-				// the JSON body for gap detection.
-				if _, err := fmt.Fprintf(w, "id: %d\nevent: message\ndata: %s\n\n", e.Seq, eventData); err != nil {
-					sseLog.Debug().Err(err).Msg("sse client write failed (likely disconnect)")
-					return
-				}
-				if err := w.Flush(); err != nil {
-					sseLog.Debug().Err(err).Msg("sse client flush failed (likely disconnect)")
+				if err := writeEvent(e); err != nil {
 					return
 				}
 
 			case <-ticker.C:
+				// Flush any events already queued for this client BEFORE the
+				// heartbeat. The heartbeat carries the broker's global head seq, so
+				// emitting it ahead of events still buffered for this client would
+				// leapfrog them: the client advances its cursor to the head, then
+				// reads the trailing buffered events as a seq gap and resyncs twice.
+				// Draining first keeps the head the client sees consistent with what
+				// it has actually been sent.
+				if open, err := drainBufferedEvents(eventChannel, writeEvent); err != nil || !open {
+					return
+				}
+
 				// Named heartbeat (no id: line, so it never advances the seq cursor).
 				// It reaches a dedicated client listener — never the message handler —
 				// and does triple duty: keep the pipe warm, surface dead sockets (a
@@ -146,4 +165,26 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 	})
 
 	return nil
+}
+
+// drainBufferedEvents writes every event currently queued on ch, in seq order,
+// via write, then returns as soon as ch is empty. It stops early if write
+// reports a fatal error (returned) or ch is closed (open=false). Called before
+// a heartbeat so the heartbeat's global head seq is never written ahead of
+// events already buffered for this client, which the client would otherwise
+// read as a seq gap and resync over needlessly.
+func drainBufferedEvents(ch <-chan event, write func(event) error) (open bool, err error) {
+	for {
+		select {
+		case e, ok := <-ch:
+			if !ok {
+				return false, nil
+			}
+			if werr := write(e); werr != nil {
+				return true, werr
+			}
+		default:
+			return true, nil
+		}
+	}
 }

@@ -1,7 +1,7 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
+import { useDismissible } from "@/hooks/useDismissible";
 
 interface ModalProps {
   onClose: () => void;
@@ -26,23 +26,21 @@ const FOCUSABLE =
  * inside, and returns to the opener on close) so it behaves like a real dialog.
  */
 export function Modal({ onClose, className, dismissible = true, children }: ModalProps) {
-  const [closing, setClosing] = useState(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const dismissibleRef = useRef(dismissible);
   dismissibleRef.current = dismissible;
   const surfaceRef = useRef<HTMLDivElement>(null);
 
+  // Mounting is parent-controlled, so only the closing phase is used: the
+  // exit motion plays, then onClosed tells the parent to unmount. Focus
+  // returns to the opener in the unmount cleanup below, not via the machine.
+  const { closing, dismiss } = useDismissible({ onClosed: () => onCloseRef.current() });
+
   const requestClose = useCallback(() => {
     if (!dismissibleRef.current) return;
-    setClosing(true);
-  }, []);
-
-  useEffect(() => {
-    if (!closing) return;
-    const t = window.setTimeout(() => onCloseRef.current(), exitDelayMs());
-    return () => window.clearTimeout(t);
-  }, [closing]);
+    dismiss();
+  }, [dismiss]);
 
   useEffect(() => {
     const surface = surfaceRef.current;

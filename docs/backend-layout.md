@@ -12,6 +12,10 @@
 - `internal/server/movies_handlers.go`: movies bounded context handlers.
 - `internal/server/settings_handlers.go`: settings bounded context handlers.
 - `internal/server/stats_handlers.go`: stats bounded context handlers.
+- `internal/server/stats_filters.go`: the stats filter value (`statsFilters`) plus its
+  parse / cache-key / matcher / echo logic (genre, actor/crew ids, release year/decade,
+  addedBy): one filter representation shared by the parser, the SQL/in-memory matcher,
+  and the response echo.
 - `internal/server/tmdb_handlers.go`: TMDB bounded context handlers.
 - `internal/server/events_handlers.go`: SSE/events bounded context handlers.
 - `internal/server/errors.go`: centralized domain-to-HTTP error mapping.
@@ -19,12 +23,34 @@
 - `internal/server/enrichment.go`: TMDB enrichment use case (`EnrichOne`: link → IMDb id → reverse lookup → details → upsert).
 - `internal/server/enrich_worker.go`: background enrichment worker (queue, rate limiter, backfill/refresh drain, config).
 - `internal/server/events.go`: SSE broker.
-- `internal/server/models.go`: API DTO mapping.
+- `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
+  `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
+  `fullMovie` (detail payload: embeds `leanMovieTile` plus the draw/reveal coordination
+  fields `drawnAt`/`revealAt`/`serverNow`/`drawClientId`/`revealed`, modal metadata, and
+  `cast`/`crew`). A handler returning `leanMovieTile` cannot accidentally ship credits or
+  prose, which keeps the list payloads small; the mappers (`toLeanTile`/`toFullMovie` and
+  their slice forms) are the single projection from `domain.Movie` to the wire.
 
 ## Domain + Use Cases
 
 - `internal/domain/*`: entities, repository ports, typed domain errors.
-- `internal/{user,movie,nextup,settings}`: service-layer use cases.
+- `internal/{user,movie,nextup,settings}`: service-layer use cases. Services
+  are concrete structs (no service interfaces, nothing consumes them
+  polymorphically); the repository ports in `internal/domain` remain the
+  substitution seam for tests.
+- `internal/nextup`: owns the whole next-up rotation. `Get` self-seeds a
+  fresh install with the first roster member; `Advance` passes the turn after
+  a draw (only while the pool still has movies and more than one member
+  exists) and reports whether it moved, so the handler only broadcasts.
+- `internal/movie`: owns the whole draw/reveal lifecycle, including the
+  server-authoritative auto-reveal. `DrawRandom` picks a pooled movie, records an
+  in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`), and arms a
+  timer at `RevealAt = DrawnAt + AutoRevealDelay` (`DefaultAutoRevealDelay` 16.5s,
+  overridable via `DrawConfig`). `RevealCurrentDraw` is the once-per-draw flip fired by
+  either the drawer's confirm or the timer; both paths call the `OnRevealed` hook exactly
+  once. The server serializes `RevealAt`/`ServerNow` into every draw payload so clients
+  time their confirm countdown off `revealAt − serverNow` (skew-immune) and broadcasts
+  `movie:drawn` / `movie:revealed`.
 
 ## Logging
 

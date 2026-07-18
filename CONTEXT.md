@@ -29,6 +29,42 @@ when the pool still has movies left and more than one member exists. A
 convention shown in the hero, not enforced by the app.
 _Avoid_: next picker
 
+### Identity
+
+**Admin**:
+A member holding the admin role: can create and delete members, lock the pool,
+and manage integrations and settings. Every other member holds the plain member
+role. Role is app-owned and single-valued, never derived from a credential.
+
+**Local login**:
+A member's username and password credential. Optional: a member may have a local
+login, a linked identity, both, or neither. The username is a stable login
+handle, separate from the display name.
+
+**Linked identity**:
+A member's connection to the external SSO provider, held alongside any local
+login. Optional and additive.
+_Avoid_: OIDC account, SSO user
+
+**Link**:
+Binding a member to an SSO identity.
+
+**Invite**:
+A single-use, expiring link an admin sends so a member can set up their login.
+_Avoid_: registration, signup
+
+**Claim**:
+A member redeeming an invite to set a password and/or link SSO, turning a
+placeholder into a login-capable member.
+
+**Placeholder**:
+A roster member with no login credential yet: visible on the roster and usable
+as an adder, but unable to log in until they claim.
+_Avoid_: pending user, inactive user
+
+**Session**:
+A server-side, revocable login for a member, carried by an opaque cookie.
+
 ### Movie lifecycle
 
 **Stash**:

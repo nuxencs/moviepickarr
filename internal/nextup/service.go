@@ -17,7 +17,7 @@ type poolCounter interface {
 
 // Service owns the next-up rotation: whose turn it is to run movie night, and
 // when the turn passes. The rotation is a convention shown in the hero, not
-// enforced by the app — every rule about it lives here.
+// enforced by the app: every rule about it lives here.
 type Service struct {
 	nextUpRepo domain.NextUpRepo
 	userRepo   domain.UserRepo
@@ -62,7 +62,7 @@ func (s *Service) Set(ctx context.Context, userID int) error {
 	return s.nextUpRepo.Set(ctx, userID)
 }
 
-// Advance passes the turn to the next roster member, in roster order — called
+// Advance passes the turn to the next roster member, in roster order, called
 // after each draw. The turn only moves while the pool still has movies left
 // and more than one member exists; otherwise it reports changed=false and the
 // current member keeps the turn. A next up who has left the roster hands the
@@ -86,7 +86,7 @@ func (s *Service) Advance(ctx context.Context) (next *domain.User, changed bool,
 
 	current, err := s.Get(ctx)
 	if err != nil {
-		// Get self-seeds, so no rows here means an empty roster — unreachable
+		// Get self-seeds, so no rows here means an empty roster, unreachable
 		// behind the len(users) guard, but harmless to treat as a no-op.
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, false, nil

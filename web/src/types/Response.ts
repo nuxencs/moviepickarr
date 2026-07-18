@@ -20,7 +20,7 @@ export interface Movie {
     // Draw-reveal coordination — present only on the current-movie endpoint and
     // the movie:drawn event. drawnAt is when the current movie was drawn;
     // revealAt is the server's auto-reveal deadline (the confirm countdown is
-    // derived from it — the server owns the reveal timing); serverNow is the
+    // derived from it, the server owns the reveal timing); serverNow is the
     // server clock at fetch time, so the client computes the reveal spin's
     // elapsed time without trusting its own clock.
     drawnAt?: string;

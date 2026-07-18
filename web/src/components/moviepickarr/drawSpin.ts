@@ -1,5 +1,5 @@
 /* ============================================================
-   moviepickarr — reel timing + easing geometry.
+   moviepickarr: reel timing + easing geometry.
 
    The presentational constants of the draw reel: the scroll duration and the
    `--ease-reel` cubic-bezier, both read from CSS tokens so the JS and the

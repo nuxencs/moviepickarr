@@ -1,9 +1,9 @@
 /* ============================================================
-   moviepickarr — the Draw store.
+   moviepickarr: the Draw store.
 
    The thin impure shell around drawMachine: it resolves the environment
    snapshot at send() time, runs the reducer, executes the returned commands
-   through injected executors, and notifies subscribers. A module singleton —
+   through injected executors, and notifies subscribers. A module singleton,
    like the old handledDraws Set, deliberately outliving the Hero so a
    tab-switch remount can't replay a spin, while a full reload starts fresh.
 
@@ -32,7 +32,7 @@ import { getClientId } from "@/lib/clientId";
  *  the full store against fakes (see drawStore.test.ts). */
 export interface DrawStoreDeps {
   resolveEnv: () => DrawEnv;
-  /** POST the reveal confirm. Failures are swallowed — the server's own
+  /** POST the reveal confirm. Failures are swallowed: the server's own
    *  auto-reveal deadline is the backstop. */
   postReveal: () => Promise<unknown>;
   /** Warm + decode the winner's backdrop; resolve when paintable. Null when
@@ -99,7 +99,7 @@ export function createDrawStore(deps: DrawStoreDeps): DrawStore {
   };
 }
 
-/** The live environment snapshot — also used by the Hero to run pure machine
+/** The live environment snapshot, also used by the Hero to run pure machine
  *  helpers (drawAwaitingReveal) outside a dispatch. */
 export function resolveDrawEnv(): DrawEnv {
   return {

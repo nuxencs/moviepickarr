@@ -30,7 +30,7 @@ type userResponse struct {
 // leanMovieTile is the list/tile class: identity + the tile-level enriched
 // fields the grids render (poster, rating, release date, runtime, genres).
 // The watched list ships hundreds of these, so the heavy modal-only fields
-// (backdrop, tagline, overview, credits) are structurally absent — the modal
+// (backdrop, tagline, overview, credits) are structurally absent: the modal
 // lazy-loads the fullMovie from GET /movies/:id when it opens.
 type leanMovieTile struct {
 	ID          int    `json:"movieID"`
@@ -47,7 +47,7 @@ type leanMovieTile struct {
 	TMDBID *int   `json:"tmdbId,omitempty"`
 	IMDbID string `json:"imdbId,omitempty"`
 
-	// Enriched TMDB tile fields. All optional — a movie may not be enriched
+	// Enriched TMDB tile fields. All optional: a movie may not be enriched
 	// yet (enrichment is async), so these are omitted when absent and the
 	// frontend degrades gracefully (placeholder poster, hidden chips).
 	// posterPath is a raw TMDB path (e.g. "/abc.jpg"); the frontend builds
@@ -69,7 +69,7 @@ type fullMovie struct {
 	// current-movie endpoint. DrawnAt is when the current movie was drawn
 	// (drives resuming the cross-client reveal spin after a reload); RevealAt
 	// is the server's auto-reveal deadline (clients time the confirm
-	// countdown off it — the server owns the reveal timing); ServerNow is the
+	// countdown off it: the server owns the reveal timing); ServerNow is the
 	// server clock at response time so the client computes elapsed without
 	// trusting its own clock. All omitted when no draw is active.
 	DrawnAt   string `json:"drawnAt,omitempty"`
@@ -117,7 +117,7 @@ func formatTime(value *time.Time) string {
 // formatTimePrecise keeps sub-second precision (RFC3339Nano). Used for
 // revealAt: the client derives the confirm countdown from revealAt − drawnAt,
 // and second-truncating both would jitter that window by up to ±0.5s per
-// draw. drawnAt itself stays second-precision — it is the draw's identity
+// draw. drawnAt itself stays second-precision: it is the draw's identity
 // string and must remain byte-identical across every payload that carries it.
 func formatTimePrecise(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)

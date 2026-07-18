@@ -139,7 +139,7 @@ export function Hero() {
   // Reveal handoff: the machine bumps commitSeq once the winner's backdrop has
   // decoded, in the SAME store update that drops the reel (phase → idle).
   // Committing during render (React's adjust-state-on-change pattern) keeps
-  // the reel unmount and the hero reveal in one paint — no placeholder frame
+  // the reel unmount and the hero reveal in one paint: no placeholder frame
   // leaks through. Initialized to the current seq so a Hero remount (tab
   // switch) never replays a reveal that already committed. The assignments are
   // idempotent, so a re-invoked render pass is harmless.
@@ -167,7 +167,7 @@ export function Hero() {
     // so the winner never flashes ahead of the reel. The machine dedups draws
     // it already handled (drawState.seen). The reveal-pending check needs only
     // `current`; building the reel needs the pool, so hold the commit until
-    // the pool has loaded. An already-revealed draw is still sent — the
+    // the pool has loaded. An already-revealed draw is still sent: the
     // machine marks it handled and the commit below shows the result directly.
     if (next?.drawnAt && !drawState.seen.includes(next.drawnAt)) {
       if (drawAwaitingReveal(next, resolveDrawEnv())) {

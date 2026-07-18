@@ -27,7 +27,7 @@ function baseURL(): string {
  * pure modules, and this hook only wires the browser to them:
  *
  * - sseConnection.ts owns the bookkeeping (seq gap-detection cursor, broker
- *   epoch, reconnect backoff ladder) — every frame is fed through its reducer
+ *   epoch, reconnect backoff ladder), every frame is fed through its reducer
  *   and the returned actions (resync / reconnect / log) run here.
  * - sseInvalidations.ts owns the event → query-key table; the per-event
  *   dispatch walks a row, and resync() derives its key set from the union.
@@ -46,7 +46,7 @@ export function useSSE() {
   useEffect(() => {
     closedRef.current = false;
 
-    // Re-pull every cache an SSE event can touch — the union of the
+    // Re-pull every cache an SSE event can touch: the union of the
     // invalidation table. Used to reconcile state after a reconnect or a
     // detected gap: SSE has no replay, so any event that fired while the
     // socket was down is lost; re-fetching current state recovers it.
@@ -126,7 +126,7 @@ export function useSSE() {
         try {
           const sseEvent: SSEEvent = JSON.parse(event.data);
 
-          // Gap detection first — a resync still runs this event's own row
+          // Gap detection first: a resync still runs this event's own row
           // below, so the frame that revealed the gap isn't itself lost.
           dispatch({ kind: "event", seq: sseEvent.seq });
 
@@ -184,7 +184,7 @@ export function useSSE() {
       // killed (frozen tab / a dead socket the browser hasn't noticed yet). If
       // the stream isn't open, reconnect now and reset the backoff. If it IS
       // open, do nothing: the heartbeat proved liveness and the seq cursor
-      // (live + heartbeat gap checks) already caught anything missed — a
+      // (live + heartbeat gap checks) already caught anything missed: a
       // blanket resync here would just over-fetch on every healthy refocus.
       const es = eventSourceRef.current;
       if (!es || es.readyState !== EventSource.OPEN) {

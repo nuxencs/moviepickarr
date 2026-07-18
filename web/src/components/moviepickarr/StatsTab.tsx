@@ -102,7 +102,7 @@ export function StatsTab() {
 
   // The custom-range popover rides the shared dismissal machine (closing plays
   // the CSS daterange--closing exit, focus returns to the trigger, unmount
-  // after exitDelayMs — the same lockstep as the Menu/Modal). hideNow is the
+  // after exitDelayMs, the same lockstep as the Menu/Modal). hideNow is the
   // hard-hide for when the view changes out from under the popover.
   const range = useDismissible({ restoreFocusTo: customRef });
   const { dismiss: dismissRange } = range;
@@ -253,7 +253,7 @@ export function StatsTab() {
       if (range.open && !range.closing) {
         closeRange(true);
       } else {
-        // Open — or interrupt an in-flight close and re-open, so a fast
+        // Open, or interrupt an in-flight close and re-open, so a fast
         // re-click during the exit fade isn't swallowed (show() clears the
         // pending close timer).
         range.show();

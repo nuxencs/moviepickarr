@@ -58,7 +58,7 @@ func (h *handler) Close() {
 
 // revealBroadcaster is the movie.DrawConfig.OnRevealed adapter: it tells every
 // client to close its reel and reveal the winner in lockstep. The Service
-// invokes it exactly once per draw — manual confirm and the server-owned
+// invokes it exactly once per draw: manual confirm and the server-owned
 // auto-reveal emit an identical frame.
 func revealBroadcaster(broker *eventBroker) func(movie.ActiveDraw) {
 	return func(ap movie.ActiveDraw) {

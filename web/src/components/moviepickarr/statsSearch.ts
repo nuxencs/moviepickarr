@@ -40,7 +40,7 @@ export interface StatsSearch {
  * The wire-facing stats filter selection: exactly what GET /stats filters by,
  * in id form. ONE value travels from the URL search through the query key to
  * the request (see StatsGetQueryOptions, whose canonical serializer feeds
- * both) — adding a filter dimension means extending this type, the codec
+ * both). Adding a filter dimension means extending this type, the codec
  * here, the chip, and the wire field, instead of threading a new positional
  * parameter through every layer.
  */

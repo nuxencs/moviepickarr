@@ -11,7 +11,7 @@ export interface DismissOptions {
 }
 
 /**
- * The one dismissal machine every floating surface rides — the Modal, the
+ * The one dismissal machine every floating surface rides: the Modal, the
  * Menu, the filter chip dropdowns, and the Stats range popover all used to
  * hand-roll the same closing-flag + re-entry-guard + exit-timer + focus-
  * restore choreography; a close-motion fix now lands here once.
@@ -22,7 +22,7 @@ export interface DismissOptions {
  *
  * - dismiss() while already closing is a no-op, so racing triggers (Esc +
  *   outside click) can't double-fire.
- * - show() while closing interrupts the exit and re-opens — clearing the
+ * - show() while closing interrupts the exit and re-opens: clearing the
  *   timer is load-bearing, otherwise the original close timer still fires
  *   and slams the surface shut again.
  * - Focus restores to the trigger synchronously inside dismiss(), so a

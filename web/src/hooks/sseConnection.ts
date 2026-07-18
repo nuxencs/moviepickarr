@@ -1,9 +1,9 @@
 /* ============================================================
-   moviepickarr — the SSE connection reducer.
+   moviepickarr: the SSE connection reducer.
 
    The pure bookkeeping of one SSE session: the seq gap-detection cursor, the
    broker epoch (server-restart detection), and the reconnect backoff ladder.
-   useSSE adapts EventSource to it — every frame becomes
+   useSSE adapts EventSource to it: every frame becomes
 
        reduceConnection(state, frame, random01) -> [state, actions]
 
@@ -47,7 +47,7 @@ export type ConnFrame =
   | { kind: "event"; seq?: number }
   /** The idle keep-alive carrying the broker's head seq. */
   | { kind: "heartbeat"; seq?: number }
-  /** Transport error — the socket is (being) torn down. */
+  /** Transport error: the socket is (being) torn down. */
   | { kind: "error" }
   /** A refocus found the socket dead; the hook reconnects immediately and
    *  the ladder resets. */
@@ -60,7 +60,7 @@ export type ConnAction =
 
 const NONE: ConnAction[] = [];
 
-/** random01 feeds the reconnect jitter — passed in so the reducer stays pure
+/** random01 feeds the reconnect jitter, passed in so the reducer stays pure
  *  (tests pin it; the hook passes Math.random()). */
 export function reduceConnection(state: ConnState, frame: ConnFrame, random01: number): [ConnState, ConnAction[]] {
   switch (frame.kind) {
@@ -69,7 +69,7 @@ export function reduceConnection(state: ConnState, frame: ConnFrame, random01: n
       const actions: ConnAction[] = [
         { action: "log", level: "log", message: `[SSE] Connected to event stream${restarted ? " (server restarted)" : ""}` },
       ];
-      // Resync on every REconnect — a down socket may have missed events (a
+      // Resync on every REconnect: a down socket may have missed events (a
       // restart included). The very first connect skips it: mount queries are
       // already fetching fresh state.
       if (state.everConnected) actions.push({ action: "resync" });
@@ -91,7 +91,7 @@ export function reduceConnection(state: ConnState, frame: ConnFrame, random01: n
     case "event": {
       if (typeof frame.seq !== "number") return [state, NONE];
       // A jump in seq means a frame was dropped (a full client buffer).
-      // Resync once to heal — the caller still runs this event's own
+      // Resync once to heal: the caller still runs this event's own
       // invalidation row afterwards, so the frame that *revealed* the gap
       // isn't itself lost.
       const gap = state.lastSeq !== null && frame.seq !== state.lastSeq + 1;

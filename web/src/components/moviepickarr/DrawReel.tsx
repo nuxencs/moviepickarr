@@ -24,7 +24,7 @@ interface DrawReelProps {
    *  draw machine settles and schedules the self-heal fallback off this. */
   onScrollDone: () => void;
   /** The drawer confirmed (OK press / Escape). The machine owns reveal-once,
-   *  so this needs no local guard — a duplicate send is silent. */
+   *  so this needs no local guard: a duplicate send is silent. */
   onConfirm: () => void;
 }
 
@@ -34,8 +34,8 @@ interface DrawReelProps {
  * for confirmation rather than auto-closing. The drawer sees an OK button whose
  * fill counts down to the server's reveal deadline (spin.confirmMs); pressing it
  * (or the server's auto-reveal broadcast) closes the reel for everyone. Motion is
- * a JS-measured target + a CSS transition — the same "measure then transition"
- * idiom as the FLIP rails — so no animation library.
+ * a JS-measured target + a CSS transition: the same "measure then transition"
+ * idiom as the FLIP rails, so no animation library.
  */
 export function DrawReel({ spin, onScrollDone, onConfirm }: DrawReelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -75,7 +75,7 @@ export function DrawReel({ spin, onScrollDone, onConfirm }: DrawReelProps) {
   }, [spin.drawnAt]);
 
   // The reel has rested on the winner; show the confirm controls and tell the
-  // machine (which starts the fallback countdown). Does NOT close — that
+  // machine (which starts the fallback countdown). Does NOT close: that
   // waits for the confirm/reveal.
   const settle = useCallback(() => {
     if (settledRef.current) return;
@@ -126,7 +126,7 @@ export function DrawReel({ spin, onScrollDone, onConfirm }: DrawReelProps) {
 
   // The SERVER owns the auto-reveal: once a draw settles it broadcasts
   // movie:revealed at the confirm deadline, so every client closes off that one
-  // broadcast in lockstep — even a backgrounded, timer-throttled tab. The
+  // broadcast in lockstep, even a backgrounded, timer-throttled tab. The
   // dropped-frame fallback timer lives in the draw machine (scheduled on
   // settle), not here.
 
@@ -231,7 +231,7 @@ export function DrawReel({ spin, onScrollDone, onConfirm }: DrawReelProps) {
           </button>
         ) : spin.mine ? (
           <button type="button" className="btn btn--accent drawreel__ok" ref={confirmRef} onClick={onConfirm}>
-            {/* The fill counts down to the server's reveal deadline — its
+            {/* The fill counts down to the server's reveal deadline: its
                 duration comes from the spin, not the --dur-confirm token. */}
             <span
               className="drawreel__ok-fill"

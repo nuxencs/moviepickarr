@@ -15,7 +15,7 @@ import (
 //
 // This value is the whole filter module: the cache-key segment, the matcher,
 // and the echo are all methods on it, and genre case-folding goes through the
-// single genreFold() below — so "same cache key" ⇒ "same match set" holds by
+// single genreFold() below, so "same cache key" ⇒ "same match set" holds by
 // construction instead of by three call sites agreeing.
 type statsFilters struct {
 	Genre         string // case-insensitive genre name (display casing kept for the echo)
@@ -55,7 +55,7 @@ func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw, addedBy
 		filters.ReleaseYear = v
 	}
 
-	// A decade selection ("1990s") is the alternative to an exact year — the UI
+	// A decade selection ("1990s") is the alternative to an exact year: the UI
 	// offers one or the other, so reject both at once rather than guess.
 	decadeRaw = strings.TrimSpace(decadeRaw)
 	if decadeRaw != "" {
@@ -73,7 +73,7 @@ func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw, addedBy
 	return filters, nil
 }
 
-// genreFold is THE genre case-folding — the cache key, the matcher, and the
+// genreFold is THE genre case-folding: the cache key, the matcher, and the
 // echo all fold through here, never inline. ToLower (not EqualFold): the two
 // relations differ on exotic runes (U+0130 "İ" lowercases to "i" but has no
 // simple case folding), and a fold drift between the key and the matcher
@@ -92,7 +92,7 @@ func (f statsFilters) cacheKeySegment() string {
 }
 
 // matches reports whether a watched movie passes the active filters.
-// Unenriched movies (no metadata/credits) fail any active filter — their
+// Unenriched movies (no metadata/credits) fail any active filter: their
 // genre/year/people are unknown, and guessing would skew the stats.
 func (f statsFilters) matches(md *domain.MovieMetadata, credits []domain.MovieCredit) bool {
 	if f.Genre != "" {
@@ -154,7 +154,7 @@ func (f statsFilters) echo(meta metaByID, credits creditsByID) statsFiltersEcho 
 }
 
 // parseIDList parses a comma-separated list of positive TMDB person ids into
-// the canonical sorted-and-deduped form — "6384,530" and "530,6384,530" both
+// the canonical sorted-and-deduped form: "6384,530" and "530,6384,530" both
 // yield [530 6384], so equivalent selections share one cache key. Empty input
 // returns nil (never an empty slice) so the filters echo can omit the field.
 func parseIDList(param, raw string) ([]int, error) {
@@ -219,7 +219,7 @@ func releaseYearOf(md *domain.MovieMetadata) int {
 
 // resolveFilterPeople maps filter ids (already sorted, so the echo order is
 // deterministic across cache hits) to display names from any credit row that
-// references them. Ids with no credit row keep an empty name — the client
+// references them. Ids with no credit row keep an empty name: the client
 // carries its own labels for those.
 func resolveFilterPeople(ids []int, credits creditsByID) []statsFilterPerson {
 	if len(ids) == 0 {
@@ -227,7 +227,7 @@ func resolveFilterPeople(ids []int, credits creditsByID) []statsFilterPerson {
 	}
 
 	names := make(map[int]string, len(ids))
-	// Stop as soon as every filter id has a name — this is a best-effort label
+	// Stop as soon as every filter id has a name: this is a best-effort label
 	// lookup over the full (~thousands of rows) credits map, and the handful of
 	// filter people are usually found in the first few movies.
 	for _, movieCredits := range credits {

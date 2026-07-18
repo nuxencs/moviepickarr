@@ -368,7 +368,7 @@ func buildStatsResponse(
 			continue
 		}
 		// Added-by is a movie-level filter (not metadata), so it gates here rather
-		// than in statsFilters.matches — any-of across the selected adders.
+		// than in statsFilters.matches: any-of across the selected adders.
 		if len(filters.AddedByIDs) > 0 && !slices.Contains(filters.AddedByIDs, watched[i].AddedByID) {
 			continue
 		}

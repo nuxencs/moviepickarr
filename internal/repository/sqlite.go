@@ -164,7 +164,7 @@ func NewSqliteMoviesRepository(pool *db.Pool) *SqliteMoviesRepository {
 	return &SqliteMoviesRepository{pool: pool}
 }
 
-// movieSelect is THE movies projection — every movie read starts from this
+// movieSelect is THE movies projection: every movie read starts from this
 // exact select (movie columns + the adder's name) and scans via scanMovie.
 // Adding a movie column is one edit here plus one in scanMovie; the query
 // methods below only append their WHERE/ORDER BY tails.

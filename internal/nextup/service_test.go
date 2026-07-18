@@ -131,7 +131,7 @@ func TestAdvanceNoOpWithEmptyPool(t *testing.T) {
 
 func TestAdvanceSeedsThenRotatesOnFreshInstall(t *testing.T) {
 	// No next up stored yet: Get seeds the first member, Advance then passes
-	// the turn onward — matching the old handler's init-then-rotate behaviour.
+	// the turn onward, matching the old handler's init-then-rotate behaviour.
 	svc, repo := newTestService(roster("ana", "ben"), 1, 0)
 
 	next, changed, err := svc.Advance(context.Background())

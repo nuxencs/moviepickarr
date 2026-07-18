@@ -1,12 +1,12 @@
 /* ============================================================
-   moviepickarr — the SSE invalidation table.
+   moviepickarr: the SSE invalidation table.
 
    ONE declarative map from every SSE event type to the query keys it stales.
    Both consumers read it, so the two can't drift apart anymore:
 
    - the per-event dispatch in useSSE walks the row for the event, and
    - resyncKeys() (the reconnect/refocus catch-up) is derived as the union of
-     every row — resync re-pulls exactly what some missed event could have
+     every row: resync re-pulls exactly what some missed event could have
      staled, by construction.
 
    Typed as Record<SSEEventType, …>, so adding an event type without deciding
@@ -14,7 +14,7 @@
    draw machine (see useSSE); their rows here carry only the cache side. The
    pool key is the one special case: its refresh is HELD while a reel is in
    flight (the post-draw pool no longer holds the winner, and refetching it
-   mid-spin would spoil the reveal) — the draw machine releases it on land,
+   mid-spin would spoil the reveal), the draw machine releases it on land,
    which is why "movie:drawn" does not list the pool here.
    ============================================================ */
 
@@ -77,14 +77,14 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
 };
 
 /** The rows for one event, or null for an unknown type (a server ahead of
- *  this client) — the caller logs it. */
+ *  this client), the caller logs it. */
 export function invalidationsFor(type: string): QueryKey[] | null {
   return Object.prototype.hasOwnProperty.call(SSE_INVALIDATIONS, type)
     ? SSE_INVALIDATIONS[type as SSEEventType]
     : null;
 }
 
-/** Every key any SSE event can stale, deduped — the resync set. A reconnect
+/** Every key any SSE event can stale, deduped: the resync set. A reconnect
  *  can't know which events it missed, so it re-pulls the union. */
 export function resyncKeys(): QueryKey[] {
   const seen = new Set<string>();

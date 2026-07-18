@@ -18,6 +18,8 @@ deps:
 
 test:
 	go test -race -count=3 -v ./...
+	@echo "Testing frontend..."
+	cd $(WEB_DIR) && bun run test
 
 build: deps build/web build/app
 

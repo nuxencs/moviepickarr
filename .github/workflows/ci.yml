@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "master"
+      - "develop"
+    paths-ignore:
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/images/**"
+      - "config.toml"
+      - "docker-compose.yml"
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/images/**"
+      - "config.toml"
+      - "docker-compose.yml"
+      - "**.md"
+
+env:
+  NODE_VERSION: "22.17.0"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Fetch web dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Test web frontend
+        working-directory: web
+        run: bun run test
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # main.go has //go:embed web/dist, so the Go packages only compile with a
+      # dist directory present. The unit tests don't serve real assets, so a
+      # placeholder index.html is enough to satisfy the embed.
+      - name: Prepare embed placeholder
+        run: mkdir -p web/dist && printf '<!doctype html>\n' > web/dist/index.html
+
+      - name: Test Go
+        run: go test -race ./...

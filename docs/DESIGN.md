@@ -50,10 +50,10 @@ Modals use `--r-xl`. Don't exceed the scale.
 
 **Motion:** a 3-step duration scale — `--dur-fast 0.14s` (pointer feedback: hover,
 press, color), `--dur-base 0.22s` (state changes, crossfades), `--dur-slow 0.4s`
-(entrances) — plus `--dur-reveal 0.6s` (the hero pick-reveal) and `--dur-spin 6.5s`
-(the slot-machine pick reel, §7). `--dur` remains as a legacy alias of `--dur-base`. Easing: `--ease` (decelerating ease-out, no bounce) for
+(entrances), plus `--dur-reveal 0.6s` (the hero draw-reveal) and `--dur-spin 6.5s`
+(the slot-machine draw reel, §7). `--dur` remains as a legacy alias of `--dur-base`. Easing: `--ease` (decelerating ease-out, no bounce) for
 entrances, `--ease-exit` (accelerate-away) for exits, `--ease-reveal` (expo) for the
-pick-reveal, `--ease-reel` (easeOutCubic) for the longer pick reel. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
+draw-reveal, `--ease-reel` (easeOutCubic) for the longer draw reel. Shadows: `--shadow` (deep, floating surfaces), `--shadow-sm`.
 
 ### Contrast (WCAG AA, non-negotiable)
 `--ink-3` is the floor for body/meta/placeholder text and is tuned to clear **4.5:1**:
@@ -76,7 +76,7 @@ the whole UI up together via a discrete root `zoom` ramp (§13), never fluid `cl
 type; weight contrast for hierarchy;
 sentence case for section/modal headings (nav tabs are the deliberate uppercase
 exception). The mono uppercase tracked "eyebrow" (`.eyebrow`) is a real label element
-(timezone, "Pool", "Next picker"), not a decorative kicker on every section.
+(timezone, "Pool", "Next up"), not a decorative kicker on every section.
 
 ---
 
@@ -99,7 +99,7 @@ old shadcn primitives.
   gold-tint active — so the time presets read as one family with the filter chips
   (see Stats filter row below).
 - **Filter bar:** `.filterbar` + `.filterchip` (`FilterBar.tsx`) — a wrapping row of
-  mono 12px chip-trigger selects (Genre / Actors / Crew / Picked by / Release year, stats-only).
+  mono 12px chip-trigger selects (Genre / Actors / Crew / Added by / Release year, stats-only).
   The chip wraps two real buttons — the trigger and, when active, a clear X — so both
   stay keyboard-reachable without nesting buttons. The dropdown reuses the `.mg-menu`
   surface and motion as a listbox (`.filtermenu` scopes its extras: an inline `.field`
@@ -117,7 +117,7 @@ old shadcn primitives.
   (`.filtermenu__item--year`), where a decade and an exact year are mutually exclusive
   (picking one clears the other) and the chip reads `Release year · 1990s` or `· 1994`.
 - **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
-  quick-select, genre, actors, crew, picked by, release year) in a single wrapping row under the
+  quick-select, genre, actors, crew, added by, release year) in a single wrapping row under the
   stats header. The seg stays a seg (presets are mutually exclusive) but drops its
   filled-container costume for the chips' dialect: transparent, `--line-2` outline,
   `--r-sm`, mono 12px, 30px rhythm, hairline dividers between segments, and the
@@ -149,7 +149,7 @@ old shadcn primitives.
 - **Films-in-filter-view rail:** `.movierail` + `.movietile` (stats, under the KPI strip,
   heading "Films in Filter View") — the concrete films behind the count (the active
   window AND all filters) as a horizontally scrollable strip of `Poster` tiles (title +
-  year·picker caption), each a button that opens the movie modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
+  year·adder caption), each a button that opens the movie modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
   first tile's hover/focus ring isn't clipped. The set
   comes from the stats endpoint's `matchedMovieIDs` joined to the cached watched list,
   so its count can't drift from the KPI. The rail always renders and owns the filter
@@ -219,6 +219,11 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
 - Has a **focus trap + focus restore** and `role="dialog"` / `aria-modal`, so it is a
   proper accessible dialog. On open, focus moves to the first form field (else the
   surface), not the close X.
+- The Esc / outside-click / focus-restore / exit-timer behaviour is not hand-rolled
+  per surface: `Modal`, the `Menu`, and the stats filter dropdowns all ride one shared
+  machine, `useDismissible` (`web/src/hooks/useDismissible.ts`), so every floating
+  surface dismisses the same way. (`VolumeControl`'s popover still hand-rolls its own
+  and is the odd one out.)
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
   buttons). Widths: `.modal` 960px, `.modal--movie` 560px, `.modal--form` 460px.
@@ -232,7 +237,7 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
 ## 6. Motion & accessibility
 
 - **Duration scale (tokens, §2):** feedback `--dur-fast`, state `--dur-base`, entrance
-  `--dur-slow`, the hero pick-reveal `--dur-reveal`. Pointer feedback uses the fast
+  `--dur-slow`, the hero draw-reveal `--dur-reveal`. Pointer feedback uses the fast
   token; exits use `--ease-exit` and run one step faster than their enter. No
   bounce/elastic. Motion conveys state, not decoration. Hardcode no new durations —
   reach for the scale.
@@ -259,7 +264,7 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   leave it at `vertical-align: baseline` and add no nudge. The one place that needs a fix
   is the **KPI value cell** (`.statitem__val`, `align-items: flex-end`): `flex-end` aligns
   box *bottoms*, not baselines, so the mask padding lets the numeral float ~4px above where
-  the plain-text values (Top picker / Busiest day) land. Compensated with
+  the plain-text values (Top adder / Busiest day) land. Compensated with
   `.statitem__val number-flow-react { margin-bottom: -4px }` — at the fixed 29px value size
   the padding is exactly 4px CSS-px and zoom-invariant. (A previous attempt also added
   `vertical-align` lifts to the inline title/sub; that pushed those numerals *off* the text
@@ -267,7 +272,7 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   number-flows (`.b-val`, donut legend, people-rail counts) have no adjacent text and need
   nothing.
 - **Stats rail motion (on filter change) — FLIP.** The three rails — the films "Films
-  in Filter View" rail, the people rails (directors/actors), and the "Picked by member"
+  in Filter View" rail, the people rails (directors/actors), and the "Added by member"
   leaderboard — animate by how each item's box *actually moved* between the old and new
   layout, via `useFlipRail` (`hooks/useFlipRail.ts`), not a blanket fade-up replay:
   - an item whose position is **unchanged** gets a zero delta and never moves — so the
@@ -339,9 +344,9 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
 
 ## 7. The Hero (static-layout contract)
 
-The Movies-tab hero must be **dimensionally static across picks**: changing the pick, its
+The Movies-tab hero must be **dimensionally static across draws**: changing the draw, its
 metadata, the title length, or the tagline length must not move any component or resize
-the banner. (Static across *picks*, not across *viewports* — the geometry steps by
+the banner. (Static across *draws*, not across *viewports*: the geometry steps by
 breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.tsx` +
 `.hero__*` in `index.css`):
 
@@ -368,17 +373,17 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
   ~3% 3+ lines. A 1-line tagline reserves the second line (whitespace is acceptable);
   a **3+ line tagline truncates to 2 lines with an ellipsis and moves nothing.**
 - **Meta slot** carries the `.metachips` row (§4): facts `│` genres `│` external
-  links, in white-on-backdrop. Links derive from ids present on every enriched pick,
-  so the row's presence is consistent pick-to-pick and does not break the contract.
+  links, in white-on-backdrop. Links derive from ids present on every enriched draw,
+  so the row's presence is consistent draw-to-draw and does not break the contract.
 - The hero stays a **dark "island"** in light theme by design (cinematic scrim over a
   backdrop). Its scrim/text are intentionally dark/white in both themes; only fix the
   genuinely-broken light overlays, not the hero's darkness.
 
-**Pick reel (slot-machine spin).** A pick first plays a slot-machine **reel** — a
-takeover overlay *inside* the hero footprint (`PickReel.tsx`, `.pickreel*`) that scrolls
+**Draw reel (slot-machine spin).** A draw first plays a slot-machine **reel**: a
+takeover overlay *inside* the hero footprint (`DrawReel.tsx`, `.drawreel*`) that scrolls
 a strip of pool-candidate posters past a centre reticle, decelerates onto the
 server-chosen winner, then **settles and holds** — handing off to the reveal only on
-confirmation (see Pick confirm). It animates a result the
+confirmation (see Draw confirm). It animates a result the
 **server already decided** (`ORDER BY RANDOM()`), so the randomness stays honest — the
 reel only adds anticipation. Only **pool candidates** scroll (every tile is a real
 possibility; never the watched library), and the strip is deduped at the landing seam so
@@ -387,50 +392,59 @@ idiom (§6): JS measures the winner tile and glides the track there with a CSS t
 over `--dur-spin` (6.5s) / `--ease-reel` (easeOutCubic — a higher-order ease-out whose
 deceleration tapers off so the reel floats to a stop rather than braking at a constant rate;
 still short of `--ease-reveal`'s expo, whose front-loading would stall a multi-second spin
-within ~1s), with a within-tile **jitter** so the landing feels live. The `movie:picked` SSE event drives it so **every connected client
+within ~1s), with a within-tile **jitter** so the landing feels live. The `movie:drawn` SSE event drives it so **every connected client
 spins**, not just the clicker; it skips for a **pool of one** or under reduced motion
-(straight to the reveal) and **resumes** server-relative on a reload while the pick is
+(straight to the reveal) and **resumes** server-relative on a reload while the draw is
 still unrevealed, while the hero **holds its commit** so the reveal never fires mid-spin.
-Full mechanics + invariants: `docs/findings/pick-reveal-reel.md`.
+The reel is a **pure reducer + store**: `drawMachine.ts` folds `movie:drawn` /
+`movie:revealed` / scroll-done / confirm / tick events into `[state, commands]`, and
+`drawStore.ts` (a `useSyncExternalStore` singleton) runs the effects. `Hero.tsx`,
+`DrawReel.tsx`, and `useSSE.ts` all read the one store, so every surface agrees on the
+draw state.
 
-**Pick confirm (hold-and-reveal).** The settled reel does **not** auto-close — it waits
-for confirmation, so the group sees the result land together. Only the **picker** (the
-client whose stable `mp-client-id` matches the pick's `pickerClientId`) gets an **OK**
-button; it carries a ~`--dur-confirm` (10s) fill that doubles as a countdown. Pressing it
-— or letting it fill — confirms, which `POST`s `/movies/current/reveal`; the server flips
-the pick to `revealed` and broadcasts **`movie:revealed`**, so **every** client's reel
-closes and reveals in lockstep. Each client also self-heals on its own countdown, so the
-reel never hangs if the picker leaves. The close is **flash-free**: the winner backdrop
+**Draw confirm (hold-and-reveal).** The settled reel does **not** auto-close. It waits
+for confirmation, so the group sees the result land together. Only the **drawer** (the
+client whose stable `mp-client-id` matches the draw's `drawClientId`) gets an **OK**
+button; its fill doubles as a countdown, and its duration is the **server's reveal
+deadline** (`spin.confirmMs`, derived from the draw payload's `revealAt` minus the
+server's `serverNow`, immune to client clock skew), not the `--dur-confirm` token (which
+is only the fallback/preview default). Pressing OK (or letting it fill) confirms, which
+`POST`s `/movies/current/reveal`; the server flips the draw to `revealed` and broadcasts
+**`movie:revealed`**, so **every** client's reel closes and reveals in lockstep. The
+**auto-reveal is server-owned**: the movie service arms a timer at `revealAt`
+(`DefaultAutoRevealDelay` 16.5s) and, if no client confirms first, reveals the draw itself
+and broadcasts the same `movie:revealed`, so a reel never hangs if the drawer leaves,
+without each client racing its own timer. The close is **flash-free**: the winner backdrop
 (preloaded during the spin) is decoded while the reel still covers the hero, then the reel
 drops and the reveal commits in one batched frame — no placeholder leaks through. A reload
 keys off the server `revealed` flag (not a timer): unrevealed re-opens the settled reel
-(the picker keeps OK, since the client id persists), revealed shows the result directly.
+(the drawer keeps OK, since the client id persists), revealed shows the result directly.
 
-**Pick sound.** As the reel starts, a Wheel-of-Fortune **click train** plays —
+**Draw sound.** As the reel starts, a Wheel-of-Fortune **click train** plays:
 an original, fully **synthesized** sound (no audio file ships, so nothing to
 license), each tick a short bandpass-filtered noise burst on the native **Web
 Audio API** (no library) in `web/src/lib/sound.ts`. The clicks are **synced to the
-posters**: `PickReel` computes the exact instant each gap crosses the reticle (it
+posters**: `DrawReel` computes the exact instant each gap crosses the reticle (it
 inverts `--ease-reel` per gap, `reelEaseTimeAt`) and hands the offsets to
-`playPickJingle`, so the ticks land on the gaps you see and decelerate on the same
+`playDrawJingle`, so the ticks land on the gaps you see and decelerate on the same
 curve — then go quiet as the winner coasts under the reticle (no gaps left to
 tick). A `SYNC_OFFSET_MS` trims the fixed audio↔compositor lag by ear; the
 relative timing is exact. The `AudioProvider` owns the on/off and 0..1 volume prefs
 (localStorage `mp-sound` / `mp-volume`) plus a one-time autoplay **unlock** (an AudioContext
-resume) on first interaction, so SSE-driven clients that never click Pick can still play. A speaker control in the nav (`VolumeControl.tsx`) opens a popover with a mute toggle, a
-volume slider, and a play/stop button to audition the (fallback) wheel. A fresh pick
+resume) on first interaction, so SSE-driven clients that never click Draw can still play. A speaker control in the nav (`VolumeControl.tsx`) opens a popover with a mute toggle, a
+volume slider, and a play/stop button to audition the (fallback) wheel. A fresh draw
 always sounds; a reload-resume joins only if audio is already running (a cold
 reload's context is suspended, so it's visually in-sync but silent), and reduced
 motion (no reel) is silent for free.
 
-**Pick-reveal (motion).** When the pick changes (or clears), the banner reveals the new
+**Draw-reveal (motion).** When the draw changes (or clears), the banner reveals the new
 state without breaking the static contract: a two-layer `.hero__bg-stack` crossfades the
 incoming backdrop (preloaded + `decode()`d in `Hero.tsx` so it never flashes blank) with
 a slow settle-scale (`mg-bgReveal`), and the poster + each text slot fade-settle in,
-lightly staggered via `--i` (`mg-revealPick`). It is **transform/opacity only** — the
-reserved slots keep their boxes, so nothing reflows. The content is keyed on the pick id
-so the reveal replays per pick; reduced-motion collapses it to an instant swap. The Pick
-/ Mark-Watched buttons show in-flight state (`Loader2Icon` + "Picking…" / "Marking…").
+lightly staggered via `--i` (`mg-revealDraw`). It is **transform/opacity only**: the
+reserved slots keep their boxes, so nothing reflows. The content is keyed on the draw id
+so the reveal replays per draw; reduced-motion collapses it to an instant swap. The Draw
+/ Mark-Watched buttons show in-flight state (`Loader2Icon` + "Drawing…" / "Marking…").
 
 Verified static: empty vs populated and a 173-char injected tagline all leave
 `eyebrowTop`, `meta top`, `actions top`, and hero height identical.
@@ -443,7 +457,7 @@ On large screens (≥1728px) the hero steps *up*: `--hero-body-h` grows (18.5rem
 and the poster width tracks it via the `calc()` above), `.hero__inner` padding opens up,
 and the title clamp ceiling rises (54 → 64px) — so the centerpiece feels grander, not
 merely bigger. Like the phone stack this is per-breakpoint geometry, not a break of the
-contract: within the breakpoint the banner stays dimensionally static as the pick changes.
+contract: within the breakpoint the banner stays dimensionally static as the draw changes.
 The whole hero also rides the global `zoom` ramp (§13) on top of this step.
 
 ---
@@ -464,12 +478,12 @@ actually has movies.
 ## 9. Copy & microcopy
 
 - **Buttons:** verb + object, sentence case ("Save changes", "Add user", "Mark as
-  watched", "Pick random movie", "Lock pool"). Only the object keeps any proper-noun
+  watched", "Draw random movie", "Lock pool"). Only the object keeps any proper-noun
   capital ("Add to Felix's stash"). Nav tabs are the deliberate uppercase exception.
 - **Error toasts:** one voice, "Failed to <verb> <thing>" ("Failed to update movie").
   Not "Error <x>ing".
-- **Success toasts:** terse, past tense, no exclamation ("Movie picked", "Marked as
-  watched", "<title> updated").
+- **Success toasts:** terse, past tense, no exclamation ("Marked as watched",
+  "<title> updated"). The draw itself shows no toast: the reel is its feedback.
 - **Loading labels:** present participle + ellipsis ("Searching…", "Adding…").
 - **Modal headers:** sentence case ("Edit movie", "Delete movie").
 - **Pluralization:** use `plural(n, noun, pluralForm?)` from `lib.ts` for any
@@ -503,11 +517,12 @@ use tokens so they follow the theme.
 ## 12. Stack & build notes
 
 - React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query +
-  **TanStack Router** (code-based, no route-gen plugin), Sonner, lucide. No
-  Radix/shadcn. Package manager: **bun** (`web/`).
+  **TanStack Router** (code-based, no route-gen plugin), Sonner, lucide. **Vitest**
+  for unit tests (pure reducers: `drawMachine`, `sseConnection`, `sseInvalidations`).
+  No Radix/shadcn. Package manager: **bun** (`web/`).
 - Tailwind v4 has no config file; theme/aliases live in `index.css` (`@theme inline`).
-- Gate before handoff: `bunx tsc -b` + `bun run lint` + `bunx vite build` (all from
-  `web/`). The editor's inline TS diagnostics often fail to resolve the `@/*` path
+- Gate before handoff: `bunx tsc -b` + `bun run lint` + `bun run test` (vitest) +
+  `bunx vite build` (all from `web/`). The editor's inline TS diagnostics often fail to resolve the `@/*` path
   aliases and show false "cannot find module" errors; trust `tsc -b`, not them.
 - Backend: Go (Fiber) on `:3030`, serves the embedded `web/dist` and `/api/v1/*`.
   Run with `web/dist` built (`go run main.go` re-embeds the current dist at compile).
@@ -523,7 +538,7 @@ use tokens so they follow the theme.
   stream opens once and survives tab navigation rather than reconnecting per switch;
   `NavBar` derives the active tab from the router and renders `<Link>`s. The **Stats
   tab keeps its entire filter state in typed URL search params** (`statsSearch.ts`:
-  window, custom range, genre, actors/crew/pickers id-lists, release year/decade).
+  window, custom range, genre, actors/crew/adders id-lists, release year/decade).
   `validateStatsSearch` is a total, never-throwing validator (caps id lists at 25,
   sorts + de-dupes to a canonical form, parses custom-range dates as *local* `ymd`)
   and `stripSearchParams` trims defaults so the default view stays a clean `/stats`.
@@ -549,7 +564,7 @@ What each does:
 - **640** — the *phone* breakpoint. Navigation moves to a fixed **bottom tab bar**
   (below); section headers (`.sec-head`) stack to a title row + full-width controls;
   user boards go single-column; the stats window control spans the row and the
-  picked-by-member bars shrink their name column (`188px → 112px`) so the track keeps
+  added-by-member bars shrink their name column (`188px → 112px`) so the track keeps
   width; poster grids become denser thumbnail grids; modal chrome tightens.
 - **700** — the hero stacks (poster above text) and page / top-nav padding tightens.
 - **760** — the stat strip drops 3 columns → 2.

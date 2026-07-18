@@ -1,4 +1,4 @@
-# Architecture review — July 2026
+# Architecture review: July 2026
 
 Deepening pass over the whole codebase (Go backend + web), driven by the
 deep-module vocabulary (module, interface, seam, adapter, depth, locality).
@@ -51,7 +51,7 @@ New glossary term recorded in CONTEXT.md: Settle.
 
 `movie.Service` absorbs the auto-reveal timer and reveal notification.
 
-- Construction: `movie.DrawConfig{AutoRevealDelay, Timer, OnRevealed}`;
+- Construction: `movie.DrawConfig{AutoRevealDelay, StartTimer, OnRevealed}`;
   the server wires `OnRevealed` to the SSE broadcast. Handler loses
   `scheduleAutoReveal`/`cancelAutoReveal`/`autoReveal`/`broadcastRevealed`
   and the three timer fields; all four funnel paths become internal.
@@ -64,8 +64,8 @@ New glossary term recorded in CONTEXT.md: Settle.
 - `ActiveDraw` stays process-local, documented on the interface. A restart
   mid-draw shows the result without ceremony; accepted (rare double-fault,
   state stays correct).
-- Tests: dataflow tests drive the lifecycle with a fake timer through the
-  Service interface.
+- Tests: dataflow tests drive the lifecycle with a fake timer injected via
+  `DrawConfig.StartTimer` (the Service is a concrete struct, not an interface).
 
 ## 3. SSE invalidation table + connection reducer (Worth exploring)
 
@@ -84,7 +84,9 @@ New glossary term recorded in CONTEXT.md: Settle.
   seams (test fakes cross them), the rest keep the repository seam uniform.
 - `advanceNextUp` + `initNextUp` move behind a deepened Next up module:
   `Advance(ctx) -> (nextUp, changed)`; the handler keeps only the broadcast.
-  The unused `userRepo` dep in nextup is deleted. Rotation gets tests.
+  Rotation keeps `userRepo` (it needs the roster order) and gains a narrowed
+  consumer-side `poolCounter` seam (`CountByStatus`) so its tests fake one
+  method, not the whole `MovieRepo`. Rotation gets tests.
 - `movie.Service`'s ~14 pass-through forwards stay (removal is churn without
   gain); revisit only if a handler needs to bypass.
 

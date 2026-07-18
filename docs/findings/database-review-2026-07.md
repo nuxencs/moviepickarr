@@ -1,9 +1,9 @@
-# Database review — July 2026
+# Database review: July 2026
 
 Full review of the SQLite layer (schema, indexes, connection handling, query
 paths) from both a brownfield and greenfield angle, and the changes shipped
 from it (migration `007` + pool split). Verified against a copy of the
-production DB (205 movies / 141 watched / 3 users / 3967 credits).
+production DB (205 movies / 141 watched / 3 members / 3967 credits).
 
 ## The bug that motivated it: three timestamp formats
 
@@ -39,30 +39,30 @@ and `db.FromUnix` the only way they are scanned; in-SQL stamps use
    seconds. Fractional seconds are dropped (second precision).
 2. **Rebuild `movies`** as STRICT with:
    - INTEGER epoch columns for `added_at` / `watched_at`
-   - `CHECK ((status = 'watched') = (watched_at IS NOT NULL))` — verified 0
+   - `CHECK ((status = 'watched') = (watched_at IS NOT NULL))`: verified 0
      violations in prod before shipping
    - `added_by_id … ON DELETE RESTRICT` (was CASCADE): deleting a member must
      not erase group watch history. Repo maps the FK error (by driver code via
      `db.IsForeignKeyViolation`; RESTRICT surfaces as extended code 1811, not
      787) to `domain.ErrConflict` → 409. Tombstone-reassignment ("Deleted
      member" user inherits watched rows, pool/stash dropped, excluded from
-     picker rotation) was designed but deferred until user deletion is a real
+     the next-up rotation) was designed but deferred until user deletion is a real
      feature.
-   - partial `UNIQUE` on `tmdb_id` (NULLs free) — verified 0 dupes in prod.
+   - partial `UNIQUE` on `tmdb_id` (NULLs free): verified 0 dupes in prod.
      Application paths handle the conflict: a duplicate add deletes its
      just-inserted stash row and returns 409; enrichment treats a tmdb-id
      conflict as non-fatal so the row still gets metadata/credits and leaves
      the backlog.
-   - partial `UNIQUE` on `status='current'` — at most one current movie,
-     enforced at the DB so the pick check-then-act race (widened by the read
+   - partial `UNIQUE` on `status='current'`: at most one current draw,
+     enforced at the DB so the draw check-then-act race (widened by the read
      pool) can't yield two currents.
    - the rebuild preserves the AUTOINCREMENT high-water mark via
      `sqlite_sequence` (the plain copy would reset it to max(id) and reuse
-     deleted ids — a hazard for SSE/pick identity keyed on movieID).
+     deleted ids, a hazard for SSE/draw identity keyed on movieID).
    - the rebuilt tables are STRICT, so the driver never guesses a format:
      repos bind via `db.ToUnix` and scan via `db.FromUnix` (`unixTimePtr`).
-3. `users_touch_updated_at` trigger — `updated_at` was write-once dead weight.
-4. Dropped `movie_metadata_enriched_at_index` — `NeedsEnrichment`'s OR-shaped
+3. `users_touch_updated_at` trigger: `updated_at` was write-once dead weight.
+4. Dropped `movie_metadata_enriched_at_index`: `NeedsEnrichment`'s OR-shaped
    predicate forces a scan (EXPLAIN QUERY PLAN confirmed), so the index was
    pure write overhead.
 
@@ -82,12 +82,12 @@ and a 4-conn `Read` pool over the same file. `Pool.Close` runs
 
 ## Deliberately NOT changed
 
-- `genres` as JSON TEXT — display-only, filtering happens in Go
-  (see data-fetching findings: pagination/SQL-filtering is the wrong move at
-  this scale).
-- `ORDER BY RANDOM()` for picks — fine until ~100k rows.
-- Singleton `next_picker` table — typed FK beats a settings string.
-- `movie_metadata` as 1:1 side-table — isolates enrichment writes.
+- `genres` as JSON TEXT: display-only, filtering happens in Go
+  (pagination/SQL-filtering is the wrong move at this scale).
+- `ORDER BY RANDOM()` for draws: fine until ~100k rows.
+- Singleton `next_up` table (renamed from `next_picker` in migration `008`):
+  typed FK beats a settings string.
+- `movie_metadata` as 1:1 side-table: isolates enrichment writes.
 - `movies`↔`users` stays a plain FK, **not** a junction table: "added by" is
   genuinely 1:N (a junction with UNIQUE(movie_id) is a foreign key in
   costume). Future M:N facts (votes, attendance) get their own relation
@@ -95,9 +95,9 @@ and a 4-conn `Read` pool over the same file. `Pool.Close` runs
 
 ## Verification
 
-- `internal/db/migration_timestamps_test.go` — 007 backfill against seeded
+- `internal/db/migration_timestamps_test.go`: 007 backfill against seeded
   legacy formats + every new constraint.
-- `scripts/verify_migration_007.go` — runs the chain against a **copy of a
+- `scripts/verify_migration_007.go`: runs the chain against a **copy of a
   production DB**; asserts per-row Go-computed UTC truth, counts, watched
   order, `integrity_check`, `foreign_key_check`, index shape. Run it against
   a prod backup before deploying.

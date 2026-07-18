@@ -1,50 +1,27 @@
-# React + TypeScript + Vite
+# moviepickarr web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React 19 + Vite + Tailwind v4 frontend. Package manager is **bun**.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
-
-- Configure the top-level `parserOptions` property like this:
-
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+bun install
+bun run dev       # Vite dev server (proxies /api + SSE to the Go backend on :3030)
+bun run build     # tsc -b && vite build → dist/ (the Go binary embeds this)
+bun run lint      # eslint
+bun run test      # vitest (pure reducers: drawMachine, sseConnection, sseInvalidations)
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+For the full dev loop (Vite + Go side by side) run `make dev` from the repo root.
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+## Where things live
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
-```
+- `src/components/moviepickarr/`: the app components and the draw machine
+  (`drawMachine.ts` reducer + `drawStore.ts` store, `DrawReel.tsx`).
+- `src/hooks/`: `useSSE.ts` plus its pure reducers (`sseConnection.ts`,
+  `sseInvalidations.ts`) and the shared `useDismissible.ts` for floating surfaces.
+- `src/index.css`: the design-system tokens and component classes (source of truth).
+
+## Docs
+
+- [`../docs/DESIGN.md`](../docs/DESIGN.md): the design system. Read it before any UI work.
+- [`../CONTEXT.md`](../CONTEXT.md): the glossary. Use its terms (draw, adder, next up).
+- [`../docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md): the dev/test/lint workflow.

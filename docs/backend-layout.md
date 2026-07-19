@@ -28,6 +28,16 @@
   (session cookie → live actor via `SessionManager`, 401 + cookie-clear on any
   miss), the `mpa_session` cookie set/clear helpers, the scheme-derived Secure
   flag, and the startup + hourly expired-session sweep.
+- `internal/server/auth_handlers.go`: the local username/password endpoints.
+  `POST /auth/login` (uniform `401 {"error":"invalid credentials"}` on every
+  credential miss, `204` + minted cookie on success), `GET /auth/me` (identity +
+  presence-derived `hasLocalLogin`/`hasLinkedIdentity`), `POST /auth/password`
+  (verify current, then revoke-all + fresh mint to revoke other devices and
+  rotate the current token), and the admin `PUT`/`DELETE
+  /members/:memberID/local-login` upsert/remove (gated by an inline admin check
+  until the per-route authz reshape lands). `/auth/login` is registered ahead of
+  `requireSession` so it stays reachable without a session; it is still behind
+  `csrfGuard`.
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
   `fullMovie` (detail payload: embeds `leanMovieTile` plus the draw/reveal coordination
@@ -54,7 +64,14 @@
   (validate both windows, slide `last_seen_at` only when >1h stale, read role
   live), `RevokeCurrent`/`RevokeAll`/`RevokeOthers`, and `Sweep`. Lifetimes are
   hardcoded (30-day idle, 90-day absolute); an injectable clock makes expiry
-  testable without sleeps.
+  testable without sleeps. `local.go` is the `LocalAuth` deep module over the
+  local-login flow: `Login` (timing-equalized via `DummyVerify`, self-healing
+  10-strike/15-min lockout, rehash-on-login, `last_login_at` bump),
+  `ChangePassword`, the admin `SetLocalLogin`/`DeleteLocalLogin` (username 3–32
+  `[a-zA-Z0-9._-]`, NOCASE collision → `ErrConflict`, self-last-credential
+  guard), and the `/me` `Identity` projection. Password bounds (min 8, max 128,
+  the max a DoS guard) and the uniform `ErrInvalidCredentials`/`ErrNoLocalLogin`
+  sentinels live here; it shares the injectable clock with `SessionManager`.
 - `internal/movie`: owns the whole draw/reveal lifecycle, including the
   server-authoritative auto-reveal. `DrawRandom` picks a pooled movie, records an
   in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`), and arms a
@@ -81,6 +98,7 @@
 - `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
 - `internal/repository/session.go`: `sessions` repository (create / find-by-token-hash joined to the member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).
+- `internal/repository/local_account.go`: `local_accounts` repository (find by NOCASE username / by user id, create with unique→`ErrConflict` + FK→`ErrNotFound` translation, password-hash and admin-reset updates, failed-attempt/successful-login lockout writes, delete) plus the `oidc_identities` presence read and the `/me` member-identity join.
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ### SQLite connections & timestamps (migration `007`)

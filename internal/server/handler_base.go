@@ -25,6 +25,7 @@ type handler struct {
 	broker          *eventBroker
 	log             zerolog.Logger
 	sessions        *auth.SessionManager
+	localAuth       *auth.LocalAuth
 	userService     *user.Service
 	movieService    *movie.Service
 	nextUpService   *nextup.Service

@@ -127,6 +127,32 @@ func (m *SessionManager) Authenticate(ctx context.Context, rawToken string) (*do
 	return as, nil
 }
 
+// Revalidate reports whether a session is still live WITHOUT sliding its idle
+// window. The SSE stream calls it on every heartbeat to drop a session revoked
+// or expired mid-stream; unlike Authenticate it writes no last_seen_at, so a
+// long-held stream can't keep an otherwise-idle session alive forever. It reads
+// no role and returns only the sentinel, since the caller just needs live/not.
+func (m *SessionManager) Revalidate(ctx context.Context, rawToken string) error {
+	if rawToken == "" {
+		return ErrSessionInvalid
+	}
+
+	now := m.now()
+	as, err := m.repo.FindByTokenHash(ctx, HashToken(rawToken))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrSessionInvalid
+	}
+	if err != nil {
+		return err
+	}
+
+	// Same two windows as Authenticate, no slide.
+	if !now.Before(as.ExpiresAt) || !now.Before(as.LastSeenAt.Add(SessionIdleTTL)) {
+		return ErrSessionInvalid
+	}
+	return nil
+}
+
 // RevokeCurrent revokes exactly the session carried by rawToken (the
 // current-device logout). Revoking a token that no longer exists is a no-op, so
 // logout is idempotent.

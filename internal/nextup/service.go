@@ -62,11 +62,12 @@ func (s *Service) Set(ctx context.Context, userID int) error {
 	return s.nextUpRepo.Set(ctx, userID)
 }
 
-// Advance passes the turn to the next roster member, in roster order, called
-// after each draw. The turn only moves while the pool still has movies left
-// and more than one member exists; otherwise it reports changed=false and the
-// current member keeps the turn. A next up who has left the roster hands the
-// turn to the first member.
+// Advance passes the turn to the next roster member, in roster order. The server
+// calls it when a movie is watched (rotation-on-watch, Model B), not on draw, so
+// the runner keeps the turn across the whole draw → reveal → watch cycle. The
+// turn only moves while the pool still has movies left and more than one member
+// exists; otherwise it reports changed=false and the current member keeps the
+// turn. A next up who has left the roster hands the turn to the first member.
 func (s *Service) Advance(ctx context.Context) (next *domain.User, changed bool, err error) {
 	users, err := s.userRepo.List(ctx)
 	if err != nil {

@@ -38,6 +38,11 @@ type handler struct {
 	statsCache      map[string]statsCacheEntry
 	statsCacheTTL   time.Duration
 
+	// sseHeartbeatInterval is how often an open SSE stream writes a heartbeat and
+	// revalidates the session. A field (not the const directly) so tests can drive
+	// the revalidation without waiting the full production interval.
+	sseHeartbeatInterval time.Duration
+
 	// Filter options (genres/actors/crew/years/adders for the Stats filter bar)
 	// are derived from the watched library's metadata+credits — the same data
 	// the watched list used to ship inline. A single cached snapshot, invalidated
@@ -100,20 +105,19 @@ func parseInt(raw string) (int, bool) {
 	return v, true
 }
 
-func (h *handler) resolveUserID(c *fiber.Ctx) (int, error) {
-	if v, ok := parseInt(c.Params("userID")); ok {
+// actorMemberID returns the session member id requireSession attached. It is the
+// single source of "who is acting": every mutation derives the actor from here,
+// never from a path parameter, so no one can act as someone else by editing a URL.
+func actorMemberID(c *fiber.Ctx) int {
+	id, _ := c.Locals(localsMemberID).(int)
+	return id
+}
+
+// resolveMovieID reads the :movieID path parameter as a positive int.
+func resolveMovieID(c *fiber.Ctx) (int, error) {
+	if v, ok := parseInt(c.Params("movieID")); ok {
 		return v, nil
 	}
 
-	return 0, fmt.Errorf("%w: userID path parameter is required", domain.ErrInvalidInput)
-}
-
-func (h *handler) resolveUserAndMovieID(c *fiber.Ctx) (int, int, error) {
-	userID, userOK := parseInt(c.Params("userID"))
-	movieID, movieOK := parseInt(c.Params("movieID"))
-	if userOK && movieOK {
-		return userID, movieID, nil
-	}
-
-	return 0, 0, fmt.Errorf("%w: userID and movieID path parameters are required", domain.ErrInvalidInput)
+	return 0, fmt.Errorf("%w: movieID path parameter is required", domain.ErrInvalidInput)
 }

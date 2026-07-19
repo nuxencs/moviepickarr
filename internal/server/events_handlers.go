@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -53,6 +54,12 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
+	// Capture the session token now, while the request context is live, so the
+	// stream can revalidate it on every heartbeat. requireSession already accepted
+	// this token to reach here (401 before the stream ever opens); the per-heartbeat
+	// recheck is what drops a session revoked AFTER the handshake.
+	sessionToken := c.Cookies(sessionCookieName)
+
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		eventChannel, headSeq := h.broker.Subscribe()
 		// nil means the broker is closed (server shutting down) — don't open a
@@ -89,7 +96,7 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			return
 		}
 
-		ticker := time.NewTicker(sseHeartbeatInterval)
+		ticker := time.NewTicker(h.sseHeartbeatInterval)
 		defer ticker.Stop()
 
 		// writeEvent serialises one domain event to the stream. A marshal error
@@ -126,6 +133,17 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 				}
 
 			case <-ticker.C:
+				// Revalidate the session before doing any heartbeat work: a session
+				// revoked (logout-everywhere, admin reset, password change) or expired
+				// after the handshake must stop receiving updates within one interval.
+				// Revalidate (not Authenticate) is deliberate: it must not slide the
+				// idle window, or a long-held stream would keep an idle session alive.
+				// Best-effort context: the request's is gone once the writer runs.
+				if err := h.sessions.Revalidate(context.Background(), sessionToken); err != nil {
+					sseLog.Debug().Msg("sse session no longer valid, closing stream")
+					return
+				}
+
 				// Flush any events already queued for this client BEFORE the
 				// heartbeat. The heartbeat carries the broker's global head seq, so
 				// emitting it ahead of events still buffered for this client would

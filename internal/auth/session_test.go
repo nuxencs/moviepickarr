@@ -248,6 +248,51 @@ func TestAuthenticate_SlidesOnlyWhenStale(t *testing.T) {
 	}
 }
 
+// Revalidate drops a revoked/expired session but, unlike Authenticate, never
+// slides the idle window — the SSE heartbeat relies on this so a long-held stream
+// can't keep an otherwise-idle session alive.
+func TestRevalidate_DropsRevokedWithoutSliding(t *testing.T) {
+	repo := newFakeSessionRepo()
+	clk := &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewSessionManager(repo, WithClock(clk.now))
+	raw := mintFor(t, m, 5)
+
+	// Live session, well past the slide threshold: valid, and no last_seen write.
+	clk.advance(2 * time.Hour)
+	if err := m.Revalidate(context.Background(), raw); err != nil {
+		t.Fatalf("revalidate live session: %v", err)
+	}
+	if repo.touches != 0 {
+		t.Fatalf("Revalidate slid the idle window (touches = %d, want 0)", repo.touches)
+	}
+
+	// Empty token is invalid.
+	if err := m.Revalidate(context.Background(), ""); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("empty token: got %v, want ErrSessionInvalid", err)
+	}
+
+	// Revoked (row deleted) is invalid.
+	if err := m.RevokeCurrent(context.Background(), raw); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if err := m.Revalidate(context.Background(), raw); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("revoked token: got %v, want ErrSessionInvalid", err)
+	}
+}
+
+// Revalidate honors the idle window: a session past its idle TTL is invalid.
+func TestRevalidate_RejectsIdleExpired(t *testing.T) {
+	repo := newFakeSessionRepo()
+	clk := &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewSessionManager(repo, WithClock(clk.now))
+	raw := mintFor(t, m, 5)
+
+	clk.advance(SessionIdleTTL + time.Hour)
+	if err := m.Revalidate(context.Background(), raw); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("idle-expired: got %v, want ErrSessionInvalid", err)
+	}
+}
+
 func TestRevoke_DelegatesWithHashedTokens(t *testing.T) {
 	repo := newFakeSessionRepo()
 	m := NewSessionManager(repo)

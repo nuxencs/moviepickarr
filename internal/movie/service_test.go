@@ -186,10 +186,21 @@ func TestActiveDrawLifecycle(t *testing.T) {
 		t.Fatal("expected the active draw to remain, now marked revealed")
 	}
 
+	// Rotation-on-watch (Model B) at the movie layer: the drawn movie is the
+	// runner's pick and stays "current" across the reveal — it becomes "watched"
+	// only when watched. The next-up rotation (advanced by the server on watch)
+	// therefore holds across draw → reveal and passes only here.
+	if got := repo.movies[drawn.ID].Status; got != "current" {
+		t.Fatalf("after reveal: movie status = %q, want current (not yet watched)", got)
+	}
+
 	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
 		t.Fatalf("MarkCurrentAsWatched: unexpected error: %v", err)
 	}
 
+	if got := repo.movies[drawn.ID].Status; got != "watched" {
+		t.Fatalf("after watch: movie status = %q, want watched", got)
+	}
 	if _, ok := svc.ActiveDraw(); ok {
 		t.Fatal("expected the active draw to be cleared after marking watched")
 	}

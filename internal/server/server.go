@@ -397,6 +397,9 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// they use the /members surface the reshape will settle on.
 	v1.Get("/auth/me", h.handleMe)
 	v1.Post("/auth/password", h.handleChangePassword)
+	// Session logout: empty/{} ends this device, {"all":true} ends every session
+	// for the member. Always clears the cookie, 204, idempotent.
+	v1.Post("/auth/logout", h.handleLogout)
 	// Self-serve credential completeness: an authed member with no local login
 	// sets a first username + password (the session is the proof).
 	v1.Post("/auth/local-login", h.handleSelfServeLocalLogin)

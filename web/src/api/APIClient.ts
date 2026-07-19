@@ -210,6 +210,11 @@ const appClient = {
 export const oidcLoginPath = () => "/api/v1/auth/oidc/login";
 export const oidcClaimPath = (token: string) =>
     `/api/v1/auth/claim/${encodeRFC3986URIComponent(token)}/oidc`;
+// Linking SSO to the signed-in member is the same top-level navigation: the
+// server 302s to the provider and, on the callback, back to /settings?linked=1
+// (or ?error=<bucket>). Driven by window.location.assign so the session cookie
+// rides along.
+export const oidcLinkPath = () => "/api/v1/auth/oidc/link";
 
 export const APIClient = {
     auth: {
@@ -230,6 +235,19 @@ export const APIClient = {
             appClient.Post<void>(`api/v1/auth/claim/${encodeRFC3986URIComponent(token)}/password`, {
                 body: username ? { username, password } : { password },
             }),
+        // Self-service account actions (the session is the proof of identity).
+        // Change an existing password: verify the current one, rewrite it. The
+        // server revokes the other devices and rotates this session's cookie, so
+        // the round trip keeps this device signed in. 401 on a wrong current.
+        changePassword: (currentPassword: string, newPassword: string) =>
+            appClient.Post<void>("api/v1/auth/password", { body: { currentPassword, newPassword } }),
+        // An SSO-first member (no local login) adds a first username + password.
+        setPassword: (username: string, password: string) =>
+            appClient.Post<void>("api/v1/auth/local-login", { body: { username, password } }),
+        // Log out. Empty body ends this device; { all: true } ends every session
+        // for the member (this one included). 204 + cleared cookie either way.
+        logout: (all = false) =>
+            appClient.Post<void>("api/v1/auth/logout", { body: all ? { all: true } : {} }),
     },
     // The admin roster surface. Reads the presence-derived roster and drives every
     // per-member admin action off the session actor (never a path id for the actor).

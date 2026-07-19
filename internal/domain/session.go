@@ -52,4 +52,9 @@ type SessionRepo interface {
 	// DeleteExpired sweeps rows past their absolute cap (expires_at <= now) or
 	// their idle window (last_seen_at <= idleCutoff). Returns rows removed.
 	DeleteExpired(ctx context.Context, now, idleCutoff time.Time) (int64, error)
+	// CountOthersByUserID counts the member's other live sessions: every row
+	// except keepTokenHash that is still inside both windows (expires_at > now
+	// and last_seen_at > idleCutoff). Drives the "other devices" number the
+	// account page shows before a log-out-everywhere.
+	CountOthersByUserID(ctx context.Context, userID int, keepTokenHash string, now, idleCutoff time.Time) (int, error)
 }

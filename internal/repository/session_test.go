@@ -156,6 +156,43 @@ func TestSessionRepo_RevokeVariants(t *testing.T) {
 	}
 }
 
+func TestSessionRepo_CountOthers(t *testing.T) {
+	ctx, sessions, users, _ := setupSessionRepo(t)
+	alice, _ := users.Create(ctx, "Alice")
+	bob, _ := users.Create(ctx, "Bob")
+	now := time.Now().UTC().Truncate(time.Second)
+	exp := now.Add(90 * 24 * time.Hour)
+	idleCutoff := now.Add(-30 * 24 * time.Hour)
+
+	// Alice: the current session (a1) plus two other live ones, one capped-out,
+	// one idle-expired. Bob's session must never count toward Alice.
+	mustCreateSession(t, ctx, sessions, "a1", alice.ID, exp, now)
+	mustCreateSession(t, ctx, sessions, "a2", alice.ID, exp, now)
+	mustCreateSession(t, ctx, sessions, "a3", alice.ID, exp, now)
+	mustCreateSession(t, ctx, sessions, "a-capped", alice.ID, now.Add(-time.Hour), now)
+	mustCreateSession(t, ctx, sessions, "a-idle", alice.ID, exp, now.Add(-31*24*time.Hour))
+	mustCreateSession(t, ctx, sessions, "b1", bob.ID, exp, now)
+
+	// Excluding a1: only a2 and a3 are other live sessions (dead + Bob excluded).
+	n, err := sessions.CountOthersByUserID(ctx, alice.ID, "a1", now, idleCutoff)
+	if err != nil {
+		t.Fatalf("count others: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("count others = %d, want 2", n)
+	}
+
+	// A token that matches no row (e.g. an empty current token) excludes nothing,
+	// so all three live sessions count.
+	n, err = sessions.CountOthersByUserID(ctx, alice.ID, "", now, idleCutoff)
+	if err != nil {
+		t.Fatalf("count others (no exclude): %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("count others with no exclusion = %d, want 3", n)
+	}
+}
+
 func TestSessionRepo_DeleteExpired(t *testing.T) {
 	ctx, sessions, users, _ := setupSessionRepo(t)
 	alice, _ := users.Create(ctx, "Alice")

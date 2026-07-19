@@ -137,6 +137,10 @@ type meResponse struct {
 	Role              string  `json:"role"`
 	HasLocalLogin     bool    `json:"hasLocalLogin"`
 	HasLinkedIdentity bool    `json:"hasLinkedIdentity"`
+	// OtherSessions is how many other devices the actor is signed in on, so the
+	// account page can show the count before a log-out-everywhere. It excludes
+	// this session and counts only live rows.
+	OtherSessions int `json:"otherSessions"`
 }
 
 // handleMe returns the current session actor's identity plus its
@@ -150,6 +154,15 @@ func (h *handler) handleMe(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	// The other-device count is best-effort: a failed count must not break the
+	// identity read the whole app depends on, so it falls back to 0 (the account
+	// page then just reads "no other devices" until the next /me succeeds).
+	others, err := h.sessions.CountOtherSessions(c.UserContext(), memberID, c.Cookies(sessionCookieName))
+	if err != nil {
+		h.log.Error().Err(err).Msg("counting other sessions failed")
+		others = 0
+	}
+
 	return c.Status(fiber.StatusOK).JSON(meResponse{
 		ID:                id.ID,
 		DisplayName:       id.DisplayName,
@@ -157,7 +170,41 @@ func (h *handler) handleMe(c *fiber.Ctx) error {
 		Role:              id.Role,
 		HasLocalLogin:     id.HasLocalLogin,
 		HasLinkedIdentity: id.HasLinkedIdentity,
+		OtherSessions:     others,
 	})
+}
+
+// handleLogout revokes the actor's session(s) and clears the cookie. An empty
+// body or {} logs out just this device; {"all":true} revokes every session for
+// the member (the compromise-recovery path). It always clears the cookie and
+// returns 204, and revoking an already-gone session is a no-op, so logout is
+// idempotent.
+func (h *handler) handleLogout(c *fiber.Ctx) error {
+	memberID, _ := c.Locals(localsMemberID).(int)
+
+	var body struct {
+		All bool `json:"all"`
+	}
+	// The body is optional: only parse when one was sent, so an empty POST
+	// (current-device logout) isn't rejected as a malformed body.
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&body); err != nil {
+			return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "invalid request body")
+		}
+	}
+
+	if body.All {
+		if err := h.sessions.RevokeAll(c.UserContext(), memberID); err != nil {
+			return h.writeInternal(c, err, "revoking all sessions on logout failed")
+		}
+	} else {
+		if err := h.sessions.RevokeCurrent(c.UserContext(), c.Cookies(sessionCookieName)); err != nil {
+			return h.writeInternal(c, err, "revoking current session on logout failed")
+		}
+	}
+
+	clearSessionCookie(c)
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 // handleChangePassword verifies the actor's current password and rewrites it,

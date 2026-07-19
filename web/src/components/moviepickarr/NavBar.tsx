@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChartNoAxesColumnIcon, FilmIcon, MoonIcon, ShieldIcon, SunIcon, UsersIcon } from "lucide-react";
+import { ChartNoAxesColumnIcon, CircleUserRoundIcon, FilmIcon, MoonIcon, ShieldIcon, SunIcon, UsersIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { MeQueryOptions } from "@/api/queries";
@@ -47,6 +47,7 @@ export function NavBar() {
   // role undefined, so the link is hidden, never a dead entry a member can't use.
   const { data: me } = useQuery(MeQueryOptions());
   const onAdmin = useRouterState({ select: (s) => s.location.pathname.startsWith("/admin") });
+  const onSettings = useRouterState({ select: (s) => s.location.pathname.startsWith("/settings") });
 
   // A single shared underline that slides between tabs, rather than one per tab
   // that unmounts/remounts on switch. We measure the active link and drive the
@@ -132,6 +133,19 @@ export function NavBar() {
                 title="Roster (admin)"
               >
                 <ShieldIcon />
+              </Link>
+            )}
+
+            {me && (
+              <Link
+                to="/settings"
+                className="iconbtn"
+                data-active={onSettings}
+                aria-current={onSettings ? "page" : undefined}
+                aria-label="Account settings"
+                title="Account"
+              >
+                <CircleUserRoundIcon />
               </Link>
             )}
 

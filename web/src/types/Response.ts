@@ -115,6 +115,10 @@ export interface MeResponse {
     role: "member" | "admin";
     hasLocalLogin: boolean;
     hasLinkedIdentity: boolean;
+    // How many OTHER devices the actor is signed in on (this session excluded),
+    // counting only live sessions. Drives the account page's log-out-everywhere
+    // copy so the count is concrete before the member ends every session.
+    otherSessions: number;
 }
 
 // Public auth capabilities the unauthenticated login page reads to decide what

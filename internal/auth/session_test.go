@@ -79,6 +79,16 @@ func (f *fakeSessionRepo) DeleteOthersByUserID(_ context.Context, userID int, ke
 	return n, nil
 }
 
+func (f *fakeSessionRepo) CountOthersByUserID(_ context.Context, userID int, keep string, now, idleCutoff time.Time) (int, error) {
+	var n int
+	for h, as := range f.rows {
+		if as.UserID == userID && h != keep && as.ExpiresAt.After(now) && as.LastSeenAt.After(idleCutoff) {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (f *fakeSessionRepo) DeleteExpired(_ context.Context, now, idleCutoff time.Time) (int64, error) {
 	var n int64
 	for h, as := range f.rows {

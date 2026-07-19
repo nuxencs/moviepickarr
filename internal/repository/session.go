@@ -124,6 +124,17 @@ func (d *SqliteSessionRepository) DeleteOthersByUserID(ctx context.Context, user
 	return res.RowsAffected()
 }
 
+func (d *SqliteSessionRepository) CountOthersByUserID(ctx context.Context, userID int, keepTokenHash string, now, idleCutoff time.Time) (int, error) {
+	// Live mirrors Authenticate's two windows (strict >), so the count matches
+	// exactly the sessions that would still authenticate.
+	query := `
+		SELECT COUNT(*) FROM sessions
+		WHERE user_id = ? AND token_hash <> ? AND expires_at > ? AND last_seen_at > ?`
+	var n int
+	err := d.pool.Read.QueryRowContext(ctx, query, userID, keepTokenHash, db.ToUnix(now), db.ToUnix(idleCutoff)).Scan(&n)
+	return n, err
+}
+
 func (d *SqliteSessionRepository) DeleteExpired(ctx context.Context, now, idleCutoff time.Time) (int64, error) {
 	query := "DELETE FROM sessions WHERE expires_at <= ? OR last_seen_at <= ?"
 	res, err := d.pool.Write.ExecContext(ctx, query, db.ToUnix(now), db.ToUnix(idleCutoff))

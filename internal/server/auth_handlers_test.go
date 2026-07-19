@@ -328,6 +328,105 @@ func TestChangePassword_RotatesAndRevokes(t *testing.T) {
 	}
 }
 
+func TestMe_ReportsOtherSessionCount(t *testing.T) {
+	e := setupAuthApp(t)
+	id := e.seedMember(t, "Gwen", "member")
+	e.seedLocalLogin(t, id, "gwen", "correct horse battery")
+
+	deviceA := e.login(t, "gwen", "correct horse battery")
+
+	// One session: /me from device A sees no other devices.
+	meOf := func(cookie string) meResponse {
+		t.Helper()
+		resp := e.request(t, http.MethodGet, "/api/v1/auth/me", cookie, nil)
+		if resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("me status = %d, want 200", resp.StatusCode)
+		}
+		var me meResponse
+		if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
+			t.Fatalf("decode me: %v", err)
+		}
+		return me
+	}
+	if n := meOf(deviceA).OtherSessions; n != 0 {
+		t.Fatalf("otherSessions with one device = %d, want 0", n)
+	}
+
+	// Two more logins: device A now sees two others, and each new device sees
+	// two others too (the count excludes only the asking session).
+	deviceB := e.login(t, "gwen", "correct horse battery")
+	_ = e.login(t, "gwen", "correct horse battery")
+	if n := meOf(deviceA).OtherSessions; n != 2 {
+		t.Fatalf("otherSessions with three devices = %d, want 2", n)
+	}
+	if n := meOf(deviceB).OtherSessions; n != 2 {
+		t.Fatalf("otherSessions from device B = %d, want 2", n)
+	}
+}
+
+func TestLogout_CurrentDeviceOnly(t *testing.T) {
+	e := setupAuthApp(t)
+	id := e.seedMember(t, "Hank", "member")
+	e.seedLocalLogin(t, id, "hank", "correct horse battery")
+
+	deviceA := e.login(t, "hank", "correct horse battery")
+	deviceB := e.login(t, "hank", "correct horse battery")
+
+	// Empty body → log out just this device. Cookie cleared, 204.
+	resp := e.request(t, http.MethodPost, "/api/v1/auth/logout", deviceA, nil)
+	if resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("logout status = %d, want 204", resp.StatusCode)
+	}
+	// The cleared cookie is sent as an empty, already-expired value.
+	if sessionCookieValue(resp) != "" {
+		t.Fatal("logout did not clear the session cookie")
+	}
+
+	// Device A is revoked; device B still authenticates.
+	if a := e.request(t, http.MethodGet, "/api/v1/auth/me", deviceA, nil); a.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("logged-out device me = %d, want 401", a.StatusCode)
+	}
+	if b := e.request(t, http.MethodGet, "/api/v1/auth/me", deviceB, nil); b.StatusCode != fiber.StatusOK {
+		t.Fatalf("other device me = %d, want 200", b.StatusCode)
+	}
+
+	// A second logout with the now-revoked cookie is rejected by requireSession
+	// before the handler runs: the session gate sits ahead of logout, so a dead
+	// cookie is a 401, not another 204. The client is already at the login screen.
+	again := e.request(t, http.MethodPost, "/api/v1/auth/logout", deviceA, nil)
+	if again.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("repeat logout with revoked cookie = %d, want 401", again.StatusCode)
+	}
+}
+
+func TestLogout_Everywhere(t *testing.T) {
+	e := setupAuthApp(t)
+	id := e.seedMember(t, "Iris", "member")
+	e.seedLocalLogin(t, id, "iris", "correct horse battery")
+
+	deviceA := e.login(t, "iris", "correct horse battery")
+	deviceB := e.login(t, "iris", "correct horse battery")
+
+	// {"all":true} → every session for the member is revoked, this one included.
+	resp := e.request(t, http.MethodPost, "/api/v1/auth/logout", deviceA, map[string]bool{"all": true})
+	if resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("logout-all status = %d, want 204", resp.StatusCode)
+	}
+	for name, cookie := range map[string]string{"A": deviceA, "B": deviceB} {
+		if r := e.request(t, http.MethodGet, "/api/v1/auth/me", cookie, nil); r.StatusCode != fiber.StatusUnauthorized {
+			t.Fatalf("device %s me after logout-all = %d, want 401", name, r.StatusCode)
+		}
+	}
+}
+
+func TestLogout_RequiresSession(t *testing.T) {
+	e := setupAuthApp(t)
+	resp := e.request(t, http.MethodPost, "/api/v1/auth/logout", "", nil)
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("logout without session = %d, want 401", resp.StatusCode)
+	}
+}
+
 func TestChangePassword_WrongCurrentAndNoLocalLogin(t *testing.T) {
 	e := setupAuthApp(t)
 	id := e.seedMember(t, "Erin", "member")

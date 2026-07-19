@@ -47,9 +47,12 @@
 - `internal/server/auth_handlers.go`: the local username/password endpoints.
   `POST /auth/login` (uniform `401 {"error":"invalid credentials"}` on every
   credential miss, `204` + minted cookie on success), `GET /auth/me` (identity +
-  presence-derived `hasLocalLogin`/`hasLinkedIdentity`), `POST /auth/password`
-  (verify current, then revoke-all + fresh mint to revoke other devices and
-  rotate the current token), and the admin `PUT`/`DELETE
+  presence-derived `hasLocalLogin`/`hasLinkedIdentity` + `otherSessions`, the
+  count of the actor's other live devices for the account page), `POST
+  /auth/password` (verify current, then revoke-all + fresh mint to revoke other
+  devices and rotate the current token), `POST /auth/logout` (empty/`{}` ends
+  this device, `{"all":true}` ends every session; always clears the cookie and
+  `204`), and the admin `PUT`/`DELETE
   /members/:memberID/local-login` upsert/remove (gated by an inline admin check).
   It also holds the shared authz guards used across handlers: `requireAdmin`
   (403 `admin_required`) and `requireNextUpOrAdmin` (403 `not_next_up`).
@@ -96,7 +99,9 @@
   `session.go` is the `SessionManager` deep module over the session store:
   `Mint` (fresh token, 90-day absolute cap, fixation-safe), `Authenticate`
   (validate both windows, slide `last_seen_at` only when >1h stale, read role
-  live), `RevokeCurrent`/`RevokeAll`/`RevokeOthers`, and `Sweep`. Lifetimes are
+  live), `RevokeCurrent`/`RevokeAll`/`RevokeOthers`, `CountOtherSessions` (live
+  sessions besides the current, for the account page's other-device count), and
+  `Sweep`. Lifetimes are
   hardcoded (30-day idle, 90-day absolute); an injectable clock makes expiry
   testable without sleeps. `local.go` is the `LocalAuth` deep module over the
   local-login flow: `Login` (timing-equalized via `DummyVerify`, self-healing

@@ -7,6 +7,7 @@ import {
 
 import { queryClient } from "@/api/QueryClient";
 
+import { AccountPage } from "@/components/moviepickarr/account/AccountPage";
 import { RosterPage } from "@/components/moviepickarr/admin/RosterPage";
 import { AppLayout, RootShell, Shell } from "@/components/moviepickarr/AppShell";
 import { ClaimPage } from "@/components/moviepickarr/auth/ClaimPage";
@@ -95,6 +96,26 @@ const adminRoute = createRoute({
   },
 });
 
+// The account settings surface. Path is /settings, not /account: the merged
+// OIDC link flow redirects the browser back to /settings?linked=1 (or
+// ?error=<bucket>) after connecting a provider, so the route has to match that
+// contract. The page reads those params to toast the link outcome.
+const settingsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/settings",
+  validateSearch: (search: Record<string, unknown>): { linked?: string; error?: string } => ({
+    linked: typeof search.linked === "string" ? search.linked : undefined,
+    error: typeof search.error === "string" ? search.error : undefined,
+  }),
+  component: function SettingsPage() {
+    return (
+      <Shell>
+        <AccountPage />
+      </Shell>
+    );
+  },
+});
+
 const statsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/stats",
@@ -111,7 +132,7 @@ const statsRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([moviesRoute, usersRoute, adminRoute, statsRoute]),
+  appLayoutRoute.addChildren([moviesRoute, usersRoute, adminRoute, settingsRoute, statsRoute]),
   loginRoute,
   claimRoute,
 ]);

@@ -177,6 +177,16 @@ func (m *SessionManager) RevokeOthers(ctx context.Context, userID int, keepRawTo
 	return err
 }
 
+// CountOtherSessions reports how many OTHER live sessions the member holds
+// besides the one carried by currentRawToken. It measures against the same two
+// windows Authenticate enforces, so the number matches exactly the devices a
+// log-out-everywhere would close. The account page shows it to make that choice
+// concrete. An empty current token counts every live session (no row to exclude).
+func (m *SessionManager) CountOtherSessions(ctx context.Context, userID int, currentRawToken string) (int, error) {
+	now := m.now()
+	return m.repo.CountOthersByUserID(ctx, userID, HashToken(currentRawToken), now, now.Add(-SessionIdleTTL))
+}
+
 // Sweep deletes every session past its absolute cap or its idle window. It runs
 // hourly and once at startup; lazy rejection in Authenticate keeps expired rows
 // harmless between sweeps, so this is pure housekeeping. Returns rows removed.

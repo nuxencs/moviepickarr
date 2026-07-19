@@ -45,6 +45,8 @@ Movies without data yet show a placeholder poster.
   source, and all configuration options.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md): developer setup and the tech
   stack.
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): auth cutover and loosening a forward-auth
+  proxy in front of the app.
 - [`docs/PRODUCT.md`](docs/PRODUCT.md) and [`docs/DESIGN.md`](docs/DESIGN.md):
   product and design decisions.
 

@@ -82,7 +82,9 @@ func NewSqliteUserRepository(pool *db.Pool) *SqliteUserRepository {
 }
 
 func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.User, error) {
-	query := "SELECT id, name, created_at, updated_at FROM users WHERE id = ?"
+	// Active read: archived members are off the roster, so a lookup by id skips
+	// them too (they resurface only via Restore, which reads the row directly).
+	query := "SELECT id, name, created_at, updated_at FROM users WHERE id = ? AND archived_at IS NULL"
 
 	user, err := scanUser(d.pool.Read.QueryRowContext(ctx, query, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -96,7 +98,10 @@ func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.Us
 }
 
 func (d *SqliteUserRepository) List(ctx context.Context) ([]*domain.User, error) {
-	query := "SELECT id, name, created_at, updated_at FROM users ORDER BY created_at ASC"
+	// The roster is active members only: archived members keep their row for
+	// watch-history attribution but never show up in a live read (this backs the
+	// board, stats, and the rotation candidate list alike).
+	query := "SELECT id, name, created_at, updated_at FROM users WHERE archived_at IS NULL ORDER BY created_at ASC"
 
 	rows, err := d.pool.Read.QueryContext(ctx, query)
 	if err != nil {
@@ -132,27 +137,92 @@ func (d *SqliteUserRepository) Create(ctx context.Context, name string) (*domain
 	return d.FindByID(ctx, int(id))
 }
 
-func (d *SqliteUserRepository) Delete(ctx context.Context, id int) error {
-	query := "DELETE FROM users WHERE id = ?"
+// Remove deletes or archives a member as one action, chosen inside a single
+// write transaction by whether they authored any movies. The whole decision runs
+// under one tx so the movie count and the delete/archive it drives can't race a
+// concurrent movie add against the ON DELETE RESTRICT constraint.
+func (d *SqliteUserRepository) Remove(ctx context.Context, id int) (domain.RemoveOutcome, error) {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Existence is the movies-join's problem otherwise, so check it up front: a
+	// missing member is a 404, not a silent no-op.
+	var exists int
+	if err := tx.QueryRowContext(ctx, "SELECT 1 FROM users WHERE id = ?", id).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("%w: user id %d", domain.ErrNotFound, id)
+		}
+		return "", err
+	}
+
+	var authored int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM movies WHERE added_by_id = ?", id).Scan(&authored); err != nil {
+		return "", err
+	}
+
+	outcome, err := removeMember(ctx, tx, id, authored)
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return outcome, nil
+}
+
+// removeMember runs the chosen removal path against an open tx. Zero authored
+// movies hard-deletes the row (FK cascade clears credentials/sessions/invites,
+// next_up nulls, name freed); one or more archives it (archived_at set, then the
+// login rows explicitly deleted so login dies) while the users row and its movie
+// attribution survive.
+func removeMember(ctx context.Context, tx *sql.Tx, id, authored int) (domain.RemoveOutcome, error) {
+	if authored == 0 {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM users WHERE id = ?", id); err != nil {
+			return "", err
+		}
+		return domain.OutcomeDeleted, nil
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE users SET archived_at = unixepoch(), updated_at = unixepoch() WHERE id = ?", id,
+	); err != nil {
+		return "", err
+	}
+	// The users row stays for attribution, so nothing cascades: strip every login
+	// row by hand so the archived member cannot authenticate.
+	for _, stmt := range []string{
+		"DELETE FROM local_accounts WHERE user_id = ?",
+		"DELETE FROM oidc_identities WHERE user_id = ?",
+		"DELETE FROM sessions WHERE user_id = ?",
+		"DELETE FROM invites WHERE user_id = ?",
+	} {
+		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
+			return "", err
+		}
+	}
+	return domain.OutcomeArchived, nil
+}
+
+// Restore reactivates an archived member by clearing archived_at. The
+// archived_at IS NOT NULL guard makes a restore of an active or non-existent
+// member a no-op that surfaces as ErrNotFound: there is nothing to restore.
+func (d *SqliteUserRepository) Restore(ctx context.Context, id int) error {
+	query := "UPDATE users SET archived_at = NULL, updated_at = unixepoch() WHERE id = ? AND archived_at IS NOT NULL"
 
 	result, err := d.pool.Write.ExecContext(ctx, query, id)
 	if err != nil {
-		// movies.added_by_id is ON DELETE RESTRICT: a member with movies can't
-		// be deleted, or the group's watch history would silently vanish.
-		if db.IsForeignKeyViolation(err) {
-			return fmt.Errorf("%w: user %d still has movies", domain.ErrConflict, id)
-		}
 		return err
 	}
-
 	affected, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
 	if affected == 0 {
-		return sql.ErrNoRows
+		return fmt.Errorf("%w: no archived member %d", domain.ErrNotFound, id)
 	}
-
 	return nil
 }
 
@@ -469,7 +539,7 @@ func (d *SqliteNextUpRepository) Get(ctx context.Context) (*domain.User, error) 
 			u.created_at,
 			u.updated_at
 		FROM next_up n
-		JOIN users u ON n.user_id = u.id
+		JOIN users u ON n.user_id = u.id AND u.archived_at IS NULL
 		WHERE n.id = 1
 		LIMIT 1
 	`

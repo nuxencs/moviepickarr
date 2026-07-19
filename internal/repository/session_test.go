@@ -193,8 +193,14 @@ func TestSessionRepo_CascadesOnUserDelete(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	mustCreateSession(t, ctx, sessions, "a1", alice.ID, now.Add(24*time.Hour), now)
 
-	if err := users.Delete(ctx, alice.ID); err != nil {
-		t.Fatalf("delete user: %v", err)
+	// Alice authored no movies, so Remove hard-deletes her row and the session
+	// cascades away with it.
+	outcome, err := users.Remove(ctx, alice.ID)
+	if err != nil {
+		t.Fatalf("remove user: %v", err)
+	}
+	if outcome != domain.OutcomeDeleted {
+		t.Fatalf("expected deleted outcome, got %q", outcome)
 	}
 	if _, err := sessions.FindByTokenHash(ctx, "a1"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("session survived member delete: %v", err)

@@ -9,8 +9,22 @@
 - `internal/server/server.go`: app lifecycle, middleware, route registration.
 - `internal/server/handler_base.go`: shared handler type + common parsing/sanitization helpers.
 - `internal/server/users_handlers.go`: members (roster) bounded context handlers.
-  Reads are any-authenticated; create/delete are admin-only via an inline
-  `requireAdmin` guard.
+  Reads are any-authenticated; create/delete/restore are admin-only via an inline
+  `requireAdmin` guard. `DELETE /members/:memberID` removes a member as one action
+  with two outcomes (reported in the 200 body as `{outcome}`): a member who
+  authored no movies is hard-deleted (credentials/sessions/invites cascade,
+  `next_up` nulls, name freed); a member who authored movies is archived
+  (`archived_at` set, login rows stripped, row and attribution kept). `POST
+  /members/:memberID/restore` clears `archived_at` and re-issues a fresh claim
+  link in one action (archiving stripped the credentials), returning the roster
+  row plus the one-time `claimUrl`. The membership reads filter `archived_at IS
+  NULL` (`UserRepo.List` backs the roster and the rotation candidate list;
+  `FindByID` gates the per-member pool/stash reads; the `next_up` join drops a
+  pointer left on an archived member), so archived members leave the active
+  board. The all-time stats leaderboard is the opposite case on purpose: it is
+  an attribution view of watch history keyed by adder name, so an archived
+  member keeps their historical rows (the whole reason archive preserves the
+  `users` row instead of deleting it).
 - `internal/server/movies_handlers.go`: movies bounded context handlers.
 - `internal/server/settings_handlers.go`: settings bounded context handlers.
 - `internal/server/stats_handlers.go`: stats bounded context handlers.
@@ -158,8 +172,9 @@
   `movies`, `users`, and `movie_metadata` as STRICT with: `status <->
   watched_at` coupling, a partial UNIQUE on `tmdb_id`, a partial UNIQUE on
   `status = 'current'` (at most one current movie, race-proof), and
-  `added_by_id ON DELETE RESTRICT` (deleting a member with movies is a 409;
-  watch history is never cascaded away). In-SQL stamps use `unixepoch()`
+  `added_by_id ON DELETE RESTRICT` (a member who authored movies is archived,
+  not deleted, so watch history is never cascaded away; see the member
+  delete/archive path below). In-SQL stamps use `unixepoch()`
   (defaults and the enrichment upsert/credits stamp), not CURRENT_TIMESTAMP.
   The rebuilds preserve the AUTOINCREMENT high-water mark so deleted ids are
   never reused. Deploy check: `go run scripts/verify_migration_007.go
@@ -207,10 +222,10 @@ always the session member, never a path id: member-scoped routes carry no
 - Rules: reads are any-authenticated (`GET /members`, pool/stash, movies / pool /
   stats / settings reads, `/tmdb/search`). `PUT`/`DELETE /movies/:movieID` and
   `/move` are **adder-only** (403 `not_adder`, no admin override). Draw / reveal /
-  watch are **next-up-or-admin** (403 `not_next_up`). Member create/delete,
-  pool-lock, local-login admin actions, and invite issuance/revocation
-  (`POST`/`DELETE /members/:memberID/invite`) are **admin-only** (403
-  `admin_required`). The claim endpoints (`GET`/`POST /auth/claim/:token...`) and
+  watch are **next-up-or-admin** (403 `not_next_up`). Member
+  create/delete/restore, pool-lock, local-login admin actions, and invite
+  issuance/revocation (`POST`/`DELETE /members/:memberID/invite`) are
+  **admin-only** (403 `admin_required`). The claim endpoints (`GET`/`POST /auth/claim/:token...`) and
   `POST /auth/login` are unauthenticated (no session yet); `POST
   /auth/local-login` is any-authenticated self-serve.
 - SSE (`GET /events`): authed at the handshake (401 before the stream opens) and

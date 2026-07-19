@@ -423,6 +423,7 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/members", h.handleGetUsers)
 	v1.Post("/members", h.handleCreateUser)
 	v1.Delete("/members/:memberID", h.handleDeleteUser)
+	v1.Post("/members/:memberID/restore", h.handleRestoreUser)
 	v1.Get("/members/:memberID/pool", h.handleGetPool)
 	v1.Get("/members/:memberID/stash", h.handleGetStash)
 

@@ -45,7 +45,11 @@ func (r *fakeUserRepo) FindByID(context.Context, int) (*domain.User, error) {
 func (r *fakeUserRepo) Create(context.Context, string) (*domain.User, error) {
 	panic("unexpected call")
 }
-func (r *fakeUserRepo) Delete(context.Context, int) error { panic("unexpected call") }
+
+func (r *fakeUserRepo) Remove(context.Context, int) (domain.RemoveOutcome, error) {
+	panic("unexpected call")
+}
+func (r *fakeUserRepo) Restore(context.Context, int) error { panic("unexpected call") }
 
 type fakePool struct{ pooled int }
 

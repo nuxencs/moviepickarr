@@ -11,7 +11,7 @@ app draws one at random for movie night.
 **Member**:
 A person in the friend group. Has a personal stash and up to 3 movies in the
 pool.
-_Avoid_: user (survives only in code, API names and URLs)
+_Avoid_: user (survives only in code)
 
 **Roster**:
 The current set of members. Former members can still appear in history as
@@ -23,10 +23,12 @@ the watched history and stats ("Added by").
 _Avoid_: picker, picked by, owner
 
 **Next up**:
-The member whose turn it is to run movie night: mark the current draw watched
-and trigger the next draw. Rotates through the roster after each draw, but only
-when the pool still has movies left and more than one member exists. A
-convention shown in the hero, not enforced by the app.
+The member whose turn it is to run movie night: draw, reveal, and mark the
+current draw watched. Enforced, not just shown in the hero: only the next-up
+member (or an admin) can draw, reveal, or mark watched. The turn holds on one
+member across the whole draw → reveal → watch cycle and rotates to the next
+member on watch, but only when the pool still has movies left and more than one
+member exists.
 _Avoid_: next picker
 
 ### Identity
@@ -76,7 +78,9 @@ A server-side, revocable login for a member, carried by an opaque cookie.
 ### Movie lifecycle
 
 **Stash**:
-A member's private backlog of movies. Unlimited; not eligible for the draw.
+A member's backlog of movies. Unlimited; not eligible for the draw. Private is
+write-scoped only: the member is the sole curator (add, edit, promote/demote),
+but the contents stay readable by any authenticated member.
 
 **Pool**:
 The shared set of movies eligible for the next draw. Each member may hold at

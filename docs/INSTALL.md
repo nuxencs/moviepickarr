@@ -111,4 +111,12 @@ alone.
 Local dev over http: point `MPA_OIDC_REDIRECT_URL` at `http://localhost:3030/...`
 and register that redirect URI with your provider. If you terminate TLS at a dev
 proxy, forward `X-Forwarded-Proto: https` so the session and transaction cookies
-get their `Secure` flag; on plain http they are set without it.
+get their `Secure` flag. On plain http they are set without it: the documented
+residual of running raw http is a session cookie with no `Secure` flag.
+
+### Deploying behind a reverse proxy
+
+The app authenticates every request itself, so a forward-auth gate (for example
+Authelia) in front of it can't tell one member from another and blocks the login
+and callback routes. If you run one, see [`RUNBOOK.md`](RUNBOOK.md) for loosening
+the gate and the one-time cutover steps.

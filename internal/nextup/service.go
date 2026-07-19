@@ -16,8 +16,9 @@ type poolCounter interface {
 }
 
 // Service owns the next-up rotation: whose turn it is to run movie night, and
-// when the turn passes. The rotation is a convention shown in the hero, not
-// enforced by the app: every rule about it lives here.
+// when the turn passes. The turn is enforced (only the next-up member or an
+// admin can draw, reveal, or mark watched) and rotates on watch; every rule
+// about who holds it and when it passes lives here.
 type Service struct {
 	nextUpRepo domain.NextUpRepo
 	userRepo   domain.UserRepo

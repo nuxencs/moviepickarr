@@ -226,6 +226,123 @@ func (d *SqliteUserRepository) Restore(ctx context.Context, id int) error {
 	return nil
 }
 
+// rosterSelect is the admin roster read: one row per member, active and archived,
+// with login state derived in-query. The three EXISTS subqueries are the
+// link-state axes (no stored flag), the invite one mirrors the app's validity
+// rule (unredeemed, unrevoked, unexpired), and the movie count decides
+// delete-vs-archive on removal. last_seen_at is the newest session touch (nullable
+// for members with no session, e.g. placeholders and archived rows). Ordering is
+// active-before-archived, then oldest-first, so the handler splits the sections
+// without re-sorting.
+const rosterSelect = `
+SELECT
+    u.id,
+    u.name,
+    (SELECT la.username FROM local_accounts la WHERE la.user_id = u.id) AS username,
+    u.role,
+    u.archived_at,
+    EXISTS (SELECT 1 FROM local_accounts la WHERE la.user_id = u.id)   AS has_local,
+    EXISTS (SELECT 1 FROM oidc_identities oi WHERE oi.user_id = u.id)  AS has_oidc,
+    EXISTS (
+        SELECT 1 FROM invites iv
+        WHERE iv.user_id = u.id
+          AND iv.used_at IS NULL
+          AND iv.revoked_at IS NULL
+          AND iv.expires_at > unixepoch()
+    ) AS invite_pending,
+    (SELECT COUNT(*) FROM movies m WHERE m.added_by_id = u.id)         AS movies_authored,
+    (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at
+FROM users u
+ORDER BY (u.archived_at IS NOT NULL), u.created_at ASC`
+
+func scanRosterMember(scanner rowScanner) (*domain.RosterMember, error) {
+	m := &domain.RosterMember{}
+	var archivedAt, lastSeenAt sql.NullInt64
+	var username sql.NullString
+	if err := scanner.Scan(
+		&m.ID,
+		&m.Name,
+		&username,
+		&m.Role,
+		&archivedAt,
+		&m.HasLocalLogin,
+		&m.HasLinkedIdentity,
+		&m.InvitePending,
+		&m.MoviesAuthored,
+		&lastSeenAt,
+	); err != nil {
+		return nil, err
+	}
+	m.Username = username.String
+	m.Archived = archivedAt.Valid
+	m.LastSeenAt = unixTimePtr(lastSeenAt)
+	return m, nil
+}
+
+func (d *SqliteUserRepository) Roster(ctx context.Context) ([]*domain.RosterMember, error) {
+	rows, err := d.pool.Read.QueryContext(ctx, rosterSelect)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	members := make([]*domain.RosterMember, 0)
+	for rows.Next() {
+		m, err := scanRosterMember(rows)
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, m)
+	}
+	return members, rows.Err()
+}
+
+// SetRole changes an active member's role under one write transaction so the
+// last-admin guard can't race a concurrent demotion. It reads the current role
+// (skipping archived members, whose role is frozen), short-circuits a no-op when
+// the role already matches, and refuses a demotion that would empty the admin set
+// so the roster is never left unmanageable. role is validated by the caller.
+func (d *SqliteUserRepository) SetRole(ctx context.Context, id int, role string) error {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var current string
+	err = tx.QueryRowContext(ctx,
+		"SELECT role FROM users WHERE id = ? AND archived_at IS NULL", id,
+	).Scan(&current)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: user id %d", domain.ErrNotFound, id)
+		}
+		return err
+	}
+	if current == role {
+		return nil
+	}
+
+	if role == domain.RoleMember {
+		var admins int
+		if err := tx.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM users WHERE role = 'admin' AND archived_at IS NULL",
+		).Scan(&admins); err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return fmt.Errorf("%w: cannot demote the last admin", domain.ErrConflict)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE users SET role = ?, updated_at = unixepoch() WHERE id = ?", role, id,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 type SqliteMoviesRepository struct {
 	pool *db.Pool
 }

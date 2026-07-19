@@ -425,7 +425,12 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	// Roster: reads are any-authenticated; create/delete are admin-only (guarded
 	// inside the handlers). The actor is always the session member, never a path id.
 	v1.Get("/members", h.handleGetUsers)
+	// The admin roster is a distinct read: every member (active + archived) with
+	// presence-derived login state, admin-gated inside the handler. It sits beside
+	// the lean movie-board GET /members rather than widening it.
+	v1.Get("/members/roster", h.handleGetRoster)
 	v1.Post("/members", h.handleCreateUser)
+	v1.Patch("/members/:memberID/role", h.handleSetRole)
 	v1.Delete("/members/:memberID", h.handleDeleteUser)
 	v1.Post("/members/:memberID/restore", h.handleRestoreUser)
 	v1.Get("/members/:memberID/pool", h.handleGetPool)

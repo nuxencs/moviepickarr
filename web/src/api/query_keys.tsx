@@ -10,6 +10,10 @@ export const UsersKeys = {
     list: () => [...UsersKeys.all, "list"] as const,
     pool: () => [...UsersKeys.all, "pool"] as const,
     stash: () => [...UsersKeys.all, "stash"] as const,
+    // The admin roster (presence-derived login state per member). Distinct from
+    // list() (the movie-board members), but rides the same "users" root so a
+    // roster mutation and a board change stale under one prefix.
+    roster: () => [...UsersKeys.all, "roster"] as const,
 }
 
 export const MoviesKeys = {

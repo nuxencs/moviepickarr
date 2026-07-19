@@ -7,6 +7,7 @@ import {
 
 import { queryClient } from "@/api/QueryClient";
 
+import { RosterPage } from "@/components/moviepickarr/admin/RosterPage";
 import { AppLayout, RootShell, Shell } from "@/components/moviepickarr/AppShell";
 import { ClaimPage } from "@/components/moviepickarr/auth/ClaimPage";
 import { LoginPage } from "@/components/moviepickarr/auth/LoginPage";
@@ -79,6 +80,21 @@ const usersRoute = createRoute({
   },
 });
 
+// The admin roster surface. A non-admin who navigates here still gets the page
+// (and its first-class "Admins only" state from the 403), never a 404, so the
+// route is mounted for everyone and the gating lives in the page.
+const adminRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/admin",
+  component: function AdminPage() {
+    return (
+      <Shell>
+        <RosterPage />
+      </Shell>
+    );
+  },
+});
+
 const statsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/stats",
@@ -95,7 +111,7 @@ const statsRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([moviesRoute, usersRoute, statsRoute]),
+  appLayoutRoute.addChildren([moviesRoute, usersRoute, adminRoute, statsRoute]),
   loginRoute,
   claimRoute,
 ]);

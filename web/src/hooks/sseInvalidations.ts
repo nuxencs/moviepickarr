@@ -26,8 +26,10 @@ type QueryKey = readonly unknown[];
 
 export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
   // Adders are part of the Stats filter options, so roster changes stale them.
-  "user:created": [UsersKeys.list(), MoviesKeys.filterOptions(), StatsKeys.all],
-  "user:deleted": [UsersKeys.list(), MoviesKeys.filterOptions(), StatsKeys.all],
+  // The admin roster also lists every member, so it stales on create/delete too
+  // (a second admin's create/remove/archive shows up without a manual refetch).
+  "user:created": [UsersKeys.list(), UsersKeys.roster(), MoviesKeys.filterOptions(), StatsKeys.all],
+  "user:deleted": [UsersKeys.list(), UsersKeys.roster(), MoviesKeys.filterOptions(), StatsKeys.all],
 
   "movie:added": [UsersKeys.list(), MoviesKeys.listpool()],
   "movie:deleted": [UsersKeys.list(), MoviesKeys.listpool()],

@@ -292,6 +292,8 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		enrichRunner:    runner,
 		statsCache:      make(map[string]statsCacheEntry),
 		statsCacheTTL:   time.Minute,
+
+		sseHeartbeatInterval: sseHeartbeatInterval,
 	}
 
 	// Stats now aggregate enriched metadata/credits, so every successful
@@ -334,15 +336,21 @@ func registerRoutes(app *fiber.App, h *handler) {
 func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/events", h.handleSSE)
 
-	v1.Get("/users", h.handleGetUsers)
-	v1.Post("/users", h.handleCreateUser)
-	v1.Delete("/users/:userID", h.handleDeleteUser)
-	v1.Post("/users/:userID/movies", h.handleAddMovie)
-	v1.Put("/users/:userID/movies/:movieID", h.handleEditMovie)
-	v1.Delete("/users/:userID/movies/:movieID", h.handleDeleteMovie)
-	v1.Post("/users/:userID/movies/:movieID/move", h.handleMove)
-	v1.Get("/users/:userID/pool", h.handleGetPool)
-	v1.Get("/users/:userID/stash", h.handleGetStash)
+	// Roster: reads are any-authenticated; create/delete are admin-only (guarded
+	// inside the handlers). The actor is always the session member, never a path id.
+	v1.Get("/members", h.handleGetUsers)
+	v1.Post("/members", h.handleCreateUser)
+	v1.Delete("/members/:memberID", h.handleDeleteUser)
+	v1.Get("/members/:memberID/pool", h.handleGetPool)
+	v1.Get("/members/:memberID/stash", h.handleGetStash)
+
+	// Movie mutations carry no actor id: the adder is the session member. Edit,
+	// delete and move are adder-only (403 not_adder, no admin override), enforced
+	// inside each handler.
+	v1.Post("/movies", h.handleAddMovie)
+	v1.Put("/movies/:movieID", h.handleEditMovie)
+	v1.Delete("/movies/:movieID", h.handleDeleteMovie)
+	v1.Post("/movies/:movieID/move", h.handleMove)
 
 	v1.Get("/movies/pool", h.handleGetPooledMovies)
 	v1.Post("/movies/random", h.handleGetRandomMovie)

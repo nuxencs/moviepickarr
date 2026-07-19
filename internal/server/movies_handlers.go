@@ -76,11 +76,16 @@ func (h *handler) advanceNextUp(ctx context.Context) error {
 	return nil
 }
 
+// writeNotAdder is the uniform 403 for a member trying to change a movie they
+// did not add. There is deliberately no admin override: edits, deletes and moves
+// are the adder's alone.
+func writeNotAdder(c *fiber.Ctx) error {
+	return writeProblem(c, fiber.StatusForbidden, "not_adder", "only the member who added this movie can change it")
+}
+
 func (h *handler) handleAddMovie(c *fiber.Ctx) error {
-	userID, err := h.resolveUserID(c)
-	if err != nil {
-		return writeError(c, err)
-	}
+	// The adder is the session member, never a path id: no target user to spoof.
+	actorID := actorMemberID(c)
 
 	var body struct {
 		Title  string `json:"title"`
@@ -107,13 +112,10 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
-	if _, err := h.userService.Get(ctx, userID); err != nil {
-		return writeError(c, err)
-	}
 
 	// Adds always land in the stash. Reaching the pool is a separate, explicit
-	// promotion (the move endpoint), so "Add to <user>'s stash" does exactly that.
-	movieRecord, err := h.movieService.AddToStash(ctx, title, userID)
+	// promotion (the move endpoint), so "Add to your stash" does exactly that.
+	movieRecord, err := h.movieService.AddToStash(ctx, title, actorID)
 	if err != nil {
 		return writeError(c, err)
 	}
@@ -142,17 +144,17 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleGetPool(c *fiber.Ctx) error {
-	userID, err := h.resolveUserID(c)
+	memberID, err := resolveMemberID(c)
 	if err != nil {
 		return writeError(c, err)
 	}
 
 	ctx := c.UserContext()
-	if _, err := h.userService.Get(ctx, userID); err != nil {
+	if _, err := h.userService.Get(ctx, memberID); err != nil {
 		return writeError(c, err)
 	}
 
-	movies, err := h.movieService.PooledByUserID(ctx, userID)
+	movies, err := h.movieService.PooledByUserID(ctx, memberID)
 	if err != nil {
 		return writeError(c, err)
 	}
@@ -163,10 +165,11 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleEditMovie(c *fiber.Ctx) error {
-	userID, movieID, err := h.resolveUserAndMovieID(c)
+	movieID, err := resolveMovieID(c)
 	if err != nil {
 		return writeError(c, err)
 	}
+	actorID := actorMemberID(c)
 
 	var body struct {
 		Title     string  `json:"title"`
@@ -204,8 +207,8 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
-	if movieRecord.AddedByID != userID {
-		return writeError(c, domain.ErrNotFound)
+	if movieRecord.AddedByID != actorID {
+		return writeNotAdder(c)
 	}
 
 	updatedMovie, err := h.movieService.Update(ctx, movieID, title, watchedAt)
@@ -254,10 +257,11 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
-	userID, movieID, err := h.resolveUserAndMovieID(c)
+	movieID, err := resolveMovieID(c)
 	if err != nil {
 		return writeError(c, err)
 	}
+	actorID := actorMemberID(c)
 
 	ctx := c.UserContext()
 	movieRecord, err := h.movieService.Get(ctx, movieID)
@@ -265,8 +269,8 @@ func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	if movieRecord.AddedByID != userID {
-		return writeError(c, domain.ErrNotFound)
+	if movieRecord.AddedByID != actorID {
+		return writeNotAdder(c)
 	}
 	if movieRecord.Status != "pool" && movieRecord.Status != "stash" {
 		return writeError(c, domain.ErrInvalidState)
@@ -278,24 +282,24 @@ func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
 
 	h.broker.Broadcast(event{
 		Type: "movie:deleted",
-		Data: fiber.Map{"userID": userID, "movieID": movieID},
+		Data: fiber.Map{"userID": actorID, "movieID": movieID},
 	})
 
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *handler) handleGetStash(c *fiber.Ctx) error {
-	userID, err := h.resolveUserID(c)
+	memberID, err := resolveMemberID(c)
 	if err != nil {
 		return writeError(c, err)
 	}
 
 	ctx := c.UserContext()
-	if _, err := h.userService.Get(ctx, userID); err != nil {
+	if _, err := h.userService.Get(ctx, memberID); err != nil {
 		return writeError(c, err)
 	}
 
-	movies, err := h.movieService.StashedByUserID(ctx, userID)
+	movies, err := h.movieService.StashedByUserID(ctx, memberID)
 	if err != nil {
 		return writeError(c, err)
 	}
@@ -306,10 +310,11 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleMove(c *fiber.Ctx) error {
-	userID, movieID, err := h.resolveUserAndMovieID(c)
+	movieID, err := resolveMovieID(c)
 	if err != nil {
 		return writeError(c, err)
 	}
+	actorID := actorMemberID(c)
 
 	ctx := c.UserContext()
 
@@ -326,6 +331,16 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeError(c, fmt.Errorf("%w: target must be \"pool\" or \"stash\"", domain.ErrInvalidInput))
 	}
 
+	// Authorize before touching state: only the movie's adder may move it, with no
+	// admin override.
+	movieRecord, err := h.movieService.Get(ctx, movieID)
+	if err != nil {
+		return writeError(c, err)
+	}
+	if movieRecord.AddedByID != actorID {
+		return writeNotAdder(c)
+	}
+
 	poolLocked, err := h.settingsService.GetPoolLock(ctx)
 	if err != nil {
 		return writeError(c, err)
@@ -334,18 +349,9 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeError(c, domain.ErrPoolLocked)
 	}
 
-	userRecord, err := h.userService.Get(ctx, userID)
+	userRecord, err := h.userService.Get(ctx, actorID)
 	if err != nil {
 		return writeError(c, err)
-	}
-
-	movieRecord, err := h.movieService.Get(ctx, movieID)
-	if err != nil {
-		return writeError(c, err)
-	}
-
-	if movieRecord.AddedByID != userID {
-		return writeError(c, domain.ErrNotFound)
 	}
 
 	// The transition is enforced atomically in the service: it moves the movie
@@ -364,11 +370,11 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	updatedPool, err := h.movieService.PooledByUserID(ctx, userID)
+	updatedPool, err := h.movieService.PooledByUserID(ctx, actorID)
 	if err != nil {
 		return writeError(c, err)
 	}
-	updatedStash, err := h.movieService.StashedByUserID(ctx, userID)
+	updatedStash, err := h.movieService.StashedByUserID(ctx, actorID)
 	if err != nil {
 		return writeError(c, err)
 	}
@@ -402,6 +408,10 @@ type drawnPayload struct {
 }
 
 func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
+	if ok, err := h.requireNextUpOrAdmin(c); !ok {
+		return err
+	}
+
 	ctx := c.UserContext()
 
 	// The client identifies itself so only the drawer sees the reel's confirm
@@ -415,10 +425,6 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	selectedMovie, err := h.movieService.DrawRandom(ctx, sanitizeInput(body.ClientID))
 	if err != nil {
 		return writeError(c, err)
-	}
-
-	if err := h.advanceNextUp(ctx); err != nil {
-		h.log.Error().Err(err).Msg("failed to advance next up")
 	}
 
 	payload := toFullMovieBare(selectedMovie)
@@ -489,14 +495,29 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 // Idempotent: a second confirm (or a confirm with no active draw) is a quiet
 // no-op, so racing clients don't double-fire the reveal.
 func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
+	if ok, err := h.requireNextUpOrAdmin(c); !ok {
+		return err
+	}
 	h.movieService.RevealCurrentDraw()
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
-	watched, err := h.movieService.MarkCurrentAsWatched(c.UserContext())
+	if ok, err := h.requireNextUpOrAdmin(c); !ok {
+		return err
+	}
+
+	ctx := c.UserContext()
+	watched, err := h.movieService.MarkCurrentAsWatched(ctx)
 	if err != nil {
 		return writeError(c, err)
+	}
+
+	// Rotation-on-watch (Model B): the turn passes only once the movie is actually
+	// watched, so the same member holds it across the whole draw → reveal → watch
+	// cycle. Advancing here (not on draw) is what keeps next up == the runner.
+	if err := h.advanceNextUp(ctx); err != nil {
+		h.log.Error().Err(err).Msg("failed to advance next up")
 	}
 
 	// MarkCurrentAsWatched cleared the draw and its pending auto-reveal.

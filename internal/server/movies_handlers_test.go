@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,34 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 )
+
+const (
+	testMemberHeader = "X-Test-Member"
+	testRoleHeader   = "X-Test-Role"
+)
+
+// mountTestV1 mounts the v1 routes behind a middleware that injects the session
+// actor from test headers, standing in for the real csrfGuard → requireSession
+// chain. Role defaults to admin so the draw/reveal/watch guard passes without
+// having to wire next-up; the adder-only checks compare the member id, which the
+// adder tests set explicitly via testMemberHeader.
+func mountTestV1(app *fiber.App, h *handler) {
+	v1 := app.Group("/api/v1")
+	v1.Use(func(c *fiber.Ctx) error {
+		if raw := c.Get(testMemberHeader); raw != "" {
+			if id, err := strconv.Atoi(raw); err == nil {
+				c.Locals(localsMemberID, id)
+			}
+		}
+		role := c.Get(testRoleHeader)
+		if role == "" {
+			role = "admin"
+		}
+		c.Locals(localsRole, role)
+		return c.Next()
+	})
+	registerV1Routes(v1, h)
+}
 
 func setupEditMovieTest(t *testing.T) (*handler, *fiber.App, *repository.SqliteUserRepository, *repository.SqliteMoviesRepository) {
 	t.Helper()
@@ -40,7 +69,7 @@ func setupEditMovieTest(t *testing.T) (*handler, *fiber.App, *repository.SqliteU
 	})
 
 	app := fiber.New()
-	registerV1Routes(app.Group("/api/v1"), h)
+	mountTestV1(app, h)
 
 	return h, app, repository.NewSqliteUserRepository(dbConn), repository.NewSqliteMoviesRepository(dbConn)
 }
@@ -63,10 +92,11 @@ func TestHandleEditMovie_RejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	body := `{"title":"After","link":"https://example.com/after","watchedAt":"2026-02-08T18:30:00Z"}`
 	req := httptest.NewRequest(
 		http.MethodPut,
-		fmt.Sprintf("/api/v1/users/%d/movies/%d", user.ID, movie.ID),
+		fmt.Sprintf("/api/v1/movies/%d", movie.ID),
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 
 	resp, err := app.Test(req, -1)
 	if err != nil {
@@ -108,10 +138,11 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	body := `{"title":"After","link":"https://example.com/after","watchedAt":"2026-02-08T16:45:00Z"}`
 	req := httptest.NewRequest(
 		http.MethodPut,
-		fmt.Sprintf("/api/v1/users/%d/movies/%d", user.ID, movie.ID),
+		fmt.Sprintf("/api/v1/movies/%d", movie.ID),
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 
 	resp, err := app.Test(req, -1)
 	if err != nil {
@@ -138,15 +169,18 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	}
 }
 
+// postMove moves a movie as the given actor (userID). The actor is passed as the
+// session member header, since the endpoint no longer carries a user path id.
 func postMove(t *testing.T, app *fiber.App, userID, movieID int, target string) *http.Response {
 	t.Helper()
 
 	req := httptest.NewRequest(
 		http.MethodPost,
-		fmt.Sprintf("/api/v1/users/%d/movies/%d/move", userID, movieID),
+		fmt.Sprintf("/api/v1/movies/%d/move", movieID),
 		strings.NewReader(fmt.Sprintf(`{"target":%q}`, target)),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(userID))
 
 	resp, err := app.Test(req, -1)
 	if err != nil {
@@ -224,10 +258,11 @@ func TestHandleMove_RejectsMissingTarget(t *testing.T) {
 
 	req := httptest.NewRequest(
 		http.MethodPost,
-		fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, movie.ID),
+		fmt.Sprintf("/api/v1/movies/%d/move", movie.ID),
 		strings.NewReader(`{}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 
 	resp, err := app.Test(req, -1)
 	if err != nil {
@@ -282,10 +317,11 @@ func TestHandleMove_ConcurrentDuplicatePromote_NoSpuriousError(t *testing.T) {
 			defer wg.Done()
 			req := httptest.NewRequest(
 				http.MethodPost,
-				fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, movie.ID),
+				fmt.Sprintf("/api/v1/movies/%d/move", movie.ID),
 				strings.NewReader(`{"target":"pool"}`),
 			)
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 			resp, err := app.Test(req, -1)
 			if err != nil {
 				results[i].err = err
@@ -416,10 +452,11 @@ func TestHandleMove_ConcurrentDistinctPromotes_RespectPoolCap(t *testing.T) {
 			defer wg.Done()
 			req := httptest.NewRequest(
 				http.MethodPost,
-				fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, ids[i]),
+				fmt.Sprintf("/api/v1/movies/%d/move", ids[i]),
 				strings.NewReader(`{"target":"pool"}`),
 			)
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 			resp, err := app.Test(req, -1)
 			if err != nil {
 				results[i].err = err
@@ -490,10 +527,11 @@ func TestHandleMove_ConcurrentDemoteIsIdempotent(t *testing.T) {
 			defer wg.Done()
 			req := httptest.NewRequest(
 				http.MethodPost,
-				fmt.Sprintf("/api/v1/users/%d/movies/%d/move", user.ID, movie.ID),
+				fmt.Sprintf("/api/v1/movies/%d/move", movie.ID),
 				strings.NewReader(`{"target":"stash"}`),
 			)
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 			resp, err := app.Test(req, -1)
 			if err != nil {
 				results[i].err = err
@@ -533,10 +571,11 @@ func TestHandleAddMovie_LandsInStashEvenWithPoolRoom(t *testing.T) {
 
 	req := httptest.NewRequest(
 		http.MethodPost,
-		fmt.Sprintf("/api/v1/users/%d/movies", user.ID),
+		"/api/v1/movies",
 		strings.NewReader(`{"title":"Dune","tmdbId":438631}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 
 	resp, err := app.Test(req, -1)
 	if err != nil {

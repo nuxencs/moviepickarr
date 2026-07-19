@@ -11,6 +11,10 @@ import (
 )
 
 func (h *handler) handleSetPoolLock(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+
 	var body struct {
 		PoolLocked *bool `json:"poolLocked"`
 	}

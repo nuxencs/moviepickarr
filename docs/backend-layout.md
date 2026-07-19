@@ -8,7 +8,9 @@
 
 - `internal/server/server.go`: app lifecycle, middleware, route registration.
 - `internal/server/handler_base.go`: shared handler type + common parsing/sanitization helpers.
-- `internal/server/users_handlers.go`: users bounded context handlers.
+- `internal/server/users_handlers.go`: members (roster) bounded context handlers.
+  Reads are any-authenticated; create/delete are admin-only via an inline
+  `requireAdmin` guard.
 - `internal/server/movies_handlers.go`: movies bounded context handlers.
 - `internal/server/settings_handlers.go`: settings bounded context handlers.
 - `internal/server/stats_handlers.go`: stats bounded context handlers.
@@ -34,8 +36,10 @@
   presence-derived `hasLocalLogin`/`hasLinkedIdentity`), `POST /auth/password`
   (verify current, then revoke-all + fresh mint to revoke other devices and
   rotate the current token), and the admin `PUT`/`DELETE
-  /members/:memberID/local-login` upsert/remove (gated by an inline admin check
-  until the per-route authz reshape lands). `/auth/login` is registered ahead of
+  /members/:memberID/local-login` upsert/remove (gated by an inline admin check).
+  It also holds the shared authz guards used across handlers: `requireAdmin`
+  (403 `admin_required`) and `requireNextUpOrAdmin` (403 `not_next_up`).
+  `/auth/login` is registered ahead of
   `requireSession` so it stays reachable without a session; it is still behind
   `csrfGuard`.
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
@@ -54,9 +58,12 @@
   polymorphically); the repository ports in `internal/domain` remain the
   substitution seam for tests.
 - `internal/nextup`: owns the whole next-up rotation. `Get` self-seeds a
-  fresh install with the first roster member; `Advance` passes the turn after
-  a draw (only while the pool still has movies and more than one member
-  exists) and reports whether it moved, so the handler only broadcasts.
+  fresh install with the first roster member; `Advance` passes the turn (only
+  while the pool still has movies and more than one member exists) and reports
+  whether it moved, so the handler only broadcasts. The handler calls `Advance`
+  on **watch**, not draw (rotation-on-watch, Model B): next up stays the runner
+  across the whole draw → reveal → watch cycle and passes only once the movie is
+  actually watched.
 - `internal/auth`: shared auth primitives. `token.go` is the opaque-token
   generator + SHA-256 storage hash; `password.go` is the argon2id wrapper;
   `session.go` is the `SessionManager` deep module over the session store:
@@ -146,6 +153,31 @@
   middleware. The SSE stream (`/api/v1/events`) is excluded — compression buffers
   the body, which would break its per-event flush.
 
+### Actor & authorization
+
+The whole `/api/v1` group runs behind `csrfGuard` → `requireSession`, so every
+handler below has a live actor (`memberID` + `role`) in `c.Locals`. The actor is
+always the session member, never a path id: member-scoped routes carry no
+`:userID`, so no one can act as someone else by editing a URL.
+
+- Surface: `/members` (`:memberID`) replaces the old `/users`/`:userID`. Movie
+  mutations carry no actor id — `POST /movies` (adder = session), `PUT`/`DELETE
+  /movies/:movieID`, `POST /movies/:movieID/move`. Member pool/stash reads are
+  `GET /members/:memberID/pool` and `/stash`.
+- Status matrix: `401` not authenticated (from `requireSession`); `403` with a
+  machine `code` in the problem `title` (`admin_required`, `not_next_up`,
+  `not_adder`) for authenticated-but-forbidden; `404` only for genuinely-missing
+  resources, never a permission mask.
+- Rules: reads are any-authenticated (`GET /members`, pool/stash, movies / pool /
+  stats / settings reads, `/tmdb/search`). `PUT`/`DELETE /movies/:movieID` and
+  `/move` are **adder-only** (403 `not_adder`, no admin override). Draw / reveal /
+  watch are **next-up-or-admin** (403 `not_next_up`). Member create/delete,
+  pool-lock, and local-login admin actions are **admin-only** (403
+  `admin_required`).
+- SSE (`GET /events`): authed at the handshake (401 before the stream opens) and
+  revalidated on every heartbeat, so a session revoked mid-stream is dropped on
+  the next tick.
+
 ## Movie identity & enrichment (TMDB)
 
 A movie's stable identity is its `tmdb_id` / `imdb_id` (columns on `movies`,
@@ -157,7 +189,7 @@ holds only enriched **display** fields (overview, poster/backdrop, runtime,
 genres-as-JSON-names, rating, tagline, `enriched_at`).
 
 Movie responses **fold in this display metadata**: every movie-returning GET
-(pool / watched / current / user pool / stash / `GET /users`) batch-loads
+(pool / watched / current / member pool / stash / `GET /members`) batch-loads
 `movie_metadata` via `MovieMetadataRepo.GetMetadataByMovieIDs` and emits the
 extra `omitempty` fields (`posterPath`, `backdropPath`, `releaseDate`, `runtime`,
 `genres`, `voteAverage`, `tagline`, `overview`) on `movieResponse`

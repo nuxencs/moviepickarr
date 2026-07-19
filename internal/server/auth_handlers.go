@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -55,6 +56,27 @@ func (h *handler) requireAdmin(c *fiber.Ctx) (bool, error) {
 		return true, nil
 	}
 	return false, writeProblem(c, fiber.StatusForbidden, "admin_required", "admin role required")
+}
+
+// requireNextUpOrAdmin gates the draw → reveal → watch cycle: only the member
+// whose turn it is, or an admin, may run movie night. Anyone else gets 403
+// not_next_up. Because the rotation advances only on watch, the same member
+// holds the turn across the whole cycle.
+func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
+	if h.isAdmin(c) {
+		return true, nil
+	}
+
+	nextUp, err := h.nextUpService.Get(c.UserContext())
+	if err == nil && nextUp.ID == actorMemberID(c) {
+		return true, nil
+	}
+	// A real infra error surfaces as-is; sql.ErrNoRows (empty roster, no one up)
+	// falls through to the same not-your-turn refusal as a plain mismatch.
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, writeError(c, err)
+	}
+	return false, writeProblem(c, fiber.StatusForbidden, "not_next_up", "it is not your turn")
 }
 
 // resolveMemberID reads the :memberID path parameter as a positive int.

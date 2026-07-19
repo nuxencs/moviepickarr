@@ -83,6 +83,10 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleCreateUser(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+
 	var body struct {
 		Name string `json:"name"`
 	}
@@ -119,19 +123,23 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
-	userID, err := h.resolveUserID(c)
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+
+	memberID, err := resolveMemberID(c)
 	if err != nil {
 		return writeError(c, err)
 	}
 
 	ctx := c.UserContext()
-	if err := h.userService.Delete(ctx, userID); err != nil {
+	if err := h.userService.Delete(ctx, memberID); err != nil {
 		return writeError(c, err)
 	}
 
 	h.invalidateStatsCache()
 
-	h.broker.Broadcast(event{Type: "user:deleted", Data: fiber.Map{"userID": userID}})
+	h.broker.Broadcast(event{Type: "user:deleted", Data: fiber.Map{"userID": memberID}})
 
 	return c.SendStatus(fiber.StatusNoContent)
 }

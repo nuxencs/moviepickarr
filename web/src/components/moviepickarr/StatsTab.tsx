@@ -95,7 +95,10 @@ function topHour(items: StatsHourCount[]) {
   return [...items].sort((a, b) => b.count - a.count || a.hour - b.hour)[0];
 }
 export function StatsTab() {
-  const search = useSearch({ from: "/stats" });
+  // The Stats page hangs off the pathless `_app` layout route (router.tsx), so
+  // its route id is `/_app/stats` while its URL stays `/stats`. useSearch keys
+  // off the route id; useNavigate keys off the URL — hence the two spellings.
+  const search = useSearch({ from: "/_app/stats" });
   const navigate = useNavigate({ from: "/stats" });
   const rangeId = useId();
   const customRef = useRef<HTMLButtonElement>(null);

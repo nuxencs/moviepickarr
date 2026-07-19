@@ -199,6 +199,35 @@ func TestMe_RequiresSession(t *testing.T) {
 	}
 }
 
+func TestAuthConfig_ReportsOIDCPresenceUnauthenticated(t *testing.T) {
+	e := setupAuthApp(t)
+
+	// No provider configured (the setup wires no OIDC): the endpoint answers
+	// without a session and reports SSO off, so the login page hides the button.
+	off := e.request(t, http.MethodGet, "/api/v1/auth/config", "", nil)
+	if off.StatusCode != fiber.StatusOK {
+		t.Fatalf("config status = %d, want 200", off.StatusCode)
+	}
+	var cfg authConfigResponse
+	if err := json.NewDecoder(off.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if cfg.OIDC {
+		t.Fatalf("config.OIDC = true, want false with no provider")
+	}
+
+	// Flip the presence-derived flag the same way registerRoutes would once a
+	// provider is configured; the endpoint now advertises the SSO button.
+	e.h.oidcEnabled = true
+	on := e.request(t, http.MethodGet, "/api/v1/auth/config", "", nil)
+	if err := json.NewDecoder(on.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if !cfg.OIDC {
+		t.Fatalf("config.OIDC = false, want true when a provider is configured")
+	}
+}
+
 func TestLogin_FailuresAreUniform(t *testing.T) {
 	e := setupAuthApp(t)
 	id := e.seedMember(t, "Bob", "member")

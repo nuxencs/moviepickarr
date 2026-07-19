@@ -1,0 +1,227 @@
+/* Login + claim screens — the split-marquee direction locked in issue #85.
+   Cinematic left panel (faux poster wall + wordmark) beside a form column;
+   the panel collapses to a slim header band on phones. Colours come from the
+   app's global tokens (index.css); everything is namespaced under .auth*.
+   These pages own the whole viewport — they render outside the app shell, so
+   there is no NavBar above them. */
+
+.auth {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: auto;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* ---- Left: the cinematic marquee ---- */
+.auth__stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-deep);
+}
+.auth__wall {
+  position: absolute;
+  inset: -8%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  transform: rotate(-8deg) scale(1.15);
+  opacity: 0.5;
+}
+.auth__tile {
+  border-radius: var(--r-lg);
+  aspect-ratio: 2 / 3;
+}
+.auth__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 30%, var(--bg-deep) 100%),
+    linear-gradient(60deg, var(--bg-deep) 8%, transparent 60%);
+}
+.auth__stagecopy {
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  bottom: 40px;
+}
+.auth__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+  font-size: 17px;
+  color: var(--ink);
+}
+.auth__brand .mark {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.auth__brand .mark svg {
+  width: 15px;
+  height: 15px;
+}
+.auth__tag {
+  font-family: var(--font-display);
+  /* Fixed step, not fluid clamp (DESIGN.md §3); the mobile size steps down in
+     the ≤720px block below. */
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  margin: 16px 0 0;
+  color: var(--ink);
+  max-width: 14ch;
+}
+
+/* ---- Right: the form column ---- */
+.auth__panel {
+  display: grid;
+  place-items: center;
+  padding: 40px 32px;
+}
+.auth__panelinner {
+  width: min(380px, 100%);
+}
+.auth__form {
+  display: flex;
+  flex-direction: column;
+}
+.auth__eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.auth__title {
+  font-family: var(--font-display);
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  margin: 0 0 8px;
+}
+.auth__lead {
+  color: var(--ink-3);
+  font-size: 14px;
+  margin: 0 0 22px;
+}
+
+/* Reused .field rows, sized for a login form. */
+.auth__field {
+  height: 46px;
+  width: 100%;
+}
+.auth__field + .auth__field {
+  margin-top: 10px;
+}
+.auth__form .auth__field:first-of-type {
+  margin-top: 8px;
+}
+
+.auth__submit {
+  width: 100%;
+  height: 46px;
+  margin-top: 12px;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.auth__submit svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- Banner (top-of-form 401 / oidc notice) ---- */
+.auth__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 4px 0 16px;
+  padding: 11px 13px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid var(--line);
+}
+.auth__note svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+}
+.auth__note[data-tone="error"] {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 40%, transparent);
+  color: color-mix(in oklab, var(--danger) 55%, var(--ink));
+}
+.auth__note[data-tone="warn"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: color-mix(in oklab, var(--accent) 45%, var(--ink));
+}
+
+/* Inline field-validation error, quieter than the banner. */
+.auth__error {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: color-mix(in oklab, var(--danger) 55%, var(--ink));
+}
+
+/* ---- Terminal claim screens (no-longer-valid / already set up) ---- */
+.auth__msg {
+  padding-top: 6px;
+}
+.auth__msgicon {
+  display: inline-grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 999px;
+  margin-bottom: 18px;
+}
+.auth__msgicon svg {
+  width: 24px;
+  height: 24px;
+}
+.auth__msgicon[data-tone="error"] {
+  background: color-mix(in oklab, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+.auth__msgicon[data-tone="ok"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .auth {
+    grid-template-columns: 1fr;
+  }
+  .auth__stage {
+    min-height: 168px;
+  }
+  .auth__wall {
+    transform: rotate(-8deg) scale(1.4);
+  }
+  .auth__stagecopy {
+    left: 24px;
+    right: 24px;
+    bottom: 20px;
+  }
+  .auth__tag {
+    font-size: 26px;
+    margin-top: 8px;
+  }
+}

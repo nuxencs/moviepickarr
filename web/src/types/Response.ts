@@ -70,6 +70,38 @@ export interface Settings {
     poolLocked: boolean;
 }
 
+// The session actor projected by GET /auth/me. username is null when the member
+// has no local login; the two link-state flags are presence-derived server-side.
+export interface MeResponse {
+    id: number;
+    displayName: string;
+    username: string | null;
+    role: "member" | "admin";
+    hasLocalLogin: boolean;
+    hasLinkedIdentity: boolean;
+}
+
+// Public auth capabilities the unauthenticated login page reads to decide what
+// to render. Today that is only whether an SSO provider is configured.
+export interface AuthConfig {
+    oidc: boolean;
+}
+
+// The two live claim modes GET /auth/claim/{token} returns for a valid invite:
+// "placeholder" (set a fresh username + password) or "reset" (password only).
+export type ClaimMode = "placeholder" | "reset";
+
+// Drives the /claim/<token> page for a valid invite. The no-longer-valid and
+// already-set-up terminal states arrive as 404/410 errors, not this shape.
+export interface ClaimInfo {
+    displayName: string;
+    mode: ClaimMode;
+    options: {
+        password: boolean;
+        oidc: boolean;
+    };
+}
+
 // A selectable person in the Stats filter bar (actor, crew member, or adder).
 export interface FilterPersonOption {
     id: number;

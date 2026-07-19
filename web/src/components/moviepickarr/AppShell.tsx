@@ -8,17 +8,31 @@ import type { ReactNode } from "react";
 import { useSSE } from "@/hooks/useSSE";
 
 /**
- * App shell. The root route mounts once and persists across tab navigations,
- * so the SSE stream (useSSE) opens a single EventSource for the session rather
- * than tearing it down and reconnecting on every route change.
+ * Root shell for every route. Holds only the global Toaster and the outlet, so
+ * the standalone auth screens (login / claim) render without the NavBar or SSE
+ * stream, while the app pages get their chrome from AppLayout below.
  */
-export function RootLayout() {
+export function RootShell() {
+  return (
+    <>
+      <Outlet />
+      <Toaster />
+    </>
+  );
+}
+
+/**
+ * Chrome for the authenticated app pages (movies / members / stats), mounted
+ * once by a pathless layout route so it persists across tab navigations: the
+ * SSE stream (useSSE) opens a single EventSource for the session rather than
+ * tearing it down and reconnecting on every route change.
+ */
+export function AppLayout() {
   useSSE();
   return (
     <div className="app">
       <NavBar />
       <Outlet />
-      <Toaster />
     </div>
   );
 }

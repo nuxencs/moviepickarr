@@ -359,6 +359,10 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// no session yet, so they declare their own (absent) auth per-route. All are
 	// still behind csrfGuard above (the claim-validate GET is exempt as a safe
 	// method; the password claim POST carries the same-origin CSRF signal).
+	// Public auth capabilities for the unauthenticated login page (presence of an
+	// SSO provider today). GET + no secrets, so it sits ahead of requireSession
+	// alongside the other pre-auth routes.
+	v1.Get("/auth/config", h.handleAuthConfig)
 	v1.Post("/auth/login", h.handleLogin)
 	v1.Get("/auth/claim/:token", h.handleValidateClaim)
 	v1.Post("/auth/claim/:token/password", h.handleClaimPassword)

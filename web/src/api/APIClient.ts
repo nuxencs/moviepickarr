@@ -1,5 +1,19 @@
 import { getClientId } from "@/lib/clientId";
-import { FilterOptionsResponse, Movie, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, MeResponse, Movie, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+
+// Carries the HTTP status alongside the human-readable message so callers can
+// branch on it (the login page shows the uniform banner only for a 401, and
+// treats anything else as a try-again error). It extends Error, so existing
+// `err.message` consumers are unaffected.
+export class ApiError extends Error {
+    readonly status: number;
+
+    constructor(status: number, message: string) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status;
+    }
+}
 
 type RequestBody = BodyInit | object | Record<string, unknown> | null;
 type Primitive = string | number | boolean | symbol | undefined;
@@ -116,13 +130,15 @@ export async function HttpClient<T = unknown>(
             return Promise.resolve<T>(response as T);
         }
     } else {
+        // Every rejection is an ApiError carrying the status, so callers can
+        // branch on it; the message text matches what components already toast.
         switch (response.status) {
             case 400:
-                return Promise.reject(new Error("Bad request"));
+                return Promise.reject(new ApiError(400, "Bad request"));
             case 404:
-                return Promise.reject(new Error("Not Found"));
+                return Promise.reject(new ApiError(404, "Not Found"));
             case 500:
-                return Promise.reject(new Error("Internal Server Error"));
+                return Promise.reject(new ApiError(500, "Internal Server Error"));
             default:
                 break;
         }
@@ -145,16 +161,18 @@ export async function HttpClient<T = unknown>(
         // movie is already in the library") — surface it as the message
         // directly; components toast err.message verbatim.
         if (reason.length) {
-            return Promise.reject(new Error(reason));
+            return Promise.reject(new ApiError(response.status, reason));
         }
 
         const statusText = response.statusText.length
             ? ` (${response.statusText})`
             : "";
-        const defaultError = new Error(
-            `HTTP request to ${endpoint} failed with code ${response.status}${statusText}`,
+        return Promise.reject(
+            new ApiError(
+                response.status,
+                `HTTP request to ${endpoint} failed with code ${response.status}${statusText}`,
+            ),
         );
-        return Promise.reject(defaultError);
     }
 }
 
@@ -181,7 +199,33 @@ const appClient = {
         }),
 };
 
+// OIDC initiation and claim-via-SSO are top-level browser navigations (the
+// server 302s to the provider), not XHR. These same-origin paths drive a
+// `window.location.assign`, so the session/tx cookies ride along.
+export const oidcLoginPath = () => "/api/v1/auth/oidc/login";
+export const oidcClaimPath = (token: string) =>
+    `/api/v1/auth/claim/${encodeRFC3986URIComponent(token)}/oidc`;
+
 export const APIClient = {
+    auth: {
+        // Public: what the unauthenticated login page needs (SSO presence).
+        config: () => appClient.Get<AuthConfig>("api/v1/auth/config"),
+        // The session actor; rejects 401 when there is no valid session.
+        me: () => appClient.Get<MeResponse>("api/v1/auth/me"),
+        // 204 + session cookie on success; 401 for any credential failure.
+        login: (username: string, password: string) =>
+            appClient.Post<void>("api/v1/auth/login", { body: { username, password } }),
+        // Claim-page data for a token: the greet name, placeholder-vs-reset mode,
+        // and offered options. 404 = no longer valid, 410 = already set up.
+        validateClaim: (token: string) =>
+            appClient.Get<ClaimInfo>(`api/v1/auth/claim/${encodeRFC3986URIComponent(token)}`),
+        // Redeem via password. Placeholder sends username + password; reset sends
+        // password only (username omitted). 204 + session cookie on success.
+        claimPassword: (token: string, password: string, username?: string) =>
+            appClient.Post<void>(`api/v1/auth/claim/${encodeRFC3986URIComponent(token)}/password`, {
+                body: username ? { username, password } : { password },
+            }),
+    },
     users: {
         getAll: () => appClient.Get<User[]>("api/v1/users"),
         create: (name: string) =>

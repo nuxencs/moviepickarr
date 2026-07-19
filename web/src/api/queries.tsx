@@ -1,11 +1,41 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 
 import { APIClient } from "@/api/APIClient";
-import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+import { AuthKeys, MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
 import type { StatsFilters } from "@/components/moviepickarr/statsSearch";
 
 import type { StatsWindow } from "@/types/Response";
+
+/** The public SSO-presence fact the login page reads. Rarely changes (it's an
+ *  operator config), so a generous staleTime; no session needed. */
+export const AuthConfigQueryOptions = () =>
+  queryOptions({
+    queryKey: AuthKeys.config(),
+    queryFn: () => APIClient.auth.config(),
+    refetchOnWindowFocus: false,
+    staleTime: 300_000,
+  })
+
+/** The current session actor. A 401 is an expected "not logged in" answer, so
+ *  it must not retry (retrying a 401 just delays the login redirect). */
+export const MeQueryOptions = () =>
+  queryOptions({
+    queryKey: AuthKeys.me(),
+    queryFn: () => APIClient.auth.me(),
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+/** Claim-page data for a token. 404/410 (no-longer-valid / already-set-up) are
+ *  terminal answers, not transient failures, so it must not retry. */
+export const ClaimQueryOptions = (token: string) =>
+  queryOptions({
+    queryKey: AuthKeys.claim(token),
+    queryFn: () => APIClient.auth.validateClaim(token),
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
 
 export const UsersGetAllQueryOptions = () =>
   queryOptions({

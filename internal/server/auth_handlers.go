@@ -113,6 +113,21 @@ func (h *handler) handleLogin(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+// authConfigResponse is the public GET /auth/config projection: the handful of
+// presence-derived facts an unauthenticated login page needs to render itself.
+// Today that is only whether an SSO provider is configured, so the login page
+// can render the SSO button (present, not disabled) exactly when it can work.
+type authConfigResponse struct {
+	OIDC bool `json:"oidc"`
+}
+
+// handleAuthConfig reports the auth capabilities visible to a caller with no
+// session yet. It is deliberately unauthenticated and carries no secrets: OIDC
+// enablement is already public (the SSO button either appears or it doesn't).
+func (h *handler) handleAuthConfig(c *fiber.Ctx) error {
+	return c.Status(fiber.StatusOK).JSON(authConfigResponse{OIDC: h.oidcEnabled})
+}
+
 // meResponse is the GET /auth/me projection. Username serializes as null (not
 // omitted) when the member has no local login, matching the spec's username|null.
 type meResponse struct {

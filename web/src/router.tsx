@@ -7,7 +7,9 @@ import {
 
 import { queryClient } from "@/api/QueryClient";
 
-import { RootLayout, Shell } from "@/components/moviepickarr/AppShell";
+import { AppLayout, RootShell, Shell } from "@/components/moviepickarr/AppShell";
+import { ClaimPage } from "@/components/moviepickarr/auth/ClaimPage";
+import { LoginPage } from "@/components/moviepickarr/auth/LoginPage";
 import { Hero } from "@/components/moviepickarr/Hero";
 import { MoviesTab } from "@/components/moviepickarr/MoviesTab";
 import { statsSearchDefaults, validateStatsSearch } from "@/components/moviepickarr/statsSearch";
@@ -21,11 +23,37 @@ interface RouterContext {
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: RootLayout,
+  component: RootShell,
+});
+
+// Pathless layout route carrying the app chrome (NavBar + SSE). The
+// authenticated app pages hang off it; the standalone auth routes below sit
+// directly under the root so they render without that chrome.
+const appLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "_app",
+  component: AppLayout,
+});
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  // The OIDC callback redirects back here with a ?error= bucket on failure; keep
+  // it as a plain optional string and let the page map it to banner copy.
+  validateSearch: (search: Record<string, unknown>): { error?: string } => ({
+    error: typeof search.error === "string" ? search.error : undefined,
+  }),
+  component: LoginPage,
+});
+
+const claimRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/claim/$token",
+  component: ClaimPage,
 });
 
 const moviesRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: "/",
   component: function MoviesPage() {
     return (
@@ -40,7 +68,7 @@ const moviesRoute = createRoute({
 });
 
 const usersRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: "/users",
   component: function UsersPage() {
     return (
@@ -52,7 +80,7 @@ const usersRoute = createRoute({
 });
 
 const statsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: "/stats",
   // All Stats filter state lives in the URL search params (see statsSearch).
   validateSearch: validateStatsSearch,
@@ -66,7 +94,11 @@ const statsRoute = createRoute({
   },
 });
 
-const routeTree = rootRoute.addChildren([moviesRoute, usersRoute, statsRoute]);
+const routeTree = rootRoute.addChildren([
+  appLayoutRoute.addChildren([moviesRoute, usersRoute, statsRoute]),
+  loginRoute,
+  claimRoute,
+]);
 
 export const router = createRouter({
   routeTree,

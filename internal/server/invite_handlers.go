@@ -65,7 +65,10 @@ func (h *handler) handleValidateClaim(c *fiber.Ctx) error {
 		resp.Mode = "reset"
 	}
 	resp.Options.Password = cc.Options.Password
-	resp.Options.OIDC = cc.Options.OIDC
+	// OIDC is offered on the claim page exactly when a provider is configured. The
+	// invite manager doesn't know about OIDC config, so enablement is layered on
+	// here from the handler's presence-derived flag.
+	resp.Options.OIDC = h.oidcEnabled
 	return c.Status(fiber.StatusOK).JSON(resp)
 }
 

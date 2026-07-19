@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"moviepickarr/internal/auth"
 	"moviepickarr/internal/db"
 	"moviepickarr/internal/logger"
 	"moviepickarr/internal/movie"
@@ -108,6 +109,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	h := newHandler(pool, rootLog)
+	h.startSessionSweeper(ctx)
 	if h.enrichRunner != nil {
 		h.enrichRunner.Start(ctx)
 	} else {
@@ -265,6 +267,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	h := &handler{
 		broker:      broker,
 		log:         rootLog.With().Str("component", "http").Logger(),
+		sessions:    auth.NewSessionManager(repository.NewSqliteSessionRepository(pool)),
 		userService: user.NewService(userRepo, nextUpRepo),
 		movieService: movie.NewService(movieRepo, movie.DrawConfig{
 			OnRevealed: revealBroadcaster(broker),
@@ -290,6 +293,16 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 
 func registerRoutes(app *fiber.App, h *handler) {
 	v1 := app.Group("/api/v1")
+	// Auth chain, mounted before the routes: csrfGuard rejects cross-origin
+	// state-changing calls, then requireSession turns the session cookie into a
+	// live actor (401 + cookie-clear when it can't). Order matters: CSRF runs
+	// first so a forged request never reaches the session lookup. The shared
+	// registerV1Routes below carries no auth of its own, so the per-route authz
+	// reshape can layer on later without moving this wiring. The same chain
+	// still needs mounting on the /auth/* group once those routes exist (the
+	// spec scopes CSRF to /api/v1/* and /auth/*); no /auth routes yet.
+	v1.Use(csrfGuard)
+	v1.Use(h.requireSession)
 	registerV1Routes(v1, h)
 }
 

@@ -279,6 +279,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		broker:      broker,
 		log:         rootLog.With().Str("component", "http").Logger(),
 		sessions:    auth.NewSessionManager(repository.NewSqliteSessionRepository(pool)),
+		localAuth:   auth.NewLocalAuth(repository.NewSqliteLocalAccountRepository(pool)),
 		userService: user.NewService(userRepo, nextUpRepo),
 		movieService: movie.NewService(movieRepo, movie.DrawConfig{
 			OnRevealed: revealBroadcaster(broker),
@@ -304,16 +305,29 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 
 func registerRoutes(app *fiber.App, h *handler) {
 	v1 := app.Group("/api/v1")
-	// Auth chain, mounted before the routes: csrfGuard rejects cross-origin
-	// state-changing calls, then requireSession turns the session cookie into a
-	// live actor (401 + cookie-clear when it can't). Order matters: CSRF runs
-	// first so a forged request never reaches the session lookup. The shared
-	// registerV1Routes below carries no auth of its own, so the per-route authz
-	// reshape can layer on later without moving this wiring. The same chain
-	// still needs mounting on the /auth/* group once those routes exist (the
-	// spec scopes CSRF to /api/v1/* and /auth/*); no /auth routes yet.
+	// csrfGuard runs first on the whole group so a forged cross-origin
+	// state-changing call never reaches a session lookup or a login verify.
 	v1.Use(csrfGuard)
+
+	// Auth-establishing routes sit ahead of requireSession: login has no session
+	// yet, so it declares its own (absent) auth per-route. It is still behind
+	// csrfGuard above.
+	v1.Post("/auth/login", h.handleLogin)
+
+	// requireSession turns the session cookie into a live actor (401 +
+	// cookie-clear when it can't); everything registered after this point is
+	// authenticated. The shared registerV1Routes carries no auth of its own, so
+	// the per-route authz reshape can layer on later without moving this wiring.
 	v1.Use(h.requireSession)
+
+	// Self-serve identity routes. The admin local-login routes sit under a
+	// temporary in-handler admin guard until the per-route authz reshape lands;
+	// they use the /members surface the reshape will settle on.
+	v1.Get("/auth/me", h.handleMe)
+	v1.Post("/auth/password", h.handleChangePassword)
+	v1.Put("/members/:memberID/local-login", h.handleSetLocalLogin)
+	v1.Delete("/members/:memberID/local-login", h.handleDeleteLocalLogin)
+
 	registerV1Routes(v1, h)
 }
 

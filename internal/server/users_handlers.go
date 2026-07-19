@@ -105,6 +105,14 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	// Onboarding is one step: create the placeholder, then issue its first claim
+	// link. The invite targets the fresh member (a placeholder → claim), issued by
+	// the acting admin.
+	rawToken, err := h.invites.Issue(ctx, createdUser.ID, actorMemberID(c))
+	if err != nil {
+		return h.writeInternal(c, err, "issuing first invite on member create failed")
+	}
+
 	// Stats list every roster member (zero rows included), so a new member
 	// must show up there immediately, not after the cache TTL.
 	h.invalidateStatsCache()
@@ -117,9 +125,21 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 		CreatedAt:   formatTime(createdUser.CreatedAt),
 	}
 
+	// The broadcast carries the roster row only: the claim URL is a one-time
+	// secret and goes solely in the direct response to the issuing admin.
 	h.broker.Broadcast(event{Type: "user:created", Data: payload})
 
-	return c.Status(fiber.StatusCreated).JSON(payload)
+	return c.Status(fiber.StatusCreated).JSON(createMemberResponse{
+		userResponse: payload,
+		ClaimURL:     claimURL(rawToken),
+	})
+}
+
+// createMemberResponse is the POST /members payload: the new roster row plus the
+// one-time claim URL. The claim URL is response-only (never broadcast).
+type createMemberResponse struct {
+	userResponse
+	ClaimURL string `json:"claimUrl"`
 }
 
 func (h *handler) handleDeleteUser(c *fiber.Ctx) error {

@@ -50,6 +50,9 @@ func setupAuthApp(t *testing.T) *authTestEnv {
 	clk := &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	h.sessions = auth.NewSessionManager(repository.NewSqliteSessionRepository(dbConn), auth.WithClock(clk.now))
 	h.localAuth = auth.NewLocalAuth(repository.NewSqliteLocalAccountRepository(dbConn), auth.WithLocalClock(clk.now))
+	// The invite manager reuses the fake-clock localAuth for the claim upsert and
+	// carries the same clock so invite expiry advances with the test.
+	h.invites = auth.NewInviteManager(repository.NewSqliteInviteRepository(dbConn), h.localAuth, auth.WithInviteClock(clk.now))
 
 	t.Cleanup(func() {
 		h.Close()

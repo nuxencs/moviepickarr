@@ -611,10 +611,6 @@
     animation: mg-okfill var(--dur-confirm) linear forwards;
   }
   .drawreel__ok-label { position: relative; z-index: 1; }
-  .drawreel__waiting {
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.6);
-  }
   @keyframes mg-okfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   @media (max-width: 700px) {
     .drawreel { gap: 14px; padding: 16px; }

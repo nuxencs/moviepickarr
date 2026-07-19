@@ -20,6 +20,15 @@ const TARGET_TRAIL = 6;
 
 interface DrawReelProps {
   spin: SpinDescriptor;
+  /** Whether this viewer may reveal — an admin or the next-up member. The
+   *  reveal is gated by the turn (member), not by which client drew: the
+   *  next-up member and any admin get a live OK, everyone else a disabled one.
+   *  Errs open while the turn gate is still loading; the backend not_next_up is
+   *  the backstop. */
+  canReveal: boolean;
+  /** Tooltip for the disabled OK, naming the member whose turn it is (or the
+   *  waiting fallback when next-up is unresolved). */
+  revealTip: string;
   /** The reel finished (or skipped) its scroll and rests on the winner. The
    *  draw machine settles and schedules the self-heal fallback off this. */
   onScrollDone: () => void;
@@ -37,7 +46,7 @@ interface DrawReelProps {
  * a JS-measured target + a CSS transition: the same "measure then transition"
  * idiom as the FLIP rails, so no animation library.
  */
-export function DrawReel({ spin, onScrollDone, onConfirm }: DrawReelProps) {
+export function DrawReel({ spin, canReveal, revealTip, onScrollDone, onConfirm }: DrawReelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const winnerRef = useRef<HTMLDivElement>(null);
@@ -104,25 +113,25 @@ export function DrawReel({ spin, onScrollDone, onConfirm }: DrawReelProps) {
   }, [spin]);
 
   // Keyboard: while scrolling, Escape skips ahead; once settled, Escape confirms
-  // (the drawer only — spectators can't close the reel for everyone).
+  // (only whoever may reveal — spectators can't close the reel for everyone).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (!settledRef.current) skip();
-      else if (spin.mine) onConfirm();
+      else if (canReveal) onConfirm();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [skip, onConfirm, spin.mine]);
+  }, [skip, onConfirm, canReveal]);
 
   // Move focus to whichever control is live, for keyboard users.
   useEffect(() => {
     if (settled) {
-      if (spin.mine) confirmRef.current?.focus();
+      if (canReveal) confirmRef.current?.focus();
     } else {
       skipRef.current?.focus();
     }
-  }, [settled, spin.mine]);
+  }, [settled, canReveal]);
 
   // The SERVER owns the auto-reveal: once a draw settles it broadcasts
   // movie:revealed at the confirm deadline, so every client closes off that one
@@ -229,21 +238,33 @@ export function DrawReel({ spin, onScrollDone, onConfirm }: DrawReelProps) {
           <button type="button" className="drawreel__skip" ref={skipRef} onClick={skip}>
             Skip
           </button>
-        ) : spin.mine ? (
+        ) : canReveal ? (
           <button type="button" className="btn btn--accent drawreel__ok" ref={confirmRef} onClick={onConfirm}>
             {/* The fill counts down to the server's reveal deadline: its
-                duration comes from the spin, not the --dur-confirm token. */}
-            <span
-              className="drawreel__ok-fill"
-              style={{ animationDuration: `${spin.confirmMs}ms` }}
-              aria-hidden="true"
-            />
+                duration comes from the spin, not the --dur-confirm token. Shown
+                only to the client that drew — the countdown is the drawer's cue;
+                a turn-eligible admin (or the member's other tab) still confirms,
+                just without the countdown they didn't start. */}
+            {spin.mine && (
+              <span
+                className="drawreel__ok-fill"
+                style={{ animationDuration: `${spin.confirmMs}ms` }}
+                aria-hidden="true"
+              />
+            )}
             <span className="drawreel__ok-label">OK</span>
           </button>
         ) : (
-          <div className="drawreel__waiting" role="status">
-            Waiting for the drawer…
-          </div>
+          // Spectators see the reveal control disabled (not hidden), naming the
+          // member whose turn it is — no countdown fill, since only they close it.
+          <button
+            type="button"
+            className="btn btn--accent drawreel__ok"
+            disabled
+            title={revealTip}
+          >
+            <span className="drawreel__ok-label">OK</span>
+          </button>
         )}
       </div>
     </div>

@@ -35,7 +35,7 @@ export interface DrawEnv {
   /** Reel scroll length (the --dur-spin token). */
   spinDurationMs: number;
   reducedMotion: boolean;
-  /** This browser's stable client id: decides `mine` (who gets the OK). */
+  /** This browser's stable client id: decides `mine` (who drew this). */
   clientId: string;
   /** Confirm-countdown length when a payload carries no revealAt. */
   confirmFallbackMs: number;
@@ -56,7 +56,9 @@ export interface SpinDescriptor {
   durationMs: number;
   /** Fresh draw (true) vs reload-resume (false): gates the draw sound. */
   live: boolean;
-  /** Whether THIS client initiated the draw (shows the OK button). */
+  /** Whether THIS client initiated the draw. The reveal (OK) itself is turn-
+   *  gated by the board (admin or next-up member), not by this; `mine` only
+   *  drives the confirm countdown fill, which is the drawer's own cue. */
   mine: boolean;
   /** Settled confirm-countdown length, derived from the server's revealAt
    *  deadline: the OK fill and the self-heal fallback both time off it. */

@@ -316,3 +316,192 @@ func TestUserRepo_Restore_NotArchivedIsNotFound(t *testing.T) {
 		t.Fatalf("restore missing member: got %v, want ErrNotFound", err)
 	}
 }
+
+// rosterByID indexes a roster read by member id, so an assertion can pull the
+// row it cares about without depending on the (active-then-oldest) ordering.
+func rosterByID(t *testing.T, members []*domain.RosterMember) map[int]*domain.RosterMember {
+	t.Helper()
+	byID := make(map[int]*domain.RosterMember, len(members))
+	for _, m := range members {
+		byID[m.ID] = m
+	}
+	return byID
+}
+
+// The roster derives login state from credential/invite/archive presence, not a
+// stored flag: a placeholder shows nothing, an invited placeholder shows a
+// pending invite, a fully-credentialed member shows both link-states, and an
+// archived member surfaces on the roster (unlike the active-only List) with its
+// login rows stripped.
+func TestUserRepo_Roster_DerivesLoginState(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+
+	// Placeholder: no credentials, no invite.
+	noor, err := e.users.Create(e.ctx, "Noor")
+	if err != nil {
+		t.Fatalf("create noor: %v", err)
+	}
+	// Invited placeholder: a valid unredeemed invite, still no credentials.
+	jamie, err := e.users.Create(e.ctx, "Jamie")
+	if err != nil {
+		t.Fatalf("create jamie: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := e.invites.Create(e.ctx, jamie.ID, "invite-jamie", now.Add(24*time.Hour), nil); err != nil {
+		t.Fatalf("seed jamie invite: %v", err)
+	}
+	// Fully credentialed member with authored movies (so a remove would archive).
+	// Seed the credentials directly (not seedLogin) so no leftover invite makes
+	// this claimed member read as still-pending.
+	alex, err := e.users.Create(e.ctx, "Alex")
+	if err != nil {
+		t.Fatalf("create alex: %v", err)
+	}
+	if err := e.accounts.Create(e.ctx, alex.ID, "alex", "hash"); err != nil {
+		t.Fatalf("seed alex local account: %v", err)
+	}
+	if err := e.oidc.Insert(e.ctx, domain.OIDCIdentity{
+		UserID: alex.ID, Issuer: "https://idp.test", Subject: "alex",
+	}, now); err != nil {
+		t.Fatalf("seed alex oidc identity: %v", err)
+	}
+	if _, err := e.movies.Add(e.ctx, "Heat", "pool", alex.ID); err != nil {
+		t.Fatalf("add alex movie: %v", err)
+	}
+	// Archived member: kept for attribution, off the active roster but on this one.
+	dana, err := e.users.Create(e.ctx, "Dana")
+	if err != nil {
+		t.Fatalf("create dana: %v", err)
+	}
+	if _, err := e.movies.Add(e.ctx, "Ronin", "pool", dana.ID); err != nil {
+		t.Fatalf("add dana movie: %v", err)
+	}
+	if _, err := e.users.Remove(e.ctx, dana.ID); err != nil {
+		t.Fatalf("archive dana: %v", err)
+	}
+
+	roster, err := e.users.Roster(e.ctx)
+	if err != nil {
+		t.Fatalf("roster: %v", err)
+	}
+	byID := rosterByID(t, roster)
+
+	if got := byID[noor.ID]; got.HasLocalLogin || got.HasLinkedIdentity || got.InvitePending || got.Archived {
+		t.Fatalf("placeholder Noor has unexpected login state: %+v", got)
+	}
+	if got := byID[jamie.ID]; !got.InvitePending || got.HasLocalLogin || got.HasLinkedIdentity {
+		t.Fatalf("invited placeholder Jamie: want invitePending only, got %+v", got)
+	}
+	if got := byID[alex.ID]; !got.HasLocalLogin || !got.HasLinkedIdentity || got.InvitePending {
+		t.Fatalf("credentialed Alex: want both link-states, no pending invite, got %+v", got)
+	}
+	if got := byID[alex.ID]; got.MoviesAuthored != 1 {
+		t.Fatalf("Alex moviesAuthored = %d, want 1", got.MoviesAuthored)
+	}
+	dRow, ok := byID[dana.ID]
+	if !ok {
+		t.Fatal("archived Dana missing from roster (should surface, unlike active List)")
+	}
+	if !dRow.Archived {
+		t.Fatal("Dana row not marked archived")
+	}
+	if dRow.HasLocalLogin || dRow.HasLinkedIdentity || dRow.InvitePending {
+		t.Fatalf("archived Dana still carries login state: %+v", dRow)
+	}
+	if dRow.MoviesAuthored != 1 {
+		t.Fatalf("archived Dana moviesAuthored = %d, want 1 (attribution kept)", dRow.MoviesAuthored)
+	}
+
+	// Active members sort before the archived one.
+	if roster[len(roster)-1].ID != dana.ID {
+		t.Fatalf("archived member not ordered last: got id %d", roster[len(roster)-1].ID)
+	}
+}
+
+// Promote then demote round-trips the role. Promotion is unconditional; demotion
+// is allowed here because a second admin remains after the change.
+func TestUserRepo_SetRole_PromoteAndDemote(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	root, err := e.users.Create(e.ctx, "Root")
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := e.users.SetRole(e.ctx, root.ID, domain.RoleAdmin); err != nil {
+		t.Fatalf("promote root: %v", err)
+	}
+	priya, err := e.users.Create(e.ctx, "Priya")
+	if err != nil {
+		t.Fatalf("create priya: %v", err)
+	}
+	if err := e.users.SetRole(e.ctx, priya.ID, domain.RoleAdmin); err != nil {
+		t.Fatalf("promote priya: %v", err)
+	}
+
+	byID := rosterByID(t, mustRoster(t, e))
+	if byID[priya.ID].Role != domain.RoleAdmin {
+		t.Fatalf("priya role = %q, want admin", byID[priya.ID].Role)
+	}
+
+	// Two admins remain, so demoting one is allowed.
+	if err := e.users.SetRole(e.ctx, priya.ID, domain.RoleMember); err != nil {
+		t.Fatalf("demote priya: %v", err)
+	}
+	byID = rosterByID(t, mustRoster(t, e))
+	if byID[priya.ID].Role != domain.RoleMember {
+		t.Fatalf("priya role = %q, want member after demote", byID[priya.ID].Role)
+	}
+}
+
+// Demoting the only admin is refused so the roster can never be left with no one
+// able to run admin actions.
+func TestUserRepo_SetRole_RefusesLastAdmin(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	root, err := e.users.Create(e.ctx, "Root")
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	if err := e.users.SetRole(e.ctx, root.ID, domain.RoleAdmin); err != nil {
+		t.Fatalf("promote root: %v", err)
+	}
+
+	if err := e.users.SetRole(e.ctx, root.ID, domain.RoleMember); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("demote last admin: got %v, want ErrConflict", err)
+	}
+	// The role is unchanged after the refused demotion.
+	byID := rosterByID(t, mustRoster(t, e))
+	if byID[root.ID].Role != domain.RoleAdmin {
+		t.Fatalf("last admin role changed despite refusal: %q", byID[root.ID].Role)
+	}
+}
+
+// A role change against a missing or archived member is ErrNotFound: an archived
+// member's role is frozen (they are off the active roster).
+func TestUserRepo_SetRole_MissingOrArchived(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	if err := e.users.SetRole(e.ctx, 4242, domain.RoleAdmin); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("set role on missing member: got %v, want ErrNotFound", err)
+	}
+
+	dana, err := e.users.Create(e.ctx, "Dana")
+	if err != nil {
+		t.Fatalf("create dana: %v", err)
+	}
+	if _, err := e.movies.Add(e.ctx, "Ronin", "pool", dana.ID); err != nil {
+		t.Fatalf("add dana movie: %v", err)
+	}
+	if _, err := e.users.Remove(e.ctx, dana.ID); err != nil {
+		t.Fatalf("archive dana: %v", err)
+	}
+	if err := e.users.SetRole(e.ctx, dana.ID, domain.RoleAdmin); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("set role on archived member: got %v, want ErrNotFound", err)
+	}
+}
+
+func mustRoster(t *testing.T, e *userRemoveEnv) []*domain.RosterMember {
+	t.Helper()
+	roster, err := e.users.Roster(e.ctx)
+	if err != nil {
+		t.Fatalf("roster: %v", err)
+	}
+	return roster
+}

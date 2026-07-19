@@ -1,6 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChartNoAxesColumnIcon, FilmIcon, MoonIcon, SunIcon, UsersIcon } from "lucide-react";
+import { ChartNoAxesColumnIcon, FilmIcon, MoonIcon, ShieldIcon, SunIcon, UsersIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+
+import { MeQueryOptions } from "@/api/queries";
 
 import { VolumeControl } from "@/components/moviepickarr/VolumeControl";
 import { useTheme } from "@/components/theme-context";
@@ -40,6 +43,10 @@ export function NavBar() {
   const { theme, setTheme } = useTheme();
   const isDark = resolveDark(theme);
   const active = useRouterState({ select: (s) => tabFromPath(s.location.pathname) });
+  // The admin roster entry only appears for admins. A 401 (not logged in) leaves
+  // role undefined, so the link is hidden, never a dead entry a member can't use.
+  const { data: me } = useQuery(MeQueryOptions());
+  const onAdmin = useRouterState({ select: (s) => s.location.pathname.startsWith("/admin") });
 
   // A single shared underline that slides between tabs, rather than one per tab
   // that unmounts/remounts on switch. We measure the active link and drive the
@@ -115,6 +122,19 @@ export function NavBar() {
           </div>
 
           <div className="nav__actions">
+            {me?.role === "admin" && (
+              <Link
+                to="/admin"
+                className="iconbtn"
+                data-active={onAdmin}
+                aria-current={onAdmin ? "page" : undefined}
+                aria-label="Roster"
+                title="Roster (admin)"
+              >
+                <ShieldIcon />
+              </Link>
+            )}
+
             <VolumeControl />
 
             <button

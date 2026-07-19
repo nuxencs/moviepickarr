@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, MeResponse, Movie, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, MeResponse, Movie, RemoveResult, RosterMember, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 // Carries the HTTP status alongside the human-readable message so callers can
 // branch on it (the login page shows the uniform banner only for a 401, and
@@ -192,8 +192,13 @@ const appClient = {
             ...config,
             method: "POST",
         }),
-    Delete: (endpoint: string, config: HttpConfig = {}) =>
-        HttpClient<void>(endpoint, {
+    Patch: <T = void>(endpoint: string, config: HttpConfig = {}) =>
+        HttpClient<T>(endpoint, {
+            ...config,
+            method: "PATCH",
+        }),
+    Delete: <T = void>(endpoint: string, config: HttpConfig = {}) =>
+        HttpClient<T>(endpoint, {
             ...config,
             method: "DELETE",
         }),
@@ -225,6 +230,43 @@ export const APIClient = {
             appClient.Post<void>(`api/v1/auth/claim/${encodeRFC3986URIComponent(token)}/password`, {
                 body: username ? { username, password } : { password },
             }),
+    },
+    // The admin roster surface. Reads the presence-derived roster and drives every
+    // per-member admin action off the session actor (never a path id for the actor).
+    // 403 on any of these is the "Admins only" signal the surface renders.
+    members: {
+        roster: () => appClient.Get<RosterMember[]>("api/v1/members/roster"),
+        // Create a placeholder + issue its first claim link in one step; the claim
+        // URL is response-only (never broadcast) and shown once.
+        create: (name: string) =>
+            appClient.Post<InviteResult>("api/v1/members", { body: { name } }),
+        // Promote/demote. 409 when it would demote the last admin.
+        setRole: (memberID: number, role: "member" | "admin") =>
+            appClient.Patch<void>(`api/v1/members/${memberID}/role`, { body: { role } }),
+        // (Re)issue a claim link: revokes any current valid invite, returns a fresh
+        // one-time URL. Serves both first-invite-after-expiry and regenerate.
+        reissueInvite: (memberID: number) =>
+            appClient.Post<InviteResult>(`api/v1/members/${memberID}/invite`),
+        revokeInvite: (memberID: number) =>
+            appClient.Delete(`api/v1/members/${memberID}/invite`),
+        // Set (create) or reset an existing local login. Reset revokes the member's
+        // other sessions server-side.
+        setLocalLogin: (memberID: number, username: string, password: string) =>
+            appClient.Put<void>(`api/v1/members/${memberID}/local-login`, { body: { username, password } }),
+        removeLocalLogin: (memberID: number) =>
+            appClient.Delete(`api/v1/members/${memberID}/local-login`),
+        // Remove another member's linked identity (they fall back to a placeholder).
+        unlink: (memberID: number) =>
+            appClient.Delete(`api/v1/members/${memberID}/linked-identity`),
+        // Remove your OWN linked identity. 409 when it is your last credential (the
+        // surface refuses this client-side first; this is the backstop).
+        unlinkSelf: () => appClient.Delete("api/v1/auth/linked-identity"),
+        // One action, two outcomes: hard delete (no authored movies) or archive.
+        remove: (memberID: number) =>
+            appClient.Delete<RemoveResult>(`api/v1/members/${memberID}`),
+        // Reactivate an archived member and re-issue their claim link in one step.
+        restore: (memberID: number) =>
+            appClient.Post<InviteResult>(`api/v1/members/${memberID}/restore`),
     },
     users: {
         getAll: () => appClient.Get<User[]>("api/v1/users"),

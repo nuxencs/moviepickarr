@@ -21,6 +21,53 @@ const (
 	OutcomeArchived RemoveOutcome = "archived"
 )
 
+// Role is the app-owned member role. It is single-valued and never derived
+// from a credential (link-state is), so the two axes stay independent.
+const (
+	RoleMember = "member"
+	RoleAdmin  = "admin"
+)
+
+// RosterMember is one row of the admin roster: identity plus the presence-derived
+// facts the admin surface renders. Link-state is never a stored flag: HasLocalLogin
+// and HasLinkedIdentity are the existence of a local_accounts / oidc_identities
+// row, InvitePending the existence of a still-valid unredeemed invite, Archived
+// the archived_at column. MoviesAuthored decides delete-vs-archive on removal, so
+// the surface can preview which path a remove will take before committing.
+type RosterMember struct {
+	ID   int
+	Name string
+	// Username is the local-login handle, present only when a local account
+	// exists (the same row HasLocalLogin is derived from). Empty for members with
+	// no password credential.
+	Username          string
+	Role              string
+	Archived          bool
+	HasLocalLogin     bool
+	HasLinkedIdentity bool
+	InvitePending     bool
+	MoviesAuthored    int
+	LastSeenAt        *time.Time
+}
+
+// RosterRepo is the admin read/write surface over members, kept separate from
+// UserRepo so the roster read (which spans credential/invite/archive presence)
+// and the role write don't widen the movie-board UserRepo the rest of the app
+// depends on.
+type RosterRepo interface {
+	// Roster returns every member, active and archived, with their presence-derived
+	// login state. Ordering is active-before-archived, then oldest-first, so the
+	// surface can split the two sections without a second pass.
+	Roster(ctx context.Context) ([]*RosterMember, error)
+	// SetRole changes an active member's role. Demoting the last remaining admin
+	// is refused with ErrConflict so the roster can never be left with no admin;
+	// a missing or archived member returns ErrNotFound. Setting the role a member
+	// already holds is a no-op success. Sessions are untouched: role is read live
+	// per request, so the change reflects on the member's next call without a
+	// re-login.
+	SetRole(ctx context.Context, id int, role string) error
+}
+
 type UserRepo interface {
 	FindByID(ctx context.Context, id int) (*User, error)
 	List(ctx context.Context) ([]*User, error)

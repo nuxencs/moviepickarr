@@ -70,6 +70,42 @@ export interface Settings {
     poolLocked: boolean;
 }
 
+// One row of the admin roster (GET /members/roster). Login state is
+// presence-derived server-side, never a stored flag: hasLocalLogin /
+// hasLinkedIdentity / invitePending are the existence of a credential / invite
+// row, archived the archived_at column. moviesAuthored decides whether a remove
+// hard-deletes (frees the name) or archives (keeps attribution), so the surface
+// can name the outcome before committing. username is present only with a local
+// login; lastSeenAt is the newest session touch, absent for members who never
+// logged in.
+export interface RosterMember {
+    id: number;
+    name: string;
+    username?: string;
+    role: "member" | "admin";
+    archived: boolean;
+    hasLocalLogin: boolean;
+    hasLinkedIdentity: boolean;
+    invitePending: boolean;
+    moviesAuthored: number;
+    lastSeenAt?: string;
+}
+
+// The one-time claim URL returned by member-create, invite reissue, and restore.
+// It is shown once and never resent, so the surface reveals it in a copy-or-lose
+// ceremony rather than persisting it.
+export interface InviteResult {
+    claimUrl: string;
+}
+
+// Which of the two removal paths ran, so the surface can report "deleted" (gone,
+// name freed) vs "archived" (restorable, attribution kept) after the same action.
+export type RemoveOutcome = "deleted" | "archived";
+
+export interface RemoveResult {
+    outcome: RemoveOutcome;
+}
+
 // The session actor projected by GET /auth/me. username is null when the member
 // has no local login; the two link-state flags are presence-derived server-side.
 export interface MeResponse {

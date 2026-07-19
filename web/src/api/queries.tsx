@@ -44,6 +44,17 @@ export const UsersGetAllQueryOptions = () =>
     refetchOnWindowFocus: false
   })
 
+/** The admin roster (presence-derived login state per member). A 403 is the
+ *  "Admins only" answer the roster page renders as a forbidden state, not an
+ *  error to retry, so it must not retry. */
+export const RosterQueryOptions = () =>
+  queryOptions({
+    queryKey: UsersKeys.roster(),
+    queryFn: () => APIClient.members.roster(),
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
 export const UsersGetPoolQueryOptions = (userID: number) =>
   queryOptions({
     queryKey: UsersKeys.pool(),

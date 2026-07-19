@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -274,9 +275,9 @@ func TestOIDC_CallbackTamperedTxExpired(t *testing.T) {
 	e := setupOIDCApp(t)
 	state, _, tx := e.begin(t, "/api/v1/auth/oidc/login")
 
-	// Flip the last character of the AEAD ciphertext: the auth tag no longer
-	// verifies, so Open rejects it as invalid.
-	tampered := &http.Cookie{Name: tx.Name, Value: flipLast(tx.Value)}
+	// Corrupt the AEAD ciphertext: the auth tag no longer verifies, so Open
+	// rejects it as invalid.
+	tampered := &http.Cookie{Name: tx.Name, Value: corruptSealed(t, tx.Value)}
 	resp := e.callback(t, "code=abc&state="+state, tampered)
 	if got := locationError(t, resp); got != errOIDCExpired {
 		t.Fatalf("error bucket = %q, want %q", got, errOIDCExpired)
@@ -531,17 +532,22 @@ func TestOIDC_RoutesAbsentWhenDisabled(t *testing.T) {
 	}
 }
 
-// flipLast returns s with its final byte changed, to corrupt an AEAD ciphertext.
-func flipLast(s string) string {
-	if s == "" {
-		return s
+// corruptSealed decodes a base64url-encoded AEAD cookie, flips a byte inside the
+// decoded sealed bytes, and re-encodes it. Mutating a decoded byte (here the
+// first, part of the GCM nonce) guarantees Open fails its auth check, unlike
+// flipping the last base64 character: that final char carries only the trailing
+// 2-4 significant bits of the payload, and the rest are discarded on decode, so
+// on some random keys/nonces it decodes to the same bytes and Open still
+// succeeds. That base64-boundary luck is what made the test flaky.
+func corruptSealed(t *testing.T, s string) string {
+	t.Helper()
+	raw, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		t.Fatalf("decode sealed cookie: %v", err)
 	}
-	b := []byte(s)
-	last := b[len(b)-1]
-	if last == 'A' {
-		b[len(b)-1] = 'B'
-	} else {
-		b[len(b)-1] = 'A'
+	if len(raw) == 0 {
+		t.Fatal("sealed cookie decoded to zero bytes")
 	}
-	return string(b)
+	raw[0] ^= 0xFF
+	return base64.RawURLEncoding.EncodeToString(raw)
 }

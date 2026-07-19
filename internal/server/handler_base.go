@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"moviepickarr/internal/auth"
 	"moviepickarr/internal/domain"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextup"
@@ -23,6 +24,7 @@ var imdbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
 type handler struct {
 	broker          *eventBroker
 	log             zerolog.Logger
+	sessions        *auth.SessionManager
 	userService     *user.Service
 	movieService    *movie.Service
 	nextUpService   *nextup.Service

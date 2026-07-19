@@ -23,6 +23,11 @@
 - `internal/server/enrichment.go`: TMDB enrichment use case (`EnrichOne`: link → IMDb id → reverse lookup → details → upsert).
 - `internal/server/enrich_worker.go`: background enrichment worker (queue, rate limiter, backfill/refresh drain, config).
 - `internal/server/events.go`: SSE broker.
+- `internal/server/auth_middleware.go`: the request-time auth chain. `csrfGuard`
+  (origin check on unsafe methods, fail-closed) runs before `requireSession`
+  (session cookie → live actor via `SessionManager`, 401 + cookie-clear on any
+  miss), the `mpa_session` cookie set/clear helpers, the scheme-derived Secure
+  flag, and the startup + hourly expired-session sweep.
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
   `fullMovie` (detail payload: embeds `leanMovieTile` plus the draw/reveal coordination
@@ -42,6 +47,14 @@
   fresh install with the first roster member; `Advance` passes the turn after
   a draw (only while the pool still has movies and more than one member
   exists) and reports whether it moved, so the handler only broadcasts.
+- `internal/auth`: shared auth primitives. `token.go` is the opaque-token
+  generator + SHA-256 storage hash; `password.go` is the argon2id wrapper;
+  `session.go` is the `SessionManager` deep module over the session store:
+  `Mint` (fresh token, 90-day absolute cap, fixation-safe), `Authenticate`
+  (validate both windows, slide `last_seen_at` only when >1h stale, read role
+  live), `RevokeCurrent`/`RevokeAll`/`RevokeOthers`, and `Sweep`. Lifetimes are
+  hardcoded (30-day idle, 90-day absolute); an injectable clock makes expiry
+  testable without sleeps.
 - `internal/movie`: owns the whole draw/reveal lifecycle, including the
   server-authoritative auto-reveal. `DrawRandom` picks a pooled movie, records an
   in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`), and arms a
@@ -67,6 +80,7 @@
 - `internal/repository/sqlite.go`: SQLite repository implementations.
 - `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
+- `internal/repository/session.go`: `sessions` repository (create / find-by-token-hash joined to the member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ### SQLite connections & timestamps (migration `007`)

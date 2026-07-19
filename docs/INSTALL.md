@@ -52,6 +52,11 @@ environment variables, or in a `.env` file next to the binary:
 | `MPA_ADMIN_NAME` | Break-glass admin: display name to create or adopt | unset (seed skipped) |
 | `MPA_ADMIN_USERNAME` | Break-glass admin: login username | unset (seed skipped) |
 | `MPA_ADMIN_PASSWORD` | Break-glass admin: login password | unset (seed skipped) |
+| `MPA_OIDC_ISSUER` | SSO provider issuer URL (discovery base) | unset (SSO off) |
+| `MPA_OIDC_CLIENT_ID` | OIDC client id registered with the provider | unset (SSO off) |
+| `MPA_OIDC_CLIENT_SECRET` | OIDC client secret (confidential client) | unset (SSO off) |
+| `MPA_OIDC_REDIRECT_URL` | Callback URL, `<base>/api/v1/auth/oidc/callback` | unset (SSO off) |
+| `MPA_OIDC_TX_SECRET` | Key for the encrypted OIDC transaction cookie | unset (random per boot) |
 | `DB_FILE` | Path to the SQLite database file | `moviepickarr.db` (working dir) |
 | `DB_BACKUP_MAX` | Pre-migration snapshots to keep next to the DB (`0` disables) | `3` |
 | `LOG_LEVEL` | Minimum log level (`trace` to `fatal`) | `info` |
@@ -76,3 +81,34 @@ skipped and logged. The seed is idempotent and never overwrites an existing
 password, so it is safe to leave the vars set across restarts. Boot fails if the
 trio is set but seeding errors, and warns if no admin exists and no seed is
 configured.
+
+### SSO / OIDC
+
+moviepickarr can act as an OIDC relying party against a single external
+provider, so members log in (or link their account) with their existing SSO
+instead of a local password. It runs the standard relying-party path (discovery,
+PKCE, ID-token verification) and reads identity only from the verified ID token:
+no refresh tokens, no `offline_access`, no userinfo call.
+
+Enablement is presence-derived. Set all four of `MPA_OIDC_ISSUER`,
+`MPA_OIDC_CLIENT_ID`, `MPA_OIDC_CLIENT_SECRET`, and `MPA_OIDC_REDIRECT_URL` and
+SSO turns on; leave any unset and it stays off (the `/oidc/*` routes return 404
+and the login and claim pages hide the SSO controls). Scopes are fixed to
+`openid profile email`. Register `MPA_OIDC_REDIRECT_URL` with the provider
+exactly as set; it must be `<public-base-url>/api/v1/auth/oidc/callback`.
+
+`MPA_OIDC_TX_SECRET` is optional. It keys the short-lived encrypted cookie that
+carries the login state across the provider round trip. Left unset, a random key
+is generated at boot, so a restart invalidates any login still in flight (fine
+in practice). Set a stable value (any length; it is folded to a 256-bit key) to
+survive restarts and to share the key across multiple instances behind a load
+balancer.
+
+Logout is session-only: signing out ends the moviepickarr session but does not
+call the provider's `end_session_endpoint`, so the IdP's own SSO session is left
+alone.
+
+Local dev over http: point `MPA_OIDC_REDIRECT_URL` at `http://localhost:3030/...`
+and register that redirect URI with your provider. If you terminate TLS at a dev
+proxy, forward `X-Forwarded-Proto: https` so the session and transaction cookies
+get their `Secure` flag; on plain http they are set without it.

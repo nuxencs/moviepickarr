@@ -100,7 +100,20 @@
   `ErrInviteUsed` sentinels), and `ClaimPassword` (reuses `LocalAuth.SetLocalLogin`
   for the placeholder/reset upsert, then consumes the invite). It shares the same
   injectable clock so invite expiry is testable without sleeps; session mint and
-  cookie handling stay in the HTTP layer.
+  cookie handling stay in the HTTP layer. `oidc.go` is the `RelyingParty` deep
+  module over the go-oidc/oauth2 protocol: `OIDCConfigFromEnv` (presence-derived
+  enablement from the `MPA_OIDC_*` quartet), one-time discovery in
+  `NewRelyingParty`, `AuthCodeURL` (state + nonce + S256 PKCE), and `Exchange`
+  (code exchange, ID-token verify, nonce compare → `OIDCClaims`). `oidc_tx.go` is
+  the `OIDCTxCodec` that seals/opens the `mpa_oidc_tx` cookie with AES-256-GCM
+  (ephemeral key by default, `MPA_OIDC_TX_SECRET` override, ~10-min TTL, uniform
+  `ErrTxInvalid` on tamper/expiry) plus the S256 PKCE helper. `oidc_link.go` is
+  the `IdentityLinker` over `oidc_identities`: `Login` (match `(issuer, subject)`,
+  refresh snapshots), `Link` (the collision matrix on both UNIQUEs, shared by the
+  link and claim intents, idempotent for the same member), and `Unlink` (self
+  last-credential guard → `ErrConflict`). All three OIDC modules take
+  already-verified inputs and never touch an `http.Request` or a session; the RP
+  runs off no clock, the tx codec and linker share the injectable one.
 - `internal/movie`: owns the whole draw/reveal lifecycle, including the
   server-authoritative auto-reveal. `DrawRandom` picks a pooled movie, records an
   in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`), and arms a

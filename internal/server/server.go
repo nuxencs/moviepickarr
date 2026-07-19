@@ -14,6 +14,7 @@ import (
 
 	"moviepickarr/internal/auth"
 	"moviepickarr/internal/db"
+	"moviepickarr/internal/domain"
 	"moviepickarr/internal/logger"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextup"
@@ -276,8 +277,10 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	}
 
 	// localAuth is shared: the invite manager reuses its SetLocalLogin for the
-	// password-claim upsert, so both hold the same instance.
-	localAuth := auth.NewLocalAuth(repository.NewSqliteLocalAccountRepository(pool))
+	// password-claim upsert, so both hold the same instance. The local-account
+	// repo is hoisted so the OIDC linker can read it for the unlink guard.
+	localAccountRepo := repository.NewSqliteLocalAccountRepository(pool)
+	localAuth := auth.NewLocalAuth(localAccountRepo)
 
 	h := &handler{
 		broker:      broker,
@@ -307,7 +310,43 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		runner.onEnriched = h.invalidateStatsCache
 	}
 
+	// OIDC is presence-derived: wired only when the config quartet is set. A tx
+	// codec or a discovery failure leaves SSO off (routes unmounted, claim page
+	// hides the option) rather than failing boot, so the app still serves local
+	// login.
+	if oidcCfg, enabled := auth.OIDCConfigFromEnv(); enabled {
+		wireOIDC(h, oidcCfg, repository.NewSqliteOIDCIdentityRepository(pool), localAccountRepo, rootLog)
+	}
+
 	return h
+}
+
+// wireOIDC builds the relying party (running discovery once), the tx-cookie AEAD
+// codec, and the identity linker, attaching them to the handler and flipping
+// oidcEnabled. Any failure (bad tx secret, unreachable provider) is logged and
+// leaves OIDC off, so a misconfigured provider never takes the whole app down.
+func wireOIDC(h *handler, cfg auth.OIDCConfig, identities domain.OIDCIdentityRepo, local domain.LocalAccountRepo, log zerolog.Logger) {
+	txCodec, err := auth.NewOIDCTxCodec(os.Getenv("MPA_OIDC_TX_SECRET"))
+	if err != nil {
+		log.Error().Err(err).Msg("oidc tx codec init failed; SSO disabled")
+		return
+	}
+
+	// Discovery is a network round trip; bound it so a slow or down provider
+	// doesn't stall boot.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rp, err := auth.NewRelyingParty(ctx, cfg)
+	if err != nil {
+		log.Error().Err(err).Str("issuer", cfg.Issuer).Msg("oidc discovery failed; SSO disabled")
+		return
+	}
+
+	h.oidc = rp
+	h.oidcTx = txCodec
+	h.linker = auth.NewIdentityLinker(identities, local)
+	h.oidcEnabled = true
+	log.Info().Str("issuer", cfg.Issuer).Msg("oidc relying-party enabled")
 }
 
 func registerRoutes(app *fiber.App, h *handler) {
@@ -323,6 +362,25 @@ func registerRoutes(app *fiber.App, h *handler) {
 	v1.Post("/auth/login", h.handleLogin)
 	v1.Get("/auth/claim/:token", h.handleValidateClaim)
 	v1.Post("/auth/claim/:token/password", h.handleClaimPassword)
+
+	// OIDC initiation + callback are unauthenticated (login and claim carry no
+	// session; the callback re-authenticates itself for the link intent) and
+	// mounted only when a provider is configured. All are GETs: csrfGuard exempts
+	// them, and the callback's CSRF defense is its own state/PKCE. link + unlink
+	// are authed, registered below.
+	if h.oidcEnabled {
+		v1.Get("/auth/oidc/login", h.handleOIDCLogin)
+		v1.Get("/auth/oidc/callback", h.handleOIDCCallback)
+		v1.Get("/auth/claim/:token/oidc", h.handleClaimOIDC)
+	} else {
+		// SSO off: the whole OIDC surface is a clean 404, registered ahead of
+		// requireSession so a probe sees "no such feature" instead of the blanket
+		// 401 the session gate would otherwise return for an unmatched path.
+		v1.All("/auth/oidc/*", ssoDisabled)
+		v1.Get("/auth/claim/:token/oidc", ssoDisabled)
+		v1.All("/auth/linked-identity", ssoDisabled)
+		v1.All("/members/:memberID/linked-identity", ssoDisabled)
+	}
 
 	// requireSession turns the session cookie into a live actor (401 +
 	// cookie-clear when it can't); everything registered after this point is
@@ -344,6 +402,15 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// itself (create + first invite) lives in registerV1Routes with the roster.
 	v1.Post("/members/:memberID/invite", h.handleReissueInvite)
 	v1.Delete("/members/:memberID/invite", h.handleRevokeInvite)
+
+	// Authed OIDC surface: link (start the link intent for the session member) and
+	// unlink (self + admin), mounted only when a provider is configured. When off,
+	// these paths are handled by the pre-session 404 stubs above.
+	if h.oidcEnabled {
+		v1.Get("/auth/oidc/link", h.handleOIDCLink)
+		v1.Delete("/auth/linked-identity", h.handleUnlinkSelf)
+		v1.Delete("/members/:memberID/linked-identity", h.handleUnlinkMember)
+	}
 
 	registerV1Routes(v1, h)
 }

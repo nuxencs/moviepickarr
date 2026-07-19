@@ -176,6 +176,18 @@ func (m *InviteManager) Consume(ctx context.Context, inviteID int64) error {
 	return m.repo.MarkUsed(ctx, inviteID, m.now())
 }
 
+// ResolveClaimByHash resolves a stored token hash to its live invite context,
+// applying the same validity state machine as Validate. The OIDC claim callback
+// uses it: initiation stashed the token HASH (not the raw token) in the AEAD tx
+// cookie, so the callback re-checks the invite is still claimable after the
+// provider round trip and learns which member and invite to link/consume.
+func (m *InviteManager) ResolveClaimByHash(ctx context.Context, tokenHash string) (*domain.InviteContext, error) {
+	if tokenHash == "" {
+		return nil, ErrInviteInvalid
+	}
+	return m.lookupByHash(ctx, tokenHash)
+}
+
 // lookup resolves a raw token to its live invite context or a failure sentinel,
 // applying the validity state machine in one place. The already-used check comes
 // first so a redeemed invite always reads as "already set up", never as merely
@@ -184,7 +196,15 @@ func (m *InviteManager) lookup(ctx context.Context, rawToken string) (*domain.In
 	if rawToken == "" {
 		return nil, ErrInviteInvalid
 	}
-	ic, err := m.repo.FindContextByTokenHash(ctx, HashToken(rawToken))
+	return m.lookupByHash(ctx, HashToken(rawToken))
+}
+
+// lookupByHash is the shared post-hash resolution: it reads the invite context
+// by token hash and runs the validity checks. The already-used check comes first
+// so a redeemed invite always reads as "already set up", never as merely expired
+// or revoked.
+func (m *InviteManager) lookupByHash(ctx context.Context, tokenHash string) (*domain.InviteContext, error) {
+	ic, err := m.repo.FindContextByTokenHash(ctx, tokenHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInviteInvalid
 	}

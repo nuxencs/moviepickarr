@@ -32,8 +32,8 @@ _Avoid_: next picker
 ### Identity
 
 **Admin**:
-A member holding the admin role: can create and delete members, lock the pool,
-and manage integrations and settings. Every other member holds the plain member
+A member holding the admin role: can create, delete/archive, and restore
+members, lock the pool, and manage integrations and settings. Every other member holds the plain member
 role. Role is app-owned and single-valued, never derived from a credential.
 
 **Local login**:
@@ -61,6 +61,14 @@ placeholder into a login-capable member.
 A roster member with no login credential yet: visible on the roster and usable
 as an adder, but unable to log in until they claim.
 _Avoid_: pending user, inactive user
+
+**Archived**:
+A removed member who authored movies: their `users` row survives with
+`archived_at` set so watch-history attribution holds, but their credentials,
+sessions, and invites are stripped and they drop off every active read (roster,
+stats, rotation). Restore clears `archived_at` and re-issues a claim link. A
+member who authored nothing is hard-deleted instead, not archived.
+_Avoid_: deleted user, disabled user
 
 **Session**:
 A server-side, revocable login for a member, carried by an opaque cookie.

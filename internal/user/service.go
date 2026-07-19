@@ -45,8 +45,19 @@ func (s *Service) Create(ctx context.Context, name string) (*domain.User, error)
 	return user, nil
 }
 
-func (s *Service) Delete(ctx context.Context, id int) error {
-	return s.userRepo.Delete(ctx, id)
+// Remove deletes or archives a member as one admin action, chosen by whether
+// they authored movies: zero authored movies hard-deletes the row, one or more
+// archives it so the group's watch-history attribution survives. It returns
+// which path ran so the caller can report delete-vs-archive.
+func (s *Service) Remove(ctx context.Context, id int) (domain.RemoveOutcome, error) {
+	return s.userRepo.Remove(ctx, id)
+}
+
+// Restore reactivates an archived member (clears archived_at). Archiving stripped
+// their credentials, so the caller re-issues a claim invite to let them log back
+// in; this only reopens the membership.
+func (s *Service) Restore(ctx context.Context, id int) error {
+	return s.userRepo.Restore(ctx, id)
 }
 
 func (s *Service) Get(ctx context.Context, id int) (*domain.User, error) {

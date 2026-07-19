@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -142,6 +143,17 @@ type createMemberResponse struct {
 	ClaimURL string `json:"claimUrl"`
 }
 
+// removeMemberResponse reports which of the two removal paths ran, so the roster
+// UI can show "deleted" (gone for good) vs "archived" (restorable, attribution
+// kept) after the same admin action.
+type removeMemberResponse struct {
+	Outcome domain.RemoveOutcome `json:"outcome"`
+}
+
+// handleDeleteUser removes a member as one admin action with two outcomes: a
+// hard delete when they authored nothing, or an archive that preserves their
+// watch-history attribution. Both leave the active roster, so both broadcast
+// user:deleted; the response body carries the outcome for the follow-up toast.
 func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -153,7 +165,8 @@ func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
-	if err := h.userService.Delete(ctx, memberID); err != nil {
+	outcome, err := h.userService.Remove(ctx, memberID)
+	if err != nil {
 		return writeError(c, err)
 	}
 
@@ -161,5 +174,90 @@ func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
 
 	h.broker.Broadcast(event{Type: "user:deleted", Data: fiber.Map{"userID": memberID}})
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.Status(fiber.StatusOK).JSON(removeMemberResponse{Outcome: outcome})
+}
+
+// handleRestoreUser reactivates an archived member and re-issues their claim
+// link as one admin action: archiving stripped the credentials, so a fresh
+// invite is what lets them log back in. It returns the roster row plus the
+// one-time claim URL (response-only, like member-create) and broadcasts the
+// member back onto the active board.
+func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+
+	memberID, err := resolveMemberID(c)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	ctx := c.UserContext()
+	if err := h.userService.Restore(ctx, memberID); err != nil {
+		return writeError(c, err)
+	}
+
+	rawToken, err := h.invites.Issue(ctx, memberID, actorMemberID(c))
+	if err != nil {
+		return h.writeInternal(c, err, "issuing invite on member restore failed")
+	}
+
+	// The member is active again, so rebuild their roster row (name + any pool/
+	// stash movies that were hidden while archived) and put them back on the board.
+	payload, err := h.userRosterRow(ctx, memberID)
+	if err != nil {
+		return h.writeInternal(c, err, "loading restored member roster row failed")
+	}
+
+	h.invalidateStatsCache()
+
+	// The claim URL is a one-time secret, so it goes only in the direct response;
+	// the broadcast carries the roster row alone.
+	h.broker.Broadcast(event{Type: "user:created", Data: payload})
+
+	return c.Status(fiber.StatusOK).JSON(createMemberResponse{
+		userResponse: payload,
+		ClaimURL:     claimURL(rawToken),
+	})
+}
+
+// userRosterRow builds one member's roster row: identity plus their pool and
+// stash tiles, the same lean shape handleGetUsers ships per member. Used by the
+// restore path to rehydrate a member whose movies were hidden while archived.
+func (h *handler) userRosterRow(ctx context.Context, memberID int) (userResponse, error) {
+	u, err := h.userService.Get(ctx, memberID)
+	if err != nil {
+		return userResponse{}, err
+	}
+
+	pooled, err := h.movieService.PooledByUserID(ctx, memberID)
+	if err != nil {
+		return userResponse{}, err
+	}
+	stashed, err := h.movieService.StashedByUserID(ctx, memberID)
+	if err != nil {
+		return userResponse{}, err
+	}
+
+	own := make([]*domain.Movie, 0, len(pooled)+len(stashed))
+	own = append(own, pooled...)
+	own = append(own, stashed...)
+	meta := h.metaFor(ctx, own)
+
+	pool := make(map[string]leanMovieTile, len(pooled))
+	for i := range pooled {
+		pool[strconv.Itoa(pooled[i].ID)] = toLeanTile(pooled[i], meta[pooled[i].ID])
+	}
+	stash := make(map[string]leanMovieTile, len(stashed))
+	for i := range stashed {
+		stash[strconv.Itoa(stashed[i].ID)] = toLeanTile(stashed[i], meta[stashed[i].ID])
+	}
+
+	return userResponse{
+		ID:          u.ID,
+		Name:        u.Name,
+		CurrentPool: pool,
+		Stash:       stash,
+		CreatedAt:   formatTime(u.CreatedAt),
+	}, nil
 }

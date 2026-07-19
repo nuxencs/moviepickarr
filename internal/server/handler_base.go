@@ -26,6 +26,7 @@ type handler struct {
 	log             zerolog.Logger
 	sessions        *auth.SessionManager
 	localAuth       *auth.LocalAuth
+	invites         *auth.InviteManager
 	userService     *user.Service
 	movieService    *movie.Service
 	nextUpService   *nextup.Service

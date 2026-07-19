@@ -275,11 +275,16 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg, enrichLog)
 	}
 
+	// localAuth is shared: the invite manager reuses its SetLocalLogin for the
+	// password-claim upsert, so both hold the same instance.
+	localAuth := auth.NewLocalAuth(repository.NewSqliteLocalAccountRepository(pool))
+
 	h := &handler{
 		broker:      broker,
 		log:         rootLog.With().Str("component", "http").Logger(),
 		sessions:    auth.NewSessionManager(repository.NewSqliteSessionRepository(pool)),
-		localAuth:   auth.NewLocalAuth(repository.NewSqliteLocalAccountRepository(pool)),
+		localAuth:   localAuth,
+		invites:     auth.NewInviteManager(repository.NewSqliteInviteRepository(pool), localAuth),
 		userService: user.NewService(userRepo, nextUpRepo),
 		movieService: movie.NewService(movieRepo, movie.DrawConfig{
 			OnRevealed: revealBroadcaster(broker),
@@ -311,10 +316,13 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// state-changing call never reaches a session lookup or a login verify.
 	v1.Use(csrfGuard)
 
-	// Auth-establishing routes sit ahead of requireSession: login has no session
-	// yet, so it declares its own (absent) auth per-route. It is still behind
-	// csrfGuard above.
+	// Auth-establishing routes sit ahead of requireSession: login and claim have
+	// no session yet, so they declare their own (absent) auth per-route. All are
+	// still behind csrfGuard above (the claim-validate GET is exempt as a safe
+	// method; the password claim POST carries the same-origin CSRF signal).
 	v1.Post("/auth/login", h.handleLogin)
+	v1.Get("/auth/claim/:token", h.handleValidateClaim)
+	v1.Post("/auth/claim/:token/password", h.handleClaimPassword)
 
 	// requireSession turns the session cookie into a live actor (401 +
 	// cookie-clear when it can't); everything registered after this point is
@@ -327,8 +335,15 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// they use the /members surface the reshape will settle on.
 	v1.Get("/auth/me", h.handleMe)
 	v1.Post("/auth/password", h.handleChangePassword)
+	// Self-serve credential completeness: an authed member with no local login
+	// sets a first username + password (the session is the proof).
+	v1.Post("/auth/local-login", h.handleSelfServeLocalLogin)
 	v1.Put("/members/:memberID/local-login", h.handleSetLocalLogin)
 	v1.Delete("/members/:memberID/local-login", h.handleDeleteLocalLogin)
+	// Invite issuance/revocation (admin-gated inside the handlers). POST /members
+	// itself (create + first invite) lives in registerV1Routes with the roster.
+	v1.Post("/members/:memberID/invite", h.handleReissueInvite)
+	v1.Delete("/members/:memberID/invite", h.handleRevokeInvite)
 
 	registerV1Routes(v1, h)
 }

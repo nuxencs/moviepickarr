@@ -42,6 +42,19 @@
   `/auth/login` is registered ahead of
   `requireSession` so it stays reachable without a session; it is still behind
   `csrfGuard`.
+- `internal/server/invite_handlers.go`: the invite/claim onboarding endpoints.
+  Admin issuance `POST /members/:memberID/invite` (re-issue/regenerate, revokes
+  the old link) and `DELETE /members/:memberID/invite` (revoke, `404` when
+  nothing valid); `POST /members` (in `users_handlers.go`) issues the first
+  invite and returns the one-time `claimUrl` in the response only, never over
+  SSE. The unauthenticated claim pair `GET /auth/claim/:token` (returns
+  displayName + placeholder-vs-reset mode + options, or the two distinct
+  `invite_invalid` 404 / `invite_used` 410 states) and `POST
+  /auth/claim/:token/password` (placeholder sets username+password, reset sets
+  password-only + revokes all sessions; both consume the invite once and mint a
+  session → `204` + cookie) sit ahead of `requireSession`. `POST
+  /auth/local-login` is the authed self-serve completeness path (first
+  username+password for a member with no local login, `409` if one exists).
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
   `fullMovie` (detail payload: embeds `leanMovieTile` plus the draw/reveal coordination
@@ -79,6 +92,15 @@
   guard), and the `/me` `Identity` projection. Password bounds (min 8, max 128,
   the max a DoS guard) and the uniform `ErrInvalidCredentials`/`ErrNoLocalLogin`
   sentinels live here; it shares the injectable clock with `SessionManager`.
+  `SetFirstLocalLogin` (self-serve first credential, `ErrConflict` if one
+  already exists) also lives on `LocalAuth`. `invite.go` is the `InviteManager`
+  deep module over the invite/claim flow: `Issue` (revoke-then-insert, enforcing
+  one valid invite per member, 7-day `InviteTTL`), `Revoke`, `Validate`
+  (time-derived state machine → `ClaimContext` or the `ErrInviteInvalid` /
+  `ErrInviteUsed` sentinels), and `ClaimPassword` (reuses `LocalAuth.SetLocalLogin`
+  for the placeholder/reset upsert, then consumes the invite). It shares the same
+  injectable clock so invite expiry is testable without sleeps; session mint and
+  cookie handling stay in the HTTP layer.
 - `internal/movie`: owns the whole draw/reveal lifecycle, including the
   server-authoritative auto-reveal. `DrawRandom` picks a pooled movie, records an
   in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`), and arms a
@@ -106,6 +128,7 @@
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
 - `internal/repository/session.go`: `sessions` repository (create / find-by-token-hash joined to the member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).
 - `internal/repository/local_account.go`: `local_accounts` repository (find by NOCASE username / by user id, create with unique→`ErrConflict` + FK→`ErrNotFound` translation, password-hash and admin-reset updates, failed-attempt/successful-login lockout writes, delete) plus the `oidc_identities` presence read and the `/me` member-identity join.
+- `internal/repository/invite.go`: `invites` repository (create with FK→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, find-context-by-token-hash joining the member's display name + local-login presence for the claim page, mark-used). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`).
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ### SQLite connections & timestamps (migration `007`)
@@ -172,8 +195,11 @@ always the session member, never a path id: member-scoped routes carry no
   stats / settings reads, `/tmdb/search`). `PUT`/`DELETE /movies/:movieID` and
   `/move` are **adder-only** (403 `not_adder`, no admin override). Draw / reveal /
   watch are **next-up-or-admin** (403 `not_next_up`). Member create/delete,
-  pool-lock, and local-login admin actions are **admin-only** (403
-  `admin_required`).
+  pool-lock, local-login admin actions, and invite issuance/revocation
+  (`POST`/`DELETE /members/:memberID/invite`) are **admin-only** (403
+  `admin_required`). The claim endpoints (`GET`/`POST /auth/claim/:token...`) and
+  `POST /auth/login` are unauthenticated (no session yet); `POST
+  /auth/local-login` is any-authenticated self-serve.
 - SSE (`GET /events`): authed at the handshake (401 before the stream opens) and
   revalidated on every heartbeat, so a session revoked mid-stream is dropped on
   the next tick.

@@ -262,6 +262,35 @@ func (a *LocalAuth) resetLocalLogin(ctx context.Context, existing *domain.LocalA
 	return SetLocalLoginResult{WasReset: true}, nil
 }
 
+// SetFirstLocalLogin is the self-serve credential-completeness path
+// (POST /auth/local-login): a logged-in member with no local login sets their
+// first username + password. The active session is the proof of identity, so
+// there is no current-password check. A member who already has a local login
+// gets ErrConflict (→409): adding a second is not a change (that is
+// ChangePassword), so this path only ever creates. Username charset/length and
+// the password bound are enforced as everywhere else; a NOCASE username
+// collision surfaces as ErrConflict from the repo.
+func (a *LocalAuth) SetFirstLocalLogin(ctx context.Context, userID int, username, password string) error {
+	if err := validatePassword(password); err != nil {
+		return err
+	}
+
+	// Change-not-create in reverse: this path refuses to touch an existing login.
+	switch _, err := a.repo.FindByUserID(ctx, userID); {
+	case err == nil:
+		return fmt.Errorf("%w: member already has a local login", domain.ErrConflict)
+	case errors.Is(err, sql.ErrNoRows):
+		// No row yet: fall through and create the first login.
+	default:
+		return err
+	}
+
+	// Reuse the same create path as the admin upsert (trim + username validation
+	// + hash + insert); the result flag is irrelevant here (always a create).
+	_, err := a.createLocalLogin(ctx, userID, username, password)
+	return err
+}
+
 // DeleteLocalLogin removes a member's local login (admin credential removal).
 // The self-last-credential guard forbids an admin from deleting their own only
 // login path (a local login with no linked identity), which would lock them out

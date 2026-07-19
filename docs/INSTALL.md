@@ -49,6 +49,9 @@ environment variables, or in a `.env` file next to the binary:
 | Variable | What it does | Default |
 | --- | --- | --- |
 | `TMDB_API_KEY` | Enables posters, cast and metadata stats | unset (enrichment off) |
+| `MPA_ADMIN_NAME` | Break-glass admin: display name to create or adopt | unset (seed skipped) |
+| `MPA_ADMIN_USERNAME` | Break-glass admin: login username | unset (seed skipped) |
+| `MPA_ADMIN_PASSWORD` | Break-glass admin: login password | unset (seed skipped) |
 | `DB_FILE` | Path to the SQLite database file | `moviepickarr.db` (working dir) |
 | `DB_BACKUP_MAX` | Pre-migration snapshots to keep next to the DB (`0` disables) | `3` |
 | `LOG_LEVEL` | Minimum log level (`trace` to `fatal`) | `info` |
@@ -60,3 +63,16 @@ environment variables, or in a `.env` file next to the binary:
 See [`.env.example`](../.env.example) for the full list. Logging is documented
 in [`LOGGING.md`](LOGGING.md), and the remaining enrichment-worker settings in
 [`backend-layout.md`](backend-layout.md).
+
+### Break-glass admin
+
+Onboarding is invite-only, so a fresh deploy needs one bootstrapped admin. Set
+all three of `MPA_ADMIN_NAME`, `MPA_ADMIN_USERNAME`, and `MPA_ADMIN_PASSWORD`
+(all or nothing) and, on boot, moviepickarr creates or adopts an admin member
+with a working local login. It matches `MPA_ADMIN_NAME` against existing member
+names case-insensitively: no match creates a fresh admin, exactly one match
+adopts that member and makes them an admin, and an ambiguous multi-match is
+skipped and logged. The seed is idempotent and never overwrites an existing
+password, so it is safe to leave the vars set across restarts. Boot fails if the
+trio is set but seeding errors, and warns if no admin exists and no seed is
+configured.

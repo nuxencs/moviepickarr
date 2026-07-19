@@ -18,6 +18,7 @@ import (
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextup"
 	"moviepickarr/internal/repository"
+	"moviepickarr/internal/seed"
 	"moviepickarr/internal/settings"
 	"moviepickarr/internal/user"
 
@@ -104,6 +105,16 @@ func Run(ctx context.Context, cfg Config) error {
 		Path:       cfg.DBFile,
 		MaxBackups: dbMaxBackups(rootLog),
 	}); err != nil {
+		_ = pool.Close()
+		return err
+	}
+
+	// Boot ordering is migrate → seed → serve: the break-glass admin seed runs
+	// on the freshly migrated schema, before any request can be served. A
+	// misconfigured seed fails boot loudly rather than leaving a login-less
+	// deploy.
+	adminCfg, adminConfigured := seed.AdminConfigFromEnv(rootLog)
+	if err := seed.BreakGlassAdmin(ctx, repository.NewSqliteAdminSeedRepository(pool), adminCfg, adminConfigured, rootLog); err != nil {
 		_ = pool.Close()
 		return err
 	}

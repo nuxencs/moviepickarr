@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
 import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { APIClient } from "@/api/APIClient";
+import { APIClient, ApiError } from "@/api/APIClient";
 import {
   MoviesGetCurrentQueryOptions,
   MoviesGetPoolQueryOptions,
@@ -16,6 +16,7 @@ import { DrawReel } from "@/components/moviepickarr/DrawReel";
 import { drawStore, resolveDrawEnv } from "@/components/moviepickarr/drawStore";
 import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
+import { drawLockedTip, revealLockedTip, useTurnGate, watchLockedTip } from "@/components/moviepickarr/turnGate";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie } from "@/types/Response";
@@ -73,6 +74,24 @@ export function Hero() {
   const { data: current, isLoading } = useQuery(MoviesGetCurrentQueryOptions());
   const { data: pooled } = useQuery(MoviesGetPoolQueryOptions());
   const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());
+  // The board-level turn gate: whether this viewer (admin, or the next-up
+  // member) may run the draw → reveal → watch cycle. Drives the disabled +
+  // tooltip treatment on the action buttons and the reel's reveal control.
+  const gate = useTurnGate();
+
+  // The backstop for a lost race: the turn passed (or the roster changed)
+  // between render and click, so the backend answers 403 not_next_up. Refresh
+  // the actor + next-up so the board re-gates, and name why the action bounced
+  // instead of the generic failure toast.
+  const onTurnError = (err: unknown, fallback: string): void => {
+    if (err instanceof ApiError && err.status === 403) {
+      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+      toast.error("It's not your turn right now");
+      return;
+    }
+    toast.error(fallback);
+  };
 
   // The draw machine drives the reel: phase + spin descriptor come from the
   // store singleton, fed by useSSE (movie:drawn / movie:revealed) and the draw
@@ -105,9 +124,9 @@ export function Hero() {
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
     },
-    onError: () => {
+    onError: (err) => {
       setDrawing(false);
-      toast.error("Failed to draw a random movie");
+      onTurnError(err, "Failed to draw a random movie");
     },
   });
 
@@ -124,9 +143,9 @@ export function Hero() {
       // duplicate refetch is a harmless no-op once current is already null.)
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
     },
-    onError: () => {
+    onError: (err) => {
       setMarking(false);
-      toast.error("Failed to mark as watched");
+      onTurnError(err, "Failed to mark as watched");
     },
   });
 
@@ -310,10 +329,15 @@ export function Hero() {
                   {marking ? "Marking…" : "Drawing…"}
                 </button>
               ) : draw ? (
+                // Stays visible for spectators, disabled with a tooltip naming
+                // the next-up member, so the turn reads instead of the control
+                // vanishing (the backend not_next_up is the backstop).
                 <button
                   type="button"
                   className="btn btn--accent"
                   onClick={() => watchMutation.mutate()}
+                  disabled={gate.locked}
+                  title={gate.locked ? watchLockedTip(gate) : undefined}
                 >
                   <EyeIcon />
                   Mark as watched
@@ -323,7 +347,8 @@ export function Hero() {
                   type="button"
                   className="btn btn--accent"
                   onClick={() => drawMutation.mutate()}
-                  disabled={!canDraw}
+                  disabled={!canDraw || gate.locked}
+                  title={gate.locked ? drawLockedTip(gate) : undefined}
                 >
                   <ShuffleIcon />
                   Draw random movie
@@ -347,6 +372,8 @@ export function Hero() {
         <DrawReel
           key={drawState.spin.drawnAt}
           spin={drawState.spin}
+          canReveal={gate.canAct}
+          revealTip={revealLockedTip(gate)}
           onScrollDone={reportScrollDone}
           onConfirm={confirmDraw}
         />

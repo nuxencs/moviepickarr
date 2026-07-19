@@ -98,20 +98,25 @@ func RunMigrationsWithBackup(ctx context.Context, db *sql.DB, backup BackupConfi
 			return err
 		}
 
-		// Tolerate a BOM or leading blank lines — missing the marker on a
-		// rebuild migration would run its DROP TABLE with FKs on and cascade
-		// into child tables, so detection must not hinge on exact first bytes.
-		if strings.HasPrefix(strings.TrimLeft(string(content), "\uFEFF \t\r\n"), fkOffMarker) {
-			err = applyMigrationFKOff(ctx, db, m, string(content))
-		} else {
-			err = applyMigration(ctx, db, m, string(content))
-		}
-		if err != nil {
+		if err := applyMigrationContent(ctx, db, m, string(content)); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// applyMigrationContent dispatches one migration's SQL to the fk_off rebuild
+// path or the plain path based on the marker, then records it. Shared with the
+// migration tests so they mirror the runner instead of reimplementing detection.
+func applyMigrationContent(ctx context.Context, db *sql.DB, m migration, content string) error {
+	// Tolerate a BOM or leading blank lines — missing the marker on a rebuild
+	// migration would run its DROP TABLE with FKs on and cascade into child
+	// tables, so detection must not hinge on exact first bytes.
+	if strings.HasPrefix(strings.TrimLeft(content, "\uFEFF \t\r\n"), fkOffMarker) {
+		return applyMigrationFKOff(ctx, db, m, content)
+	}
+	return applyMigration(ctx, db, m, content)
 }
 
 func applyMigration(ctx context.Context, db *sql.DB, m migration, content string) error {

@@ -220,6 +220,10 @@ export const APIClient = {
     auth: {
         // Public: what the unauthenticated login page needs (SSO presence).
         config: () => appClient.Get<AuthConfig>("api/v1/auth/config"),
+        // Public: popularity-ordered TMDB poster paths for the login wall. Bare
+        // []string; [] when the cache is unwarmed or no TMDB key is set. Carries
+        // no secrets (poster paths are public artwork).
+        posterWall: () => appClient.Get<string[]>("api/v1/auth/poster-wall"),
         // The session actor; rejects 401 when there is no valid session.
         me: () => appClient.Get<MeResponse>("api/v1/auth/me"),
         // 204 + session cookie on success; 401 for any credential failure.

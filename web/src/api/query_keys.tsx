@@ -2,6 +2,7 @@ export const AuthKeys = {
     all: ["auth"] as const,
     me: () => [...AuthKeys.all, "me"] as const,
     config: () => [...AuthKeys.all, "config"] as const,
+    posterWall: () => [...AuthKeys.all, "poster-wall"] as const,
     claim: (token: string) => [...AuthKeys.all, "claim", token] as const,
 }
 

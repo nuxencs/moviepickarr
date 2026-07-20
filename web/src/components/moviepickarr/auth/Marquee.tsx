@@ -1,26 +1,32 @@
-// Faux poster wall — gradient tiles standing in for artwork, arranged as four
-// columns at staggered depths (see auth.css) so the panel reads as a receding
-// wall of "movie night" posters without shipping or fetching real artwork. Real
-// posters swap in later. Each entry is two hues fed into a tile's diagonal
-// gradient; the columns shingle unevenly for depth rather than form a flat grid.
-const COLUMNS = [
-  ["197 58", "84 40", "150 55", "22 40"],
-  ["84 62", "264 55", "310 45", "197 30"],
-  ["264 30", "22 62", "84 55", "150 40"],
-  ["22 40", "150 30", "264 45", "310 58"],
-];
+import { useQuery } from "@tanstack/react-query";
+
+import { PosterWallQueryOptions } from "@/api/queries";
+
+import {
+  posterWall,
+  WALL_COLUMNS,
+  WALL_ROWS,
+} from "@/components/moviepickarr/auth/posterWall";
+import { posterUrl } from "@/components/moviepickarr/lib";
 
 /** The cinematic left panel shared by the login and claim screens. Decorative
- *  only (aria-hidden): a tilted, layered-depth wall of poster stand-ins that the
- *  form column does not depend on. */
+ *  only (aria-hidden): a tilted, layered-depth wall of movie posters the form
+ *  column does not depend on. Real posters come from the public poster-wall
+ *  endpoint (popularity order, centre-fanned so #1 sits at the visual middle);
+ *  the gradient stand-ins fill any empty slot and stand in for the whole wall
+ *  whenever the fetch is empty, still loading, or errored, so it never breaks. */
 export function Marquee() {
+  const wall = useQuery(PosterWallQueryOptions());
+  const tiles = posterWall(wall.data ?? []);
+
   return (
     <aside className="auth__stage" aria-hidden>
       <div className="auth__wall">
-        {COLUMNS.map((tiles, ci) => (
+        {Array.from({ length: WALL_COLUMNS }, (_, ci) => (
           <div key={ci} className="auth__col">
-            {tiles.map((hues, ti) => {
-              const [a, b] = hues.split(" ");
+            {tiles.slice(ci * WALL_ROWS, ci * WALL_ROWS + WALL_ROWS).map((tile, ti) => {
+              const [a, b] = tile.hues.split(" ");
+              const url = posterUrl(tile.path);
               return (
                 <span
                   key={ti}
@@ -28,7 +34,24 @@ export function Marquee() {
                   style={{
                     background: `linear-gradient(150deg, oklch(0.4 0.09 ${a}), oklch(0.2 0.05 ${b}))`,
                   }}
-                />
+                >
+                  {url && (
+                    <img
+                      className="auth__poster"
+                      src={url}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      // Decorative wall, so no per-image loading state or the
+                      // Poster crossfade: the gradient underlay already covers
+                      // the pre-load frame. On a 404, drop the broken image so
+                      // the underlay shows through instead of an empty box.
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  )}
+                </span>
               );
             })}
           </div>

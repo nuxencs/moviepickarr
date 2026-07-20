@@ -17,6 +17,18 @@ export const AuthConfigQueryOptions = () =>
     staleTime: 300_000,
   })
 
+/** The public poster wall (popularity-ordered TMDB poster paths) the login
+ *  screen renders behind the form. Public artwork that rarely changes and needs
+ *  no session, so a generous staleTime and no refetch on focus; an empty or
+ *  errored fetch just leaves the gradient stand-ins in place. */
+export const PosterWallQueryOptions = () =>
+  queryOptions({
+    queryKey: AuthKeys.posterWall(),
+    queryFn: () => APIClient.auth.posterWall(),
+    refetchOnWindowFocus: false,
+    staleTime: 300_000,
+  })
+
 /** The current session actor. A 401 is an expected "not logged in" answer, so
  *  it must not retry (retrying a 401 just delays the login redirect). */
 export const MeQueryOptions = () =>

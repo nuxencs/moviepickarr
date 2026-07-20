@@ -55,7 +55,7 @@ export function SearchModal({ userName, onClose }: SearchModalProps) {
     if (pendingId !== null) return;
     setPendingId(movie.id);
     try {
-      await APIClient.users.addMovie(movie.title, movie.id);
+      await APIClient.board.addMovie(movie.title, movie.id);
       toast.success(`${movie.title} added to ${userName}'s stash`);
       close();
     } catch (err) {

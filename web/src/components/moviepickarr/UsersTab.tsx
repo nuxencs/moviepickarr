@@ -17,6 +17,7 @@ import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { Menu } from "@/components/moviepickarr/Menu";
+import { isSelf } from "@/components/moviepickarr/ownership";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
 import { UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
@@ -31,10 +32,10 @@ const POOL_SIZE = 3;
 
 export function UsersTab() {
   const { data: users, isPending: usersPending, isError: usersError } = useQuery(UsersGetAllQueryOptions());
-  // The session member drives the board's self-service gating: movie actions
-  // show only on your own board (the backend enforces adder-only anyway).
-  // Member onboarding and removal live on the admin roster, so this page has
-  // no add-member form and no delete action.
+  // The session member drives the board's self-service gating via isSelf (see
+  // ownership.ts): movie actions show only on your own board. Member onboarding
+  // and removal live on the admin roster, so this page has no add-member form
+  // and no delete action.
   const { data: me } = useQuery(MeQueryOptions());
   const [searchUser, setSearchUser] = useState<User | null>(null);
 
@@ -58,7 +59,7 @@ export function UsersTab() {
               <Board
                 key={user.userID}
                 user={user}
-                isOwnBoard={me?.id === user.userID}
+                isOwnBoard={isSelf(me?.id, user.userID)}
                 onOpenSearch={() => setSearchUser(user)}
               />
             ))
@@ -106,9 +107,9 @@ function Board({
 
   // Demote a pooled movie back to the stash. The move endpoint is directional
   // (target = destination) and idempotent, so a repeat click is a safe no-op.
-  // Adder-only server-side, so this only renders on your own board.
+  // Gated on isOwnBoard, so it only renders on your own board.
   const demoteMutation = useMutation({
-    mutationFn: (movieID: number) => APIClient.users.moveMovie(movieID, "stash"),
+    mutationFn: (movieID: number) => APIClient.board.moveMovie(movieID, "stash"),
     onError: () => toast.error("Failed to move movie"),
   });
 
@@ -221,20 +222,19 @@ function StashRow({
   const [editOpen, toggleEdit] = useToggle(false);
   const [deleteOpen, toggleDelete] = useToggle(false);
 
-  // All three mutations are adder-only server-side (the adder is the session
-  // member), so the row only renders its actions on your own board.
+  // The row only renders these actions on your own board (isOwnBoard).
   const moveMutation = useMutation({
-    mutationFn: () => APIClient.users.moveMovie(movie.movieID, "pool"),
+    mutationFn: () => APIClient.board.moveMovie(movie.movieID, "pool"),
     onError: () => toast.error("Failed to move movie"),
   });
   const deleteMutation = useMutation({
-    mutationFn: () => APIClient.users.deleteMovie(movie.movieID),
+    mutationFn: () => APIClient.board.deleteMovie(movie.movieID),
     onSuccess: () => toast.success(`${movie.title} deleted`),
     onError: () => toast.error("Failed to delete movie"),
   });
   const editMutation = useMutation({
     mutationFn: (payload: { title: string; link: string }) =>
-      APIClient.users.updateMovie(movie.movieID, payload.title, payload.link),
+      APIClient.board.updateMovie(movie.movieID, payload.title, payload.link),
     onSuccess: () => {
       toast.success(`${movie.title} updated`);
       toggleEdit();

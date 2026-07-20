@@ -40,7 +40,7 @@ export const ClaimQueryOptions = (token: string) =>
 export const UsersGetAllQueryOptions = () =>
   queryOptions({
     queryKey: UsersKeys.list(),
-    queryFn: () => APIClient.users.getAll(),
+    queryFn: () => APIClient.board.getAll(),
     refetchOnWindowFocus: false
   })
 
@@ -58,14 +58,14 @@ export const RosterQueryOptions = () =>
 export const UsersGetPoolQueryOptions = (userID: number) =>
   queryOptions({
     queryKey: UsersKeys.pool(),
-    queryFn: () => APIClient.users.getPool(userID),
+    queryFn: () => APIClient.board.getPool(userID),
     refetchOnWindowFocus: false
   })
 
 export const UsersGetStashQueryOptions = (userID: number) =>
   queryOptions({
     queryKey: UsersKeys.stash(),
-    queryFn: () => APIClient.users.getStash(userID),
+    queryFn: () => APIClient.board.getStash(userID),
     refetchOnWindowFocus: false
   })
 

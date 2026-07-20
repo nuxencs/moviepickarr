@@ -62,14 +62,6 @@ export function AccountPage() {
     void navigate({ to: "/settings", search: {}, replace: true });
   }, [linked, oidcError, navigate, queryClient]);
 
-  // A member must be signed in to manage their account; a 401 (no/expired
-  // session) sends them to the login screen rather than showing an empty page.
-  useEffect(() => {
-    if (me.isError && me.error instanceof ApiError && me.error.status === 401) {
-      void navigate({ to: "/login" });
-    }
-  }, [me.isError, me.error, navigate]);
-
   const openDialog = (kind: Dialog) => {
     setDialogError(null);
     setDialog(kind);
@@ -148,7 +140,9 @@ export function AccountPage() {
     return <p className="acc-state">Loading your account…</p>;
   }
   if (!me.data) {
-    // Not a 401 (that redirects above): a genuine load failure.
+    // A 401 never reaches here: the _app route's beforeLoad redirects a
+    // logged-out member to /login before the page renders. So this is a genuine
+    // load failure (network, 5xx) rather than a missing session.
     return <p className="acc-state">Couldn&apos;t load your account. Try again in a moment.</p>;
   }
 

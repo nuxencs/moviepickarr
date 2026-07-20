@@ -21,6 +21,7 @@ import {
 } from "@/components/moviepickarr/lib";
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { StatNumber } from "@/components/moviepickarr/numberRoll";
+import { isSelf } from "@/components/moviepickarr/ownership";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
 
@@ -233,13 +234,14 @@ function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
   const [editOpen, toggleEdit] = useToggle(false);
   const { date, time } = dateTimeParts(movie.watchedAt);
   // Editing is adder-only server-side (no admin override), so only the adder
-  // gets the edit control; everyone else sees the watched row read-only.
+  // gets the edit control; everyone else sees the watched row read-only. Same
+  // ownership rule as the board, via isSelf (see ownership.ts).
   const { data: me } = useQuery(MeQueryOptions());
-  const canEdit = me?.id === movie.addedByID;
+  const canEdit = isSelf(me?.id, movie.addedByID);
 
   const editMutation = useMutation({
     mutationFn: (payload: { title: string; link: string; watchedAt?: string }) =>
-      APIClient.users.updateMovie(movie.movieID, payload.title, payload.link, payload.watchedAt),
+      APIClient.board.updateMovie(movie.movieID, payload.title, payload.link, payload.watchedAt),
     onSuccess: () => {
       toast.success(`${movie.title} updated`);
       toggleEdit();

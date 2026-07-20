@@ -286,12 +286,13 @@ export const APIClient = {
         restore: (memberID: number) =>
             appClient.Post<InviteResult>(`api/v1/members/${memberID}/restore`),
     },
-    // The Members board and its self-service movie actions. Movie mutations are
-    // adder-only server-side: the adder is always the session member, so none of
-    // them take a target member id (editing/moving/deleting a movie you did not
-    // add returns 403 not_adder, with no admin override). Member lifecycle
-    // (create/remove) lives under `members` above, not here.
-    users: {
+    // The Members board and its self-service movie actions. Reads hit /members
+    // (the board's per-member pool + stash tiles); mutations hit /movies. Movie
+    // mutations are adder-only server-side: the adder is always the session
+    // member, so none of them take a target member id (editing/moving/deleting a
+    // movie you did not add returns 403 not_adder, with no admin override).
+    // Member lifecycle (create/remove) lives under `members` above, not here.
+    board: {
         // Every member with their lean pool + stash tiles for the board.
         getAll: () => appClient.Get<User[]>("api/v1/members"),
         // Adds always land in the session member's stash.

@@ -228,6 +228,28 @@ func TestAuthConfig_ReportsOIDCPresenceUnauthenticated(t *testing.T) {
 	}
 }
 
+func TestPosterWall_PublicAndEmptyWhenUnwarmed(t *testing.T) {
+	e := setupAuthApp(t)
+
+	// No TMDB key in the test env → posterWall is nil (keyless boot). The route
+	// sits ahead of requireSession, so it answers without a session and returns a
+	// clean JSON [] the client can fall back from.
+	resp := e.request(t, http.MethodGet, "/api/v1/auth/poster-wall", "", nil)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("poster-wall status = %d, want 200", resp.StatusCode)
+	}
+	var paths []string
+	if err := json.NewDecoder(resp.Body).Decode(&paths); err != nil {
+		t.Fatalf("decode poster-wall: %v", err)
+	}
+	if paths == nil {
+		t.Fatal("poster-wall body decoded to null, want a JSON array")
+	}
+	if len(paths) != 0 {
+		t.Fatalf("poster-wall unwarmed = %v, want []", paths)
+	}
+}
+
 func TestLogin_FailuresAreUniform(t *testing.T) {
 	e := setupAuthApp(t)
 	id := e.seedMember(t, "Bob", "member")

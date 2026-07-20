@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 )
@@ -184,6 +185,50 @@ func TestDoRequest_NotConfigured(t *testing.T) {
 	t.Parallel()
 	c := &tmdbClient{apiKey: "", baseURL: "http://unused", http: &http.Client{}}
 	_, err := c.MovieDetails(context.Background(), 1)
+	if !errors.Is(err, errTMDBNotConfigured) {
+		t.Fatalf("expected errTMDBNotConfigured, got %v", err)
+	}
+}
+
+func TestDiscoverPopularPosters_ParamsOrderAndNullDrop(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/discover/movie" {
+			t.Errorf("path = %q, want /discover/movie", got)
+		}
+		q := r.URL.Query()
+		for key, want := range map[string]string{
+			"sort_by":        "popularity.desc",
+			"vote_count.gte": "200",
+			"include_adult":  "false",
+			"language":       "en-US",
+		} {
+			if got := q.Get(key); got != want {
+				t.Errorf("query %s = %q, want %q", key, got, want)
+			}
+		}
+		// Second result has a null poster and must be dropped; order is preserved.
+		_, _ = w.Write([]byte(`{"results":[
+			{"id":1,"poster_path":"/a.jpg"},
+			{"id":2,"poster_path":null},
+			{"id":3,"poster_path":"/c.jpg"}
+		]}`))
+	}))
+	defer srv.Close()
+
+	got, err := testClient(srv.URL).DiscoverPopularPosters(context.Background())
+	if err != nil {
+		t.Fatalf("DiscoverPopularPosters: %v", err)
+	}
+	if want := []string{"/a.jpg", "/c.jpg"}; !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestDiscoverPopularPosters_NotConfigured(t *testing.T) {
+	t.Parallel()
+	c := &tmdbClient{apiKey: "", baseURL: "http://unused", http: &http.Client{}}
+	_, err := c.DiscoverPopularPosters(context.Background())
 	if !errors.Is(err, errTMDBNotConfigured) {
 		t.Fatalf("expected errTMDBNotConfigured, got %v", err)
 	}

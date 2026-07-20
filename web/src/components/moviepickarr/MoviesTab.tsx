@@ -22,6 +22,7 @@ import {
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { StatNumber } from "@/components/moviepickarr/numberRoll";
 import { isSelf } from "@/components/moviepickarr/ownership";
+import { canLockPool } from "@/components/moviepickarr/poolLock";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
 
@@ -36,6 +37,10 @@ export function MoviesTab() {
   const { data: pooled, isPending: poolPending, isError: poolError } = useQuery(MoviesGetPoolQueryOptions());
   const { data: watched, isPending: watchedPending, isError: watchedError } = useQuery(MoviesGetWatchedQueryOptions());
   const { data: isLocked } = useQuery(SettingsGetPoolLockQueryOptions());
+  const { data: me } = useQuery(MeQueryOptions());
+  // Locking the pool is admin-only server-side; disable (don't hide) the toggle
+  // for everyone else, matching the turn gate's treatment on the draw controls.
+  const canLock = canLockPool(me?.role);
 
   // FLIP enter/exit + glide for the pool grid — the same hook the Stats rails
   // use. Tiles fade in when a movie is added/promoted, fade out when it's drawn
@@ -105,7 +110,8 @@ export function MoviesTab() {
               type="button"
               className="btn btn--ghost btn--sm"
               onClick={() => lockMutation.mutate()}
-              disabled={lockMutation.isPending}
+              disabled={!canLock || lockMutation.isPending}
+              title={canLock ? undefined : "Only admins can lock the pool."}
             >
               {isLocked ? <LockOpenIcon /> : <LockIcon />}
               {isLocked ? "Unlock pool" : "Lock pool"}

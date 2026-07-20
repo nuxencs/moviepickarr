@@ -32,11 +32,10 @@ const POOL_SIZE = 3;
 export function UsersTab() {
   const { data: users, isPending: usersPending, isError: usersError } = useQuery(UsersGetAllQueryOptions());
   // The session member drives the board's self-service gating: movie actions
-  // show only on your own board (the backend enforces adder-only anyway), and
-  // deleting a member is admin-only. Member onboarding lives on the admin
-  // roster, so there is no add-member form here.
+  // show only on your own board (the backend enforces adder-only anyway).
+  // Member onboarding and removal live on the admin roster, so this page has
+  // no add-member form and no delete action.
   const { data: me } = useQuery(MeQueryOptions());
-  const isAdmin = me?.role === "admin";
   const [searchUser, setSearchUser] = useState<User | null>(null);
 
   return (
@@ -60,7 +59,6 @@ export function UsersTab() {
                 key={user.userID}
                 user={user}
                 isOwnBoard={me?.id === user.userID}
-                isAdmin={isAdmin}
                 onOpenSearch={() => setSearchUser(user)}
               />
             ))
@@ -80,17 +78,14 @@ export function UsersTab() {
 function Board({
   user,
   isOwnBoard,
-  isAdmin,
   onOpenSearch,
 }: {
   user: User;
   isOwnBoard: boolean;
-  isAdmin: boolean;
   onOpenSearch: () => void;
 }) {
   const { data: isLocked } = useQuery(SettingsGetPoolLockQueryOptions());
   const [filter, setFilter] = useState("");
-  const [deleteOpen, toggleDelete] = useToggle(false);
 
   const pool = useMemo(
     () => Object.values(user.currentPool).sort((a, b) => a.title.localeCompare(b.title)),
@@ -109,12 +104,6 @@ function Board({
   const poolFull = filled >= POOL_SIZE;
   const firstName = user.name.split(" ")[0];
 
-  const deleteUserMutation = useMutation({
-    mutationFn: () => APIClient.members.remove(user.userID),
-    onSuccess: () => toast.success(`Member ${user.name} deleted`),
-    onError: () => toast.error("Failed to delete member"),
-  });
-
   // Demote a pooled movie back to the stash. The move endpoint is directional
   // (target = destination) and idempotent, so a repeat click is a safe no-op.
   // Adder-only server-side, so this only renders on your own board.
@@ -125,15 +114,6 @@ function Board({
 
   return (
     <div className="board">
-      <DeletionDialog
-        isOpen={deleteOpen}
-        onClose={toggleDelete}
-        onConfirm={() => deleteUserMutation.mutate()}
-        title="Delete member"
-        description={`Delete ${user.name}? This cannot be undone.`}
-        confirmText="Delete"
-      />
-
       <div className="board__head">
         <div className="board__id">
           <Avatar name={user.name} size={38} />
@@ -144,11 +124,6 @@ function Board({
             </div>
           </div>
         </div>
-        {isAdmin && (
-          <button type="button" className="iconbtn iconbtn--danger" onClick={toggleDelete} aria-label="Delete member">
-            <Trash2Icon />
-          </button>
-        )}
       </div>
 
       {isOwnBoard && (

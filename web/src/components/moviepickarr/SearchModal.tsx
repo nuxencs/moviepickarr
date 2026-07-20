@@ -11,13 +11,14 @@ import { toast } from "@/components/ui/toast-api";
 import type { TMDBMovie } from "@/types/Response";
 
 interface SearchModalProps {
-  userID: number;
+  // The board is self-service: adds always land in the session member's stash,
+  // so this carries only the name for display copy, not a target member id.
   userName: string;
   onClose: () => void;
 }
 
 /** Flat, editorial TMDB search modal. Real posters; hover reveals overview + add. */
-export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
+export function SearchModal({ userName, onClose }: SearchModalProps) {
   const [query, setQuery] = useState("");
   const [searchedTerm, setSearchedTerm] = useState("");
   const [results, setResults] = useState<TMDBMovie[]>([]);
@@ -54,7 +55,7 @@ export function SearchModal({ userID, userName, onClose }: SearchModalProps) {
     if (pendingId !== null) return;
     setPendingId(movie.id);
     try {
-      await APIClient.users.addMovie(userID, movie.title, movie.id);
+      await APIClient.users.addMovie(movie.title, movie.id);
       toast.success(`${movie.title} added to ${userName}'s stash`);
       close();
     } catch (err) {

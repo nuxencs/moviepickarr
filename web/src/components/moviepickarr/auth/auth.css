@@ -17,24 +17,63 @@
   color: var(--ink);
 }
 
-/* ---- Left: the cinematic marquee ---- */
+/* ---- Left: the cinematic marquee ----
+   A layered-depth poster wall (issue #134, prototype variant B): four columns,
+   each pushed to its own Z depth and vertical offset, tilted so the right edge
+   recedes back-and-to-the-right with the nearest content on the left. Static. */
 .auth__stage {
   position: relative;
   overflow: hidden;
   background: var(--bg-deep);
+  perspective: 1150px;
+  perspective-origin: 50% 44%;
 }
 .auth__wall {
   position: absolute;
   inset: -8%;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  transform: rotate(-8deg) scale(1.15);
-  opacity: 0.5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  transform-style: preserve-3d;
+  transform: translateX(9%) rotateX(5deg) rotateY(18deg) scale(0.98);
+  opacity: 0.6;
+}
+.auth__col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transform-style: preserve-3d;
+  transform: translateZ(var(--col-z, 0));
+  margin-top: var(--col-offset, 0);
+}
+/* Each column carries its own Z depth and vertical offset, so the wall shingles
+   unevenly instead of alternating in lockstep. Only the two vars vary per column;
+   the base rule owns the transform, so the mobile reset below zeroes both with a
+   plain .auth__col override instead of restating every nth-child. */
+.auth__col:nth-child(1) {
+  --col-z: 70px;
+  --col-offset: 54px;
+}
+.auth__col:nth-child(2) {
+  --col-z: 10px;
+  --col-offset: -96px;
+}
+.auth__col:nth-child(3) {
+  --col-z: -60px;
+  --col-offset: 12px;
+}
+.auth__col:nth-child(4) {
+  --col-z: -140px;
+  --col-offset: -150px;
 }
 .auth__tile {
   border-radius: var(--r-lg);
   aspect-ratio: 2 / 3;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.8);
+  outline: 1px solid var(--poster-ring);
+  outline-offset: -1px;
 }
 .auth__veil {
   position: absolute;
@@ -42,45 +81,6 @@
   background:
     linear-gradient(180deg, transparent 30%, var(--bg-deep) 100%),
     linear-gradient(60deg, var(--bg-deep) 8%, transparent 60%);
-}
-.auth__stagecopy {
-  position: absolute;
-  left: 40px;
-  right: 40px;
-  bottom: 40px;
-}
-.auth__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 650;
-  font-size: 17px;
-  color: var(--ink);
-}
-.auth__brand .mark {
-  display: inline-grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--r-md);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.auth__brand .mark svg {
-  width: 15px;
-  height: 15px;
-}
-.auth__tag {
-  font-family: var(--font-display);
-  /* Fixed step, not fluid clamp (DESIGN.md §3); the mobile size steps down in
-     the ≤720px block below. */
-  font-size: 40px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.02;
-  margin: 16px 0 0;
-  color: var(--ink);
-  max-width: 14ch;
 }
 
 /* ---- Right: the form column ---- */
@@ -212,16 +212,14 @@
   .auth__stage {
     min-height: 168px;
   }
+  /* Heavy per-column Z-depth reads poorly in a ~168px band — flatten toward a
+     single plane (drop the per-column Z + vertical offsets) so the tilt stays
+     legible full-width. */
   .auth__wall {
-    transform: rotate(-8deg) scale(1.4);
+    inset: -40%;
   }
-  .auth__stagecopy {
-    left: 24px;
-    right: 24px;
-    bottom: 20px;
-  }
-  .auth__tag {
-    font-size: 26px;
-    margin-top: 8px;
+  .auth__col {
+    transform: none;
+    margin-top: 0;
   }
 }

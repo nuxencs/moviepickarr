@@ -4,6 +4,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, useMemo, useState } from "rea
 
 import { APIClient } from "@/api/APIClient";
 import {
+  MeQueryOptions,
   MoviesGetPoolQueryOptions,
   MoviesGetWatchedQueryOptions,
   SettingsGetPoolLockQueryOptions,
@@ -231,10 +232,14 @@ export function MoviesTab() {
 function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
   const [editOpen, toggleEdit] = useToggle(false);
   const { date, time } = dateTimeParts(movie.watchedAt);
+  // Editing is adder-only server-side (no admin override), so only the adder
+  // gets the edit control; everyone else sees the watched row read-only.
+  const { data: me } = useQuery(MeQueryOptions());
+  const canEdit = me?.id === movie.addedByID;
 
   const editMutation = useMutation({
     mutationFn: (payload: { title: string; link: string; watchedAt?: string }) =>
-      APIClient.users.updateMovie(movie.addedByID, movie.movieID, payload.title, payload.link, payload.watchedAt),
+      APIClient.users.updateMovie(movie.movieID, payload.title, payload.link, payload.watchedAt),
     onSuccess: () => {
       toast.success(`${movie.title} updated`);
       toggleEdit();
@@ -276,9 +281,11 @@ function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
               <LinkIcon />
             </a>
           )}
-          <button type="button" className="iconbtn" onClick={toggleEdit} aria-label="Edit">
-            <PencilIcon />
-          </button>
+          {canEdit && (
+            <button type="button" className="iconbtn" onClick={toggleEdit} aria-label="Edit">
+              <PencilIcon />
+            </button>
+          )}
         </div>
         <div className="wr-date">
           {date}

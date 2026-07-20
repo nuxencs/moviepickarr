@@ -286,39 +286,42 @@ export const APIClient = {
         restore: (memberID: number) =>
             appClient.Post<InviteResult>(`api/v1/members/${memberID}/restore`),
     },
+    // The Members board and its self-service movie actions. Movie mutations are
+    // adder-only server-side: the adder is always the session member, so none of
+    // them take a target member id (editing/moving/deleting a movie you did not
+    // add returns 403 not_adder, with no admin override). Member lifecycle
+    // (create/remove) lives under `members` above, not here.
     users: {
-        getAll: () => appClient.Get<User[]>("api/v1/users"),
-        create: (name: string) =>
-            appClient.Post<User>("api/v1/users", {
-                body: { name },
-            }),
-        delete: (userID: number) =>
-            appClient.Delete(`api/v1/users/${userID}`),
-        addMovie: (userID: number, title: string, tmdbId: number) =>
-            appClient.Post<Movie>(`api/v1/users/${userID}/movies`, {
+        // Every member with their lean pool + stash tiles for the board.
+        getAll: () => appClient.Get<User[]>("api/v1/members"),
+        // Adds always land in the session member's stash.
+        addMovie: (title: string, tmdbId: number) =>
+            appClient.Post<Movie>("api/v1/movies", {
                 body: {
                     title,
                     tmdbId,
                 },
             }),
-        deleteMovie: (userID: number, movieID: number) =>
-            appClient.Delete(`api/v1/users/${userID}/movies/${movieID}`),
-        updateMovie: (userID: number, movieID: number, title: string, link: string, watchedAt?: string) =>
-            appClient.Put<Movie>(`api/v1/users/${userID}/movies/${movieID}`, {
+        deleteMovie: (movieID: number) =>
+            appClient.Delete(`api/v1/movies/${movieID}`),
+        updateMovie: (movieID: number, title: string, link: string, watchedAt?: string) =>
+            appClient.Put<Movie>(`api/v1/movies/${movieID}`, {
                 body: {
                     title,
                     link,
                     watchedAt,
                 },
             }),
-        moveMovie: (userID: number, movieID: number, target: "pool" | "stash") =>
-            appClient.Post<Movie>(`api/v1/users/${userID}/movies/${movieID}/move`, {
+        moveMovie: (movieID: number, target: "pool" | "stash") =>
+            appClient.Post<Movie>(`api/v1/movies/${movieID}/move`, {
                 body: { target },
             }),
+        // Board reads stay keyed by member id (a public per-member read, not a
+        // mutation): the pool/stash tiles for the given member.
         getPool: (userID: number) =>
-            appClient.Get<Movie[]>(`api/v1/users/${userID}/pool`),
+            appClient.Get<Movie[]>(`api/v1/members/${userID}/pool`),
         getStash: (userID: number) =>
-            appClient.Get<Movie[]>(`api/v1/users/${userID}/stash`),
+            appClient.Get<Movie[]>(`api/v1/members/${userID}/stash`),
     },
     movies: {
         getPooled: () => appClient.Get<Movie[]>("api/v1/movies/pool"),

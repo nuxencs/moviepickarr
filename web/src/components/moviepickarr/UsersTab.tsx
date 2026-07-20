@@ -7,12 +7,11 @@ import {
   PlusIcon,
   SearchIcon,
   Trash2Icon,
-  UsersIcon,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
-import { SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
+import { MeQueryOptions, SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar } from "@/components/moviepickarr/Bits";
@@ -32,26 +31,12 @@ const POOL_SIZE = 3;
 
 export function UsersTab() {
   const { data: users, isPending: usersPending, isError: usersError } = useQuery(UsersGetAllQueryOptions());
-  const [name, setName] = useState("");
+  // The session member drives the board's self-service gating: movie actions
+  // show only on your own board (the backend enforces adder-only anyway).
+  // Member onboarding and removal live on the admin roster, so this page has
+  // no add-member form and no delete action.
+  const { data: me } = useQuery(MeQueryOptions());
   const [searchUser, setSearchUser] = useState<User | null>(null);
-
-  const createMutation = useMutation({
-    mutationFn: () => APIClient.users.create(name.trim()),
-    onSuccess: () => {
-      toast.success(`Member ${name.trim()} created`);
-      setName("");
-    },
-    onError: () => {
-      toast.error("Failed to create member");
-      setName("");
-    },
-  });
-
-  const handleCreate = (e: FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || createMutation.isPending) return;
-    createMutation.mutate();
-  };
 
   return (
     <>
@@ -61,23 +46,6 @@ export function UsersTab() {
             <h2>Members</h2>
             <span className="sec-count">{plural(users?.length ?? 0, "person", "people")}</span>
           </div>
-          <form className="user-add" onSubmit={handleCreate}>
-            <label className="field user-add__field">
-              <UsersIcon />
-              <input
-                name="new-user-name"
-                aria-label="Add a new member by name"
-                placeholder="Add someone…"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={createMutation.isPending}
-              />
-            </label>
-            <button type="submit" className="btn btn--accent" disabled={!name.trim() || createMutation.isPending}>
-              <PlusIcon />
-              Add member
-            </button>
-          </form>
         </div>
 
         <div className="boards">
@@ -87,7 +55,12 @@ export function UsersTab() {
             <UsersBodySkeleton />
           ) : users && users.length > 0 ? (
             users.map((user) => (
-              <Board key={user.userID} user={user} onOpenSearch={() => setSearchUser(user)} />
+              <Board
+                key={user.userID}
+                user={user}
+                isOwnBoard={me?.id === user.userID}
+                onOpenSearch={() => setSearchUser(user)}
+              />
             ))
           ) : (
             <p className="empty">No members yet</p>
@@ -96,16 +69,23 @@ export function UsersTab() {
       </div>
 
       {searchUser && (
-        <SearchModal userID={searchUser.userID} userName={searchUser.name} onClose={() => setSearchUser(null)} />
+        <SearchModal userName={searchUser.name} onClose={() => setSearchUser(null)} />
       )}
     </>
   );
 }
 
-function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void }) {
+function Board({
+  user,
+  isOwnBoard,
+  onOpenSearch,
+}: {
+  user: User;
+  isOwnBoard: boolean;
+  onOpenSearch: () => void;
+}) {
   const { data: isLocked } = useQuery(SettingsGetPoolLockQueryOptions());
   const [filter, setFilter] = useState("");
-  const [deleteOpen, toggleDelete] = useToggle(false);
 
   const pool = useMemo(
     () => Object.values(user.currentPool).sort((a, b) => a.title.localeCompare(b.title)),
@@ -124,30 +104,16 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
   const poolFull = filled >= POOL_SIZE;
   const firstName = user.name.split(" ")[0];
 
-  const deleteUserMutation = useMutation({
-    mutationFn: () => APIClient.users.delete(user.userID),
-    onSuccess: () => toast.success(`Member ${user.name} deleted`),
-    onError: () => toast.error("Failed to delete member"),
-  });
-
   // Demote a pooled movie back to the stash. The move endpoint is directional
   // (target = destination) and idempotent, so a repeat click is a safe no-op.
+  // Adder-only server-side, so this only renders on your own board.
   const demoteMutation = useMutation({
-    mutationFn: (movieID: number) => APIClient.users.moveMovie(user.userID, movieID, "stash"),
+    mutationFn: (movieID: number) => APIClient.users.moveMovie(movieID, "stash"),
     onError: () => toast.error("Failed to move movie"),
   });
 
   return (
     <div className="board">
-      <DeletionDialog
-        isOpen={deleteOpen}
-        onClose={toggleDelete}
-        onConfirm={() => deleteUserMutation.mutate()}
-        title="Delete member"
-        description={`Delete ${user.name}? This cannot be undone.`}
-        confirmText="Delete"
-      />
-
       <div className="board__head">
         <div className="board__id">
           <Avatar name={user.name} size={38} />
@@ -158,15 +124,14 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
             </div>
           </div>
         </div>
-        <button type="button" className="iconbtn iconbtn--danger" onClick={toggleDelete} aria-label="Delete member">
-          <Trash2Icon />
-        </button>
       </div>
 
-      <button type="button" className="btn btn--ghost board__search" onClick={onOpenSearch}>
-        <PlusIcon />
-        Add to {firstName}'s stash
-      </button>
+      {isOwnBoard && (
+        <button type="button" className="btn btn--ghost board__search" onClick={onOpenSearch}>
+          <PlusIcon />
+          Add to {firstName}'s stash
+        </button>
+      )}
 
       <div className="poolbox">
         <div className="poolbox__label">
@@ -181,7 +146,7 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
             return movie ? (
               <div className="pslot pslot--filled" key={movie.movieID} title={movie.title}>
                 <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
-                {!isLocked && (
+                {isOwnBoard && !isLocked && (
                   <button
                     type="button"
                     className="pslot__demote"
@@ -227,7 +192,13 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
             </div>
           ) : (
             filteredStash.map((movie) => (
-              <StashRow key={movie.movieID} user={user} movie={movie} poolFull={poolFull} locked={!!isLocked} />
+              <StashRow
+                key={movie.movieID}
+                movie={movie}
+                poolFull={poolFull}
+                locked={!!isLocked}
+                isOwnBoard={isOwnBoard}
+              />
             ))
           )}
         </div>
@@ -237,31 +208,33 @@ function Board({ user, onOpenSearch }: { user: User; onOpenSearch: () => void })
 }
 
 function StashRow({
-  user,
   movie,
   poolFull,
   locked,
+  isOwnBoard,
 }: {
-  user: User;
   movie: Movie;
   poolFull: boolean;
   locked: boolean;
+  isOwnBoard: boolean;
 }) {
   const [editOpen, toggleEdit] = useToggle(false);
   const [deleteOpen, toggleDelete] = useToggle(false);
 
+  // All three mutations are adder-only server-side (the adder is the session
+  // member), so the row only renders its actions on your own board.
   const moveMutation = useMutation({
-    mutationFn: () => APIClient.users.moveMovie(user.userID, movie.movieID, "pool"),
+    mutationFn: () => APIClient.users.moveMovie(movie.movieID, "pool"),
     onError: () => toast.error("Failed to move movie"),
   });
   const deleteMutation = useMutation({
-    mutationFn: () => APIClient.users.deleteMovie(user.userID, movie.movieID),
+    mutationFn: () => APIClient.users.deleteMovie(movie.movieID),
     onSuccess: () => toast.success(`${movie.title} deleted`),
     onError: () => toast.error("Failed to delete movie"),
   });
   const editMutation = useMutation({
     mutationFn: (payload: { title: string; link: string }) =>
-      APIClient.users.updateMovie(user.userID, movie.movieID, payload.title, payload.link),
+      APIClient.users.updateMovie(movie.movieID, payload.title, payload.link),
     onSuccess: () => {
       toast.success(`${movie.title} updated`);
       toggleEdit();
@@ -297,23 +270,27 @@ function StashRow({
               <LinkIcon />
             </a>
           )}
-          <button
-            type="button"
-            className="iconbtn"
-            onClick={() => moveMutation.mutate()}
-            disabled={locked || poolFull || moveMutation.isPending}
-            aria-label="Promote to pool"
-            title={poolFull ? "Pool is full" : locked ? "Pool is locked" : "Promote to pool"}
-          >
-            <MoveUpIcon />
-          </button>
-          <Menu
-            label="More actions"
-            actions={[
-              { icon: <PencilIcon />, label: "Edit", onSelect: toggleEdit },
-              { icon: <Trash2Icon />, label: "Delete", onSelect: toggleDelete, danger: true },
-            ]}
-          />
+          {isOwnBoard && (
+            <>
+              <button
+                type="button"
+                className="iconbtn"
+                onClick={() => moveMutation.mutate()}
+                disabled={locked || poolFull || moveMutation.isPending}
+                aria-label="Promote to pool"
+                title={poolFull ? "Pool is full" : locked ? "Pool is locked" : "Promote to pool"}
+              >
+                <MoveUpIcon />
+              </button>
+              <Menu
+                label="More actions"
+                actions={[
+                  { icon: <PencilIcon />, label: "Edit", onSelect: toggleEdit },
+                  { icon: <Trash2Icon />, label: "Delete", onSelect: toggleDelete, danger: true },
+                ]}
+              />
+            </>
+          )}
         </div>
       </div>
     </>

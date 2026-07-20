@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { KeyRoundIcon, LockIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { APIClient, oidcLoginPath } from "@/api/APIClient";
-import { AuthConfigQueryOptions, MeQueryOptions } from "@/api/queries";
+import { AuthConfigQueryOptions } from "@/api/queries";
 import { AuthKeys } from "@/api/query_keys";
 
 import { AuthFrame } from "@/components/moviepickarr/auth/AuthFrame";
@@ -31,16 +31,12 @@ export function LoginPage() {
   const { error: oidcError } = useSearch({ from: "/login" });
 
   const config = useQuery(AuthConfigQueryOptions());
-  const me = useQuery(MeQueryOptions());
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
-  // Already signed in (a stray visit to /login with a live session): send the
-  // member straight into the app rather than showing them a login form.
-  useEffect(() => {
-    if (me.data) void navigate({ to: "/" });
-  }, [me.data, navigate]);
+  // The already-signed-in bounce lives in the route's beforeLoad (see router.tsx):
+  // resolving /me before render means a live session never paints the form.
 
   const login = useMutation({
     mutationFn: () => APIClient.auth.login(username.trim(), password),

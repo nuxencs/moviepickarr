@@ -5,6 +5,8 @@ import {
   stripSearchParams,
 } from "@tanstack/react-router";
 
+import { redirectIfSignedIn, requireSession } from "@/api/authGuard";
+import { MeQueryOptions } from "@/api/queries";
 import { queryClient } from "@/api/QueryClient";
 
 import { AccountPage } from "@/components/moviepickarr/account/AccountPage";
@@ -28,12 +30,24 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootShell,
 });
 
+// The auth gates below run on every route entry, so they must read a *fresh*
+// session, not the 60s-stale /me the global staleTime hands back on tab nav (see
+// QueryClient). staleTime: 0 forces a revalidation each time, so a session that
+// died server-side redirects on the next navigation instead of trusting a cached
+// success and painting the chrome behind a wall of 401s. /me is a cheap session
+// lookup, not one of the heavy SQLite reads that staleTime exists to spare.
+const resolveMe = (queryClient: QueryClient) =>
+  queryClient.fetchQuery({ ...MeQueryOptions(), staleTime: 0 });
+
 // Pathless layout route carrying the app chrome (NavBar + SSE). The
 // authenticated app pages hang off it; the standalone auth routes below sit
 // directly under the root so they render without that chrome.
 const appLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "_app",
+  // Auth gate for every app page: a dead/absent session bounces to /login before
+  // the chrome paints behind a wall of 401s (see requireSession).
+  beforeLoad: ({ context }) => requireSession(() => resolveMe(context.queryClient)),
   component: AppLayout,
 });
 
@@ -45,6 +59,10 @@ const loginRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): { error?: string } => ({
     error: typeof search.error === "string" ? search.error : undefined,
   }),
+  // A member with a live session never sees the login form: /me is resolved
+  // before render so there is no one-frame flash of the form (see
+  // redirectIfSignedIn).
+  beforeLoad: ({ context }) => redirectIfSignedIn(() => resolveMe(context.queryClient)),
   component: LoginPage,
 });
 

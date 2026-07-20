@@ -35,7 +35,8 @@
 - `internal/server/tmdb_handlers.go`: TMDB bounded context handlers.
 - `internal/server/events_handlers.go`: SSE/events bounded context handlers.
 - `internal/server/errors.go`: centralized domain-to-HTTP error mapping.
-- `internal/server/tmdb.go`: TMDB API client adapter (search, reverse lookup + details with rate-limit/retry).
+- `internal/server/tmdb.go`: TMDB API client adapter (search, reverse lookup + details with rate-limit/retry, and `DiscoverPopularPosters` on `/discover/movie` for the poster wall).
+- `internal/server/poster_wall.go`: the public poster-wall cache + endpoint. An in-memory `[]string` of up to 20 poster paths (popularity order, null posters dropped), warmed once in a background goroutine on boot and refreshed every 7 days, keeping the last good list on a failed warm. Nil when no `TMDB_API_KEY` (mirrors the `enrichRunner` guard); `GET /auth/poster-wall` then serves `[]`. The route sits ahead of `requireSession` beside `/auth/config`, carries no secrets, and rides the `csrfGuard` safe-method exemption.
 - `internal/server/enrichment.go`: TMDB enrichment use case (`EnrichOne`: link → IMDb id → reverse lookup → details → upsert).
 - `internal/server/enrich_worker.go`: background enrichment worker (queue, rate limiter, backfill/refresh drain, config).
 - `internal/server/events.go`: SSE broker.

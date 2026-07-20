@@ -127,6 +127,10 @@ func Run(ctx context.Context, cfg Config) error {
 	} else {
 		rootLog.Info().Msg("enrichment disabled: TMDB_API_KEY not set")
 	}
+	// Warm the public poster wall in the background: nil (no key) means the wall
+	// never warms and the endpoint serves []. Async, so boot is never blocked by
+	// the TMDB round trip.
+	h.posterWall.Start(ctx)
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -233,6 +237,8 @@ func Run(ctx context.Context, cfg Config) error {
 			if h.enrichRunner != nil {
 				h.enrichRunner.Stop()
 			}
+			// Stop the poster-wall refresh loop too; nil-safe when keyless.
+			h.posterWall.Stop()
 			h.Close()
 			if err := pool.Close(); err != nil {
 				rootLog.Error().Err(err).Msg("db close error")
@@ -276,6 +282,15 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg, enrichLog)
 	}
 
+	// The poster wall shares the same nil-when-keyless guard: with no TMDB key the
+	// cache stays nil, the warm goroutine never starts, and the endpoint serves [].
+	// It reuses h.tmdb (so it rides the enrichment rate limiter) via the fetch seam.
+	var posterWall *posterWallCache
+	if tmdbCli.apiKey != "" {
+		posterLog := rootLog.With().Str("component", "poster-wall").Logger()
+		posterWall = newPosterWallCache(tmdbCli.DiscoverPopularPosters, posterWallRefreshInterval, posterLog)
+	}
+
 	// localAuth is shared: the invite manager reuses its SetLocalLogin for the
 	// password-claim upsert, so both hold the same instance. The local-account
 	// repo is hoisted so the OIDC linker can read it for the unlink guard.
@@ -298,6 +313,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		movieCredits:    movieCreditsRepo,
 		tmdb:            tmdbCli,
 		enrichRunner:    runner,
+		posterWall:      posterWall,
 		statsCache:      make(map[string]statsCacheEntry),
 		statsCacheTTL:   time.Minute,
 
@@ -363,6 +379,10 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// SSO provider today). GET + no secrets, so it sits ahead of requireSession
 	// alongside the other pre-auth routes.
 	v1.Get("/auth/config", h.handleAuthConfig)
+	// Poster wall for the unauthenticated login/claim panel. GET + no secrets
+	// (poster paths are public artwork), so it sits ahead of requireSession beside
+	// /auth/config and rides the csrfGuard safe-method exemption.
+	v1.Get("/auth/poster-wall", h.handlePosterWall)
 	v1.Post("/auth/login", h.handleLogin)
 	v1.Get("/auth/claim/:token", h.handleValidateClaim)
 	v1.Post("/auth/claim/:token/password", h.handleClaimPassword)

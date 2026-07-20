@@ -191,6 +191,37 @@ func (c *tmdbClient) MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDet
 	return payload, nil
 }
 
+// DiscoverPopularPosters fetches one /discover/movie page of the most popular
+// movies and returns their poster paths in popularity order, dropping any result
+// with no poster. It is instance-independent (it never reads the pool) so a fresh
+// instance still gets a full wall and no member's real pool leaks pre-auth. The
+// pinned filters keep the wall safe and recognizable: popularity-sorted, a
+// vote-count floor to cut noise, no adult titles, English metadata. It rides the
+// shared doRequest path, so it reuses the retry/backoff/rate-limit machinery and
+// returns errTMDBNotConfigured when no key is set.
+func (c *tmdbClient) DiscoverPopularPosters(ctx context.Context) ([]string, error) {
+	q := url.Values{}
+	q.Set("sort_by", "popularity.desc")
+	q.Set("vote_count.gte", "200")
+	q.Set("include_adult", "false")
+	q.Set("language", "en-US")
+	u := fmt.Sprintf("%s/discover/movie?%s", c.baseURL, q.Encode())
+
+	var payload tmdbSearchResponse
+	if err := c.doRequest(ctx, u, &payload); err != nil {
+		return nil, err
+	}
+
+	paths := make([]string, 0, len(payload.Results))
+	for _, m := range payload.Results {
+		if m.PosterPath == nil || *m.PosterPath == "" {
+			continue
+		}
+		paths = append(paths, *m.PosterPath)
+	}
+	return paths, nil
+}
+
 // doRequest is the shared GET helper for the enrichment endpoints. It paces
 // every request through the rate limiter, maps status codes to the error
 // taxonomy, honors 429 Retry-After, and retries 5xx/network errors with

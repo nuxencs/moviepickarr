@@ -43,9 +43,13 @@ type handler struct {
 	movieCredits    domain.MovieCreditsRepo
 	tmdb            *tmdbClient
 	enrichRunner    *enrichRunner
-	statsCacheMu    sync.RWMutex
-	statsCache      map[string]statsCacheEntry
-	statsCacheTTL   time.Duration
+	// posterWall backs the public GET /auth/poster-wall endpoint. Like
+	// enrichRunner it is nil when no TMDB key is set, and the handler then serves
+	// an empty array.
+	posterWall    *posterWallCache
+	statsCacheMu  sync.RWMutex
+	statsCache    map[string]statsCacheEntry
+	statsCacheTTL time.Duration
 
 	// sseHeartbeatInterval is how often an open SSE stream writes a heartbeat and
 	// revalidates the session. A field (not the const directly) so tests can drive

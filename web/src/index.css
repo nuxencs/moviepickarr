@@ -853,9 +853,12 @@
   .stat-strip { display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .statitem { padding: 24px 30px; display: flex; flex-direction: column; gap: 13px; border-left: 1px solid var(--line); }
   .statitem:first-child { border-left: none; padding-left: 0; }
-  .statitem__top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); }
-  .statitem__top svg { color: var(--accent); }
-  .statitem__top span { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  /* Reserve two label lines so a wrapping label ("Most-watched adder" wraps at
+     the 6-up width) doesn't push this tile's value below its neighbours' and
+     break the KPI baseline across the strip. */
+  .statitem__top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); min-height: 30px; }
+  .statitem__top svg { color: var(--accent); flex-shrink: 0; }
+  .statitem__top span { font-family: var(--font-mono); font-size: 11px; line-height: 1.35; letter-spacing: 0.1em; text-transform: uppercase; }
   /* Fixed 2-line height (bottom-aligned) so a wrapping most-watched-adder name
      never changes the strip height, so the page no longer jumps between windows. */
   .statitem__val { font-size: 29px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.05; height: 2.1em; display: flex; align-items: flex-end; overflow: hidden; }

@@ -5,24 +5,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 import { MeQueryOptions } from "@/api/queries";
 
+import { type Tab, tabFromPath, tabsForRole } from "@/components/moviepickarr/nav";
 import { VolumeControl } from "@/components/moviepickarr/VolumeControl";
 import { useTheme } from "@/components/theme-context";
 
-export type Tab = "movies" | "users" | "stats";
-
-const TABS: { id: Tab; label: string; icon: typeof FilmIcon; path: "/" | "/users" | "/stats" }[] = [
-  { id: "movies", label: "Movies", icon: FilmIcon, path: "/" },
-  { id: "users", label: "Members", icon: UsersIcon, path: "/users" },
-  { id: "stats", label: "Stats", icon: ChartNoAxesColumnIcon, path: "/stats" },
-];
-
-/** The router is the source of truth for the active tab now. Map the current
- *  pathname back to a tab id ('/' → movies) to drive the active styling. */
-function tabFromPath(pathname: string): Tab {
-  if (pathname.startsWith("/stats")) return "stats";
-  if (pathname.startsWith("/users")) return "users";
-  return "movies";
-}
+/** Icon per tab id; the pure nav module carries ids/labels/paths, not JSX. */
+const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
+  movies: FilmIcon,
+  users: UsersIcon,
+  stats: ChartNoAxesColumnIcon,
+  roster: ShieldIcon,
+};
 
 /**
  * Resolve dark/light from the `theme` value directly (not the DOM class):
@@ -43,10 +36,10 @@ export function NavBar() {
   const { theme, setTheme } = useTheme();
   const isDark = resolveDark(theme);
   const active = useRouterState({ select: (s) => tabFromPath(s.location.pathname) });
-  // The admin roster entry only appears for admins. A 401 (not logged in) leaves
-  // role undefined, so the link is hidden, never a dead entry a member can't use.
+  // The Roster tab only appears for admins. A 401 (not logged in) leaves role
+  // undefined, so it's hidden, never a dead entry a member can't use.
   const { data: me } = useQuery(MeQueryOptions());
-  const onAdmin = useRouterState({ select: (s) => s.location.pathname.startsWith("/admin") });
+  const tabs = tabsForRole(me?.role);
   const onSettings = useRouterState({ select: (s) => s.location.pathname.startsWith("/settings") });
 
   // A single shared underline that slides between tabs, rather than one per tab
@@ -57,6 +50,7 @@ export function NavBar() {
     movies: null,
     users: null,
     stats: null,
+    roster: null,
   });
   const [ink, setInk] = useState<{ left: number; width: number } | null>(null);
 
@@ -70,7 +64,9 @@ export function NavBar() {
   }, [active]);
 
   // Measure before paint so the indicator never flashes at a stale position.
-  useLayoutEffect(() => measure(), [measure]);
+  // tabs.length is a dep so the pass re-runs when the Roster tab appears once
+  // `me` loads as admin (its ref is null on the first, roster-less render).
+  useLayoutEffect(() => measure(), [measure, tabs.length]);
 
   // Re-measure on resize and once web fonts settle (font swap changes label width).
   useEffect(() => {
@@ -102,40 +98,30 @@ export function NavBar() {
           {/* Top-bar tabs with the sliding underline (desktop / tablet). Hidden on
               phones, where navigation moves to the fixed bottom bar below. */}
           <div className="nav__tabs">
-            {TABS.map(({ id, label, icon: Icon, path }) => (
-              <Link
-                key={id}
-                to={path}
-                ref={(el) => {
-                  btnRefs.current[id] = el;
-                }}
-                className="tab"
-                data-active={active === id}
-                aria-current={active === id ? "page" : undefined}
-              >
-                <Icon />
-                {label}
-              </Link>
-            ))}
+            {tabs.map(({ id, label, path }) => {
+              const Icon = TAB_ICONS[id];
+              return (
+                <Link
+                  key={id}
+                  to={path}
+                  ref={(el) => {
+                    btnRefs.current[id] = el;
+                  }}
+                  className="tab"
+                  data-active={active === id}
+                  aria-current={active === id ? "page" : undefined}
+                >
+                  <Icon />
+                  {label}
+                </Link>
+              );
+            })}
             {ink && (
               <span className="tab__ink" style={{ left: ink.left, width: ink.width }} />
             )}
           </div>
 
           <div className="nav__actions">
-            {me?.role === "admin" && (
-              <Link
-                to="/admin"
-                className="iconbtn"
-                data-active={onAdmin}
-                aria-current={onAdmin ? "page" : undefined}
-                aria-label="Roster"
-                title="Roster (admin)"
-              >
-                <ShieldIcon />
-              </Link>
-            )}
-
             {me && (
               <Link
                 to="/settings"
@@ -168,18 +154,21 @@ export function NavBar() {
           tab is gold-tinted instead of carrying the desktop underline slider.
           Hidden at the same breakpoint where the top-bar tabs reappear. */}
       <nav className="navbar-bottom" aria-label="Primary">
-        {TABS.map(({ id, label, icon: Icon, path }) => (
-          <Link
-            key={id}
-            to={path}
-            className="navbar-bottom__tab"
-            data-active={active === id}
-            aria-current={active === id ? "page" : undefined}
-          >
-            <Icon />
-            <span>{label}</span>
-          </Link>
-        ))}
+        {tabs.map(({ id, label, path }) => {
+          const Icon = TAB_ICONS[id];
+          return (
+            <Link
+              key={id}
+              to={path}
+              className="navbar-bottom__tab"
+              data-active={active === id}
+              aria-current={active === id ? "page" : undefined}
+            >
+              <Icon />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
       </nav>
     </>
   );

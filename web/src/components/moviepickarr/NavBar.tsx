@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChartNoAxesColumnIcon, CircleUserRoundIcon, FilmIcon, MoonIcon, ShieldIcon, SunIcon, UsersIcon } from "lucide-react";
+import { ChartNoAxesColumnIcon, FilmIcon, ShieldIcon, UsersIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { MeQueryOptions } from "@/api/queries";
 
 import { type Tab, tabFromPath, tabsForRole } from "@/components/moviepickarr/nav";
+import { ProfilePanel } from "@/components/moviepickarr/ProfilePanel";
 import { VolumeControl } from "@/components/moviepickarr/VolumeControl";
-import { useTheme } from "@/components/theme-context";
 
 /** Icon per tab id; the pure nav module carries ids/labels/paths, not JSX. */
 const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
@@ -17,30 +17,15 @@ const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
   roster: ShieldIcon,
 };
 
-/**
- * Resolve dark/light from the `theme` value directly (not the DOM class):
- * reading the class here is unreliable because this child's effects run before
- * the parent ThemeProvider applies the class, so the read would be stale.
- */
-function resolveDark(theme: string): boolean {
-  if (theme === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  }
-  return theme === "dark";
-}
-
 /** Horizontal inset (px) the underline keeps from each edge of the active tab. */
 const INK_INSET = 12;
 
 export function NavBar() {
-  const { theme, setTheme } = useTheme();
-  const isDark = resolveDark(theme);
   const active = useRouterState({ select: (s) => tabFromPath(s.location.pathname) });
   // The Roster tab only appears for admins. A 401 (not logged in) leaves role
   // undefined, so it's hidden, never a dead entry a member can't use.
   const { data: me } = useQuery(MeQueryOptions());
   const tabs = tabsForRole(me?.role);
-  const onSettings = useRouterState({ select: (s) => s.location.pathname.startsWith("/settings") });
 
   // A single shared underline that slides between tabs, rather than one per tab
   // that unmounts/remounts on switch. We measure the active link and drive the
@@ -74,8 +59,6 @@ export function NavBar() {
     document.fonts?.ready.then(measure);
     return () => window.removeEventListener("resize", measure);
   }, [measure]);
-
-  const toggleTheme = () => setTheme(isDark ? "light" : "dark");
 
   return (
     <>
@@ -122,30 +105,8 @@ export function NavBar() {
           </div>
 
           <div className="nav__actions">
-            {me && (
-              <Link
-                to="/settings"
-                className="iconbtn"
-                data-active={onSettings}
-                aria-current={onSettings ? "page" : undefined}
-                aria-label="Account settings"
-                title="Account"
-              >
-                <CircleUserRoundIcon />
-              </Link>
-            )}
-
             <VolumeControl />
-
-            <button
-              type="button"
-              className="iconbtn"
-              onClick={toggleTheme}
-              aria-label="Toggle theme"
-              title={isDark ? "Switch to light" : "Switch to dark"}
-            >
-              {isDark ? <SunIcon /> : <MoonIcon />}
-            </button>
+            {me && <ProfilePanel me={me} />}
           </div>
         </div>
       </nav>

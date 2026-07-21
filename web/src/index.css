@@ -477,6 +477,64 @@
     width: 34px; text-align: right; font-variant-numeric: tabular-nums;
   }
 
+  /* Profile: the top-right avatar and the panel it toggles (ProfilePanel.tsx).
+     Anchored top-right and width-capped to the viewport so it never overflows on
+     phones, where the avatar sits in the same top bar. */
+  .profile { position: relative; display: flex; }
+  .profile__trigger {
+    display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer;
+    border-radius: 999px; transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  }
+  .profile__trigger:active { transform: scale(0.94); }
+  .profile__trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .profile__trigger[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--accent); }
+
+  .profile__panel {
+    position: absolute; top: calc(100% + 10px); right: 0; z-index: 45;
+    width: 288px; max-width: calc(100vw - 24px);
+    display: flex; flex-direction: column;
+    padding: 8px;
+    background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: var(--r-lg); box-shadow: var(--shadow);
+    transform-origin: top right;
+    animation: mg-scaleIn var(--dur-base) var(--ease);
+  }
+  .profile__panel--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
+  .profile__sep { height: 1px; background: var(--line); margin: 6px 4px; }
+
+  .profile__id { display: flex; align-items: center; gap: 12px; padding: 8px 10px; }
+  .profile__idtext { min-width: 0; }
+  .profile__idname { display: flex; align-items: center; gap: 8px; }
+  .profile__idnametext { font-size: 15px; font-weight: 640; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Role pill; mirrors account/.acc-tag but lives here so the panel doesn't
+     depend on the account page's stylesheet being loaded. */
+  .profile__tag {
+    flex: none; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 999px; line-height: 1;
+    background: color-mix(in oklab, var(--ink) 10%, transparent); color: var(--ink-2);
+  }
+  .profile__idsub { font-size: 13px; color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .profile__item {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 10px; border: 0; border-radius: var(--r-sm);
+    background: none; color: var(--ink); text-decoration: none; text-align: left;
+    font-family: var(--font-ui); font-size: 13.5px; cursor: pointer;
+    transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .profile__item svg { width: 16px; height: 16px; flex: none; }
+  .profile__item:hover, .profile__item:focus-visible { background: var(--surface-3); }
+  .profile__item:disabled { opacity: 0.5; cursor: default; }
+  .profile__item--danger { color: var(--danger); font-weight: 600; }
+  .profile__item--danger:hover:not(:disabled), .profile__item--danger:focus-visible { background: color-mix(in oklab, var(--danger) 16%, transparent); }
+
+  .profile__section { padding: 6px 10px 8px; }
+  .profile__seclabel { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  .profile__pref { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .profile__prefname { font-size: 13.5px; color: var(--ink-2); }
+  .profile__pref .seg button { padding: 6px 11px; font-size: 12.5px; }
+  .profile__pref .seg button svg { width: 14px; height: 14px; }
+
   /* ---- Hero ---- */
   .hero { --hero-body-h: 18.5rem; position: relative; overflow: hidden; isolation: isolate; border-bottom: 1px solid var(--line); animation: mg-fadeIn var(--dur-slow) var(--ease); }
   .hero__bg-stack { position: absolute; inset: 0; z-index: 0; }

@@ -8,6 +8,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { MeQueryOptions, SettingsGetNextUpQueryOptions } from "@/api/queries";
 
+import { possessive } from "@/components/moviepickarr/possessive";
+
 export interface TurnGateInputs {
   /** The session actor's role, undefined while /auth/me is still loading. */
   role: "member" | "admin" | undefined;
@@ -66,7 +68,7 @@ const WAITING_TIP = "Waiting for the next-up member.";
 
 /** Tooltip for the disabled Draw control. */
 export function drawLockedTip(gate: TurnGate): string {
-  return gate.resolved ? `It's ${gate.nextUpName}'s turn to draw.` : WAITING_TIP;
+  return gate.resolved ? `It's ${possessive(gate.nextUpName)} turn to draw.` : WAITING_TIP;
 }
 
 /** Tooltip for the disabled Reveal (OK) control. */

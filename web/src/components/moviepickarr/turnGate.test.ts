@@ -86,6 +86,11 @@ describe("locked tooltips", () => {
     expect(watchLockedTip(gate)).toBe("Only Ada can mark this watched.");
   });
 
+  it("uses a bare apostrophe for a next-up name ending in s", () => {
+    const gate = turnGate(inputs({ meID: 2, nextUpID: 1, nextUpName: "Aleks" }));
+    expect(drawLockedTip(gate)).toBe("It's Aleks' turn to draw.");
+  });
+
   it("fall back to the waiting copy when unresolved", () => {
     const gate = turnGate(inputs({ meID: 2, nextUpID: 0, nextUpName: "" }));
     expect(drawLockedTip(gate)).toBe("Waiting for the next-up member.");

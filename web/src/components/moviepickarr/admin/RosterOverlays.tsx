@@ -11,6 +11,7 @@ import { useState } from "react";
 import { loginChips, removeOutcome } from "@/components/moviepickarr/admin/roster";
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { Modal } from "@/components/moviepickarr/Modal";
+import { possessive } from "@/components/moviepickarr/possessive";
 import { toast } from "@/components/ui/toast-api";
 
 
@@ -244,7 +245,7 @@ export function SetLoginDialog({
           }}
         >
           <h3 className="adm-modal__title">
-            {isReset ? `Reset ${member.name}'s password` : `Set a password for ${member.name}`}
+            {isReset ? `Reset ${possessive(member.name)} password` : `Set a password for ${member.name}`}
           </h3>
           <p className="adm-modal__sub">
             {isReset

@@ -5,6 +5,7 @@ import { APIClient } from "@/api/APIClient";
 
 import { hueOf, yearOf } from "@/components/moviepickarr/lib";
 import { Modal } from "@/components/moviepickarr/Modal";
+import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { toast } from "@/components/ui/toast-api";
 
@@ -56,7 +57,7 @@ export function SearchModal({ userName, onClose }: SearchModalProps) {
     setPendingId(movie.id);
     try {
       await APIClient.board.addMovie(movie.title, movie.id);
-      toast.success(`${movie.title} added to ${userName}'s stash`);
+      toast.success(`${movie.title} added to ${possessive(userName)} stash`);
       close();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Failed to add ${movie.title}`);
@@ -73,7 +74,7 @@ export function SearchModal({ userName, onClose }: SearchModalProps) {
             <div className="top">
               <div>
                 <h3>Search &amp; add movies</h3>
-                <p>Find a movie on TMDB, then add it to {userName}'s stash.</p>
+                <p>Find a movie on TMDB, then add it to {possessive(userName)} stash.</p>
               </div>
               <button type="button" className="iconbtn" onClick={close} aria-label="Close">
                 <XIcon />

@@ -5,10 +5,15 @@
    Ported from the locked prototype direction (proto/auth-login-claim, Variant A
    "Settings page"). */
 
+/* No bottom padding of its own: the page sits inside `.shell`, which already
+   carries the scroll-past breathing room (index.css). The prototype's 96px
+   bottom padding was for a standalone page; stacked on the shell's it left a
+   ~200px band of empty space below the last row, so a short page overflowed the
+   viewport into blank scroll. */
 .acc {
   max-width: 560px;
   margin: 0 auto;
-  padding: 8px 4px 96px;
+  padding: 8px 4px 0;
 }
 
 .acc__head {
@@ -29,6 +34,12 @@
 
 .acc__section {
   margin-bottom: 30px;
+}
+/* The gap belongs *between* sections; on the last one it's just trailing dead
+   space that pushes the page past the viewport. :last-of-type (not :last-child)
+   so an open dialog rendered after the sections doesn't unset it. */
+.acc__section:last-of-type {
+  margin-bottom: 0;
 }
 .acc__label {
   font-size: 11px;

@@ -8,6 +8,7 @@ import { AuthKeys } from "@/api/query_keys";
 
 import { apiMessage } from "@/components/moviepickarr/account/account";
 import { Avatar } from "@/components/moviepickarr/Bits";
+import { VolumeControl } from "@/components/moviepickarr/VolumeControl";
 import { useTheme } from "@/components/theme-context";
 import { toast } from "@/components/ui/toast-api";
 
@@ -29,8 +30,8 @@ function resolveDark(theme: string): boolean {
 
 /**
  * The top-right avatar and the profile panel it toggles: identity header, an
- * Account settings link, a Preferences section (theme today; the draw-sound
- * control moves in with #143), and a danger-styled single-device Log out.
+ * Account settings link, a Preferences section (theme plus the inline
+ * draw-sound control), and a danger-styled single-device Log out.
  *
  * The panel rides the shared dismissal machine so its open/close motion and its
  * Escape / outside-click behaviour match the app's other popovers, and it's
@@ -148,6 +149,7 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
                 </button>
               </div>
             </div>
+            <VolumeControl />
           </div>
 
           <div className="profile__sep" />

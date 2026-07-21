@@ -7,7 +7,6 @@ import { MeQueryOptions } from "@/api/queries";
 
 import { type Tab, tabFromPath, tabsForRole } from "@/components/moviepickarr/nav";
 import { ProfilePanel } from "@/components/moviepickarr/ProfilePanel";
-import { VolumeControl } from "@/components/moviepickarr/VolumeControl";
 
 /** Icon per tab id; the pure nav module carries ids/labels/paths, not JSX. */
 const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
@@ -105,7 +104,6 @@ export function NavBar() {
           </div>
 
           <div className="nav__actions">
-            <VolumeControl />
             {me && <ProfilePanel me={me} />}
           </div>
         </div>

@@ -222,8 +222,8 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
 - The Esc / outside-click / focus-restore / exit-timer behaviour is not hand-rolled
   per surface: `Modal`, the `Menu`, and the stats filter dropdowns all ride one shared
   machine, `useDismissible` (`web/src/hooks/useDismissible.ts`), so every floating
-  surface dismisses the same way. (`VolumeControl`'s popover still hand-rolls its own
-  and is the odd one out.)
+  surface dismisses the same way. The `ProfilePanel` rides it too; its inline
+  `VolumeControl` owns no dismissal of its own.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
   buttons). Widths: `.modal` 960px, `.modal--movie` 560px, `.modal--form` 460px.
@@ -431,8 +431,9 @@ curve — then go quiet as the winner coasts under the reticle (no gaps left to
 tick). A `SYNC_OFFSET_MS` trims the fixed audio↔compositor lag by ear; the
 relative timing is exact. The `AudioProvider` owns the on/off and 0..1 volume prefs
 (localStorage `mp-sound` / `mp-volume`) plus a one-time autoplay **unlock** (an AudioContext
-resume) on first interaction, so SSE-driven clients that never click Draw can still play. A speaker control in the nav (`VolumeControl.tsx`) opens a popover with a mute toggle, a
-volume slider, and a play/stop button to audition the (fallback) wheel. A fresh draw
+resume) on first interaction, so SSE-driven clients that never click Draw can still play. The draw-sound control (`VolumeControl.tsx`) lives inline in the profile panel's
+Preferences section: a mute toggle, a volume slider with its percentage, and a
+play/stop button to audition the (fallback) wheel. A fresh draw
 always sounds; a reload-resume joins only if audio is already running (a cold
 reload's context is suspended, so it's visually in-sync but silent), and reduced
 motion (no reel) is silent for free.

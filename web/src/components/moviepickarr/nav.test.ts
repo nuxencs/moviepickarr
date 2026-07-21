@@ -27,9 +27,12 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/users")).toBe("users");
   });
 
-  it("falls through to Movies for root and unknown paths", () => {
+  it("maps root to Movies", () => {
     expect(tabFromPath("/")).toBe("movies");
-    expect(tabFromPath("/settings")).toBe("movies");
-    expect(tabFromPath("/anything-else")).toBe("movies");
+  });
+
+  it("highlights no tab on non-tab pages like account settings", () => {
+    expect(tabFromPath("/settings")).toBeNull();
+    expect(tabFromPath("/anything-else")).toBeNull();
   });
 });

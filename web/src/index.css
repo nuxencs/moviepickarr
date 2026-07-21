@@ -457,33 +457,32 @@
      and the slide between tabs is the transition below. */
   .tab__ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); transition: left var(--dur) var(--ease), width var(--dur) var(--ease); }
   .nav .iconbtn { border: 1px solid var(--line); }
-  /* Trailing controls (draw-sound + theme) grouped at the right edge of the bar. */
+  /* The avatar/profile trigger, pinned to the right edge of the bar. */
   .nav__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
-  /* Draw-sound control: speaker button + a popover holding the mute toggle and
-     volume slider (VolumeControl.tsx). Popover mirrors the date-range pattern. */
-  .volume { position: relative; display: flex; }
-  .volume__pop {
-    position: absolute; top: calc(100% + 10px); right: 0; z-index: 45;
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px;
-    background: var(--surface); border: 1px solid var(--line-2);
-    border-radius: var(--r-md); box-shadow: var(--shadow);
-    animation: mg-scaleIn var(--dur-base) var(--ease);
-  }
-  .volume__range { width: 120px; accent-color: var(--accent); cursor: pointer; }
+  /* Draw-sound control: mute toggle, a full-width volume slider with its
+     percentage, and a jingle audition button, rendered inline inside the
+     profile panel's Preferences section (VolumeControl.tsx). The panel owns
+     open/close, so there's no popover here. */
+  .volume { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .volume__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .volume__label { font-size: 13.5px; color: var(--ink-2); }
+  .volume__row { display: flex; align-items: center; gap: 8px; }
+  .volume__range { flex: 1; min-width: 0; accent-color: var(--accent); cursor: pointer; }
   .volume__pct {
     font-family: var(--font-mono); font-size: 12px; color: var(--ink-2);
-    width: 34px; text-align: right; font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums;
   }
 
   /* Profile: the top-right avatar and the panel it toggles (ProfilePanel.tsx).
      Anchored top-right and width-capped to the viewport so it never overflows on
      phones, where the avatar sits in the same top bar. */
   .profile { position: relative; display: flex; }
+  /* Radius matches the Avatar (var(--r-sm)) so the focus outline and the
+     open-state ring hug the rounded-square photo instead of drawing a circle. */
   .profile__trigger {
     display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer;
-    border-radius: 999px; transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+    border-radius: var(--r-sm); transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
   }
   .profile__trigger:active { transform: scale(0.94); }
   .profile__trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

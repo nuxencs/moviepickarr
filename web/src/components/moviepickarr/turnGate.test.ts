@@ -31,12 +31,25 @@ describe("turnGate", () => {
     const gate = turnGate(inputs({ meID: 1, nextUpID: 1 }));
     expect(gate.canAct).toBe(true);
     expect(gate.locked).toBe(false);
+    expect(gate.isSelf).toBe(true);
   });
 
   it("always lets an admin act, even when they aren't next-up", () => {
     const gate = turnGate(inputs({ role: "admin", meID: 9, nextUpID: 1 }));
     expect(gate.canAct).toBe(true);
     expect(gate.locked).toBe(false);
+    // canAct via the admin role, but the admin is not the turn-holder.
+    expect(gate.isSelf).toBe(false);
+  });
+
+  it("marks a non-next-up member as not self", () => {
+    const gate = turnGate(inputs({ meID: 2, nextUpID: 1 }));
+    expect(gate.isSelf).toBe(false);
+  });
+
+  it("is not self while next-up is still loading", () => {
+    const gate = turnGate(inputs({ meID: 1, nextUpID: undefined, nextUpName: undefined }));
+    expect(gate.isSelf).toBe(false);
   });
 
   it("keeps an admin unlocked when next-up is unresolved", () => {

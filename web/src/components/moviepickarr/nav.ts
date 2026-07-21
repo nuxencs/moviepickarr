@@ -30,11 +30,14 @@ export function tabsForRole(role: string | undefined): TabDescriptor[] {
 /**
  * The router is the source of truth for the active tab. Map the current
  * pathname back to a tab id ('/' → movies, '/admin' → roster) to drive the
- * active styling. Unknown and root paths fall through to movies.
+ * active styling. Pages that live in the navbar chrome but aren't tabs (account
+ * settings at /settings) and unknown paths return null, so no tab is
+ * highlighted rather than falsely lighting up Movies.
  */
-export function tabFromPath(pathname: string): Tab {
+export function tabFromPath(pathname: string): Tab | null {
   if (pathname.startsWith("/admin")) return "roster";
   if (pathname.startsWith("/stats")) return "stats";
   if (pathname.startsWith("/users")) return "users";
-  return "movies";
+  if (pathname === "/") return "movies";
+  return null;
 }

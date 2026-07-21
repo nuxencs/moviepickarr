@@ -39,6 +39,12 @@ export function NavBar() {
   const [ink, setInk] = useState<{ left: number; width: number } | null>(null);
 
   const measure = useCallback(() => {
+    // On a non-tab page (account settings) no tab is active, so retire the
+    // underline instead of leaving it parked under whichever tab it last sat on.
+    if (!active) {
+      setInk(null);
+      return;
+    }
     const btn = btnRefs.current[active];
     // Skip when the top-bar tabs are hidden (mobile bottom-bar layout): a
     // display:none link reports offsetWidth 0, which would park the slider

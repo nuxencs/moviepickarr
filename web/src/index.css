@@ -152,6 +152,14 @@
     padding: 0;
   }
 
+  /* Always reserve the vertical scrollbar gutter. Without this, short pages (the
+     roster) drop the scrollbar and Chrome's classic 10px scrollbar recenters the
+     layout ~5px, so the persistent fixed nav visibly jumps right when you land
+     there. Firefox uses overlay scrollbars, so it never showed the shift.
+     scrollbar-gutter:stable doesn't work here because body{overflow-x:hidden}
+     owns the scroll box; overflow-y:scroll on the root is the reliable fix. */
+  html { overflow-y: scroll; }
+
   body {
     font-family: var(--font-ui);
     background: var(--bg);
@@ -199,7 +207,7 @@
   .mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
   .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
 
-  .app { position: relative; z-index: 1; min-height: 100vh; }
+  .app { position: relative; z-index: 1; min-height: 100vh; padding-top: 63px; }
 
   /* ---- Poster ---- */
   .poster {
@@ -418,8 +426,11 @@
   .shell { max-width: 1240px; margin: 0 auto; padding: 40px 32px 110px; }
   @media (max-width: 700px) { .shell { padding: 28px 18px 90px; } }
 
+  /* Fixed (not sticky) so the bar stays pinned to the viewport during trackpad
+     rubber-band overscroll at the top. .app reserves 63px (62px + border) so
+     content clears it. */
   .nav {
-    position: sticky; top: 0; z-index: 40;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 40;
     background: color-mix(in oklab, var(--bg) 82%, transparent);
     backdrop-filter: blur(16px) saturate(1.2);
     border-bottom: 1px solid var(--line);

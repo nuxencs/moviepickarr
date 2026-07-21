@@ -372,7 +372,7 @@ export function StatsTab() {
               sub="TMDB average"
               mono
             />
-            <StatItem icon={<TrophyIcon size={15} />} label="Top adder" value={topUser?.name ?? "—"} sub={<MovieCount value={topUser?.count ?? 0} animateOnMount />} />
+            <StatItem icon={<TrophyIcon size={15} />} label="Most-watched adder" value={topUser?.name ?? "—"} sub={<MovieCount value={topUser?.count ?? 0} animateOnMount />} />
             <StatItem icon={<CalendarDaysIcon size={15} />} label="Busiest day" value={topDay?.name ?? "—"} sub={<MovieCount value={topDay?.count ?? 0} animateOnMount />} />
             <StatItem
               icon={<Clock3Icon size={15} />}
@@ -535,7 +535,7 @@ function AddedByMember({ rows }: { rows: StatsNamedCount[] }) {
   const { containerRef, entries, itemProps } = useFlipRail<StatsNamedCount>(rows, (r) => r.name);
   return (
     <section className="statsec">
-      <h3 className="statsec__title">Added by member</h3>
+      <h3 className="statsec__title">Most-watched adders</h3>
       {entries.length === 0 ? (
         <p className="empty">No watched movies in this window.</p>
       ) : (

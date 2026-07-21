@@ -31,6 +31,11 @@ export interface TurnGate {
   /** Next-up is a real member, not the empty-roster placeholder. Drives the
    *  named tooltip vs the waiting fallback. */
   resolved: boolean;
+  /** The viewer *is* the next-up member (their turn right now). Narrower than
+   *  `canAct`, which also covers admins and the loading window. Drives the
+   *  "Your turn" vs "<name>'s turn" hero label, so an admin who isn't next-up
+   *  still reads the turn-holder's name. */
+  isSelf: boolean;
   /** The next-up member's name, "" when unresolved. */
   nextUpName: string;
 }
@@ -51,6 +56,7 @@ export function turnGate(input: TurnGateInputs): TurnGate {
     canAct,
     locked: ready && !canAct,
     resolved,
+    isSelf: isNextUp,
     nextUpName: input.nextUpName ?? "",
   };
 }

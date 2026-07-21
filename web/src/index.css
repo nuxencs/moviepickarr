@@ -598,7 +598,6 @@
     animation-delay: calc(var(--i, 0) * var(--stagger));
   }
   .hero__nextup { display: flex; align-items: center; gap: 11px; margin-left: 10px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,0.2); color: #fff; }
-  .hero__nextup .lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
   .hero__nextup .nm { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
   @media (max-width: 700px) {
     .hero__inner { flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px 18px 34px; }
@@ -854,18 +853,21 @@
   .stat-strip { display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .statitem { padding: 24px 30px; display: flex; flex-direction: column; gap: 13px; border-left: 1px solid var(--line); }
   .statitem:first-child { border-left: none; padding-left: 0; }
-  .statitem__top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); }
-  .statitem__top svg { color: var(--accent); }
-  .statitem__top span { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
-  /* Fixed 2-line height (bottom-aligned) so a wrapping top-adder name never
-     changes the strip height — the page no longer jumps between windows. */
+  /* Reserve two label lines so a wrapping label ("Most-watched adder" wraps at
+     the 6-up width) doesn't push this tile's value below its neighbours' and
+     break the KPI baseline across the strip. */
+  .statitem__top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); min-height: 30px; }
+  .statitem__top svg { color: var(--accent); flex-shrink: 0; }
+  .statitem__top span { font-family: var(--font-mono); font-size: 11px; line-height: 1.35; letter-spacing: 0.1em; text-transform: uppercase; }
+  /* Fixed 2-line height (bottom-aligned) so a wrapping most-watched-adder name
+     never changes the strip height, so the page no longer jumps between windows. */
   .statitem__val { font-size: 29px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.05; height: 2.1em; display: flex; align-items: flex-end; overflow: hidden; }
   .statitem__val.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
   /* NumberFlow's box carries internal mask padding round(0.25em/2,1px) below the
      glyph — at this fixed 29px value size exactly 4px CSS-px (zoom-invariant). The
      value cell is align-items:flex-end, which aligns box bottoms (not baselines),
-     so the numeral floats 4px above where the plain-text values (Top adder /
-     Busiest day) land. Pull it down so numbers and names share one baseline.
+     so the numeral floats 4px above where the plain-text values (Most-watched
+     adder / Busiest day) land. Pull it down so numbers and names share one baseline.
      NOTE: this comp is only needed because of flex-end box alignment. Inline
      NumberFlows (the .statitem__sub runtime + .statsec__title count) baseline-align
      on their own — the mask is visual-only and does not move the glyph baseline,

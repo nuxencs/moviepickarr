@@ -358,10 +358,7 @@ export function Hero() {
             {ready && nextUp?.name && (
               <div className="hero__nextup">
                 <Avatar name={nextUp.name} size={30} />
-                <div>
-                  <div className="lab">Next up</div>
-                  <div className="nm">{nextUp.name}</div>
-                </div>
+                <div className="nm">{gate.isSelf ? "Your turn" : `${gate.nextUpName}'s turn`}</div>
               </div>
             )}
           </div>

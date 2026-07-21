@@ -15,6 +15,7 @@ import { drawAwaitingReveal } from "@/components/moviepickarr/drawMachine";
 import { DrawReel } from "@/components/moviepickarr/DrawReel";
 import { drawStore, resolveDrawEnv } from "@/components/moviepickarr/drawStore";
 import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/moviepickarr/lib";
+import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { drawLockedTip, revealLockedTip, useTurnGate, watchLockedTip } from "@/components/moviepickarr/turnGate";
 import { toast } from "@/components/ui/toast-api";
@@ -358,7 +359,7 @@ export function Hero() {
             {ready && nextUp?.name && (
               <div className="hero__nextup">
                 <Avatar name={nextUp.name} size={30} />
-                <div className="nm">{gate.isSelf ? "Your turn" : `${gate.nextUpName}'s turn`}</div>
+                <div className="nm">{gate.isSelf ? "Your turn" : `${possessive(gate.nextUpName)} turn`}</div>
               </div>
             )}
           </div>

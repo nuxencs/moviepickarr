@@ -18,6 +18,7 @@ import { Avatar } from "@/components/moviepickarr/Bits";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { Menu } from "@/components/moviepickarr/Menu";
 import { isSelf } from "@/components/moviepickarr/ownership";
+import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
 import { UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
@@ -130,7 +131,7 @@ function Board({
       {isOwnBoard && (
         <button type="button" className="btn btn--ghost board__search" onClick={onOpenSearch}>
           <PlusIcon />
-          Add to {firstName}'s stash
+          Add to {possessive(firstName)} stash
         </button>
       )}
 
@@ -179,7 +180,7 @@ function Board({
             <SearchIcon />
             <input
               name="stash-filter"
-              aria-label={`Search ${firstName}'s stash`}
+              aria-label={`Search ${possessive(firstName)} stash`}
               placeholder="Search stash…"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}

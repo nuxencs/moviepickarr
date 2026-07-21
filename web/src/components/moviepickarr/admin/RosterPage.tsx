@@ -27,6 +27,7 @@ import {
   SetLoginDialog,
   UnlinkGuard,
 } from "@/components/moviepickarr/admin/RosterOverlays";
+import { plural } from "@/components/moviepickarr/lib";
 import { Menu, type MenuAction } from "@/components/moviepickarr/Menu";
 import { toast } from "@/components/ui/toast-api";
 
@@ -259,12 +260,10 @@ export function RosterPage() {
   return (
     <div className="adm">
       <div className="adm-bar">
-        <div className="adm-heading">
-          <h1>Roster</h1>
+        <div className="sec-title">
+          <h2>Roster</h2>
           {!roster.isPending && (
-            <span className="adm-count">
-              {active.length} {active.length === 1 ? "member" : "members"}
-            </span>
+            <span className="sec-count">{plural(active.length, "member")}</span>
           )}
         </div>
         <form className="adm-add" onSubmit={handleCreate}>

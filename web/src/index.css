@@ -40,6 +40,7 @@
   --dur-spin: 6.5s; /* the slot-machine draw reel — scroll + decelerate onto the winner, timed to land on the jingle's payoff */
   --dur-confirm: 10s; /* the settled reel's confirm countdown (OK button fill); read in DrawReel for the auto-reveal timer */
   --dur: var(--dur-base); /* legacy alias — prefer the scale above */
+  --stagger: 0.055s; /* per-index step for cascaded entrances (draw-reveal slots, .block, auth column) */
 
   /* accent — gold (fixed) */
   --accent: oklch(0.82 0.13 84);
@@ -594,7 +595,7 @@
      fixed box means nothing reflows; reduced-motion zeroes duration AND delay. */
   .hero[data-ready] :is(.hero__poster, .hero__eyebrow, .hero__title, .hero__tag, .hero__meta, .hero__actions) {
     animation: mg-revealDraw var(--dur-reveal) var(--ease-reveal) both;
-    animation-delay: calc(var(--i, 0) * 55ms);
+    animation-delay: calc(var(--i, 0) * var(--stagger));
   }
   .hero__nextup { display: flex; align-items: center; gap: 11px; margin-left: 10px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,0.2); color: #fff; }
   .hero__nextup .lab { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.6); }
@@ -685,7 +686,14 @@
     .drawreel__tile { flex-basis: 96px; }
   }
 
-  .block { animation: mg-fadeUp var(--dur-slow) var(--ease); }
+  /* Shared page-section entrance. `--i` is an opt-in stagger index: it defaults
+     to 0, so a page whose blocks don't set it (Movies / Members / Stats) mounts
+     them simultaneously as before. Surfaces with 3+ peer sections, or a
+     front-door moment (auth), set `--i` 0,1,2… per block to cascade top-down at
+     55ms apart — the same step the hero draw-reveal uses. `both` fill is
+     required for any delayed block so its pre-delay frame shows the empty start,
+     not the resting (opacity 1) value. */
+  .block { animation: mg-fadeUp var(--dur-slow) var(--ease) both; animation-delay: calc(var(--i, 0) * var(--stagger)); }
   .rule { height: 1px; background: var(--line); margin: 36px 0; }
   .empty { padding: 32px 0; text-align: center; color: var(--ink-2); font-size: 14px; }
 

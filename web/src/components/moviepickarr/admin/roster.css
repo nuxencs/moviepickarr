@@ -5,9 +5,11 @@
    prototype direction (proto/auth-login-claim, Variant A "Roster table"). */
 
 .adm {
-  max-width: 1080px;
-  margin: 0 auto;
   padding: 8px 4px 64px;
+  /* Width + centering come from the shell wrapper (index.css .shell, 1240px), so
+     the roster spans the same measure as the movie/member/stats boards. The
+     fade-up entrance matches the shared .block motion those tabs mount with. */
+  animation: mg-fadeUp var(--dur-slow) var(--ease);
 }
 
 /* ---------- top bar: count + add & invite ---------- */

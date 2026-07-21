@@ -1,12 +1,10 @@
-.PHONY: all deps build build/app build/web clean dev
+.PHONY: all deps test build build/app build/web clean fmt gofix-changed lint precommit dev prod
 .POSIX:
 .SUFFIXES:
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT := $(shell git rev-parse HEAD 2> /dev/null)
-GIT_TAG := $(shell git describe --abbrev=0 --tags)
 BINARY_NAME = moviepickarr
-BUILD_DIR = build
 WEB_DIR = web
 BINDIR = bin
 
@@ -21,17 +19,18 @@ test:
 	@echo "Testing frontend..."
 	cd $(WEB_DIR) && bun run test
 
-build: deps build/web build/app
+build: build/web build/app
 
-build/app:
+build/app: deps
 	go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(GIT_COMMIT)" -o $(BINDIR)/$(BINARY_NAME) main.go
 
-build/web:
+build/web: deps
 	bun run --cwd ./$(WEB_DIR) build
-	@touch $(WEB_DIR)/dist/.gitkeep 2>/dev/null  # To avoid accidental commit of the deletionn
+	@touch $(WEB_DIR)/dist/.gitkeep 2>/dev/null  # To avoid accidental commit of the deletion
 
 clean:
 	rm -rf $(BINDIR)
+	rm -rf $(WEB_DIR)/dist
 
 fmt:
 	@echo "Formatting changed Go code..."
@@ -76,6 +75,9 @@ lint:
 
 precommit: fmt gofix-changed lint
 	@echo "Pre-commit checks passed."
+
+prod: build
+	./$(BINDIR)/$(BINARY_NAME)
 
 dev:
 	@if ! command -v tmux >/dev/null 2>&1; then \

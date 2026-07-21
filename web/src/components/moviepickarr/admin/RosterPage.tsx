@@ -11,7 +11,7 @@ import {
   UnlinkIcon,
   UsersIcon,
 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, type CSSProperties } from "react";
 
 import { APIClient, ApiError } from "@/api/APIClient";
 import { MeQueryOptions, RosterQueryOptions } from "@/api/queries";
@@ -259,7 +259,7 @@ export function RosterPage() {
 
   return (
     <div className="adm">
-      <div className="adm-bar">
+      <div className="adm-bar block" style={{ "--i": 0 } as CSSProperties}>
         <div className="sec-title">
           <h2>Roster</h2>
           {!roster.isPending && (
@@ -287,7 +287,7 @@ export function RosterPage() {
         <p className="adm-state">Loading roster…</p>
       ) : (
         <>
-          <div className="adm-tablewrap">
+          <div className="adm-tablewrap block" style={{ "--i": 1 } as CSSProperties}>
             <table className="adm-table">
               <thead>
                 <tr>
@@ -331,7 +331,7 @@ export function RosterPage() {
           </div>
 
           {archived.length > 0 && (
-            <div className="adm-archived">
+            <div className="adm-archived block" style={{ "--i": 2 } as CSSProperties}>
               <div className="adm-archivedhead">
                 Archived <span className="adm-count">{archived.length}</span>
                 <span className="adm-archivednote">

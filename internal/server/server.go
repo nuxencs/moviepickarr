@@ -64,6 +64,21 @@ func dbMaxBackups(log zerolog.Logger) int {
 	return n
 }
 
+// ResolveDBFile picks the SQLite path the app opens: an explicit value wins,
+// then DB_FILE from the environment (populate it from .env with godotenv.Load
+// first), then the "moviepickarr.db" default in the working directory. Both the
+// server (Run) and the dev-fixtures command resolve the DB the same way so they
+// never disagree about which file is "the dev DB".
+func ResolveDBFile(explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if v := os.Getenv("DB_FILE"); v != "" {
+		return v
+	}
+	return "moviepickarr.db"
+}
+
 func Run(ctx context.Context, cfg Config) error {
 	_ = godotenv.Load()
 
@@ -72,12 +87,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	// Resolved after godotenv.Load() above so DB_FILE works from a .env file
 	// too, not just the process environment.
-	if cfg.DBFile == "" {
-		cfg.DBFile = os.Getenv("DB_FILE")
-	}
-	if cfg.DBFile == "" {
-		cfg.DBFile = "moviepickarr.db"
-	}
+	cfg.DBFile = ResolveDBFile(cfg.DBFile)
 	if cfg.WebRoot == nil {
 		return fmt.Errorf("web root is required")
 	}

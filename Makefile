@@ -1,4 +1,4 @@
-.PHONY: all deps test build build/app build/web clean fmt gofix-changed lint precommit dev prod
+.PHONY: all deps test build build/app build/web clean fmt gofix-changed lint precommit dev dev/fixtures dev/fixtures-reset prod
 .POSIX:
 .SUFFIXES:
 
@@ -89,3 +89,12 @@ dev:
 	@tmux new-session -d -s moviepickarr-dev 'bun run --cwd ./$(WEB_DIR) dev'
 	@tmux split-window -h 'go run main.go'
 	@tmux -2 attach-session -d
+
+# Load a full developer dataset (roster with logins, movies across every state,
+# watched history, an active turn holder) into the local DB. Refuses on a
+# non-empty DB; use dev/fixtures-reset to wipe and reload.
+dev/fixtures:
+	go run ./cmd/devfixtures
+
+dev/fixtures-reset:
+	go run ./cmd/devfixtures -reset

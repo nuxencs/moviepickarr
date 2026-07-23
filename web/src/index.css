@@ -894,6 +894,14 @@
   /* Hugs the element above it (e.g. the films rail under the KPI strip, which
      already closes with its own bottom rule) — no second divider. */
   .statsec--flush { margin-top: 24px; padding-top: 0; border-top: none; }
+  /* The below-fold panels (everything except the flush films rail) skip layout
+     and paint while off-screen — the browser renders each only as it nears the
+     viewport, using the intrinsic-size placeholder to hold scroll position until
+     then (it remembers the real height after the first render via `auto`). Pairs
+     with the IntersectionObserver mount gate in StatsTab: that keeps them out of
+     the DOM until first approach, this skips repaint for the ones sitting below
+     the fold once mounted. */
+  .statsec:not(.statsec--flush) { content-visibility: auto; contain-intrinsic-size: auto 320px; }
   .statsec__title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0 0 20px; letter-spacing: -0.005em; }
   /* Inline count ("Films in Filter View · N") baseline-aligns on its own — see the
      NOTE on .statitem__val above; no vertical-align nudge. */

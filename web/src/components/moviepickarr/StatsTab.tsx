@@ -123,13 +123,16 @@ export function StatsTab() {
   const [selected, setSelected] = useState<Movie | null>(null);
 
   // The below-fold panels (leaderboard, weekday/hourly, genres/decades, the two
-  // people rails) mount ~35 NumberFlow web components, each of which measures the
-  // DOM on mount — a chunk of synchronous layout that, profiled, was ~half the
-  // Stats LCP. They're below the fold, so we paint the above-fold KPIs + films
-  // rail first and mount the panels one frame later (off the LCP path). Gated to
-  // the first data arrival only (`panelsReady` latches true), so filter changes —
-  // which keep StatsTab mounted — never re-defer or flicker the panels.
-  const [panelsReady, setPanelsReady] = useState(false);
+  // people rails) carry the bulk of the Stats mount cost — FLIP rails, ~45
+  // avatars, and the chart DOM. Rather than mount them one frame after data
+  // (which just moves that cost off the first paint), we gate them on the
+  // viewport: an IntersectionObserver watching an anchor below the films rail
+  // flips `panelsVisible` true only when the panels are about to scroll into
+  // view (see the effect below). A visit that reads the KPI strip + films rail
+  // and leaves never pays for them. Latches true once shown, so filter changes —
+  // which keep StatsTab mounted — never re-gate or flicker the panels.
+  const [panelsVisible, setPanelsVisible] = useState(false);
+  const panelsAnchorRef = useRef<HTMLDivElement>(null);
 
   const win = search.win;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
@@ -154,14 +157,33 @@ export function StatsTab() {
   const { data: filterOptionsData } = useQuery(FilterOptionsQueryOptions());
   const filterOptions: FilterOptions = filterOptionsData ?? EMPTY_FILTER_OPTIONS;
 
-  // Once the first stats payload with films is on screen, mount the below-fold
-  // panels on the next frame (see panelsReady). Latches, so it only defers the
-  // initial load.
+  // Reveal the below-fold panels when their anchor nears the viewport (see
+  // panelsVisible). Latches, so it fires once and never unmounts them. The IO
+  // callback runs after first paint, so even when the anchor is already in view
+  // on a tall screen the panels still mount off the initial-paint path. Without
+  // IO support (or when there's nothing below the rail to reveal) fall back to
+  // showing them.
   useEffect(() => {
-    if (panelsReady || !stats || (stats.selectedWindowCount ?? 0) === 0) return;
-    const id = requestAnimationFrame(() => setPanelsReady(true));
-    return () => cancelAnimationFrame(id);
-  }, [panelsReady, stats]);
+    if (panelsVisible) return;
+    if (!stats || (stats.selectedWindowCount ?? 0) === 0) return;
+    const el = panelsAnchorRef.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setPanelsVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setPanelsVisible(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [panelsVisible, stats]);
   // Resolve the URL's id lists back into {id, name} chips for the FilterBar.
   const filters = useMemo(() => filtersFromSearch(search, filterOptions), [search, filterOptions]);
   const watchYears = useMemo(() => {
@@ -390,7 +412,11 @@ export function StatsTab() {
               information. */}
           <MatchedMoviesRail movies={matchedMovies} count={count} filtered={filtered} onSelect={setSelected} />
 
-          {count > 0 && panelsReady && (
+          {/* Anchor the IntersectionObserver watches to reveal the below-fold
+              panels only as they approach the viewport (see panelsVisible). */}
+          <div ref={panelsAnchorRef} aria-hidden="true" className="stats-panels-anchor" />
+
+          {count > 0 && panelsVisible && (
             <>
               <AddedByMember rows={stats.watchedByUser} />
 
@@ -557,7 +583,7 @@ function AddedByMember({ rows }: { rows: StatsNamedCount[] }) {
                   } as CSSProperties}
                 />
               </div>
-              <div className="b-val"><StatNumber value={r.count} /></div>
+              <div className="b-val">{r.count}</div>
             </div>
           ))}
         </div>
@@ -586,7 +612,7 @@ function WeekdayActivity({ rows }: { rows: StatsNamedCount[] }) {
                 } as CSSProperties}
               />
             </div>
-            <div className="b-val"><StatNumber value={r.count} /></div>
+            <div className="b-val">{r.count}</div>
           </div>
         ))}
       </div>
@@ -670,7 +696,7 @@ function TopGenres({ rows }: { rows: StatsNamedCount[] }) {
             <li key={s.name}>
               <span className="donut-legend__swatch" style={{ background: s.color }} aria-hidden="true" />
               <span className="donut-legend__name">{s.name}</span>
-              <span className="donut-legend__count"><StatNumber value={s.count} /></span>
+              <span className="donut-legend__count">{s.count}</span>
             </li>
           ))}
         </ul>
@@ -697,8 +723,8 @@ function PeopleRail({
 }) {
   // FLIP the ranking: when a window change reranks people, cards glide between
   // ranks; new entries pop in, dropped ones fade out then the rail tightens.
-  // Keyed by personId only (not count) — a count change rolls the card's
-  // NumberFlow live without re-animating the rail; order changes drive the glide.
+  // Keyed by personId only (not count) — a count change updates the card's static
+  // count text in place without re-animating the rail; order changes drive the glide.
   const { containerRef, entries, itemProps } = useFlipRail<StatsPersonCount>(people, (p) => String(p.personId));
   if (entries.length === 0) return null;
   return (
@@ -721,7 +747,7 @@ function PeopleRail({
                 </div>
                 <span className="castcard__caption">
                   <span className="castcard__name">{p.name}</span>
-                  <span className="castcard__role"><MovieCount value={p.count} /></span>
+                  <span className="castcard__role">{plural(p.count, "movie")}</span>
                 </span>
               </button>
               {/* Sibling, never nested in the toggle — its own tab stop, and a

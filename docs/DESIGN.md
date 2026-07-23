@@ -245,15 +245,21 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   changes, overlays, charts) is CSS keyframes (prefixed `mg-`) + transitions — do not
   reach for a general-purpose animation library (framer-motion / gsap / etc.) for those.
   The one exception is **animated number transitions**, which CSS can't do for arbitrary
-  formats: the Stats counts that change with the window/filters — the KPI strip, the
-  "Films in Filter View" count, the leaderboard + weekday bar values, the genre-donut
-  legend, and the people-rail counts — use **NumberFlow** (`@number-flow/react`, via the
-  `StatNumber` / `MovieCount` / `RuntimeCount` wrappers in `StatsTab.tsx`), tuned to the
-  MG scale (`NUMBER_TIMING` = `--dur-slow` duration + `--ease`, no bounce) and honoring
-  `prefers-reduced-motion` (it renders instantly). The dense hourly + decade axis counts
-  stay static on purpose (too many to roll at once reads as noise). The KPI strip counts
-  up from 0 on mount (`animateOnMount`, matching the bars' from-0 entrance); the charts
-  stay static on mount and only roll on change. The stats query keeps the previous result
+  formats. NumberFlow is a Web Component that measures glyph geometry on mount, so it is
+  scoped to the two above-the-fold counts where the roll actually reads: the **KPI strip**
+  and the **"Films in Filter View"** heading count use **NumberFlow** (`@number-flow/react`,
+  via the `StatNumber` / `MovieCount` / `RuntimeCount` wrappers in `StatsTab.tsx`), tuned to
+  the MG scale (`NUMBER_TIMING` = `--dur-slow` duration + `--ease`, no bounce) and honoring
+  `prefers-reduced-motion` (it renders instantly). The below-fold panel counts — the
+  leaderboard + weekday bar values, the genre-donut legend, and the people-rail counts —
+  render as **static text**: they only ever rolled on a window/filter change, never on
+  mount, so on a page visit they animated nothing while ~45 NumberFlow elements mounting at
+  once cost a ~50ms main-thread block. They now sit in scroll-gated panels
+  (`content-visibility` + an IntersectionObserver mount gate) that only render as they near
+  the viewport. The dense hourly + decade axis counts stay static too (too many to roll at
+  once reads as noise). The KPI strip counts up from 0 on mount (`animateOnMount`, matching
+  the bars' from-0 entrance); the "Films in Filter View" count stays static on mount and
+  rolls only on change. The stats query keeps the previous result
   (`placeholderData: keepPreviousData`) so an uncached filter change rolls in place
   instead of blanking to "Loading stats…" and remounting. Any new motion must still
   degrade to an instant state under RM. **Alignment gotcha:** `<number-flow-react>` is

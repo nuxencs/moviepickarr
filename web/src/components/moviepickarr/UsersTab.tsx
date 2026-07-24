@@ -8,7 +8,7 @@ import {
   SearchIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import { MeQueryOptions, SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
@@ -209,7 +209,11 @@ function Board({
   );
 }
 
-function StashRow({
+// Memoized because the stash filter lives in the Board above: without it every
+// keystroke re-renders every matching row, and a row is not cheap (three
+// mutation hooks, a poster, a menu, two dialogs). The props are the movie object
+// straight out of the query cache plus primitives, so the memo holds while typing.
+const StashRow = memo(function StashRow({
   movie,
   poolFull,
   locked,
@@ -296,4 +300,4 @@ function StashRow({
       </div>
     </>
   );
-}
+});

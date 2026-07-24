@@ -135,6 +135,14 @@ old shadcn primitives.
   under the keyboard hands focus back to the list instead of dropping it to `<body>`.
   Don't put `content-visibility` on virtualized rows: it reports
   `contain-intrinsic-size` instead of the real height and feeds row measurement a lie.
+- **Shorter lists keep typing off the rows instead.** Where a list is small enough that
+  a virtualizer would be machinery for nothing, the rule is that a keystroke must not
+  reach the rows. Two shapes do that. A text field that lives above a list gets pushed
+  into its own child that owns the field state (`AddMemberForm` in the admin roster), so
+  the character re-renders the form and the roster table sits still. A filter that has
+  to live in the parent because it drives the list (`Board`'s stash search) instead
+  memoizes the row (`StashRow`), whose props are the movie straight out of the query
+  cache plus primitives, so only rows entering or leaving the match set do any work.
 - **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
   quick-select, genre, actors, crew, added by, release year) in a single wrapping row under the
   stats header. The seg stays a seg (presets are mutually exclusive) but drops its

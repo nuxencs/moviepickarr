@@ -958,17 +958,20 @@
      never nested, so each keeps its own tab stop and a link click can't flip
      the filter. Gold name = active (gold is state). */
   /* Inline padding + matching negative margin keep the cards flush with the
-     section title; scroll-padding keeps the first card resting flush at scroll-0. */
-  .peoplerail { display: flex; gap: 14px; overflow-x: auto; padding: 3px 4px 6px; margin-inline: -4px; scroll-padding-inline: 4px; }
+     section title; scroll-padding keeps the first card resting flush at scroll-0.
+     The padding is also what keeps the focus ring off the rail's clip edge: the
+     global ring needs 4px of clearance (2px offset + 2px width), so the top and
+     inline padding are exactly that. */
+  .peoplerail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 4px 6px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .peoplecard { position: relative; flex: 0 0 96px; }
   .peoplecard__toggle {
     display: flex; flex-direction: column; gap: 7px; width: 100%;
     background: none; border: none; padding: 0; font: inherit; color: inherit;
     text-align: left; cursor: pointer; border-radius: var(--r-sm);
   }
-  /* Inward ring: the scrolling rail clips at its edges, so an outward ring
-     would lose its top/bottom (same reason the chips draw inward). */
-  .peoplecard__toggle:focus-visible { outline-offset: -2px; }
+  /* Focus keeps the global outward ring. An inward one is invisible here: it
+     would run inside the photo box, which the opaque .avatar paints over. The
+     rail's padding gives the outward ring its clearance. */
   /* Hover zooms the avatar inside the clipped photo box (same language as the
      poster tiles). The active state is the gold name alone: a ring on the photo
      box can't be seen, because .avatar is positioned and opaque and so paints

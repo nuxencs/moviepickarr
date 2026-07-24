@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { type SpinDescriptor } from "@/components/moviepickarr/drawMachine";
+import {
+  confirmRemainingMs,
+  type DrawPhase,
+  reelResume,
+  type SpinDescriptor,
+} from "@/components/moviepickarr/drawMachine";
 import { reelEaseOutput, reelEaseTimeAt, spinDurationMs } from "@/components/moviepickarr/drawSpin";
 import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
@@ -20,6 +25,12 @@ const TARGET_TRAIL = 6;
 
 interface DrawReelProps {
   spin: SpinDescriptor;
+  /** The machine's phase at mount. The reel can be mounted onto a draw that
+   *  has already scrolled (a tab switch unmounts the Movies tab and mounting
+   *  again is not a new draw), so where to pick up comes from the machine
+   *  (see reelResume). Later phase changes don't re-run the scroll: the reel
+   *  drives its own settle from there. */
+  phase: DrawPhase;
   /** Whether this viewer may reveal — an admin or the next-up member. The
    *  reveal is gated by the turn (member), not by which client drew: the
    *  next-up member and any admin get a live OK, everyone else a disabled one.
@@ -41,22 +52,33 @@ interface DrawReelProps {
  * The slot-machine draw reveal: a horizontal reel of pool-candidate posters that
  * scrolls and decelerates onto the server-chosen winner, then *settles* and waits
  * for confirmation rather than auto-closing. The drawer sees an OK button whose
- * fill counts down to the server's reveal deadline (spin.confirmMs); pressing it
+ * fill counts down to the server's reveal deadline (spin.deadlineAtMs); pressing it
  * (or the server's auto-reveal broadcast) closes the reel for everyone. Motion is
  * a JS-measured target + a CSS transition: the same "measure then transition"
  * idiom as the FLIP rails, so no animation library.
  */
-export function DrawReel({ spin, canReveal, revealTip, onScrollDone, onConfirm }: DrawReelProps) {
+export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onConfirm }: DrawReelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const winnerRef = useRef<HTMLDivElement>(null);
   const skipRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
-  const settledRef = useRef(false);
   const targetXRef = useRef<number | null>(null);
 
+  // Where this mount picks up: the whole scroll for a fresh draw, the time
+  // that's left for a reel remounted mid-scroll, and no scroll at all once the
+  // draw has settled. Read once, at mount, from the machine.
+  const [resume] = useState(() => reelResume(spin, phase, Date.now()));
+
+  const settledRef = useRef(resume.settled);
+
   // The reel has scrolled to rest on the winner and now awaits confirmation.
-  const [settled, setSettled] = useState(false);
+  const [settled, setSettled] = useState(resume.settled);
+
+  // How long the confirm bar runs, read when it appears rather than fixed per
+  // draw: Skip lands the reel early and a tab switch can mount it late, while
+  // the deadline it counts down to never moves.
+  const [confirmMs, setConfirmMs] = useState(() => (resume.settled ? confirmRemainingMs(spin, Date.now()) : 0));
 
   // Built once per draw (drawnAt identity). The pool repeats in its natural
   // order for a long run, then the winner, then a few trailing tiles so the
@@ -89,9 +111,10 @@ export function DrawReel({ spin, canReveal, revealTip, onScrollDone, onConfirm }
   const settle = useCallback(() => {
     if (settledRef.current) return;
     settledRef.current = true;
+    setConfirmMs(confirmRemainingMs(spin, Date.now()));
     setSettled(true);
     onScrollDone();
-  }, [onScrollDone]);
+  }, [onScrollDone, spin]);
 
   // Skip the scroll: snap the track onto the winner and settle (still awaits
   // confirmation — skipping fast-forwards the animation, it doesn't reveal).
@@ -163,7 +186,25 @@ export function DrawReel({ spin, canReveal, revealTip, onScrollDone, onConfirm }
     targetXRef.current = targetX;
 
     const full = spinDurationMs();
-    const remaining = Math.max(150, Math.min(spin.durationMs, full));
+
+    // Mounted onto a draw that already landed (came back to the Movies tab
+    // after the settle): put the track on the winner and leave it there. The
+    // scroll is over, and replaying it would spend the confirm window on an
+    // animation the member already watched, and the server's reveal deadline
+    // would close the reel mid-replay, confirm never offered.
+    if (resume.settled) {
+      track.style.transition = "none";
+      track.style.transform = `translate3d(${targetX}px, 0, 0)`;
+      // Still report the landing: a scroll whose window ran out while no reel
+      // was mounted (a long tab switch, or a reload resuming past the scroll)
+      // leaves the machine in `spinning` with nobody left to settle it. A
+      // duplicate report is silent, so this is safe on the ordinary path where
+      // the machine settled long ago.
+      onScrollDone();
+      return;
+    }
+
+    const remaining = Math.max(150, Math.min(resume.remainingMs, full));
     // Resume: enter the easing curve where it would already be, then ease the rest.
     // reelEaseOutput evaluates the actual --ease-reel cubic-bezier (not a polynomial
     // stand-in), so the resume start position matches the curve the transition glides.
@@ -248,7 +289,7 @@ export function DrawReel({ spin, canReveal, revealTip, onScrollDone, onConfirm }
             {spin.mine && (
               <span
                 className="drawreel__ok-fill"
-                style={{ animationDuration: `${spin.confirmMs}ms` }}
+                style={{ animationDuration: `${confirmMs}ms` }}
                 aria-hidden="true"
               />
             )}

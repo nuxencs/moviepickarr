@@ -108,6 +108,7 @@ export function resolveDrawEnv(): DrawEnv {
     clientId: getClientId(),
     confirmFallbackMs: 10_000,
     fallbackGraceMs: 5_000,
+    now: Date.now(),
   };
 }
 

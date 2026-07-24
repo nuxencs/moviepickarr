@@ -5,14 +5,19 @@ import {
   type DrawEnv,
   type DrawState,
   drawAwaitingReveal,
+  confirmRemainingMs,
   initialDrawState,
   reduce,
+  reelResume,
 } from "@/components/moviepickarr/drawMachine";
 
 import type { Movie } from "@/types/Response";
 
 const T0 = "2026-07-17T20:00:00Z";
 const T0_PLUS = (ms: number) => new Date(Date.parse(T0) + ms).toISOString();
+/** The client's wall clock when a spin is built. Arbitrary and independent of
+ *  the server timestamps above: only differences against it are ever read. */
+const NOW = 1_000_000;
 
 function env(overrides: Partial<DrawEnv> = {}): DrawEnv {
   return {
@@ -21,6 +26,7 @@ function env(overrides: Partial<DrawEnv> = {}): DrawEnv {
     clientId: "me",
     confirmFallbackMs: 10_000,
     fallbackGraceMs: 5_000,
+    now: NOW,
     ...overrides,
   };
 }
@@ -91,15 +97,27 @@ describe("DRAWN", () => {
     expect(state.spin!.mine).toBe(false);
   });
 
-  it("derives the confirm window from the server's revealAt deadline", () => {
+  it("anchors the reveal deadline to the server clock the payload was stamped with", () => {
+    // The payload left the server 400ms after the draw, so 16.1s of the 16.5s
+    // window is left when it lands here.
+    const state = spinning({ serverNow: T0_PLUS(400) });
+    expect(state.spin!.deadlineAtMs).toBe(NOW + 16_100);
+  });
+
+  it("falls back to drawnAt when the payload carries no serverNow", () => {
     const state = spinning();
-    // 16.5s deadline − 6.5s scroll = 10s confirm.
-    expect(state.spin!.confirmMs).toBe(10_000);
+    expect(state.spin!.deadlineAtMs).toBe(NOW + 16_500);
   });
 
   it("falls back to the default confirm window without a revealAt", () => {
     const state = spinning({ revealAt: undefined });
-    expect(state.spin!.confirmMs).toBe(10_000);
+    // 6.5s scroll + the 10s default.
+    expect(state.spin!.deadlineAtMs).toBe(NOW + 16_500);
+  });
+
+  it("keeps a second of confirm even when the deadline has already passed", () => {
+    const state = spinning({ serverNow: T0_PLUS(20_000) });
+    expect(state.spin!.deadlineAtMs).toBe(NOW + 7500);
   });
 
   it("skips the reel under reduced motion but still releases the pool refresh", () => {
@@ -134,17 +152,17 @@ describe("RESUME", () => {
     expect(state.spin).toMatchObject({ durationMs: 4500, live: false, mine: false });
   });
 
-  it("times the confirm window to the same absolute deadline", () => {
+  it("times the reveal deadline to the same absolute instant", () => {
     const [state] = reduce(initialDrawState, { type: "RESUME", current: current(), pool }, env());
-    // deadline 16.5s − elapsed 2s − remaining 4.5s = 10s: settle happens at the
-    // same instant as everyone else's, so the countdown length matches too.
-    expect(state.spin!.confirmMs).toBe(10_000);
+    // 16.5s deadline − 2s already elapsed: this client reaches the reveal at
+    // the same instant as everyone else's reel.
+    expect(state.spin!.deadlineAtMs).toBe(NOW + 14_500);
   });
 
   it("schedules the draw-anchored self-heal fallback on resume", () => {
     const [, commands] = reduce(initialDrawState, { type: "RESUME", current: current(), pool }, env());
-    // remaining scroll 4.5s + confirm 10s + grace 5s = 19.5s: the same absolute
-    // revealAt + grace deadline as a fresh draw, measured from serverNow.
+    // 14.5s left on the deadline + 5s grace: the same absolute revealAt + grace
+    // instant as a fresh draw, measured from serverNow.
     expect(commands).toEqual([{ cmd: "scheduleFallback", afterMs: 19_500 }]);
   });
 
@@ -152,8 +170,8 @@ describe("RESUME", () => {
     const late = current({ serverNow: T0_PLUS(8000) });
     const [state] = reduce(initialDrawState, { type: "RESUME", current: late, pool }, env());
     expect(state.spin!.durationMs).toBe(0);
-    // 16.5 − 8 − 0 = 8.5s left on the shared deadline.
-    expect(state.spin!.confirmMs).toBe(8500);
+    // 16.5 − 8 = 8.5s left on the shared deadline.
+    expect(state.spin!.deadlineAtMs).toBe(NOW + 8500);
   });
 
   it("marks an already-revealed draw handled without spinning", () => {
@@ -266,5 +284,45 @@ describe("commit", () => {
     });
     expect(state.phase).toBe("spinning");
     expect(state.spin!.drawnAt).toBe(nextDrawnAt);
+  });
+});
+
+describe("confirm bar", () => {
+  const spin = () => spinning({ serverNow: T0 }).spin!;
+
+  it("runs for whatever is left of the deadline when it starts", () => {
+    // Straight after the scroll: the full confirm window.
+    expect(confirmRemainingMs(spin(), NOW + 6500)).toBe(10_000);
+  });
+
+  it("shortens when the scroll was skipped or the bar mounts late", () => {
+    expect(confirmRemainingMs(spin(), NOW + 1000)).toBe(15_500);
+    expect(confirmRemainingMs(spin(), NOW + 12_000)).toBe(4500);
+  });
+
+  it("never runs backwards once the deadline has passed", () => {
+    expect(confirmRemainingMs(spin(), NOW + 20_000)).toBe(0);
+  });
+});
+
+describe("reel resume", () => {
+  const spin = () => spinning().spin!;
+
+  it("a fresh mount scrolls the whole duration", () => {
+    expect(reelResume(spin(), "spinning", NOW)).toEqual({ settled: false, remainingMs: 6500 });
+  });
+
+  it("a remount mid-scroll glides only the time that's left", () => {
+    expect(reelResume(spin(), "spinning", NOW + 5000)).toEqual({ settled: false, remainingMs: 1500 });
+  });
+
+  it("a remount once the draw has settled shows the confirm, no scroll", () => {
+    expect(reelResume(spin(), "settled", NOW + 100)).toEqual({ settled: true, remainingMs: 0 });
+    expect(reelResume(spin(), "revealing", NOW + 100)).toEqual({ settled: true, remainingMs: 0 });
+  });
+
+  it("a remount after the scroll window ran out settles straight away", () => {
+    expect(reelResume(spin(), "spinning", NOW + 6500)).toEqual({ settled: true, remainingMs: 0 });
+    expect(reelResume(spin(), "spinning", NOW + 20_000)).toEqual({ settled: true, remainingMs: 0 });
   });
 });

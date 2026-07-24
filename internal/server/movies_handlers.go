@@ -437,6 +437,11 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == selectedMovie.ID {
 		payload.DrawnAt = formatTime(&ap.DrawnAt)
 		payload.RevealAt = formatTimePrecise(ap.RevealAt)
+		// The server clock as this payload leaves, so a client can anchor the
+		// deadline in its own clock (revealAt − serverNow, added to the moment
+		// it received this) instead of to drawnAt, which is second-truncated
+		// and already in the past by the time the payload lands.
+		payload.ServerNow = formatTimePrecise(time.Now().UTC())
 		payload.DrawClientID = ap.DrawClientID
 	}
 
@@ -480,10 +485,11 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 	// resume the reveal spin after a reload: when it was drawn, plus the server
 	// clock now (so elapsed is computed server-relative, free of client skew).
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == movieRecord.ID {
-		now := time.Now().UTC()
 		resp.DrawnAt = formatTime(&ap.DrawnAt)
 		resp.RevealAt = formatTimePrecise(ap.RevealAt)
-		resp.ServerNow = formatTime(&now)
+		// Precise, like revealAt: the confirm countdown is revealAt − serverNow,
+		// so truncating this to the second would jitter the bar by up to a second.
+		resp.ServerNow = formatTimePrecise(time.Now().UTC())
 		resp.DrawClientID = ap.DrawClientID
 		resp.Revealed = ap.Revealed
 	}

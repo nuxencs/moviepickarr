@@ -446,13 +446,29 @@ The reel is a **pure reducer + store**: `drawMachine.ts` folds `movie:drawn` /
 `DrawReel.tsx`, and `useSSE.ts` all read the one store, so every surface agrees on the
 draw state.
 
+**Reel remounts resume, they don't replay.** The reel is rendered by the Hero, which lives
+on the Movies tab, so switching tabs unmounts it and switching back mounts a new one against
+the same draw. Scroll progress is component state and dies with it, so the elapsed time lives
+on the spin descriptor instead (`startedAtMs`, stamped from `DrawEnv.now`), and every mount
+asks `reelResume(spin, phase, now)` where to pick up: the whole scroll for a fresh draw, only
+the time that's left mid-scroll, and no scroll at all once the phase is past `spinning` (the
+track snaps onto the winner and the confirm is up immediately). Without that the reel replayed
+the full 6.5s on every return, which ate the confirm window and let the server's reveal
+deadline close the reel mid-replay, so the OK never appeared.
+
 **Draw confirm (hold-and-reveal).** The settled reel does **not** auto-close. It waits
 for confirmation, so the group sees the result land together. Only the **drawer** (the
 client whose stable `mp-client-id` matches the draw's `drawClientId`) gets an **OK**
-button; its fill doubles as a countdown, and its duration is the **server's reveal
-deadline** (`spin.confirmMs`, derived from the draw payload's `revealAt` minus the
-server's `serverNow`, immune to client clock skew), not the `--dur-confirm` token (which
-is only the fallback/preview default). Pressing OK (or letting it fill) confirms, which
+button; its fill doubles as a countdown, and it runs to the **server's reveal deadline**
+(`spin.deadlineAtMs`), not the `--dur-confirm` token (which is only the
+fallback/preview default). The deadline is an **instant, not a length**: every draw
+payload carries `revealAt` and the `serverNow` it was stamped with, and the client
+anchors `revealAt − serverNow` to the moment the payload arrived, so client clock skew
+never enters. The bar reads what's left when it appears rather than a fixed per-draw
+length, because it doesn't always start at the same point in the draw: **Skip** lands
+the reel early and a tab switch can mount it late, while the deadline never moves. Both
+of those used to leave the bar visibly out of step (a skip finished it ~5.6s early, a
+tab switch restarted it with only ~7s to go). Pressing OK (or letting it fill) confirms, which
 `POST`s `/movies/current/reveal`; the server flips the draw to `revealed` and broadcasts
 **`movie:revealed`**, so **every** client's reel closes and reveals in lockstep. The
 **auto-reveal is server-owned**: the movie service arms a timer at `revealAt`
@@ -564,8 +580,12 @@ use tokens so they follow the theme.
 - React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query +
   **TanStack Router** (code-based, no route-gen plugin), **TanStack Virtual** (the
   watched grid and the filter menus, §4), Sonner, lucide. **Vitest**
-  for unit tests (pure reducers and helpers: `drawMachine`, `sseConnection`,
-  `sseInvalidations`, `sseInvalidationQueue`, `search`, `useGridMetrics`).
+  for unit tests, in two projects: `node` for pure reducers and helpers
+  (`drawMachine`, `sseConnection`, `sseInvalidations`, `sseInvalidationQueue`,
+  `search`, `useGridMetrics`) and `dom` (jsdom + Testing Library,
+  `*.render.test.tsx`) for behaviour that only exists once a component renders,
+  such as the reel's remount resume. The pure seam stays the first choice; render
+  tests are the fallback when there isn't one.
   No Radix/shadcn. Package manager: **bun** (`web/`).
 - Tailwind v4 has no config file; theme/aliases live in `index.css` (`@theme inline`).
 - Gate before handoff: `bunx tsc -b` + `bun run lint` + `bun run test` (vitest) +

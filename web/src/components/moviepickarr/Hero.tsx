@@ -370,6 +370,7 @@ export function Hero() {
         <DrawReel
           key={drawState.spin.drawnAt}
           spin={drawState.spin}
+          phase={drawState.phase}
           canReveal={gate.canAct}
           revealTip={revealLockedTip(gate)}
           onScrollDone={reportScrollDone}

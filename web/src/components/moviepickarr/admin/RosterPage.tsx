@@ -45,34 +45,25 @@ type Dialog =
   | { kind: "set-login"; member: RosterMember }
   | null;
 
+// Every roster mutation toasts the server's message on failure (a 409 last-admin
+// / self-lockout carries its reason in the ApiError message) and falls back to a
+// generic line.
+const fail = (fallback: string) => (err: unknown) =>
+  toast.error(err instanceof ApiError && err.message ? err.message : fallback);
+
 export function RosterPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: me } = useQuery(MeQueryOptions());
   const roster = useQuery(RosterQueryOptions());
 
-  const [name, setName] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: UsersKeys.roster() });
   const closeDialog = () => setDialog(null);
 
-  // Every roster mutation refetches the roster on settle so the surface reflects
-  // the new state immediately, and toasts the server's message on failure (a 409
-  // last-admin / self-lockout carries its reason in the ApiError message).
-  const fail = (fallback: string) => (err: unknown) =>
-    toast.error(err instanceof ApiError && err.message ? err.message : fallback);
-
-  const createMember = useMutation({
-    mutationFn: (memberName: string) => APIClient.members.create(memberName),
-    onSuccess: (res, memberName) => {
-      setName("");
-      refresh();
-      setDialog({ kind: "invite", name: memberName, claimUrl: res.claimUrl });
-    },
-    onError: fail("Couldn't create the member."),
-  });
-
+  // Each mutation refetches the roster on success so the surface reflects the
+  // new state immediately.
   const reissueInvite = useMutation({
     mutationFn: (member: RosterMember) => APIClient.members.reissueInvite(member.id),
     onSuccess: (res, member) => {
@@ -169,13 +160,6 @@ export function RosterPage() {
   const activeAdmins = active.filter((m) => m.role === "admin").length;
   const isSelf = (m: RosterMember) => me?.id === m.id;
 
-  const handleCreate = (e: FormEvent) => {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed || createMember.isPending) return;
-    createMember.mutate(trimmed);
-  };
-
   // The row kebab: contextual per credential state. Placeholders get invite
   // actions; credentialed members get password + unlink; every active member can
   // be promoted/demoted and removed. Archived members can only be restored.
@@ -266,21 +250,12 @@ export function RosterPage() {
             <span className="sec-count">{plural(active.length, "member")}</span>
           )}
         </div>
-        <form className="adm-add" onSubmit={handleCreate}>
-          <label className="field adm-field">
-            <UsersIcon />
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="New member's name…"
-              aria-label="New member name"
-            />
-          </label>
-          <button type="submit" className="btn btn--accent" disabled={!name.trim() || createMember.isPending}>
-            <PlusIcon />
-            Add &amp; invite
-          </button>
-        </form>
+        <AddMemberForm
+          onCreated={(memberName, claimUrl) => {
+            refresh();
+            setDialog({ kind: "invite", name: memberName, claimUrl });
+          }}
+        />
       </div>
 
       {roster.isPending ? (
@@ -383,5 +358,47 @@ export function RosterPage() {
         />
       )}
     </div>
+  );
+}
+
+// The field keeps its own state so a keystroke re-renders the form and nothing
+// else. Held in RosterPage it re-rendered every roster row per character, and a
+// row is not cheap: an avatar with a layout effect, cred chips, a menu, and a
+// freshly built action array.
+function AddMemberForm({ onCreated }: { onCreated: (name: string, claimUrl: string) => void }) {
+  const [name, setName] = useState("");
+
+  const createMember = useMutation({
+    mutationFn: (memberName: string) => APIClient.members.create(memberName),
+    onSuccess: (res, memberName) => {
+      setName("");
+      onCreated(memberName, res.claimUrl);
+    },
+    onError: fail("Couldn't create the member."),
+  });
+
+  const handleCreate = (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || createMember.isPending) return;
+    createMember.mutate(trimmed);
+  };
+
+  return (
+    <form className="adm-add" onSubmit={handleCreate}>
+      <label className="field adm-field">
+        <UsersIcon />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="New member's name…"
+          aria-label="New member name"
+        />
+      </label>
+      <button type="submit" className="btn btn--accent" disabled={!name.trim() || createMember.isPending}>
+        <PlusIcon />
+        Add &amp; invite
+      </button>
+    </form>
   );
 }

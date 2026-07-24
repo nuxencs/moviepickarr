@@ -556,7 +556,7 @@ use tokens so they follow the theme.
   **TanStack Router** (code-based, no route-gen plugin), **TanStack Virtual** (the
   watched grid and the filter menus, §4), Sonner, lucide. **Vitest**
   for unit tests (pure reducers and helpers: `drawMachine`, `sseConnection`,
-  `sseInvalidations`, `search`, `useGridMetrics`).
+  `sseInvalidations`, `sseInvalidationQueue`, `search`, `useGridMetrics`).
   No Radix/shadcn. Package manager: **bun** (`web/`).
 - Tailwind v4 has no config file; theme/aliases live in `index.css` (`@theme inline`).
 - Gate before handoff: `bunx tsc -b` + `bun run lint` + `bun run test` (vitest) +
@@ -570,6 +570,15 @@ use tokens so they follow the theme.
   on `:5173` directly. (Fixed in `59f2f80`; the base used to hardcode `:3030`, which
   the browser blocked as a cross-origin/CORS call.) Empty data on `:5173` ⇒ the Go
   backend isn't up, the proxy `target` is wrong, or the DB is empty — not CORS.
+- **SSE invalidation coalescing.** Every key `useSSE` invalidates (per-event rows
+  and the reconnect resync alike) goes through `sseInvalidationQueue.ts`: keys land
+  in a set and flush once per distinct key after a 50ms window measured from the
+  first key. A bulk add/move/delete emitting one event per item costs one refetch
+  of the board and pool lists instead of one per item; a lone event pays the 50ms
+  and nothing else. The window never re-arms mid-burst, so a sustained stream still
+  flushes on time, and the queue schedules nothing while idle. The pool hold (the
+  draw reveal, §4) moved to the flush callback: a spin can start inside the window,
+  so the phase has to be read when the invalidation actually fires.
 - **Routing & URL state (TanStack Router).** Three path routes — `/` (Movies),
   `/stats`, `/users` — defined code-based in `router.tsx`. The root route is the app
   shell (NavBar + `<Outlet/>` + Toaster) and owns the single `useSSE()` mount, so the

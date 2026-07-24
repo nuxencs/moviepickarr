@@ -121,7 +121,17 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
   useEffect(() => {
     if (!open || closing) return;
 
-    const reposition = () => place();
+    // Scroll fires many times per frame and place() reads two rects, so a raw
+    // listener forces layout on every tick. Coalesce the burst into one pass on
+    // the next frame, which is the soonest the move can be painted anyway.
+    let frame: number | null = null;
+    const reposition = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        place();
+      });
+    };
     const onPointerDown = (e: PointerEvent) => {
       const node = e.target as Node;
       if (menuRef.current?.contains(node) || triggerRef.current?.contains(node)) return;
@@ -139,6 +149,7 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
       document.removeEventListener("pointerdown", onPointerDown, true);

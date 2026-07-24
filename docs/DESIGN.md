@@ -491,7 +491,8 @@ curve — then go quiet as the winner coasts under the reticle (no gaps left to
 tick). A `SYNC_OFFSET_MS` trims the fixed audio↔compositor lag by ear; the
 relative timing is exact. The `AudioProvider` owns the on/off and 0..1 volume prefs
 (localStorage `mp-sound` / `mp-volume`) plus a one-time autoplay **unlock** (an AudioContext
-resume) on first interaction, so SSE-driven clients that never click Draw can still play. The draw-sound control (`VolumeControl.tsx`) lives inline in the profile panel's
+resume) on first interaction, so SSE-driven clients that never click Draw can still play. It mounts with the app
+chrome (`AppLayout`), not at the root, so the login and claim screens never build an audio graph they can't use. The draw-sound control (`VolumeControl.tsx`) lives inline in the profile panel's
 Preferences section: a mute toggle, a volume slider with its percentage, and a
 play/stop button to audition the (fallback) wheel. A fresh draw
 always sounds; a reload-resume joins only if audio is already running (a cold

@@ -59,10 +59,18 @@ export function NavBar() {
   useLayoutEffect(() => measure(), [measure, tabs.length]);
 
   // Re-measure on resize and once web fonts settle (font swap changes label width).
+  // fonts.ready can settle after this effect is torn down (a sign-out unmounts
+  // the whole chrome), so the late measure is gated on the effect still being live.
   useEffect(() => {
+    let cancelled = false;
     window.addEventListener("resize", measure);
-    document.fonts?.ready.then(measure);
-    return () => window.removeEventListener("resize", measure);
+    document.fonts?.ready.then(() => {
+      if (!cancelled) measure();
+    });
+    return () => {
+      cancelled = true;
+      window.removeEventListener("resize", measure);
+    };
   }, [measure]);
 
   return (

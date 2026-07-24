@@ -1,5 +1,6 @@
 import { Outlet } from "@tanstack/react-router";
 
+import { AudioProvider } from "@/components/AudioProvider";
 import { NavBar } from "@/components/moviepickarr/NavBar";
 import { Toaster } from "@/components/ui/toast";
 
@@ -26,14 +27,21 @@ export function RootShell() {
  * once by a pathless layout route so it persists across tab navigations: the
  * SSE stream (useSSE) opens a single EventSource for the session rather than
  * tearing it down and reconnecting on every route change.
+ *
+ * The AudioProvider hangs off this layout, not the app root: it builds the Web
+ * Audio graph on mount, and the only surfaces that play or configure sound (the
+ * draw reel, the profile panel's volume control) live under here. Mounting it at
+ * the root made the login screen pay for a graph it could never use.
  */
 export function AppLayout() {
   useSSE();
   return (
-    <div className="app">
-      <NavBar />
-      <Outlet />
-    </div>
+    <AudioProvider>
+      <div className="app">
+        <NavBar />
+        <Outlet />
+      </div>
+    </AudioProvider>
   );
 }
 

@@ -13,7 +13,6 @@ export const AuthConfigQueryOptions = () =>
   queryOptions({
     queryKey: AuthKeys.config(),
     queryFn: () => APIClient.auth.config(),
-    refetchOnWindowFocus: false,
     staleTime: 300_000,
   })
 
@@ -25,7 +24,6 @@ export const PosterWallQueryOptions = () =>
   queryOptions({
     queryKey: AuthKeys.posterWall(),
     queryFn: () => APIClient.auth.posterWall(),
-    refetchOnWindowFocus: false,
     staleTime: 300_000,
   })
 
@@ -35,7 +33,6 @@ export const MeQueryOptions = () =>
   queryOptions({
     queryKey: AuthKeys.me(),
     queryFn: () => APIClient.auth.me(),
-    refetchOnWindowFocus: false,
     retry: false,
   })
 
@@ -45,7 +42,6 @@ export const ClaimQueryOptions = (token: string) =>
   queryOptions({
     queryKey: AuthKeys.claim(token),
     queryFn: () => APIClient.auth.validateClaim(token),
-    refetchOnWindowFocus: false,
     retry: false,
   })
 
@@ -53,7 +49,6 @@ export const UsersGetAllQueryOptions = () =>
   queryOptions({
     queryKey: UsersKeys.list(),
     queryFn: () => APIClient.board.getAll(),
-    refetchOnWindowFocus: false
   })
 
 /** The admin roster (presence-derived login state per member). A 403 is the
@@ -63,7 +58,6 @@ export const RosterQueryOptions = () =>
   queryOptions({
     queryKey: UsersKeys.roster(),
     queryFn: () => APIClient.members.roster(),
-    refetchOnWindowFocus: false,
     retry: false,
   })
 
@@ -71,35 +65,30 @@ export const UsersGetPoolQueryOptions = (userID: number) =>
   queryOptions({
     queryKey: UsersKeys.pool(),
     queryFn: () => APIClient.board.getPool(userID),
-    refetchOnWindowFocus: false
   })
 
 export const UsersGetStashQueryOptions = (userID: number) =>
   queryOptions({
     queryKey: UsersKeys.stash(),
     queryFn: () => APIClient.board.getStash(userID),
-    refetchOnWindowFocus: false
   })
 
 export const MoviesGetPoolQueryOptions = () =>
   queryOptions({
     queryKey: MoviesKeys.listpool(),
     queryFn: () => APIClient.movies.getPooled(),
-    refetchOnWindowFocus: false
   })
 
 export const MoviesGetCurrentQueryOptions = () =>
   queryOptions({
     queryKey: MoviesKeys.current(),
     queryFn: () => APIClient.movies.getCurrent(),
-    refetchOnWindowFocus: false
   })
 
 export const MoviesGetWatchedQueryOptions = () =>
   queryOptions({
     queryKey: MoviesKeys.listwatched(),
     queryFn: () => APIClient.movies.getWatched(),
-    refetchOnWindowFocus: false
   })
 
 /** Full enriched record (cast/crew/overview) for the detail modal — lazy-loaded
@@ -108,7 +97,6 @@ export const MovieDetailQueryOptions = (movieID: number) =>
   queryOptions({
     queryKey: MoviesKeys.detail(movieID),
     queryFn: ({ signal }) => APIClient.movies.get(movieID, signal),
-    refetchOnWindowFocus: false,
   })
 
 /** Stats filter choices (genres/actors/crew/years/adders), derived server-side
@@ -118,7 +106,6 @@ export const FilterOptionsQueryOptions = () =>
   queryOptions({
     queryKey: MoviesKeys.filterOptions(),
     queryFn: ({ signal }) => APIClient.movies.getFilterOptions(signal),
-    refetchOnWindowFocus: false,
     staleTime: 300_000,
   })
 
@@ -126,14 +113,12 @@ export const SettingsGetPoolLockQueryOptions = () =>
   queryOptions({
     queryKey: SettingsKeys.poolLock(),
     queryFn: () => APIClient.settings.getLock(),
-    refetchOnWindowFocus: false
   })
 
 export const SettingsGetNextUpQueryOptions = () =>
   queryOptions({
     queryKey: SettingsKeys.nextUp(),
     queryFn: () => APIClient.settings.getNextUp(),
-    refetchOnWindowFocus: false
   })
 
 /** Sorted, comma-joined person ids — the canonical form shared by the query
@@ -166,7 +151,6 @@ export const StatsGetQueryOptions = (
     // the numbers stay mounted and roll (NumberFlow) to the new values instead of
     // remounting static. The first-ever load still shows the loading placeholder.
     placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
     staleTime: 60_000,
     gcTime: 600_000,
   });

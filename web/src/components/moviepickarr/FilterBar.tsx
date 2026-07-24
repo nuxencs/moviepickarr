@@ -1,12 +1,15 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { CheckIcon, ChevronDownIcon, SearchIcon, XIcon } from "lucide-react";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useCallback,
+  useDeferredValue,
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -17,8 +20,10 @@ import {
   type PersonFilter,
   type PersonOption,
 } from "@/components/moviepickarr/lib";
+import { filterChoices } from "@/components/moviepickarr/search";
 
 import { useDismissible } from "@/hooks/useDismissible";
+import { virtualRowStyle } from "@/hooks/useGridMetrics";
 
 export interface FilterChoice<T extends string | number> {
   value: T;
@@ -32,6 +37,9 @@ type CloseReason = "select" | "escape" | "tab" | "outside" | "trigger";
 
 /** People lists at least this long get the inline search field. */
 const SEARCHABLE_FROM = 9;
+/** Starting row height for the virtualized option list; real heights are
+ *  measured once each option renders. */
+const OPTION_HEIGHT = 32;
 /** Mirrors the backend's statsMaxPeopleFilterIDs — the stats endpoint rejects
  *  longer id lists, so the UI stops adding instead of erroring the page. */
 const MAX_SELECTED = 25;
@@ -71,9 +79,15 @@ function FilterChipMenu<T extends string | number>({
   searchable?: boolean;
 }) {
   const [query, setQuery] = useState("");
+  // Index of the option holding roving focus; -1 while focus sits in the search
+  // field. Tracked by index (not by DOM order) because virtualization means the
+  // option the keyboard is moving to may not be rendered yet.
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const pendingFocus = useRef(false);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
   const { open, closing, show, dismiss } = useDismissible({ restoreFocusTo: triggerRef });
@@ -82,11 +96,61 @@ function FilterChipMenu<T extends string | number>({
   // supported. Older engines fall back to the plain left-aligned drop (below).
   const anchorName = `--chip-anchor-${menuId.replace(/[^a-zA-Z0-9]/g, "")}`;
 
-  const q = query.trim().toLowerCase();
-  const visible = q ? choices.filter((c) => c.label.toLowerCase().includes(q)) : choices;
+  // The people lists that opt into search are long by definition (1500+ actors
+  // on a mature library), so the query is deferred into the filter memo — typing
+  // never blocks on it — and the matches render through a virtualizer, which
+  // puts a screenful of option buttons in the DOM instead of all of them.
+  const deferredQuery = useDeferredValue(query);
+  const matches = useMemo(() => filterChoices(choices, deferredQuery), [choices, deferredQuery]);
+
+  const virtualizer = useVirtualizer({
+    count: matches.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => OPTION_HEIGHT,
+    overscan: 8,
+  });
+  const rendered = virtualizer.getVirtualItems();
+
+  // Move roving focus to an option by index: scroll it into view, then focus it
+  // once the virtualizer has rendered it (the effect below).
+  const focusOption = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= matches.length) return;
+      virtualizer.scrollToIndex(index);
+      setActiveIndex(index);
+      pendingFocus.current = true;
+    },
+    [matches.length, virtualizer],
+  );
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const option = list.querySelector<HTMLButtonElement>(`[data-index="${activeIndex}"]`);
+    if (pendingFocus.current) {
+      if (option) {
+        option.focus();
+        pendingFocus.current = false;
+      }
+      return;
+    }
+    // The focused option can be scrolled out of the rendered window by the
+    // mouse, which unmounts it and would drop focus to <body> — out of reach of
+    // the menu's key handling. Hand focus back to the list itself.
+    // Unmounting the focused element drops focus to <body>, so that — not a
+    // still-in-the-list activeElement — is what this recovers from. A click
+    // elsewhere lands on a real element and is left alone.
+    if (activeIndex !== -1 && !option && document.activeElement === document.body) {
+      list.focus();
+      setActiveIndex(-1);
+    }
+    // `rendered` changes identity whenever the virtual window moves, which is
+    // exactly when a pending focus can land or an active option can vanish.
+  }, [activeIndex, rendered]);
 
   const openMenu = useCallback(() => {
     setQuery("");
+    setActiveIndex(-1);
     show();
   }, [show]);
 
@@ -99,16 +163,17 @@ function FilterChipMenu<T extends string | number>({
   // Focus the search field (when present) or the selected/first option on open.
   useLayoutEffect(() => {
     if (!open || closing) return;
-    const menu = menuRef.current;
-    const field = menu?.querySelector<HTMLInputElement>("input");
+    const field = menuRef.current?.querySelector<HTMLInputElement>("input");
     if (field) {
       field.focus();
       return;
     }
-    (
-      menu?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]') ??
-      menu?.querySelector<HTMLButtonElement>('[role="option"]:not([disabled])')
-    )?.focus();
+    // `choices`, not `matches`: opening resets the query, and the deferred copy
+    // still holds the last session's on this render.
+    const selectedIndex = choices.findIndex((c) => isSelected(c.value));
+    focusOption(selectedIndex === -1 ? 0 : selectedIndex);
+    // Only on open: re-running as the list changes would steal focus mid-typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, closing]);
 
   // Dismiss on Esc or outside click. The menu is CSS-anchored to its chip, so
@@ -144,34 +209,29 @@ function FilterChipMenu<T extends string | number>({
 
   const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End", "Tab"].includes(e.key)) return;
-    const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]:not([disabled])') ?? [],
-    );
     if (e.key === "Tab") {
       e.preventDefault();
       requestClose("tab");
       return;
     }
-    if (items.length === 0) return;
-    const current = items.indexOf(document.activeElement as HTMLButtonElement);
-    // From the search field, ArrowDown enters the list; arrows otherwise cycle.
-    if (current === -1) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        items[e.key === "ArrowDown" ? 0 : items.length - 1]?.focus();
-      }
-      return;
+    const last = matches.length - 1;
+    if (last < 0) return;
+    // From the search field (activeIndex -1) the arrows enter the list at the
+    // top/bottom, while Home/End stay caret keys for the text being typed. From
+    // an option, Home/End jump the list and the arrows cycle.
+    if (activeIndex === -1) {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      return focusOption(e.key === "ArrowDown" ? 0 : last);
     }
     e.preventDefault();
-    const next =
-      e.key === "Home"
-        ? 0
-        : e.key === "End"
-          ? items.length - 1
-          : e.key === "ArrowDown"
-            ? (current + 1) % items.length
-            : (current - 1 + items.length) % items.length;
-    items[next]?.focus();
+    if (e.key === "Home") return focusOption(0);
+    if (e.key === "End") return focusOption(last);
+    focusOption(
+      e.key === "ArrowDown"
+        ? (activeIndex + 1) % matches.length
+        : (activeIndex - 1 + matches.length) % matches.length,
+    );
   };
 
   return (
@@ -237,41 +297,66 @@ function FilterChipMenu<T extends string | number>({
                 aria-label={`Search ${label.toLowerCase()}`}
                 placeholder={`Search ${label.toLowerCase()}…`}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  // A narrower list renumbers the options; focus goes back to
+                  // the field until the next arrow key.
+                  setActiveIndex(-1);
+                }}
               />
             </label>
           )}
           <div
+            ref={listRef}
+            // Focusable so a scrolled-away option can hand focus back here
+            // rather than to <body>, keeping the arrow keys working.
+            tabIndex={-1}
             className="filtermenu__list"
             id={menuId}
             role="listbox"
             aria-label={`Filter by ${label.toLowerCase()}`}
             aria-multiselectable={multiselectable || undefined}
           >
-            {visible.map((choice) => {
-              const selected = isSelected(choice.value);
-              return (
-                <button
-                  key={choice.value}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  className={`mg-menu__item${choice.kind ? ` filtermenu__item--${choice.kind}` : ""}`}
-                  onClick={() => select(choice.value)}
-                >
-                  {multiselectable && (
-                    // Fixed-width check slot: selection reads as a mark, not
-                    // color alone, and labels don't shift as it toggles.
-                    <span className="filtermenu__check" aria-hidden="true">
-                      {selected && <CheckIcon />}
-                    </span>
-                  )}
-                  {choice.label}
-                </button>
-              );
-            })}
+            {/* Presentational sizer: it holds the full scroll height while only
+                the visible options exist, and is ignored by the a11y tree so
+                the options still read as direct children of the listbox. */}
+            <div
+              role="presentation"
+              // flexShrink: the list is a column flex box, which would otherwise
+              // squash the sizer to the menu's height and cap the scroll range.
+              style={{ position: "relative", flexShrink: 0, height: virtualizer.getTotalSize() }}
+            >
+              {rendered.map((row) => {
+                const choice = matches[row.index];
+                const selected = isSelected(choice.value);
+                return (
+                  <button
+                    key={choice.value}
+                    data-index={row.index}
+                    ref={virtualizer.measureElement}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    aria-setsize={matches.length}
+                    aria-posinset={row.index + 1}
+                    className={`mg-menu__item${choice.kind ? ` filtermenu__item--${choice.kind}` : ""}`}
+                    style={virtualRowStyle(row.start)}
+                    onClick={() => select(choice.value)}
+                  >
+                    {multiselectable && (
+                      // Fixed-width check slot: selection reads as a mark, not
+                      // color alone, and labels don't shift as it toggles.
+                      <span className="filtermenu__check" aria-hidden="true">
+                        {selected && <CheckIcon />}
+                      </span>
+                    )}
+                    {choice.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {visible.length === 0 && <p className="filtermenu__empty">No matches</p>}
+          {matches.length === 0 && <p className="filtermenu__empty">No matches</p>}
         </div>
       )}
     </span>
@@ -373,6 +458,9 @@ export function FilterMultiSelect<T extends string | number>({
   );
 }
 
+const personChoices = (people: PersonOption[]): FilterChoice<number>[] =>
+  people.map((p) => ({ value: p.id, label: p.name }));
+
 /** Decade floor of a year — 1994 ⇒ 1990. */
 const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 
@@ -399,17 +487,21 @@ function ReleaseYearSelect({
   onChange: (next: { year: number | null; decade: number | null }) => void;
 }) {
   // Walk the newest-first years, emitting a decade header each time the decade
-  // changes — so both decades and their years stay descending.
-  const choices: FilterChoice<string>[] = [];
-  let lastDecade: number | null = null;
-  for (const y of years) {
-    const d = decadeOf(y);
-    if (d !== lastDecade) {
-      lastDecade = d;
-      choices.push({ value: `d:${d}`, label: `${d}s`, kind: "decade" });
+  // changes — so both decades and their years stay descending. Memoized so the
+  // menu's filter memo isn't invalidated by every parent render.
+  const choices = useMemo(() => {
+    const out: FilterChoice<string>[] = [];
+    let lastDecade: number | null = null;
+    for (const y of years) {
+      const d = decadeOf(y);
+      if (d !== lastDecade) {
+        lastDecade = d;
+        out.push({ value: `d:${d}`, label: `${d}s`, kind: "decade" });
+      }
+      out.push({ value: `y:${y}`, label: String(y), kind: "year" });
     }
-    choices.push({ value: `y:${y}`, label: String(y), kind: "year" });
-  }
+    return out;
+  }, [years]);
 
   const active = year !== null || decade !== null;
   const activeValue = decade !== null ? `d:${decade}` : year !== null ? `y:${year}` : null;
@@ -457,8 +549,12 @@ export function FilterBar({
   className?: string;
   children?: ReactNode;
 }) {
-  const personChoices = (people: PersonOption[]): FilterChoice<number>[] =>
-    people.map((p) => ({ value: p.id, label: p.name }));
+  // Choice lists are memoized on their source options: a stable array identity
+  // is what lets each menu's filter memo survive an unrelated parent render.
+  const genreChoices = useMemo(() => options.genres.map((g) => ({ value: g, label: g })), [options.genres]);
+  const actorChoices = useMemo(() => personChoices(options.actors), [options.actors]);
+  const crewChoices = useMemo(() => personChoices(options.crew), [options.crew]);
+  const adderChoices = useMemo(() => personChoices(options.adders), [options.adders]);
 
   // Map selected ids back to {id, name} pairs, preferring the option list and
   // falling back to the already-selected entry (so names survive a person
@@ -478,7 +574,7 @@ export function FilterBar({
       <FilterSelect
         label="Genre"
         value={value.genre}
-        choices={options.genres.map((g) => ({ value: g, label: g }))}
+        choices={genreChoices}
         onChange={(genre) => onChange({ ...value, genre })}
       />
       <FilterMultiSelect
@@ -486,7 +582,7 @@ export function FilterBar({
         searchable={options.actors.length >= SEARCHABLE_FROM}
         values={value.actors.map((p) => p.id)}
         valueLabels={new Map(value.actors.map((p) => [p.id, p.name]))}
-        choices={personChoices(options.actors)}
+        choices={actorChoices}
         onChange={(ids) => onChange({ ...value, actors: toPersonFilters(ids, options.actors, value.actors) })}
       />
       <FilterMultiSelect
@@ -494,7 +590,7 @@ export function FilterBar({
         searchable={options.crew.length >= SEARCHABLE_FROM}
         values={value.crew.map((p) => p.id)}
         valueLabels={new Map(value.crew.map((p) => [p.id, p.name]))}
-        choices={personChoices(options.crew)}
+        choices={crewChoices}
         onChange={(ids) => onChange({ ...value, crew: toPersonFilters(ids, options.crew, value.crew) })}
       />
       <FilterMultiSelect
@@ -502,7 +598,7 @@ export function FilterBar({
         searchable={options.adders.length >= SEARCHABLE_FROM}
         values={value.adders.map((p) => p.id)}
         valueLabels={new Map(value.adders.map((p) => [p.id, p.name]))}
-        choices={personChoices(options.adders)}
+        choices={adderChoices}
         onChange={(ids) => onChange({ ...value, adders: toPersonFilters(ids, options.adders, value.adders) })}
       />
       <ReleaseYearSelect

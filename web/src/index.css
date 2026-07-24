@@ -707,18 +707,13 @@
   .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 28px 18px; }
   .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
   .tile { display: flex; flex-direction: column; gap: 12px; cursor: pointer; }
-  /* The watched library renders every filtered film as real DOM. Let the engine
-     skip layout/paint for off-screen rows (content-visibility); `auto` intrinsic
-     size self-corrects from the real height after first render to avoid scrollbar
-     jump. Scoped to .watch-body so the FLIP-animated pool grid (.tile-grid--pool,
-     whose getBoundingClientRect measurements would break under skipped layout) is
-     untouched — and it's tiny/on-screen anyway. */
-  .watch-body .tile { content-visibility: auto; contain-intrinsic-size: auto 300px; }
-  .watch-body .wrow { content-visibility: auto; contain-intrinsic-size: auto 84px; }
+  /* The watched grid/list is window-virtualized (see VirtualWatched), so only
+     the rows near the viewport are in the DOM — no content-visibility here: it
+     would report contain-intrinsic-size instead of the real height and feed the
+     virtualizer's row measurement a lie. */
   /* Hover zoom lives on the image inside the frame (.poster clips with
-     overflow:hidden), not a translate on the frame itself: the whole tile paints
-     within its own box, so the .watch-body content-visibility paint box never
-     clips it. Same treatment on the pool and the stats rails for consistency. */
+     overflow:hidden), not a translate on the frame itself, so the whole tile
+     paints within its own box. Same treatment on the pool and the stats rails. */
   .tile:hover .poster__img,
   .tile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .tile:active .poster__img { transform: scale(var(--poster-zoom-press)); }

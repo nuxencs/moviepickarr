@@ -116,6 +116,25 @@ old shadcn primitives.
   headers (`.filtermenu__item--decade`) with their years indented beneath
   (`.filtermenu__item--year`), where a decade and an exact year are mutually exclusive
   (picking one clears the other) and the chip reads `Release year · 1990s` or `· 1994`.
+- **Long lists are virtualized (`@tanstack/react-virtual`).** Two lists grow with the
+  library and both would otherwise render every row: the Movies **watched grid/list**
+  and the **filter menus** (1500+ actors on a mature library). Each feeds its search
+  box through `useDeferredValue` into a memoized filter, so a keystroke updates the
+  input immediately and the list at React's convenience, then renders the matches
+  through a virtualizer — a screenful of DOM instead of the whole result set, flat per
+  keystroke however large the library gets. Two things to know before touching them:
+  the watched grid keeps its `.tile-grid` class and reads the *resolved*
+  `gridTemplateColumns` + gaps back out via `useGridMetrics`, so the responsive
+  `repeat(auto-fill, minmax(…))` ramp stays in the stylesheet and is never restated in
+  JS (the list view resolves to one lane); and the filter menu's option list is
+  keyboard-navigated **by index**, not by DOM order — the arrows (plus Home/End once
+  focus is in the list, so they stay caret keys in the search field) scroll the target
+  option into view and focus it once rendered, since the option being moved to usually
+  does not exist yet. Options carry `aria-setsize`/`aria-posinset` so the full match
+  count is announced rather than the rendered window, and an option scrolled out from
+  under the keyboard hands focus back to the list instead of dropping it to `<body>`.
+  Don't put `content-visibility` on virtualized rows: it reports
+  `contain-intrinsic-size` instead of the real height and feeds row measurement a lie.
 - **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
   quick-select, genre, actors, crew, added by, release year) in a single wrapping row under the
   stats header. The seg stays a seg (presets are mutually exclusive) but drops its
@@ -526,8 +545,10 @@ use tokens so they follow the theme.
 ## 12. Stack & build notes
 
 - React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query +
-  **TanStack Router** (code-based, no route-gen plugin), Sonner, lucide. **Vitest**
-  for unit tests (pure reducers: `drawMachine`, `sseConnection`, `sseInvalidations`).
+  **TanStack Router** (code-based, no route-gen plugin), **TanStack Virtual** (the
+  watched grid and the filter menus, §4), Sonner, lucide. **Vitest**
+  for unit tests (pure reducers and helpers: `drawMachine`, `sseConnection`,
+  `sseInvalidations`, `search`, `useGridMetrics`).
   No Radix/shadcn. Package manager: **bun** (`web/`).
 - Tailwind v4 has no config file; theme/aliases live in `index.css` (`@theme inline`).
 - Gate before handoff: `bunx tsc -b` + `bun run lint` + `bun run test` (vitest) +

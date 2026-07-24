@@ -18,6 +18,8 @@ import type { Movie } from "@/types/Response";
 
 const NOW = 1_000_000;
 const SPIN_MS = 6500;
+/** The server reveals 16.5s after the draw: 6.5s of scroll, then the confirm. */
+const DEADLINE_MS = 16_500;
 
 function movie(id: number): Movie {
   return {
@@ -39,7 +41,7 @@ function spin(overrides: Partial<SpinDescriptor> = {}): SpinDescriptor {
     startedAtMs: NOW,
     live: true,
     mine: true,
-    confirmMs: 10_000,
+    deadlineAtMs: NOW + DEADLINE_MS,
     ...overrides,
   };
 }
@@ -64,6 +66,12 @@ function renderReel(props: Partial<Parameters<typeof DrawReel>[0]> = {}) {
 /** Let the reel's timers run: the scroll's own settle timer fires inside act,
  *  so the render that follows is the one a member would be looking at. */
 const advance = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
+
+/** How long the confirm bar is set to run, in ms. */
+const fillMs = () => {
+  const el = document.querySelector<HTMLElement>(".drawreel__ok-fill");
+  return el ? parseFloat(el.style.animationDuration) : null;
+};
 
 const skip = () => screen.queryByRole("button", { name: "Skip" });
 const ok = () => screen.queryByRole("button", { name: "OK" });
@@ -135,5 +143,33 @@ describe("coming back to the Movies tab", () => {
     expect(ok()).toBeTruthy();
     expect(skip()).toBeNull();
     expect(onScrollDone).toHaveBeenCalled();
+  });
+});
+
+describe("the confirm bar", () => {
+  it("runs out exactly when the server reveals", () => {
+    renderReel();
+    advance(SPIN_MS + 200);
+    // The reel settles on its own safety-net timer, 150ms past the scroll, and
+    // the bar covers the rest of the way to the deadline from there.
+    expect(fillMs()).toBe(DEADLINE_MS - SPIN_MS - 150);
+  });
+
+  it("covers the whole wait when the scroll was skipped", () => {
+    renderReel();
+    advance(1000);
+    act(() => screen.getByRole("button", { name: "Skip" }).click());
+    // Skipping only fast-forwards the animation; the reveal is still 15.5s out.
+    expect(fillMs()).toBe(DEADLINE_MS - 1000);
+  });
+
+  it("picks up mid-countdown when the reel is mounted late", () => {
+    const { unmount } = renderReel();
+    advance(SPIN_MS + 200);
+    unmount();
+
+    advance(4000);
+    renderReel({ spin: spin(), phase: "settled" });
+    expect(fillMs()).toBe(DEADLINE_MS - SPIN_MS - 4200);
   });
 });

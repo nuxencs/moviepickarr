@@ -161,6 +161,59 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	}
 }
 
+// The confirm bar counts down to revealAt, and it can start at any point in the
+// draw (Skip lands the reel early, a tab switch can mount it late). So the draw
+// payload has to say when the server stamped it: the client anchors the
+// deadline as serverNow -> revealAt measured against its own arrival time.
+// drawnAt can't serve, being second-truncated and already a round-trip stale.
+func TestHandleGetRandomMovie_StampsServerNowForTheConfirmDeadline(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Gwen")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, title := range []string{"Heat", "Casino"} {
+		if _, err := movieRepo.Add(ctx, title, "pool", user.ID); err != nil {
+			t.Fatalf("seed pool: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/movies/random", strings.NewReader(`{"clientId":"c-test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+
+	var body struct {
+		RevealAt  string `json:"revealAt"`
+		ServerNow string `json:"serverNow"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	serverNow, err := time.Parse(time.RFC3339Nano, body.ServerNow)
+	if err != nil {
+		t.Fatalf("serverNow not RFC3339: %q (%v)", body.ServerNow, err)
+	}
+	// Sub-second precision, or the countdown jitters by up to a second.
+	if serverNow.Nanosecond() == 0 {
+		t.Fatalf("serverNow %q looks truncated to the second", body.ServerNow)
+	}
+	revealAt, err := time.Parse(time.RFC3339Nano, body.RevealAt)
+	if err != nil {
+		t.Fatalf("revealAt not RFC3339: %q (%v)", body.RevealAt, err)
+	}
+	left := revealAt.Sub(serverNow)
+	if left <= 0 || left > movie.DefaultAutoRevealDelay {
+		t.Fatalf("revealAt - serverNow = %v, want within (0, %v]", left, movie.DefaultAutoRevealDelay)
+	}
+}
+
 // countEvents drains a broker client for frames of the given type until the
 // channel goes quiet for `within`.
 func countEvents(client chan event, typ string, within time.Duration) int {

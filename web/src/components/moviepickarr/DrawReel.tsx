@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { type DrawPhase, reelResume, type SpinDescriptor } from "@/components/moviepickarr/drawMachine";
+import {
+  confirmRemainingMs,
+  type DrawPhase,
+  reelResume,
+  type SpinDescriptor,
+} from "@/components/moviepickarr/drawMachine";
 import { reelEaseOutput, reelEaseTimeAt, spinDurationMs } from "@/components/moviepickarr/drawSpin";
 import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
@@ -47,7 +52,7 @@ interface DrawReelProps {
  * The slot-machine draw reveal: a horizontal reel of pool-candidate posters that
  * scrolls and decelerates onto the server-chosen winner, then *settles* and waits
  * for confirmation rather than auto-closing. The drawer sees an OK button whose
- * fill counts down to the server's reveal deadline (spin.confirmMs); pressing it
+ * fill counts down to the server's reveal deadline (spin.deadlineAtMs); pressing it
  * (or the server's auto-reveal broadcast) closes the reel for everyone. Motion is
  * a JS-measured target + a CSS transition: the same "measure then transition"
  * idiom as the FLIP rails, so no animation library.
@@ -69,6 +74,11 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
 
   // The reel has scrolled to rest on the winner and now awaits confirmation.
   const [settled, setSettled] = useState(resume.settled);
+
+  // How long the confirm bar runs, read when it appears rather than fixed per
+  // draw: Skip lands the reel early and a tab switch can mount it late, while
+  // the deadline it counts down to never moves.
+  const [confirmMs, setConfirmMs] = useState(() => (resume.settled ? confirmRemainingMs(spin, Date.now()) : 0));
 
   // Built once per draw (drawnAt identity). The pool repeats in its natural
   // order for a long run, then the winner, then a few trailing tiles so the
@@ -101,9 +111,10 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
   const settle = useCallback(() => {
     if (settledRef.current) return;
     settledRef.current = true;
+    setConfirmMs(confirmRemainingMs(spin, Date.now()));
     setSettled(true);
     onScrollDone();
-  }, [onScrollDone]);
+  }, [onScrollDone, spin]);
 
   // Skip the scroll: snap the track onto the winner and settle (still awaits
   // confirmation — skipping fast-forwards the animation, it doesn't reveal).
@@ -278,7 +289,7 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
             {spin.mine && (
               <span
                 className="drawreel__ok-fill"
-                style={{ animationDuration: `${spin.confirmMs}ms` }}
+                style={{ animationDuration: `${confirmMs}ms` }}
                 aria-hidden="true"
               />
             )}

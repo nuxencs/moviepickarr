@@ -67,9 +67,13 @@ export interface SpinDescriptor {
    *  gated by the board (admin or next-up member), not by this; `mine` only
    *  drives the confirm countdown fill, which is the drawer's own cue. */
   mine: boolean;
-  /** Settled confirm-countdown length, derived from the server's revealAt
-   *  deadline: the OK fill and the self-heal fallback both time off it. */
-  confirmMs: number;
+  /** The server's reveal deadline, in this client's clock: `env.now` plus the
+   *  server-measured time left (revealAt − serverNow), so client skew never
+   *  enters. An instant, not a length, because the confirm bar and the
+   *  self-heal fallback both need to land ON the reveal no matter when they
+   *  start: the scroll can be skipped, and the reel can be remounted
+   *  mid-countdown by a tab switch. */
+  deadlineAtMs: number;
 }
 
 export type DrawPhase = "idle" | "spinning" | "settled" | "revealing";
@@ -137,17 +141,21 @@ function uniqueById(movies: Movie[]): Movie[] {
   return out;
 }
 
-/** Confirm-countdown length: time left to the server's revealAt deadline once
- *  the scroll (durationMs) has run, measured from `reference` (drawnAt for a
- *  fresh draw, serverNow for a resume: both server clocks, so client skew
- *  never enters). Clamped to at least a second so the OK fill stays visible
- *  even when the deadline is imminent; missing/bad revealAt falls back. */
-function confirmWindowMs(reference: string, revealAt: string | undefined, durationMs: number, env: DrawEnv): number {
-  if (revealAt) {
-    const window = Date.parse(revealAt) - Date.parse(reference) - durationMs;
-    if (Number.isFinite(window)) return Math.max(1000, window);
+/** The server's reveal deadline in this client's clock: how long the server
+ *  says is left (revealAt − `reference`, both server clocks, so client skew
+ *  never enters), added to the moment the payload arrived. `reference` is the
+ *  payload's serverNow; a draw payload without one falls back to drawnAt,
+ *  which is second-truncated and a round-trip stale, so the bar can run up to
+ *  a second long. Kept at least a second past the scroll so the confirm stays
+ *  visible even when the deadline is already on top of us; a missing or
+ *  unparseable revealAt falls back to the default window. */
+function deadline(reference: string | undefined, revealAt: string | undefined, durationMs: number, env: DrawEnv): number {
+  const floor = env.now + durationMs + 1000;
+  if (reference && revealAt) {
+    const left = Date.parse(revealAt) - Date.parse(reference);
+    if (Number.isFinite(left)) return Math.max(floor, env.now + left);
   }
-  return env.confirmFallbackMs;
+  return env.now + durationMs + env.confirmFallbackMs;
 }
 
 /** Whether a current movie still has a reel pending: drawn but not yet
@@ -173,7 +181,7 @@ function buildLiveSpin(drawn: Movie, env: DrawEnv): SpinDescriptor | null {
     startedAtMs: env.now,
     live: true,
     mine: !!drawn.drawClientId && drawn.drawClientId === env.clientId,
-    confirmMs: confirmWindowMs(drawn.drawnAt, drawn.revealAt, env.spinDurationMs, env),
+    deadlineAtMs: deadline(drawn.serverNow ?? drawn.drawnAt, drawn.revealAt, env.spinDurationMs, env),
   };
 }
 
@@ -197,7 +205,7 @@ function buildResumeSpin(current: Movie, pool: Movie[], env: DrawEnv): SpinDescr
     startedAtMs: env.now,
     live: false,
     mine: !!current.drawClientId && current.drawClientId === env.clientId,
-    confirmMs: confirmWindowMs(current.serverNow, current.revealAt, durationMs, env),
+    deadlineAtMs: deadline(current.serverNow, current.revealAt, durationMs, env),
   };
 }
 
@@ -222,6 +230,15 @@ export function reelResume(
   return { settled: false, remainingMs: remaining };
 }
 
+/** How long the confirm bar has to run when it starts: the time left to the
+ *  server's reveal deadline, right now. Read when the bar appears rather than
+ *  fixed per draw, because the bar doesn't always start at the same point in
+ *  the draw (Skip lands it early, a tab switch can mount it late) while the
+ *  deadline it counts down to never moves. */
+export function confirmRemainingMs(spin: SpinDescriptor, now: number): number {
+  return Math.max(0, spin.deadlineAtMs - now);
+}
+
 /** The self-heal fallback: a backstop confirm that fires just past the server's
  *  reveal deadline (revealAt + grace) in case a movie:revealed frame is dropped.
  *  Anchored to the DRAW (scheduled at spin start over the full scroll + confirm
@@ -229,7 +246,7 @@ export function reelResume(
  *  the visuals) can't pull the fallback in ahead of the server's on-time
  *  broadcast and reveal early. Any confirm (OK / remote reveal) cancels it. */
 function scheduleFallback(spin: SpinDescriptor, env: DrawEnv): DrawCommand {
-  return { cmd: "scheduleFallback", afterMs: spin.durationMs + spin.confirmMs + env.fallbackGraceMs };
+  return { cmd: "scheduleFallback", afterMs: spin.deadlineAtMs - env.now + env.fallbackGraceMs };
 }
 
 export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawState, DrawCommand[]] {

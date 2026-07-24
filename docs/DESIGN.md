@@ -459,10 +459,16 @@ deadline close the reel mid-replay, so the OK never appeared.
 **Draw confirm (hold-and-reveal).** The settled reel does **not** auto-close. It waits
 for confirmation, so the group sees the result land together. Only the **drawer** (the
 client whose stable `mp-client-id` matches the draw's `drawClientId`) gets an **OK**
-button; its fill doubles as a countdown, and its duration is the **server's reveal
-deadline** (`spin.confirmMs`, derived from the draw payload's `revealAt` minus the
-server's `serverNow`, immune to client clock skew), not the `--dur-confirm` token (which
-is only the fallback/preview default). Pressing OK (or letting it fill) confirms, which
+button; its fill doubles as a countdown, and it runs to the **server's reveal deadline**
+(`spin.deadlineAtMs`), not the `--dur-confirm` token (which is only the
+fallback/preview default). The deadline is an **instant, not a length**: every draw
+payload carries `revealAt` and the `serverNow` it was stamped with, and the client
+anchors `revealAt − serverNow` to the moment the payload arrived, so client clock skew
+never enters. The bar reads what's left when it appears rather than a fixed per-draw
+length, because it doesn't always start at the same point in the draw: **Skip** lands
+the reel early and a tab switch can mount it late, while the deadline never moves. Both
+of those used to leave the bar visibly out of step (a skip finished it ~5.6s early, a
+tab switch restarted it with only ~7s to go). Pressing OK (or letting it fill) confirms, which
 `POST`s `/movies/current/reveal`; the server flips the draw to `revealed` and broadcasts
 **`movie:revealed`**, so **every** client's reel closes and reveals in lockstep. The
 **auto-reveal is server-owned**: the movie service arms a timer at `revealAt`

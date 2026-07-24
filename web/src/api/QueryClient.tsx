@@ -7,7 +7,8 @@ import { QueryClient } from "@tanstack/react-query";
 // explicit invalidateQueries (the SSE path) refetches active queries regardless
 // of staleTime, so real mutations still update immediately — staleTime only
 // gates the automatic mount/focus refetch. refetchOnWindowFocus stays off (SSE +
-// reconnect-resync own liveness); the per-query overrides are now redundant.
+// reconnect-resync own liveness) and is set here only — queries inherit it, so
+// none of them repeat it.
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

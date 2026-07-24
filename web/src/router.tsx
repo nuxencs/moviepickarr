@@ -2,6 +2,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   stripSearchParams,
 } from "@tanstack/react-router";
 
@@ -9,16 +10,10 @@ import { redirectIfSignedIn, requireSession } from "@/api/authGuard";
 import { MeQueryOptions } from "@/api/queries";
 import { queryClient } from "@/api/QueryClient";
 
-import { AccountPage } from "@/components/moviepickarr/account/AccountPage";
-import { RosterPage } from "@/components/moviepickarr/admin/RosterPage";
 import { AppLayout, RootShell, Shell } from "@/components/moviepickarr/AppShell";
-import { ClaimPage } from "@/components/moviepickarr/auth/ClaimPage";
-import { LoginPage } from "@/components/moviepickarr/auth/LoginPage";
 import { Hero } from "@/components/moviepickarr/Hero";
 import { MoviesTab } from "@/components/moviepickarr/MoviesTab";
 import { statsSearchDefaults, validateStatsSearch } from "@/components/moviepickarr/statsSearch";
-import { StatsTab } from "@/components/moviepickarr/StatsTab";
-import { UsersTab } from "@/components/moviepickarr/UsersTab";
 
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -51,6 +46,13 @@ const appLayoutRoute = createRoute({
   component: AppLayout,
 });
 
+// Every route below except the movies landing page loads its component on
+// demand, so the entry bundle carries the shell plus the one route the visitor
+// actually asked for. lazyRouteComponent (not React.lazy) is what makes that
+// free at navigation time: the router owns the import, so defaultPreload:
+// "intent" fetches the chunk on nav-link hover and it's warm by the time the
+// click lands. Movies stays eager because it's the landing route, where a
+// deferred chunk would only delay the first paint.
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -63,13 +65,19 @@ const loginRoute = createRoute({
   // before render so there is no one-frame flash of the form (see
   // redirectIfSignedIn).
   beforeLoad: ({ context }) => redirectIfSignedIn(() => resolveMe(context.queryClient)),
-  component: LoginPage,
+  component: lazyRouteComponent(
+    () => import("@/components/moviepickarr/auth/LoginPage"),
+    "LoginPage",
+  ),
 });
 
 const claimRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/claim/$token",
-  component: ClaimPage,
+  component: lazyRouteComponent(
+    () => import("@/components/moviepickarr/auth/ClaimPage"),
+    "ClaimPage",
+  ),
 });
 
 const moviesRoute = createRoute({
@@ -90,13 +98,7 @@ const moviesRoute = createRoute({
 const usersRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/users",
-  component: function UsersPage() {
-    return (
-      <Shell>
-        <UsersTab />
-      </Shell>
-    );
-  },
+  component: lazyRouteComponent(() => import("@/pages/UsersPage"), "UsersPage"),
 });
 
 // The admin roster surface. A non-admin who navigates here still gets the page
@@ -105,13 +107,7 @@ const usersRoute = createRoute({
 const adminRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/admin",
-  component: function AdminPage() {
-    return (
-      <Shell>
-        <RosterPage />
-      </Shell>
-    );
-  },
+  component: lazyRouteComponent(() => import("@/pages/AdminPage"), "AdminPage"),
 });
 
 // The account settings surface. Path is /settings, not /account: the merged
@@ -125,13 +121,7 @@ const settingsRoute = createRoute({
     linked: typeof search.linked === "string" ? search.linked : undefined,
     error: typeof search.error === "string" ? search.error : undefined,
   }),
-  component: function SettingsPage() {
-    return (
-      <Shell>
-        <AccountPage />
-      </Shell>
-    );
-  },
+  component: lazyRouteComponent(() => import("@/pages/SettingsPage"), "SettingsPage"),
 });
 
 const statsRoute = createRoute({
@@ -140,13 +130,7 @@ const statsRoute = createRoute({
   // All Stats filter state lives in the URL search params (see statsSearch).
   validateSearch: validateStatsSearch,
   search: { middlewares: [stripSearchParams(statsSearchDefaults)] },
-  component: function StatsPage() {
-    return (
-      <Shell>
-        <StatsTab />
-      </Shell>
-    );
-  },
+  component: lazyRouteComponent(() => import("@/pages/StatsPage"), "StatsPage"),
 });
 
 const routeTree = rootRoute.addChildren([

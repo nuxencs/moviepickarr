@@ -575,6 +575,17 @@ use tokens so they follow the theme.
   Net: every filter is shareable, bookmarkable, and survives reload + back/forward,
   and the genre/year chips in the hero + movie modal (`MetaChips`) deep-link straight
   into a pre-filtered `/stats` (genre → `?genre=`, release year → `?year=`).
+- **Route code splitting.** Every route except the movies landing page loads its
+  component through `lazyRouteComponent`, so `/stats`, `/users`, `/admin`,
+  `/settings`, `/login` and `/claim/$token` each ship their own chunk (the
+  Shell-wrapped ones live in `src/pages/`). Because the router owns the import,
+  `defaultPreload: "intent"` warms the chunk on nav-link hover, so the click still
+  paints without a round-trip. Movies stays eager: it's the landing route, where a
+  deferred chunk would only delay the first paint. Alongside that, `vite.config.ts`
+  pins react/react-dom/scheduler into `react-vendor` and everything under
+  `@tanstack` into `tanstack` using `manualChunks`' **function** form. The array
+  form matches bare specifiers, so it missed the `react-dom/client` the entry
+  imports and react-dom leaked into the app chunk.
 - **Backend SPA fallback.** The Fiber file server uses `NotFoundFile: "index.html"`
   so a hard refresh or shared deep-link on a client route (`/stats`, `/users`)
   resolves to the SPA instead of 404ing, with an `/api` JSON-404 catch-all above it

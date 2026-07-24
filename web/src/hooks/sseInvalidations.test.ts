@@ -24,6 +24,13 @@ describe("the invalidation table", () => {
     expect(has(SSE_INVALIDATIONS["movie:drawn"], SettingsKeys.nextUp())).toBe(true);
   });
 
+  it("a reveal releases the pool the server held for the reel", () => {
+    // The server hands the drawn movie back in every pool read until the reveal,
+    // so the refresh has to happen when the reveal lands — including on clients
+    // that never ran a reel and have no land of their own to hook.
+    expect(has(SSE_INVALIDATIONS["movie:revealed"], MoviesKeys.listpool())).toBe(true);
+  });
+
   it("a watched movie stales stats and the watched-derived filter options", () => {
     const row = SSE_INVALIDATIONS["movie:watched"];
     for (const key of [MoviesKeys.current(), MoviesKeys.listwatched(), MoviesKeys.filterOptions(), StatsKeys.all]) {

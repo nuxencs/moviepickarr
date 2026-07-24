@@ -431,6 +431,15 @@ within ~1s), with a within-tile **jitter** so the landing feels live. The `movie
 spins**, not just the clicker; it skips for a **pool of one** or under reduced motion
 (straight to the reveal) and **resumes** server-relative on a reload while the draw is
 still unrevealed, while the hero **holds its commit** so the reveal never fires mid-spin.
+The **pool holds the winner** for as long as the draw is unrevealed: the draw flips the
+row to `current` immediately, so the server hands the movie back in every pool read
+(`Pooled` / `PooledByUserID`, `withHeldDraw`) until the reveal. Without that, a reload
+mid-spin — or any client opening the board during a draw — fetched the post-draw pool and
+the missing tile gave the winner away behind the reel. The client-side pool hold (the draw
+machine releasing the pool on land) still covers cached clients; the two agree. While the
+draw is held the **pool is frozen**: demote and delete are refused for every pool tile
+(the held winner included, so no answer singles it out) and the board's demote button
+disables with "A draw is in progress"; the stash is unaffected.
 The reel is a **pure reducer + store**: `drawMachine.ts` folds `movie:drawn` /
 `movie:revealed` / scroll-done / confirm / tick events into `[state, commands]`, and
 `drawStore.ts` (a `useSyncExternalStore` singleton) runs the effects. `Hero.tsx`,

@@ -8,13 +8,14 @@ import {
   SearchIcon,
   Trash2Icon,
 } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, useSyncExternalStore } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import { MeQueryOptions, SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar } from "@/components/moviepickarr/Bits";
+import { drawStore } from "@/components/moviepickarr/drawStore";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { Menu } from "@/components/moviepickarr/Menu";
 import { isSelf } from "@/components/moviepickarr/ownership";
@@ -114,6 +115,15 @@ function Board({
     onError: () => toast.error("Failed to move movie"),
   });
 
+  // The pool is frozen server-side while a draw is unrevealed: the drawn movie
+  // is still shown as a pool tile, so demoting any of them has to be refused
+  // (letting one tile through would say which movie was drawn). Match that here
+  // instead of letting the click come back as a failed move.
+  const drawInFlight = useSyncExternalStore(
+    drawStore.subscribe,
+    () => drawStore.getState().phase !== "idle",
+  );
+
   return (
     <div className="board">
       <div className="board__head">
@@ -153,9 +163,9 @@ function Board({
                     type="button"
                     className="pslot__demote"
                     onClick={() => demoteMutation.mutate(movie.movieID)}
-                    disabled={demoteMutation.isPending}
+                    disabled={demoteMutation.isPending || drawInFlight}
                     aria-label="Move back to stash"
-                    title="Move back to stash"
+                    title={drawInFlight ? "A draw is in progress" : "Move back to stash"}
                   >
                     <MoveDownIcon />
                   </button>

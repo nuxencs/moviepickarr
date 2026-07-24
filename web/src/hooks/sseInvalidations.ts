@@ -63,8 +63,12 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
   // the reel lands (see the header comment).
   "movie:drawn": [UsersKeys.list(), MoviesKeys.current(), SettingsKeys.nextUp()],
 
-  // Pure draw-machine signal; nothing cached stales.
-  "movie:revealed": [],
+  // The reveal is when the server stops holding the winner in the pool (it
+  // hands the drawn movie back in every pool read until then, so a missing tile
+  // can't spoil the reel). Clients that never ran a reel — reduced motion, a
+  // lone candidate — have no land to refresh on, and a local confirm can race
+  // its own POST, so the broadcast is the one moment every client can trust.
+  "movie:revealed": [MoviesKeys.listpool()],
 
   // A newly-watched movie enters the watched-derived filter options.
   "movie:watched": [

@@ -440,17 +440,17 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	}
 
 	// Reel candidates = the pre-draw pool (winner + the rest) as lean tiles WITH
-	// posters, reconstructed from the post-draw pool plus the winner. The winner
-	// must carry a poster here because the reel lands on it: toFullMovieBare(selected)
+	// posters. That IS the pool view during an unrevealed draw: the service holds
+	// the winner in it until the reveal, so no reconstruction is needed here. The
+	// winner must carry a poster because the reel lands on it: toFullMovieBare(selected)
 	// alone has none (no metadata), so the tiles — not the bare payload — supply it.
 	// Best-effort: the draw already succeeded, so a pool-load failure must not fail
 	// the response — it just omits candidates and the client falls back to its
 	// local pool cache (the pre-self-contained behaviour).
 	drawn := drawnPayload{fullMovie: payload}
-	if pooled, err := h.movieService.Pooled(ctx); err != nil {
+	if candidateMovies, err := h.movieService.Pooled(ctx); err != nil {
 		h.log.Warn().Err(err).Msg("failed to load pool for draw candidates (reel falls back to client pool cache)")
 	} else {
-		candidateMovies := append([]*domain.Movie{selectedMovie}, pooled...)
 		drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(ctx, candidateMovies))
 	}
 

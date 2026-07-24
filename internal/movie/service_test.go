@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"slices"
+	"sort"
 	"testing"
 	"time"
 
@@ -437,5 +440,236 @@ func TestUpdateWatchedMovieAllowsWatchedAt(t *testing.T) {
 	}
 	if repo.updateWatchedAtHit != 1 {
 		t.Fatalf("expected watchedAt update once, got %d", repo.updateWatchedAtHit)
+	}
+}
+
+// titlePoolRepo holds three pooled movies whose titles sort A < B < C, plus a
+// second owner, so the pool-view tests can assert both placement and per-member
+// scoping. FindByUserIDAndStatus is implemented here (the shared repo panics on
+// it) because the per-member pool view goes through it.
+type titlePoolRepo struct {
+	testMovieRepo
+}
+
+func (r *titlePoolRepo) FindByUserIDAndStatus(_ context.Context, userID int, status string) ([]*domain.Movie, error) {
+	var out []*domain.Movie
+	for _, m := range r.movies {
+		if m.AddedByID == userID && m.Status == status {
+			c := *m
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
+	return out, nil
+}
+
+// FindByID mirrors the sqlite repo, which wraps a miss as domain.ErrNotFound
+// rather than returning sql.ErrNoRows bare.
+func (r *titlePoolRepo) FindByID(_ context.Context, id int) (*domain.Movie, error) {
+	movie, ok := r.movies[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, id)
+	}
+	c := *movie
+	return &c, nil
+}
+
+func (r *titlePoolRepo) FindByStatus(ctx context.Context, status string) ([]*domain.Movie, error) {
+	out, err := r.testMovieRepo.FindByStatus(ctx, status)
+	if err != nil {
+		return nil, err
+	}
+	// The real repo sorts the pool by title; the pool view inserts the held
+	// draw into that order, so the fake has to sort too.
+	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
+	return out, nil
+}
+
+func titleRepo() *titlePoolRepo {
+	return &titlePoolRepo{testMovieRepo{
+		movies: map[int]*domain.Movie{
+			1: {ID: 1, Title: "Alpha", Status: string(domain.MovieStatusPool), AddedByID: 10},
+			2: {ID: 2, Title: "Bravo", Status: string(domain.MovieStatusPool), AddedByID: 10},
+			3: {ID: 3, Title: "Charlie", Status: string(domain.MovieStatusPool), AddedByID: 20},
+		},
+	}}
+}
+
+func titles(movies []*domain.Movie) []string {
+	out := make([]string, 0, len(movies))
+	for _, m := range movies {
+		out = append(out, m.Title)
+	}
+	return out
+}
+
+// The whole point of the pool view: an unrevealed draw stays in the pool, in
+// its title position, so no client can tell which movie was drawn before the
+// reel lands. GetRandomPooled picks the lowest id, so "Alpha" is the winner.
+func TestPooledHoldsTheDrawnMovieUntilRevealed(t *testing.T) {
+	t.Parallel()
+
+	repo := titleRepo()
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	drawn, err := svc.DrawRandom(ctx, "client-abc")
+	if err != nil {
+		t.Fatalf("DrawRandom: unexpected error: %v", err)
+	}
+	if drawn.Title != "Alpha" {
+		t.Fatalf("drawn = %q, want Alpha", drawn.Title)
+	}
+
+	pooled, err := svc.Pooled(ctx)
+	if err != nil {
+		t.Fatalf("Pooled: unexpected error: %v", err)
+	}
+	if want := []string{"Alpha", "Bravo", "Charlie"}; !slices.Equal(titles(pooled), want) {
+		t.Fatalf("pool during the draw = %v, want %v (the winner must not go missing)", titles(pooled), want)
+	}
+
+	if _, flipped := svc.RevealCurrentDraw(); !flipped {
+		t.Fatal("expected the reveal to flip the draw")
+	}
+
+	pooled, err = svc.Pooled(ctx)
+	if err != nil {
+		t.Fatalf("Pooled after reveal: unexpected error: %v", err)
+	}
+	if want := []string{"Bravo", "Charlie"}; !slices.Equal(titles(pooled), want) {
+		t.Fatalf("pool after the reveal = %v, want %v", titles(pooled), want)
+	}
+}
+
+// The board renders each member's own pool, so the hold has to reach that read
+// too — and only for the member who actually owns the drawn movie.
+func TestPooledByUserIDHoldsTheDrawnMovieForItsOwner(t *testing.T) {
+	t.Parallel()
+
+	repo := titleRepo()
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	if _, err := svc.DrawRandom(ctx, ""); err != nil {
+		t.Fatalf("DrawRandom: unexpected error: %v", err)
+	}
+
+	own, err := svc.PooledByUserID(ctx, 10)
+	if err != nil {
+		t.Fatalf("PooledByUserID: unexpected error: %v", err)
+	}
+	if want := []string{"Alpha", "Bravo"}; !slices.Equal(titles(own), want) {
+		t.Fatalf("owner pool during the draw = %v, want %v", titles(own), want)
+	}
+
+	other, err := svc.PooledByUserID(ctx, 20)
+	if err != nil {
+		t.Fatalf("PooledByUserID: unexpected error: %v", err)
+	}
+	if want := []string{"Charlie"}; !slices.Equal(titles(other), want) {
+		t.Fatalf("other member's pool = %v, want %v (the held draw isn't theirs)", titles(other), want)
+	}
+
+	if _, flipped := svc.RevealCurrentDraw(); !flipped {
+		t.Fatal("expected the reveal to flip the draw")
+	}
+
+	own, err = svc.PooledByUserID(ctx, 10)
+	if err != nil {
+		t.Fatalf("PooledByUserID after reveal: unexpected error: %v", err)
+	}
+	if want := []string{"Bravo"}; !slices.Equal(titles(own), want) {
+		t.Fatalf("owner pool after the reveal = %v, want %v", titles(own), want)
+	}
+}
+
+// A watch clears the active draw, and the watched movie must not reappear in
+// the pool through the hold.
+func TestPooledDropsTheDrawnMovieOnceWatched(t *testing.T) {
+	t.Parallel()
+
+	repo := titleRepo()
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	if _, err := svc.DrawRandom(ctx, ""); err != nil {
+		t.Fatalf("DrawRandom: unexpected error: %v", err)
+	}
+	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
+		t.Fatalf("MarkCurrentAsWatched: unexpected error: %v", err)
+	}
+
+	pooled, err := svc.Pooled(ctx)
+	if err != nil {
+		t.Fatalf("Pooled: unexpected error: %v", err)
+	}
+	if want := []string{"Bravo", "Charlie"}; !slices.Equal(titles(pooled), want) {
+		t.Fatalf("pool after the watch = %v, want %v", titles(pooled), want)
+	}
+}
+
+// A movie deleted out from under an in-flight draw must not fail every pool
+// read: the listing is correct without it.
+func TestPooledSurvivesAHeldDrawWhoseMovieIsGone(t *testing.T) {
+	t.Parallel()
+
+	repo := titleRepo()
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	drawn, err := svc.DrawRandom(ctx, "")
+	if err != nil {
+		t.Fatalf("DrawRandom: unexpected error: %v", err)
+	}
+	delete(repo.movies, drawn.ID)
+
+	pooled, err := svc.Pooled(ctx)
+	if err != nil {
+		t.Fatalf("Pooled: unexpected error: %v", err)
+	}
+	if want := []string{"Bravo", "Charlie"}; !slices.Equal(titles(pooled), want) {
+		t.Fatalf("pool = %v, want %v", titles(pooled), want)
+	}
+}
+
+// staleListingRepo answers the pool listing from before the draw while FindByID
+// already reports the winner as current: the window between the two queries.
+type staleListingRepo struct {
+	titlePoolRepo
+}
+
+func (r *staleListingRepo) FindByStatus(_ context.Context, status string) ([]*domain.Movie, error) {
+	var out []*domain.Movie
+	for _, m := range r.movies {
+		if m.Status == status || (status == "pool" && m.Status == "current") {
+			c := *m
+			c.Status = "pool"
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
+	return out, nil
+}
+
+// A draw landing between the listing query and the held-draw read leaves the
+// movie in both; it must still appear once.
+func TestPooledHandsOutTheHeldDrawOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	repo := &staleListingRepo{*titleRepo()}
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	if _, err := svc.DrawRandom(ctx, ""); err != nil {
+		t.Fatalf("DrawRandom: unexpected error: %v", err)
+	}
+
+	pooled, err := svc.Pooled(ctx)
+	if err != nil {
+		t.Fatalf("Pooled: unexpected error: %v", err)
+	}
+	if want := []string{"Alpha", "Bravo", "Charlie"}; !slices.Equal(titles(pooled), want) {
+		t.Fatalf("pool = %v, want %v (no duplicate tile)", titles(pooled), want)
 	}
 }

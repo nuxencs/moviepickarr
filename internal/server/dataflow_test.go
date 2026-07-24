@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -257,5 +258,94 @@ func TestHandleRevealCurrentMovie_CancelsServerAutoReveal(t *testing.T) {
 	// Over a window longer than autoRevealDelay, exactly one reveal (the manual one).
 	if got := countEvents(client, "movie:revealed", 300*time.Millisecond); got != 1 {
 		t.Fatalf("expected exactly 1 movie:revealed (manual confirm; auto-reveal canceled), got %d", got)
+	}
+}
+
+// The draw must not leak through the pool reads. DrawRandom flips the winner to
+// "current" straight away, so before this hold every pool read dropped the tile
+// mid-spin: reload the page during the reel (or open the board on a second
+// client) and the missing poster gave the winner away ahead of the reveal. Both
+// the pool list and the per-member board pools have to keep it until the reveal.
+func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		// Long enough that only the explicit reveal below flips the draw.
+		AutoRevealDelay: time.Hour,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
+
+	user, err := userRepo.Create(ctx, "Nell")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	seedPoolAndDraw(t, app, movieRepo, user.ID, "Alien", "Aliens", "Prometheus")
+
+	current, err := movieRepo.GetCurrent(ctx)
+	if err != nil {
+		t.Fatalf("get current: %v", err)
+	}
+
+	poolIDs := func() []int {
+		t.Helper()
+		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/movies/pool", nil), -1)
+		if err != nil || resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("get pool: err=%v status=%v", err, resp.StatusCode)
+		}
+		var movies []struct {
+			MovieID int `json:"movieID"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&movies); err != nil {
+			t.Fatalf("decode pool: %v", err)
+		}
+		ids := make([]int, 0, len(movies))
+		for _, m := range movies {
+			ids = append(ids, m.MovieID)
+		}
+		return ids
+	}
+
+	boardPoolIDs := func() []int {
+		t.Helper()
+		resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/members", nil), -1)
+		if err != nil || resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("get members: err=%v status=%v", err, resp.StatusCode)
+		}
+		var members []struct {
+			CurrentPool map[string]struct {
+				MovieID int `json:"movieID"`
+			} `json:"currentPool"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&members); err != nil {
+			t.Fatalf("decode members: %v", err)
+		}
+		var ids []int
+		for _, m := range members {
+			for _, tile := range m.CurrentPool {
+				ids = append(ids, tile.MovieID)
+			}
+		}
+		return ids
+	}
+
+	if got := poolIDs(); !slices.Contains(got, current.ID) || len(got) != 3 {
+		t.Fatalf("pool during the draw = %v, want all 3 seeded movies incl. the winner %d", got, current.ID)
+	}
+	if got := boardPoolIDs(); !slices.Contains(got, current.ID) || len(got) != 3 {
+		t.Fatalf("board pools during the draw = %v, want all 3 incl. the winner %d", got, current.ID)
+	}
+
+	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
+	if resp, err := app.Test(revReq, -1); err != nil || resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("reveal: err=%v status=%v", err, resp.StatusCode)
+	}
+
+	if got := poolIDs(); slices.Contains(got, current.ID) || len(got) != 2 {
+		t.Fatalf("pool after the reveal = %v, want the 2 remaining movies without %d", got, current.ID)
+	}
+	if got := boardPoolIDs(); slices.Contains(got, current.ID) || len(got) != 2 {
+		t.Fatalf("board pools after the reveal = %v, want the 2 remaining without %d", got, current.ID)
 	}
 }

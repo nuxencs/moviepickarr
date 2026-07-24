@@ -227,8 +227,76 @@ func (s *Service) List(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.List(ctx)
 }
 
+// Pooled is the pool as clients may see it, which is not the same as the rows
+// with status "pool": a drawn-but-unrevealed movie is held in it (see
+// withHeldDraw). Everything that renders a pool reads through here.
 func (s *Service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
-	return s.movieRepo.FindByStatus(ctx, "pool")
+	movies, err := s.movieRepo.FindByStatus(ctx, "pool")
+	if err != nil {
+		return nil, err
+	}
+
+	return s.withHeldDraw(ctx, movies, 0)
+}
+
+// withHeldDraw puts a drawn-but-unrevealed movie back into a pool listing.
+//
+// DrawRandom flips the winner to "current" the moment it draws, so every pool
+// read loses that tile immediately — while the reel is still spinning. Clients
+// that were already on the page don't notice (their cached pool isn't refreshed
+// until the reel lands), but a reload mid-spin, or any client opening the board
+// during the draw, fetches the post-draw pool and the missing tile gives the
+// winner away before the reveal. Holding the movie in the view until the draw
+// is revealed makes the pool read the same for everyone, whatever their cache
+// state, and the reveal-time refresh drops it.
+//
+// The row keeps its DB status ("current", so it can't be drawn again), only the
+// copy handed out reads as pooled; callers bucket on Status. userID scopes the
+// hold to one member's pool (0 = the whole pool). The movie is inserted in
+// title order, matching the repo's sort, so the tile doesn't jump to the end.
+func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, userID int) ([]*domain.Movie, error) {
+	s.mu.Lock()
+	held := s.activeDraw
+	s.mu.Unlock()
+	if held == nil || held.Revealed {
+		return pooled, nil
+	}
+
+	movie, err := s.movieRepo.FindByID(ctx, held.MovieID)
+	if err != nil {
+		// The draw is in memory and the row is not: a deleted movie mid-draw.
+		// The listing is still correct without it, so don't fail the read.
+		// (The sqlite repo wraps the miss as ErrNotFound; other repos may not.)
+		if errors.Is(err, domain.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
+			return pooled, nil
+		}
+		return nil, err
+	}
+	if movie.Status != "current" || (userID != 0 && movie.AddedByID != userID) {
+		return pooled, nil
+	}
+	// A draw that landed between the listing query and the read above leaves the
+	// row in both: hand it out once.
+	for _, m := range pooled {
+		if m.ID == movie.ID {
+			return pooled, nil
+		}
+	}
+
+	shown := *movie
+	shown.Status = "pool"
+	at := len(pooled)
+	for i, m := range pooled {
+		if shown.Title < m.Title {
+			at = i
+			break
+		}
+	}
+	out := make([]*domain.Movie, 0, len(pooled)+1)
+	out = append(out, pooled[:at]...)
+	out = append(out, &shown)
+	out = append(out, pooled[at:]...)
+	return out, nil
 }
 
 func (s *Service) Stashed(ctx context.Context) ([]*domain.Movie, error) {
@@ -243,13 +311,15 @@ func (s *Service) Current(ctx context.Context) (*domain.Movie, error) {
 	return s.movieRepo.GetCurrent(ctx)
 }
 
+// PooledByUserID is one member's slice of the same view: the held draw shows up
+// only in its own adder's pool.
 func (s *Service) PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {
 	movies, err := s.movieRepo.FindByUserIDAndStatus(ctx, userID, "pool")
 	if err != nil {
 		return nil, err
 	}
 
-	return movies, nil
+	return s.withHeldDraw(ctx, movies, userID)
 }
 
 func (s *Service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {

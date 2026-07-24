@@ -142,7 +142,12 @@
   either the drawer's confirm or the timer; both paths call the `OnRevealed` hook exactly
   once. The server serializes `RevealAt`/`ServerNow` into every draw payload so clients
   time their confirm countdown off `revealAt − serverNow` (skew-immune) and broadcasts
-  `movie:drawn` / `movie:revealed`.
+  `movie:drawn` / `movie:revealed`. It also owns the pool *view*: `Pooled` and
+  `PooledByUserID` are not the rows with status `pool`, they run through
+  `withHeldDraw`, which hands a drawn-but-unrevealed movie back in the listing (the
+  row is already `current`, only the copy reads as pooled). Without it a pool read
+  during the reel — a reload mid-spin, or a client opening the board — would drop
+  the tile and give the winner away before the reveal.
 
 ## Logging
 

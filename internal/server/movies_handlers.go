@@ -272,10 +272,11 @@ func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
 	if movieRecord.AddedByID != actorID {
 		return writeNotAdder(c)
 	}
-	if movieRecord.Status != "pool" && movieRecord.Status != "stash" {
-		return writeError(c, domain.ErrInvalidState)
-	}
 
+	// The state rules (deletable statuses, and the freeze while a draw is
+	// unrevealed) live in the service, which owns the active draw. Checking the
+	// status here too would answer differently for the held winner than for the
+	// tile beside it, which is exactly the tell the freeze exists to remove.
 	if err := h.movieService.Delete(ctx, movieID); err != nil {
 		return writeError(c, err)
 	}

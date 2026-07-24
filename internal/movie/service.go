@@ -126,7 +126,12 @@ func (s *Service) AddToStash(ctx context.Context, title string, userID int) (*do
 // MoveToPool promotes a stashed movie into its owner's pool. It is idempotent
 // (already-pooled is a no-op) and reports whether a real transition happened.
 func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
-	n, err := s.movieRepo.PromoteToPoolIfRoom(ctx, id, maxPoolSize)
+	limit, err := s.poolLimit(ctx, id)
+	if err != nil {
+		return false, err
+	}
+
+	n, err := s.movieRepo.PromoteToPoolIfRoom(ctx, id, limit)
 	if err != nil {
 		return false, err
 	}
@@ -152,9 +157,56 @@ func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
 	}
 }
 
+// poolLimit is the per-user pool cap as it applies to promoting movie id. A
+// held draw (see withHeldDraw) still occupies a tile in its adder's pool, so it
+// has to keep costing them a slot: counting only the rows with status "pool"
+// would hand that member a free fourth movie for the length of every draw.
+func (s *Service) poolLimit(ctx context.Context, id int) (int, error) {
+	held, ok := s.heldDraw()
+	if !ok {
+		return maxPoolSize, nil
+	}
+
+	heldMovie, err := s.movieRepo.FindByID(ctx, held.MovieID)
+	if err != nil {
+		if isNotFound(err) {
+			return maxPoolSize, nil
+		}
+		return 0, err
+	}
+	if heldMovie.Status != "current" {
+		return maxPoolSize, nil
+	}
+
+	target, err := s.movieRepo.FindByID(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	if target.AddedByID != heldMovie.AddedByID {
+		return maxPoolSize, nil
+	}
+	return maxPoolSize - 1, nil
+}
+
 // MoveToStash demotes a pooled movie back to the stash. Idempotent; reports
 // whether a real transition happened.
+//
+// While a draw is unrevealed the whole pool is frozen: the held winner sits in
+// the pool as a normal tile but is really "current", so demoting it would fail
+// where every other tile succeeds — and that difference tells whoever tries
+// which movie was drawn, before the reel lands. One answer for every tile keeps
+// the draw secret, and the pool the reel is spinning over stays put.
 func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
+	if held, ok := s.heldDraw(); ok {
+		movie, err := s.movieRepo.FindByID(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		if movie.Status == "pool" || movie.ID == held.MovieID {
+			return false, domain.ErrDrawInProgress
+		}
+	}
+
 	n, err := s.movieRepo.UpdateStatusIf(ctx, id, "stash", "pool")
 	if err != nil {
 		return false, err
@@ -183,6 +235,13 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return err
+	}
+
+	// Same reasoning as MoveToStash: while a draw is unrevealed, every pool tile
+	// answers alike (the held winner included, which is why this runs before the
+	// status check below — it is "current", not "pool"). Stashes stay deletable.
+	if held, ok := s.heldDraw(); ok && (movie.Status == "pool" || movie.ID == held.MovieID) {
+		return domain.ErrDrawInProgress
 	}
 
 	if movie.Status != "pool" && movie.Status != "stash" {
@@ -239,6 +298,24 @@ func (s *Service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 	return s.withHeldDraw(ctx, movies, 0)
 }
 
+// heldDraw returns the active draw while it is still unrevealed: the window in
+// which the pool must not give the winner away. Everything that has to behave
+// differently during the ceremony asks here.
+func (s *Service) heldDraw() (ActiveDraw, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeDraw == nil || s.activeDraw.Revealed {
+		return ActiveDraw{}, false
+	}
+	return *s.activeDraw, true
+}
+
+// isNotFound covers both shapes a repo may report a missing row with: the sqlite
+// repo wraps the miss as domain.ErrNotFound, others return sql.ErrNoRows bare.
+func isNotFound(err error) bool {
+	return errors.Is(err, domain.ErrNotFound) || errors.Is(err, sql.ErrNoRows)
+}
+
 // withHeldDraw puts a drawn-but-unrevealed movie back into a pool listing.
 //
 // DrawRandom flips the winner to "current" the moment it draws, so every pool
@@ -255,10 +332,8 @@ func (s *Service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 // hold to one member's pool (0 = the whole pool). The movie is inserted in
 // title order, matching the repo's sort, so the tile doesn't jump to the end.
 func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, userID int) ([]*domain.Movie, error) {
-	s.mu.Lock()
-	held := s.activeDraw
-	s.mu.Unlock()
-	if held == nil || held.Revealed {
+	held, ok := s.heldDraw()
+	if !ok {
 		return pooled, nil
 	}
 
@@ -266,8 +341,7 @@ func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, user
 	if err != nil {
 		// The draw is in memory and the row is not: a deleted movie mid-draw.
 		// The listing is still correct without it, so don't fail the read.
-		// (The sqlite repo wraps the miss as ErrNotFound; other repos may not.)
-		if errors.Is(err, domain.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
+		if isNotFound(err) {
 			return pooled, nil
 		}
 		return nil, err

@@ -111,7 +111,9 @@ spinning on every client.
 **Held draw**:
 The drawn movie still shown as pooled because the draw isn't revealed yet. The
 row is already `current`, but every pool read hands it back until the reveal, so
-a missing tile can't give the winner away mid-reel.
+a missing tile can't give the winner away mid-reel. For as long as it's held the
+pool is frozen (no demote, no delete, on any tile) and it still counts against
+its adder's pool cap.
 
 **Settle**:
 The reel resting on the winner, awaiting confirmation. The scroll is over but

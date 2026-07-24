@@ -3,13 +3,16 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"moviepickarr/internal/domain"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/repository"
 
@@ -347,5 +350,114 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 	}
 	if got := boardPoolIDs(); slices.Contains(got, current.ID) || len(got) != 2 {
 		t.Fatalf("board pools after the reveal = %v, want the 2 remaining without %d", got, current.ID)
+	}
+}
+
+// Closing the two ways the hold could still give the winner away.
+//
+// The held tile looks pooled but is really "current", so without care it answers
+// mutations differently from the tiles beside it (a prober learns the winner),
+// and it stops costing its adder a pool slot (a free fourth movie for the length
+// of every draw). Both are settled server-side: pool mutations are frozen while
+// a draw is unrevealed, and the held tile still counts against the cap.
+func TestPoolIsFrozenAndStillCountsWhileADrawIsUnrevealed(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		AutoRevealDelay: time.Hour,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
+
+	user, err := userRepo.Create(ctx, "Ripley")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	stashed, err := movieRepo.Add(ctx, "Barbarella", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("seed stash: %v", err)
+	}
+	spare, err := movieRepo.Add(ctx, "Solaris", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("seed stash: %v", err)
+	}
+	seedPoolAndDraw(t, app, movieRepo, user.ID, "Alien", "Aliens", "Prometheus")
+
+	winner, err := movieRepo.GetCurrent(ctx)
+	if err != nil {
+		t.Fatalf("get current: %v", err)
+	}
+	var bystander *domain.Movie
+	pooled, err := movieRepo.FindByStatus(ctx, "pool")
+	if err != nil || len(pooled) == 0 {
+		t.Fatalf("read pool rows: err=%v len=%d", err, len(pooled))
+	}
+	bystander = pooled[0]
+
+	as := func(method, path, body string) (int, string) {
+		t.Helper()
+		var req *http.Request
+		if body == "" {
+			req = httptest.NewRequest(method, path, nil)
+		} else {
+			req = httptest.NewRequest(method, path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		var problem struct {
+			Title string `json:"title"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&problem)
+		return resp.StatusCode, problem.Title
+	}
+
+	// The held winner and the tile beside it must answer identically: same
+	// status, same problem type. Anything else identifies the draw.
+	demoteWinner, titleWinner := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", winner.ID), `{"target":"stash"}`)
+	demoteOther, titleOther := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", bystander.ID), `{"target":"stash"}`)
+	if demoteWinner != fiber.StatusConflict || titleWinner != "draw_in_progress" {
+		t.Fatalf("demote winner = %d/%q, want 409/draw_in_progress", demoteWinner, titleWinner)
+	}
+	if demoteOther != demoteWinner || titleOther != titleWinner {
+		t.Fatalf("demote bystander = %d/%q, want the same answer as the winner (%d/%q)", demoteOther, titleOther, demoteWinner, titleWinner)
+	}
+
+	deleteWinner, titleWinner := as(http.MethodDelete, fmt.Sprintf("/api/v1/movies/%d", winner.ID), "")
+	deleteOther, titleOther := as(http.MethodDelete, fmt.Sprintf("/api/v1/movies/%d", bystander.ID), "")
+	if deleteWinner != fiber.StatusConflict || titleWinner != "draw_in_progress" {
+		t.Fatalf("delete winner = %d/%q, want 409/draw_in_progress", deleteWinner, titleWinner)
+	}
+	if deleteOther != deleteWinner || titleOther != titleWinner {
+		t.Fatalf("delete bystander = %d/%q, want the same answer as the winner (%d/%q)", deleteOther, titleOther, deleteWinner, titleWinner)
+	}
+
+	// The stash is not part of the ceremony and stays editable.
+	if status, title := as(http.MethodDelete, fmt.Sprintf("/api/v1/movies/%d", spare.ID), ""); status != fiber.StatusNoContent {
+		t.Fatalf("delete stashed movie = %d/%q, want 204 (the freeze is the pool's)", status, title)
+	}
+
+	// 2 rows in the pool + the held winner = a full pool, so the promotion is
+	// refused. Without counting the held tile this would succeed and leave the
+	// member with four.
+	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", stashed.ID), `{"target":"pool"}`); status != fiber.StatusConflict || title != "pool_limit_reached" {
+		t.Fatalf("promote during the draw = %d/%q, want 409/pool_limit_reached", status, title)
+	}
+
+	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
+	if resp, err := app.Test(revReq, -1); err != nil || resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("reveal: err=%v status=%v", err, resp.StatusCode)
+	}
+
+	// The reveal thaws the pool: the winner has left it, so there's room again.
+	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", stashed.ID), `{"target":"pool"}`); status != fiber.StatusOK {
+		t.Fatalf("promote after the reveal = %d/%q, want 200", status, title)
+	}
+	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", bystander.ID), `{"target":"stash"}`); status != fiber.StatusOK {
+		t.Fatalf("demote after the reveal = %d/%q, want 200", status, title)
 	}
 }

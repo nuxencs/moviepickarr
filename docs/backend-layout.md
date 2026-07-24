@@ -147,7 +147,12 @@
   `withHeldDraw`, which hands a drawn-but-unrevealed movie back in the listing (the
   row is already `current`, only the copy reads as pooled). Without it a pool read
   during the reel — a reload mid-spin, or a client opening the board — would drop
-  the tile and give the winner away before the reveal.
+  the tile and give the winner away before the reveal. Two consequences ride
+  along: while a draw is unrevealed the pool is **frozen** (demote and delete
+  answer `ErrDrawInProgress` for every pool tile, the held winner included, so no
+  answer singles it out; stashes stay editable), and the held tile still **counts
+  against the per-user cap** (`poolLimit`), so a draw doesn't quietly buy its
+  adder a fourth slot.
 
 ## Logging
 

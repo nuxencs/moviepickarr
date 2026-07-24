@@ -10,6 +10,7 @@ var (
 	ErrPoolLocked        = errors.New("pool is locked")
 	ErrNoCurrentDraw     = errors.New("no current draw")
 	ErrCurrentDrawExists = errors.New("current draw exists")
+	ErrDrawInProgress    = errors.New("a draw is in progress")
 	ErrInvalidState      = errors.New("invalid state")
 	ErrConflict          = errors.New("conflict")
 )

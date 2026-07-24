@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AudioProviderContext } from "@/components/audio-context";
 
@@ -40,19 +40,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const value = {
-    soundEnabled,
-    toggleSound: () => {
-      const next = !soundEnabled;
-      setSoundEnabled(next);
-      setEnabled(next);
-    },
-    volume,
-    setVolume: (v: number) => {
-      applyVolume(v);
-      setVol(getVolume()); // read back the clamped, persisted value
-    },
-  };
+  const toggleSound = useCallback(() => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    setEnabled(next);
+  }, [soundEnabled]);
+
+  const setVolume = useCallback((v: number) => {
+    applyVolume(v);
+    setVol(getVolume()); // read back the clamped, persisted value
+  }, []);
+
+  // The volume slider fires setVolume on every drag tick, so the context value
+  // has to keep a stable identity while the state behind it is unchanged.
+  // Otherwise every useAudio() consumer re-renders for the whole drag.
+  const value = useMemo(
+    () => ({ soundEnabled, toggleSound, volume, setVolume }),
+    [soundEnabled, toggleSound, volume, setVolume],
+  );
 
   return <AudioProviderContext.Provider value={value}>{children}</AudioProviderContext.Provider>;
 }

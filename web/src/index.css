@@ -41,6 +41,8 @@
   --dur-confirm: 10s; /* the settled reel's confirm countdown (OK button fill); read in DrawReel for the auto-reveal timer */
   --dur: var(--dur-base); /* legacy alias — prefer the scale above */
   --stagger: 0.055s; /* per-index step for cascaded entrances (draw-reveal slots, .block, auth column) */
+  --poster-zoom: 1.06; /* hover/focus zoom for poster + avatar tiles, scaled inside their clipped frame */
+  --poster-zoom-press: 1.03; /* the :active press, eased back from the hover zoom */
 
   /* accent — gold (fixed) */
   --accent: oklch(0.82 0.13 84);
@@ -219,7 +221,7 @@
     isolation: isolate; flex: none;
     background-size: cover; background-position: center;
   }
-  .poster__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transition: opacity var(--dur) var(--ease); }
+  .poster__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transition: opacity var(--dur) var(--ease), transform var(--dur-fast) var(--ease); }
   /* Until the photo loads, the duotone backdrop shows through (img faded out)
      under a shimmer sweep; the photo then crossfades in over the duotone. */
   .poster--loading .poster__img { opacity: 0; }
@@ -713,10 +715,13 @@
      untouched — and it's tiny/on-screen anyway. */
   .watch-body .tile { content-visibility: auto; contain-intrinsic-size: auto 300px; }
   .watch-body .wrow { content-visibility: auto; contain-intrinsic-size: auto 84px; }
-  .tile .poster { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
-  .tile:hover .poster,
-  .tile:focus-visible .poster { transform: translateY(-5px); box-shadow: 0 26px 44px -22px rgba(0,0,0,0.7); }
-  .tile:active .poster { transform: translateY(-2px) scale(0.99); }
+  /* Hover zoom lives on the image inside the frame (.poster clips with
+     overflow:hidden), not a translate on the frame itself: the whole tile paints
+     within its own box, so the .watch-body content-visibility paint box never
+     clips it. Same treatment on the pool and the stats rails for consistency. */
+  .tile:hover .poster__img,
+  .tile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
+  .tile:active .poster__img { transform: scale(var(--poster-zoom-press)); }
   .tile .t-meta { display: flex; flex-direction: column; gap: 6px; }
   .tile .t-title { font-weight: 600; font-size: 14.5px; letter-spacing: -0.01em; line-height: 1.2; }
   .tile .t-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
@@ -951,23 +956,30 @@
      drill-down strip. Two SIBLING interactive layers per card — the toggle
      button filters the page, the always-visible corner link opens TMDB —
      never nested, so each keeps its own tab stop and a link click can't flip
-     the filter. Gold ring + gold name = active (gold is state). */
-  /* Inline padding + matching negative margin gives the active/hover ring room
-     so the edge cards aren't clipped by the scroll container, while keeping the
-     cards flush with the section title; scroll-padding keeps the first card
-     resting flush at scroll-0. */
-  .peoplerail { display: flex; gap: 14px; overflow-x: auto; padding: 3px 4px 6px; margin-inline: -4px; scroll-padding-inline: 4px; }
+     the filter. Gold name = active (gold is state). */
+  /* Inline padding + matching negative margin keep the cards flush with the
+     section title; scroll-padding keeps the first card resting flush at scroll-0.
+     The padding is also what keeps the focus ring off the rail's clip edge: the
+     global ring needs 4px of clearance (2px offset + 2px width), so the top and
+     inline padding are exactly that. */
+  .peoplerail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 4px 6px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .peoplecard { position: relative; flex: 0 0 96px; }
   .peoplecard__toggle {
     display: flex; flex-direction: column; gap: 7px; width: 100%;
     background: none; border: none; padding: 0; font: inherit; color: inherit;
     text-align: left; cursor: pointer; border-radius: var(--r-sm);
   }
-  /* Inward ring: the scrolling rail clips at its edges, so an outward ring
-     would lose its top/bottom (same reason the chips draw inward). */
-  .peoplecard__toggle:focus-visible { outline-offset: -2px; }
-  .peoplecard__toggle:hover .castcard__photo { box-shadow: inset 0 0 0 1px var(--poster-ring), 0 0 0 2px var(--line-2); }
-  .peoplecard[data-active="true"] .castcard__photo { box-shadow: inset 0 0 0 1px var(--poster-ring), 0 0 0 2px var(--accent); }
+  /* Focus keeps the global outward ring. An inward one is invisible here: it
+     would run inside the photo box, which the opaque .avatar paints over. The
+     rail's padding gives the outward ring its clearance. */
+  /* Hover zooms the avatar inside the clipped photo box (same language as the
+     poster tiles). The active state is the gold name alone: a ring on the photo
+     box can't be seen, because .avatar is positioned and opaque and so paints
+     over its non-positioned parent's outline. */
+  .peoplecard .castcard__photo .avatar { transition: transform var(--dur-fast) var(--ease); }
+  .peoplecard__toggle:hover .castcard__photo .avatar,
+  .peoplecard__toggle:focus-visible .castcard__photo .avatar { transform: scale(var(--poster-zoom)); }
+  .peoplecard__toggle:active .castcard__photo .avatar { transform: scale(var(--poster-zoom-press)); }
   .peoplecard[data-active="true"] .castcard__name { color: var(--accent); }
   .peoplecard__ext {
     position: absolute; top: 5px; right: 5px; z-index: 2;
@@ -991,9 +1003,8 @@
     background: none; border: none; padding: 0; font: inherit; color: inherit;
     text-align: left; cursor: pointer; border-radius: var(--r-sm);
   }
-  .movietile .poster { transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
-  .movietile:hover .poster,
-  .movietile:focus-visible .poster { transform: translateY(-4px); box-shadow: inset 0 0 0 1px var(--poster-ring), 0 0 0 2px var(--line-2); }
+  .movietile:hover .poster__img,
+  .movietile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .movietile:focus-visible { outline-offset: -2px; }
   .movietile__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .movietile__title { font-size: 12.5px; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--dur-fast) var(--ease); }
@@ -1079,11 +1090,12 @@
   .modal__count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); margin-bottom: 18px; letter-spacing: 0.04em; }
   .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 22px 16px; }
   .result { display: flex; flex-direction: column; gap: 10px; }
-  /* Lift the whole media wrapper so the hover overlay rides up with the poster. */
-  .result__media { position: relative; border-radius: var(--r-md); transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
-  .result:hover .result__media,
-  .result:focus-visible .result__media { transform: translateY(-4px); box-shadow: var(--shadow); }
-  .result:active .result__media { transform: translateY(-2px) scale(0.99); }
+  .result__media { position: relative; border-radius: var(--r-md); }
+  /* Zoom the poster image inside its clipped frame (same language as the tiles);
+     the overlay is a sibling above the poster, so it stays put over the zoom. */
+  .result:hover .poster__img,
+  .result:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
+  .result:active .poster__img { transform: scale(var(--poster-zoom-press)); }
   .r-overlay {
     position: absolute; inset: 0; z-index: 5; border-radius: var(--r-md);
     display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 13px;

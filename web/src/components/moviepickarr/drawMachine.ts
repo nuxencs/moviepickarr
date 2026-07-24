@@ -42,6 +42,9 @@ export interface DrawEnv {
   /** Grace past the server's reveal deadline before the local self-heal
    *  confirm fires (covers a dropped movie:revealed frame). */
   fallbackGraceMs: number;
+  /** Wall clock (Date.now()) at send() time: stamps when a spin's scroll
+   *  started, so a reel remount can resume it instead of replaying it. */
+  now: number;
 }
 
 /** The reel descriptor a spin renders. Immutable per draw. */
@@ -54,6 +57,10 @@ export interface SpinDescriptor {
   candidates: Movie[];
   /** How long THIS client scrolls: full duration fresh, remaining on resume. */
   durationMs: number;
+  /** Wall clock when the scroll started. The reel is a component and its
+   *  progress dies with it (a tab switch unmounts the Hero), so the elapsed
+   *  time lives here, on the store singleton that outlives the remount. */
+  startedAtMs: number;
   /** Fresh draw (true) vs reload-resume (false): gates the draw sound. */
   live: boolean;
   /** Whether THIS client initiated the draw. The reveal (OK) itself is turn-
@@ -163,6 +170,7 @@ function buildLiveSpin(drawn: Movie, env: DrawEnv): SpinDescriptor | null {
     winnerId: drawn.movieID,
     candidates,
     durationMs: env.spinDurationMs,
+    startedAtMs: env.now,
     live: true,
     mine: !!drawn.drawClientId && drawn.drawClientId === env.clientId,
     confirmMs: confirmWindowMs(drawn.drawnAt, drawn.revealAt, env.spinDurationMs, env),
@@ -186,10 +194,32 @@ function buildResumeSpin(current: Movie, pool: Movie[], env: DrawEnv): SpinDescr
     winnerId: current.movieID,
     candidates,
     durationMs,
+    startedAtMs: env.now,
     live: false,
     mine: !!current.drawClientId && current.drawClientId === env.clientId,
     confirmMs: confirmWindowMs(current.serverNow, current.revealAt, durationMs, env),
   };
+}
+
+/** Where a reel should pick up when it mounts. The reel's scroll progress is
+ *  component state, and the Movies tab unmounts with the route, so a mount is
+ *  not always the start of a scroll: it may be the same draw coming back after
+ *  a tab switch. The machine outlives that, so the answer comes from here.
+ *
+ *  Settled once the phase is past spinning (the scroll already finished; the
+ *  reel must show the confirm, not replay the scroll) or once the scroll window
+ *  has run out while nothing was mounted to notice. Otherwise the reel glides
+ *  only the time that's left, so the landing stays on schedule against the
+ *  server's reveal deadline. */
+export function reelResume(
+  spin: SpinDescriptor,
+  phase: DrawPhase,
+  now: number,
+): { settled: boolean; remainingMs: number } {
+  if (phase !== "spinning") return { settled: true, remainingMs: 0 };
+  const remaining = spin.durationMs - (now - spin.startedAtMs);
+  if (!Number.isFinite(remaining) || remaining <= 0) return { settled: true, remainingMs: 0 };
+  return { settled: false, remainingMs: remaining };
 }
 
 /** The self-heal fallback: a backstop confirm that fires just past the server's

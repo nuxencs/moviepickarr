@@ -446,6 +446,16 @@ The reel is a **pure reducer + store**: `drawMachine.ts` folds `movie:drawn` /
 `DrawReel.tsx`, and `useSSE.ts` all read the one store, so every surface agrees on the
 draw state.
 
+**Reel remounts resume, they don't replay.** The reel is rendered by the Hero, which lives
+on the Movies tab, so switching tabs unmounts it and switching back mounts a new one against
+the same draw. Scroll progress is component state and dies with it, so the elapsed time lives
+on the spin descriptor instead (`startedAtMs`, stamped from `DrawEnv.now`), and every mount
+asks `reelResume(spin, phase, now)` where to pick up: the whole scroll for a fresh draw, only
+the time that's left mid-scroll, and no scroll at all once the phase is past `spinning` (the
+track snaps onto the winner and the confirm is up immediately). Without that the reel replayed
+the full 6.5s on every return, which ate the confirm window and let the server's reveal
+deadline close the reel mid-replay, so the OK never appeared.
+
 **Draw confirm (hold-and-reveal).** The settled reel does **not** auto-close. It waits
 for confirmation, so the group sees the result land together. Only the **drawer** (the
 client whose stable `mp-client-id` matches the draw's `drawClientId`) gets an **OK**
@@ -564,8 +574,12 @@ use tokens so they follow the theme.
 - React 19 + Vite 7 + Tailwind **v4** (`@tailwindcss/vite`), TanStack Query +
   **TanStack Router** (code-based, no route-gen plugin), **TanStack Virtual** (the
   watched grid and the filter menus, §4), Sonner, lucide. **Vitest**
-  for unit tests (pure reducers and helpers: `drawMachine`, `sseConnection`,
-  `sseInvalidations`, `sseInvalidationQueue`, `search`, `useGridMetrics`).
+  for unit tests, in two projects: `node` for pure reducers and helpers
+  (`drawMachine`, `sseConnection`, `sseInvalidations`, `sseInvalidationQueue`,
+  `search`, `useGridMetrics`) and `dom` (jsdom + Testing Library,
+  `*.render.test.tsx`) for behaviour that only exists once a component renders,
+  such as the reel's remount resume. The pure seam stays the first choice; render
+  tests are the fallback when there isn't one.
   No Radix/shadcn. Package manager: **bun** (`web/`).
 - Tailwind v4 has no config file; theme/aliases live in `index.css` (`@theme inline`).
 - Gate before handoff: `bunx tsc -b` + `bun run lint` + `bun run test` (vitest) +

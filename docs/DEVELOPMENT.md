@@ -10,11 +10,22 @@ make lint         # lint Go + frontend
 make precommit    # format + fix + lint before committing
 ```
 
-`make test` runs the Go suite (`go test -race`) and the frontend vitest suite
-(the pure reducers and helpers: `drawMachine`, `sseConnection`, `sseInvalidations`,
-`sseInvalidationQueue`, `search`, `useGridMetrics`). Both
+`make test` runs the Go suite (`go test -race`) and the frontend vitest suites. Both
 also run in CI on every push and pull request (`.github/workflows/ci.yml`). To
 run just the web tests, use `bun run test` from `web/`.
+
+The web tests are split into two vitest projects (`web/vitest.config.ts`):
+
+- `node`: `src/**/*.test.ts` in a plain node environment, no DOM. This is where
+  most tests belong: the pure reducers and helpers (`drawMachine`, `sseConnection`,
+  `sseInvalidations`, `sseInvalidationQueue`, `search`, `useGridMetrics`) take their
+  environment as data.
+- `dom`: `src/**/*.render.test.tsx` in jsdom with Testing Library, for behaviour
+  that only exists once a component renders and has no pure seam below it (the
+  draw reel's remount resume is the first one). Drive the DOM the way a member
+  would, by role and text; don't assert on class names or internal state.
+
+Run one project with `bunx vitest run --project dom` (or `--project node`).
 
 Vite hot-reloads the frontend only. After Go changes, restart the backend pane
 before verifying anything.

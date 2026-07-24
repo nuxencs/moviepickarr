@@ -7,12 +7,16 @@ import {
   drawAwaitingReveal,
   initialDrawState,
   reduce,
+  reelResume,
 } from "@/components/moviepickarr/drawMachine";
 
 import type { Movie } from "@/types/Response";
 
 const T0 = "2026-07-17T20:00:00Z";
 const T0_PLUS = (ms: number) => new Date(Date.parse(T0) + ms).toISOString();
+/** The client's wall clock when a spin is built. Arbitrary and independent of
+ *  the server timestamps above: only differences against it are ever read. */
+const NOW = 1_000_000;
 
 function env(overrides: Partial<DrawEnv> = {}): DrawEnv {
   return {
@@ -21,6 +25,7 @@ function env(overrides: Partial<DrawEnv> = {}): DrawEnv {
     clientId: "me",
     confirmFallbackMs: 10_000,
     fallbackGraceMs: 5_000,
+    now: NOW,
     ...overrides,
   };
 }
@@ -266,5 +271,27 @@ describe("commit", () => {
     });
     expect(state.phase).toBe("spinning");
     expect(state.spin!.drawnAt).toBe(nextDrawnAt);
+  });
+});
+
+describe("reel resume", () => {
+  const spin = () => spinning().spin!;
+
+  it("a fresh mount scrolls the whole duration", () => {
+    expect(reelResume(spin(), "spinning", NOW)).toEqual({ settled: false, remainingMs: 6500 });
+  });
+
+  it("a remount mid-scroll glides only the time that's left", () => {
+    expect(reelResume(spin(), "spinning", NOW + 5000)).toEqual({ settled: false, remainingMs: 1500 });
+  });
+
+  it("a remount once the draw has settled shows the confirm, no scroll", () => {
+    expect(reelResume(spin(), "settled", NOW + 100)).toEqual({ settled: true, remainingMs: 0 });
+    expect(reelResume(spin(), "revealing", NOW + 100)).toEqual({ settled: true, remainingMs: 0 });
+  });
+
+  it("a remount after the scroll window ran out settles straight away", () => {
+    expect(reelResume(spin(), "spinning", NOW + 6500)).toEqual({ settled: true, remainingMs: 0 });
+    expect(reelResume(spin(), "spinning", NOW + 20_000)).toEqual({ settled: true, remainingMs: 0 });
   });
 });

@@ -12,7 +12,7 @@ make precommit    # format + fix + lint before committing
 
 `make test` runs the Go suite (`go test -race`) and the frontend vitest suite
 (the pure reducers and helpers: `drawMachine`, `sseConnection`, `sseInvalidations`,
-`search`, `useGridMetrics`). Both
+`sseInvalidationQueue`, `search`, `useGridMetrics`). Both
 also run in CI on every push and pull request (`.github/workflows/ci.yml`). To
 run just the web tests, use `bun run test` from `web/`.
 

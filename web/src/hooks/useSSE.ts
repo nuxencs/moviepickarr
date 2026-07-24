@@ -9,6 +9,7 @@ import type { Movie } from "@/types/Response";
 import type { SSEConnectedFrame, SSEEvent, SSEHeartbeatFrame } from "@/types/SSEEvent";
 
 import { type ConnFrame, initialConnState, reduceConnection } from "@/hooks/sseConnection";
+import { createInvalidationQueue, timeoutScheduler } from "@/hooks/sseInvalidationQueue";
 import { invalidationsFor, resyncKeys } from "@/hooks/sseInvalidations";
 
 
@@ -31,6 +32,8 @@ function baseURL(): string {
  *   and the returned actions (resync / reconnect / log) run here.
  * - sseInvalidations.ts owns the event → query-key table; the per-event
  *   dispatch walks a row, and resync() derives its key set from the union.
+ * - sseInvalidationQueue.ts coalesces those keys, so a bulk operation emitting
+ *   one event per item costs one refetch per distinct key, not per event.
  *
  * Draw events additionally drive the draw machine (drawStore).
  */
@@ -46,21 +49,31 @@ export function useSSE() {
   useEffect(() => {
     closedRef.current = false;
 
+    // The pool refresh is held while a draw-reveal spin is in flight: the
+    // post-draw pool no longer holds the winner, so refetching it mid-spin
+    // would drop the winner tile from the grid and spoil the reveal. The draw
+    // machine releases the pool itself when the reel lands, so a dropped
+    // refresh is picked up there rather than lost. The check runs at flush
+    // time, not enqueue time: the queue's window means a spin can start after
+    // a key was collected.
+    const [poolNs, poolSub] = MoviesKeys.listpool();
+    const held = (key: readonly unknown[]) =>
+      key[0] === poolNs && key[1] === poolSub && drawStore.getState().phase !== "idle";
+
+    // One invalidation per distinct key per window, whoever queued it.
+    const queue = createInvalidationQueue((keys) => {
+      for (const key of keys) {
+        if (held(key)) continue;
+        void queryClient.invalidateQueries({ queryKey: key });
+      }
+    }, timeoutScheduler);
+
     // Re-pull every cache an SSE event can touch: the union of the
     // invalidation table. Used to reconcile state after a reconnect or a
     // detected gap: SSE has no replay, so any event that fired while the
     // socket was down is lost; re-fetching current state recovers it.
     const resync = () => {
-      // Skip the pool refresh while a draw-reveal spin is in flight: the
-      // post-draw pool no longer holds the winner, so refetching it mid-spin
-      // would drop the winner tile from the grid and spoil the reveal. The
-      // draw machine releases the pool itself when the reel lands.
-      const holdPool = drawStore.getState().phase !== "idle";
-      const [poolNs, poolSub] = MoviesKeys.listpool();
-      for (const key of resyncKeys()) {
-        if (holdPool && key[0] === poolNs && key[1] === poolSub) continue;
-        void queryClient.invalidateQueries({ queryKey: key });
-      }
+      queue.push(resyncKeys());
     };
 
     const clearReconnectTimer = () => {
@@ -145,9 +158,7 @@ export function useSSE() {
             console.warn("[SSE] Unknown event type:", sseEvent.type);
             return;
           }
-          for (const key of row) {
-            void queryClient.invalidateQueries({ queryKey: key });
-          }
+          queue.push(row);
         } catch (error) {
           console.error("[SSE] Error parsing event:", error);
         }
@@ -200,6 +211,7 @@ export function useSSE() {
     // Cleanup on unmount
     return () => {
       closedRef.current = true;
+      queue.cancel();
       document.removeEventListener("visibilitychange", handleVisibility);
       clearReconnectTimer();
       if (eventSourceRef.current) {

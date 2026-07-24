@@ -956,11 +956,9 @@
      drill-down strip. Two SIBLING interactive layers per card — the toggle
      button filters the page, the always-visible corner link opens TMDB —
      never nested, so each keeps its own tab stop and a link click can't flip
-     the filter. Gold ring + gold name = active (gold is state). */
+     the filter. Gold name = active (gold is state). */
   /* Inline padding + matching negative margin keep the cards flush with the
-     section title; scroll-padding keeps the first card resting flush at scroll-0.
-     The active ring is drawn inward (below) so it no longer depends on this
-     bleed surviving an ancestor's overflow clip. */
+     section title; scroll-padding keeps the first card resting flush at scroll-0. */
   .peoplerail { display: flex; gap: 14px; overflow-x: auto; padding: 3px 4px 6px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .peoplecard { position: relative; flex: 0 0 96px; }
   .peoplecard__toggle {
@@ -972,13 +970,13 @@
      would lose its top/bottom (same reason the chips draw inward). */
   .peoplecard__toggle:focus-visible { outline-offset: -2px; }
   /* Hover zooms the avatar inside the clipped photo box (same language as the
-     poster tiles); the persistent active state is an inward accent outline, which
-     paints above the photo and can't be shaved at the rail's left/right edge. */
+     poster tiles). The active state is the gold name alone: a ring on the photo
+     box can't be seen, because .avatar is positioned and opaque and so paints
+     over its non-positioned parent's outline. */
   .peoplecard .castcard__photo .avatar { transition: transform var(--dur-fast) var(--ease); }
   .peoplecard__toggle:hover .castcard__photo .avatar,
   .peoplecard__toggle:focus-visible .castcard__photo .avatar { transform: scale(var(--poster-zoom)); }
   .peoplecard__toggle:active .castcard__photo .avatar { transform: scale(var(--poster-zoom-press)); }
-  .peoplecard[data-active="true"] .castcard__photo { outline: 2px solid var(--accent); outline-offset: -2px; }
   .peoplecard[data-active="true"] .castcard__name { color: var(--accent); }
   .peoplecard__ext {
     position: absolute; top: 5px; right: 5px; z-index: 2;

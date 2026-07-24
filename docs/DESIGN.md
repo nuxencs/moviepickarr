@@ -144,8 +144,10 @@ old shadcn primitives.
   card, never nested: `.peoplecard__toggle` (a real button; `aria-pressed`) toggles
   the person in the matching multi-select filter, and `.peoplecard__ext` — a small,
   always-visible corner scrim chip (hover-only would strand touch) with its own tab
-  stop — opens their TMDB page without touching the filter. Active = gold ring on
-  the photo + gold name (gold is state).
+  stop — opens their TMDB page without touching the filter. Active = gold name (gold
+  is state). A ring on the photo doesn't work here: `.avatar` is positioned and
+  opaque, so it paints over the outline of its non-positioned parent, and an outward
+  ring gets shaved by the rail's overflow clip at the edge cards.
 - **Films-in-filter-view rail:** `.movierail` + `.movietile` (stats, under the KPI strip,
   heading "Films in Filter View") — the concrete films behind the count (the active
   window AND all filters) as a horizontally scrollable strip of `Poster` tiles (title +

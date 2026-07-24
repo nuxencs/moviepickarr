@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { LayoutGridIcon, ListIcon, LinkIcon, LockIcon, LockOpenIcon, PencilIcon, SearchIcon } from "lucide-react";
-import { type KeyboardEvent as ReactKeyboardEvent, useMemo, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useDeferredValue, useMemo, useRef, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import {
@@ -24,12 +25,14 @@ import { StatNumber } from "@/components/moviepickarr/numberRoll";
 import { isSelf } from "@/components/moviepickarr/ownership";
 import { canLockPool } from "@/components/moviepickarr/poolLock";
 import { Poster } from "@/components/moviepickarr/Poster";
+import { chunkRows, filterWatched } from "@/components/moviepickarr/search";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie } from "@/types/Response";
 
 import { useToggle } from "@/hooks/hooks";
 import { useFlipRail } from "@/hooks/useFlipRail";
+import { useGridMetrics, virtualRowStyle } from "@/hooks/useGridMetrics";
 
 type WatchedView = "grid" | "list";
 
@@ -53,8 +56,6 @@ export function MoviesTab() {
     itemProps: poolItemProps,
   } = useFlipRail<Movie>(pooled ?? [], (m) => String(m.movieID));
 
-  const [search, setSearch] = useState("");
-  const [view, setView] = useState<WatchedView>("grid");
   const [selected, setSelected] = useState<Movie | null>(null);
 
   // The modal renders from the live lists so SSE-driven refetches (enrichment
@@ -73,26 +74,6 @@ export function MoviesTab() {
     mutationFn: () => APIClient.settings.toggleLock(!isLocked),
     onError: () => toast.error("Failed to toggle the pool lock"),
   });
-
-  // Interactive props that open the detail modal from a poster tile.
-  const tileProps = (movie: Movie) => ({
-    role: "button" as const,
-    tabIndex: 0,
-    onClick: () => setSelected(movie),
-    onKeyDown: (e: ReactKeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        setSelected(movie);
-      }
-    },
-  });
-
-  const filteredWatched = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (watched ?? []).filter(
-      (m) => !q || m.title.toLowerCase().includes(q) || m.addedByName.toLowerCase().includes(q),
-    );
-  }, [watched, search]);
 
   return (
     <>
@@ -131,7 +112,7 @@ export function MoviesTab() {
                 key={key}
                 data-flip-exit={exiting || undefined}
                 {...poolItemProps(key)}
-                {...tileProps(movie)}
+                {...openProps(() => setSelected(movie))}
               >
                 <Poster
                   title={movie.title}
@@ -155,84 +136,199 @@ export function MoviesTab() {
 
       <div className="rule" />
 
-      {/* ---- Watched ---- */}
-      <section className="block">
-        <div className="sec-head">
-          <div className="sec-title">
-            <h2>Watched</h2>
-            <span className="sec-count">
-              {search ? (
-                <>
-                  <StatNumber value={filteredWatched.length} />/<StatNumber value={watched?.length ?? 0} /> films
-                </>
-              ) : (
-                <>
-                  <StatNumber value={watched?.length ?? 0} /> {(watched?.length ?? 0) === 1 ? "film" : "films"}
-                </>
-              )}
-            </span>
-          </div>
-          <div className="watched-controls">
-            <label className="field watched-controls__search">
-              <SearchIcon />
-              <input
-                name="watched-search"
-                aria-label="Search watched films by title or adder"
-                placeholder="Search by title or adder…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </label>
-            <div className="seg">
-              <button type="button" data-active={view === "grid"} onClick={() => setView("grid")} aria-label="Grid view">
-                <LayoutGridIcon />
-              </button>
-              <button type="button" data-active={view === "list"} onClick={() => setView("list")} aria-label="List view">
-                <ListIcon />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {watchedError ? (
-          <p className="empty text-destructive">Failed to load watched movies.</p>
-        ) : watchedPending ? (
-          <p className="empty">Loading watched…</p>
-        ) : filteredWatched.length === 0 ? (
-          <p className="empty">{search ? "No films match your search" : "No movies watched yet"}</p>
-        ) : view === "grid" ? (
-          <div className="watch-body tile-grid" key="grid">
-            {filteredWatched.map((movie) => (
-              <article className="tile" key={movie.movieID} {...tileProps(movie)}>
-                <Poster
-                  title={movie.title}
-                  hue={hueOf(movie.title)}
-                  posterPath={movie.posterPath}
-                  voteAverage={movie.voteAverage}
-                />
-                <div className="t-meta">
-                  <span className="t-title">{movie.title}</span>
-                  <div className="t-sub">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Avatar name={movie.addedByName} size={20} />
-                      <span className="t-date">{relativeDate(movie.watchedAt)}</span>
-                    </span>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="watch-body watch-list" key="list">
-            {filteredWatched.map((movie) => (
-              <WatchedRow key={movie.movieID} movie={movie} onOpen={() => setSelected(movie)} />
-            ))}
-          </div>
-        )}
-      </section>
+      <WatchedSection
+        watched={watched}
+        isPending={watchedPending}
+        isError={watchedError}
+        onOpen={setSelected}
+      />
 
       {selectedLive && <MovieModal movie={selectedLive} onClose={() => setSelected(null)} />}
     </>
+  );
+}
+
+/** Interactive props that open a movie's detail modal from a poster tile. */
+function openProps(onOpen: () => void) {
+  return {
+    role: "button" as const,
+    tabIndex: 0,
+    onClick: onOpen,
+    onKeyDown: (e: ReactKeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onOpen();
+      }
+    },
+  };
+}
+
+/**
+ * The Watched section: its search box, count, grid/list toggle and the list
+ * itself. It owns the search state rather than MoviesTab so a keystroke
+ * re-renders this section alone — on the tab, every keystroke also re-rendered
+ * the pool rail above, twice over (the urgent pass and the deferred one).
+ */
+function WatchedSection({
+  watched,
+  isPending,
+  isError,
+  onOpen,
+}: {
+  watched: Movie[] | undefined;
+  isPending: boolean;
+  isError: boolean;
+  onOpen: (movie: Movie) => void;
+}) {
+  const [search, setSearch] = useState("");
+  // Keystrokes update the input at once and the (expensive) list at React's
+  // convenience, so typing never blocks on filtering a large watched library.
+  const deferredSearch = useDeferredValue(search);
+  const [view, setView] = useState<WatchedView>("grid");
+
+  const filtered = useMemo(() => filterWatched(watched ?? [], deferredSearch), [watched, deferredSearch]);
+  const total = watched?.length ?? 0;
+
+  return (
+    <section className="block">
+      <div className="sec-head">
+        <div className="sec-title">
+          <h2>Watched</h2>
+          <span className="sec-count">
+            {deferredSearch ? (
+              <>
+                <StatNumber value={filtered.length} />/<StatNumber value={total} /> films
+              </>
+            ) : (
+              <>
+                <StatNumber value={total} /> {total === 1 ? "film" : "films"}
+              </>
+            )}
+          </span>
+        </div>
+        <div className="watched-controls">
+          <label className="field watched-controls__search">
+            <SearchIcon />
+            <input
+              name="watched-search"
+              aria-label="Search watched films by title or adder"
+              placeholder="Search by title or adder…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <div className="seg">
+            <button type="button" data-active={view === "grid"} onClick={() => setView("grid")} aria-label="Grid view">
+              <LayoutGridIcon />
+            </button>
+            <button type="button" data-active={view === "list"} onClick={() => setView("list")} aria-label="List view">
+              <ListIcon />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {isError ? (
+        <p className="empty text-destructive">Failed to load watched movies.</p>
+      ) : isPending ? (
+        <p className="empty">Loading watched…</p>
+      ) : filtered.length === 0 ? (
+        <p className="empty">{deferredSearch ? "No films match your search" : "No movies watched yet"}</p>
+      ) : view === "grid" ? (
+        <VirtualWatched
+          key="grid"
+          className="watch-body tile-grid"
+          movies={filtered}
+          estimateSize={300}
+          render={(movie) => (
+            <article className="tile" key={movie.movieID} {...openProps(() => onOpen(movie))}>
+              <Poster
+                title={movie.title}
+                hue={hueOf(movie.title)}
+                posterPath={movie.posterPath}
+                voteAverage={movie.voteAverage}
+              />
+              <div className="t-meta">
+                <span className="t-title">{movie.title}</span>
+                <div className="t-sub">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Avatar name={movie.addedByName} size={20} />
+                    <span className="t-date">{relativeDate(movie.watchedAt)}</span>
+                  </span>
+                </div>
+              </div>
+            </article>
+          )}
+        />
+      ) : (
+        <VirtualWatched
+          key="list"
+          className="watch-body watch-list"
+          movies={filtered}
+          estimateSize={84}
+          render={(movie) => <WatchedRow key={movie.movieID} movie={movie} onOpen={() => onOpen(movie)} />}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * The watched grid/list, virtualized against the window scroller: only the rows
+ * near the viewport are in the DOM, so a keystroke re-renders a screenful of
+ * tiles instead of the whole library, and the DOM stays flat as it grows.
+ *
+ * Layout stays in the stylesheet. The container keeps its `.tile-grid` (or
+ * `.watch-list`) class and `useGridMetrics` reads back the resolved column
+ * count and gaps, so the responsive `repeat(auto-fill, minmax(…))` ramp and its
+ * breakpoints are never restated in JS. The list view resolves to one lane.
+ */
+function VirtualWatched({
+  className,
+  movies,
+  estimateSize,
+  render,
+}: {
+  className: string;
+  movies: readonly Movie[];
+  /** Starting row height, in px; real heights are measured once rendered. */
+  estimateSize: number;
+  render: (movie: Movie) => ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { template, lanes, columnGap, rowGap, offsetTop } = useGridMetrics(containerRef);
+  const rows = useMemo(() => chunkRows(movies, lanes), [movies, lanes]);
+
+  const virtualizer = useWindowVirtualizer({
+    count: rows.length,
+    estimateSize: () => estimateSize,
+    overscan: 3,
+    gap: rowGap,
+    scrollMargin: offsetTop,
+  });
+
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      style={{ position: "relative", height: virtualizer.getTotalSize() }}
+    >
+      {virtualizer.getVirtualItems().map((row) => (
+        <div
+          key={row.key}
+          data-index={row.index}
+          ref={virtualizer.measureElement}
+          style={{
+            ...virtualRowStyle(row.start - offsetTop),
+            display: "grid",
+            gridTemplateColumns: template,
+            columnGap,
+          }}
+        >
+          {rows[row.index].map(render)}
+        </div>
+      ))}
+    </div>
   );
 }
 

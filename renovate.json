@@ -48,6 +48,18 @@
         "github-actions"
       ],
       "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Digest bumps on the base image carry Go and Alpine patches. The weekly window exists to batch noise, and a patched golang image is not noise. Pinning the digest already costs patch latency compared to a floating tag, so the PR should at least appear when the patch does rather than waiting for Monday. Merging stays manual.",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "schedule": [
+        "at any time"
+      ]
     }
   ],
   "customManagers": [

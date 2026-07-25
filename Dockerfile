@@ -1,5 +1,5 @@
 # build web
-FROM oven/bun:latest AS web-builder
+FROM oven/bun:latest@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS web-builder
 
 WORKDIR /web
 
@@ -10,7 +10,7 @@ COPY web ./
 RUN bun run build
 
 # build app
-FROM golang:1.26-alpine3.23 AS app-builder
+FROM golang:1.26-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS app-builder
 
 ARG VERSION=dev
 ARG REVISION=dev
@@ -34,7 +34,7 @@ COPY --from=web-builder /web/dist ./web/dist
 RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o bin/moviepickarr main.go
 
 # build runner
-FROM alpine:latest
+FROM alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 LABEL org.opencontainers.image.source="https://github.com/nuxencs/moviepickarr"
 

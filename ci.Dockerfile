@@ -1,5 +1,5 @@
 # build app
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine3.23 AS app-builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS app-builder
 RUN apk add --no-cache git tzdata
 
 ENV SERVICE=moviepickarr
@@ -31,7 +31,7 @@ RUN --network=none --mount=target=. \
     go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o /out/bin/moviepickarr main.go
 
 # build runner
-FROM alpine:latest AS runner
+FROM alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runner
 
 LABEL org.opencontainers.image.source="https://github.com/nuxencs/moviepickarr"
 LABEL org.opencontainers.image.licenses="GPL-2.0-or-later"

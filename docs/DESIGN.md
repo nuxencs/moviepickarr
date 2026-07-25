@@ -256,6 +256,16 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
   buttons). Widths: `.modal` 960px, `.modal--movie` 560px, `.modal--form` 460px.
+- **Two scroll modes.** By default the veil scrolls and the surface grows to its
+  content. Its 56px of breathing room is two spacer items in a flex column rather
+  than block padding, because a scroll container's bottom padding is not part of its
+  scrollable overflow and a tall dialog would otherwise park flush against the window
+  edge. `<Modal capped>` switches to the other mode: the veil stops scrolling
+  (`:has(.modal--capped)` centers it and hides the spacers), the surface caps at
+  `min(900px, 100dvh - 96px)` and lays out as a flex column, and the part marked
+  `.modal__scroll` scrolls inside it with `overscroll-behavior: contain` so the page
+  behind never chains. Chrome outside that region (a close X, a head) stays put while
+  the content moves. Opt-in: form dialogs are short and size to their content.
 
 Destructive confirms (`DeletionDialog`) use the same `Modal`: dismissing (Esc / veil /
 Cancel) is the safe choice, so outside-click dismiss is intentional; only the explicit

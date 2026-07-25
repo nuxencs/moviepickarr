@@ -1066,13 +1066,35 @@
   .hourchart--decades .hourchart__axis span { flex: 0 1 72px; font-size: 10.5px; }
 
   /* ---- Search modal ---- */
-  .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: grid; place-items: start center; padding: 56px 20px; overflow-y: auto; animation: mg-fadeIn var(--dur-base) var(--ease); }
+  .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; padding: 0 20px; overflow-y: auto; animation: mg-fadeIn var(--dur-base) var(--ease); }
+  /* The breathing room above and below the surface is two spacer items, not the
+     veil's block padding: a scroll container's bottom padding is not part of its
+     scrollable overflow, so a dialog taller than the window used to park flush
+     against the bottom edge (an 841px surface in an 806px window scrolled to 897 =
+     56 + 841, no padding left in sight). Items are, so the 56px survives the scroll
+     to the end. `flex: none` throughout, because the surface clips its own overflow
+     and so has an automatic minimum size of 0: without it the surface is squashed to
+     the window instead of overflowing it. */
+  .modal-veil > *, .modal-veil::before, .modal-veil::after { flex: none; }
+  .modal-veil::before, .modal-veil::after { content: ""; height: 56px; }
   .modal-veil--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
   .modal { width: min(960px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
   /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
   .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
   .modal--movie { width: min(560px, 100%); }
   .modal--form { width: min(460px, 100%); }
+  /* Capped mode (`<Modal capped>`): the surface owns the scroll instead of the veil,
+     so it centers in the window at any content length and chrome pinned outside the
+     `.modal__scroll` region (a close X, a head) stays put while the content moves.
+     The veil stops scrolling entirely, which is also what stops the whole blurred
+     page from sliding under a tall dialog. `position: relative` so that pinned chrome
+     anchors to the surface, `overscroll-behavior` on the veil so a wheel over the
+     pinned part doesn't chain to the page either. Opt-in: form dialogs are short and
+     should keep sizing to their content. */
+  .modal-veil:has(.modal--capped) { justify-content: center; overflow: hidden; overscroll-behavior: contain; }
+  .modal-veil:has(.modal--capped)::before, .modal-veil:has(.modal--capped)::after { display: none; }
+  .modal--capped { position: relative; max-height: min(900px, calc(100dvh - 96px)); display: flex; flex-direction: column; min-height: 0; }
+  .modal--capped .modal__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   .modal__body { padding: 22px 26px 0; display: flex; flex-direction: column; gap: 14px; }
   .modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 20px 26px 24px; }
   .modal__head { padding: 24px 26px 20px; border-bottom: 1px solid var(--line); }

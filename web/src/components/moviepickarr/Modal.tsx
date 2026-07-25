@@ -13,6 +13,14 @@ interface ModalProps {
    * otherwise toggle the dialog back open). Defaults to true.
    */
   dismissible?: boolean;
+  /**
+   * Cap the surface at the window height and scroll inside it instead of letting the
+   * veil scroll. The surface stays centered at any content length and chrome outside
+   * the scrolling part stays put. Children lay out as a flex column: put the region
+   * that should scroll in a `.modal__scroll` and leave a close X or head beside it.
+   * Off by default, since short dialogs should keep sizing to their content.
+   */
+  capped?: boolean;
   /** Render-prop receiving a `close` that plays the exit animation before unmounting. */
   children: (close: () => void) => ReactNode;
 }
@@ -25,7 +33,13 @@ const FOCUSABLE =
  * dismissal, body-scroll lock, and a focus trap (focus moves in on open, cycles
  * inside, and returns to the opener on close) so it behaves like a real dialog.
  */
-export function Modal({ onClose, className, dismissible = true, children }: ModalProps) {
+export function Modal({
+  onClose,
+  className,
+  dismissible = true,
+  capped = false,
+  children,
+}: ModalProps) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const dismissibleRef = useRef(dismissible);
@@ -102,7 +116,7 @@ export function Modal({ onClose, className, dismissible = true, children }: Moda
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        className={`modal${className ? ` ${className}` : ""}${closing ? " modal--closing" : ""}`}
+        className={`modal${capped ? " modal--capped" : ""}${className ? ` ${className}` : ""}${closing ? " modal--closing" : ""}`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {children(requestClose)}

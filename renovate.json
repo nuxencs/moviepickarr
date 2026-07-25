@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
+    "config:best-practices",
     ":semanticCommitTypeAll(ci)"
   ],
   "schedule": [
@@ -39,6 +39,27 @@
         "github-actions"
       ],
       "groupName": "github actions"
+    },
+    {
+      "description": "Let anything pulled from a public registry sit for a week before it is proposed. Compromised packages are usually caught and pulled within days, and nothing here is urgent enough to be worth being first. This deliberately overrides the three days that config:best-practices sets for npm, and extends the same wait to actions, which that preset does not cover. Renovate exempts security updates, so a real advisory still arrives immediately. Not applied to golang-version: a Go patch release exists to fix CVEs, so delaying it would work against the toolchain pin.",
+      "matchManagers": [
+        "bun",
+        "npm",
+        "github-actions"
+      ],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Digest bumps on the base image carry Go and Alpine patches. The weekly window exists to batch noise, and a patched golang image is not noise. Pinning the digest already costs patch latency compared to a floating tag, so the PR should at least appear when the patch does rather than waiting for Monday. Merging stays manual.",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "schedule": [
+        "at any time"
+      ]
     }
   ],
   "customManagers": [

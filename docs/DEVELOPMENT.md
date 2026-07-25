@@ -21,9 +21,24 @@ The web tests are split into two vitest projects (`web/vitest.config.ts`):
   `sseInvalidations`, `sseInvalidationQueue`, `search`, `useGridMetrics`) take their
   environment as data.
 - `dom`: `src/**/*.render.test.tsx` in jsdom with Testing Library, for behaviour
-  that only exists once a component renders and has no pure seam below it (the
-  draw reel's remount resume is the first one). Drive the DOM the way a member
-  would, by role and text; don't assert on class names or internal state.
+  that only exists once a component renders and has no pure seam below it: the
+  draw reel's remount resume, the modal shell's dismissal and focus handling,
+  the profile panel's split focus-restore, and whether the account/roster
+  dialogs pin themselves open mid-save. Drive the DOM the way a member would,
+  by role and text; don't assert on class names or internal state.
+
+  Component-level files stub what they need inline (a router `Link`, an API
+  call), and every file that drives a dismissal keeps its own copy of the
+  exit-timer helper. That duplication is deliberate: a render test should read
+  top to bottom without chasing a shared harness.
+
+  Page-level files are the exception and use `src/test/providers.tsx`, which
+  mounts the real query client, theme, audio and router around a subject. Reach
+  for it only when a stub would remove the thing under test: `AccountPage` reads
+  its search params via `useSearch({ from: "/_app/settings" })`, which needs a
+  real route tree, and the page tests exist to prove which trigger opens which
+  dialog and that the right row's member rides along. A component that renders
+  from props should still be rendered bare.
 
 Run one project with `bunx vitest run --project dom` (or `--project node`).
 

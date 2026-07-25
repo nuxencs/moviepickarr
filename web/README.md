@@ -7,7 +7,7 @@ bun install
 bun run dev       # Vite dev server (proxies /api + SSE to the Go backend on :3030)
 bun run build     # tsc -b && vite build → dist/ (the Go binary embeds this)
 bun run lint      # eslint
-bun run test      # vitest (pure reducers: drawMachine, sseConnection, sseInvalidations)
+bun run test      # vitest: the `node` project (pure logic) + `dom` (jsdom render tests)
 ```
 
 For the full dev loop (Vite + Go side by side) run `make dev` from the repo root.

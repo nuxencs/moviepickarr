@@ -10,7 +10,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . ./
+# The build below bind-mounts the build context over /src, so a COPY of the
+# source here would be shadowed and never read. BuildKit still checksums the
+# mounted context into the RUN's cache key, so invalidation works without it.
 
 ARG VERSION=dev
 ARG REVISION=dev

@@ -211,7 +211,18 @@ old shadcn primitives.
   movie's stable ids via `externalLinks()` (`lib.ts`). Rendered by `MetaChips`
   (`Bits.tsx`), shared by the hero and the movie modal — the **hero passes `links`**
   so they sit inline after the genres; the **modal omits them** and renders its own
-  `.moviemodal__links` button block instead (no duplication).
+  `.moviemodal__links` column in the rail instead (no duplication).
+- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a read-only record on an
+  880px capped surface (§5): a 260px backdrop (190px narrow), then a 172px **rail** (`.moviemodal__rail`)
+  of poster + the links out, beside the reading column. The links are quiet mono lines
+  with a small icon, not ghost buttons: three buttons read as three things to do, three
+  mono lines read as reference material attached to the film. The **credit block**
+  (`.moviemodal__credit`) puts "Directed by / Written by" and the attribution
+  (`.moviemodal__by` — added by, plus the watch date on a watched film) side by side,
+  split by a rule that spans the whole block (`align-items: stretch`), because both are
+  the same kind of line: who is responsible for this. Below 700px the rail becomes a row
+  (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
+  the credit columns stack with the rule turning into a top border. No actions live here.
 - **Modal:** the bespoke `Modal` component (§5).
 
 ### Decision: no shadcn primitives
@@ -255,7 +266,7 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   `VolumeControl` owns no dismissal of its own.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
-  buttons). Widths: `.modal` 960px, `.modal--movie` 560px, `.modal--form` 460px.
+  buttons). Widths: `.modal` 960px, `.modal--movie` 880px, `.modal--form` 460px.
 - **Two scroll modes.** By default the veil scrolls and the surface grows to its
   content. Its 56px of breathing room is two spacer items in a flex column rather
   than block padding, because a scroll container's bottom padding is not part of its
@@ -265,7 +276,9 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   `min(900px, 100dvh - 96px)` and lays out as a flex column, and the part marked
   `.modal__scroll` scrolls inside it with `overscroll-behavior: contain` so the page
   behind never chains. Chrome outside that region (a close X, a head) stays put while
-  the content moves. Opt-in: form dialogs are short and size to their content.
+  the content moves. Opt-in: form dialogs are short and size to their content. The movie
+  detail modal is the capped one — its close X is pinned to the surface, so it holds its
+  corner while the backdrop scrolls under it.
 
 Destructive confirms (`DeletionDialog`) use the same `Modal`: dismissing (Esc / veil /
 Cancel) is the safe choice, so outside-click dismiss is intentional; only the explicit
@@ -373,6 +386,9 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   shimmer blocks (`.skel`, reusing `mg-shimmer`) instead of popping in all at once —
   gated on the query being *pending AND* the field absent, so a full (pool) payload shows
   its data immediately and a genuinely empty field renders nothing, not a perma-skeleton.
+  Each placeholder holds the space its real content will take, so nothing grows under the
+  reader: the credit rows are reserved at one line height each
+  (`.moviemodal__credits__ghost`, `height: 1lh`), not at the height of the skeleton bar.
 - **`prefers-reduced-motion`**: the global block zeroes animation/transition *duration
   AND delay* (so staggered reveals don't pop in) and collapses iteration counts.
   Loaders are the one exception — `.mg-spin` keeps spinning (essential motion). Any new
@@ -653,18 +669,19 @@ use tokens so they follow the theme.
 ## 13. Responsive & touch
 
 Desktop-first, with a dedicated phone/touch pass below and a large-screen scale-up above.
-Breakpoints are content-driven but drawn from one tidy scale — **560 / 640 / 700 / 760 /
+Breakpoints are content-driven but drawn from one tidy scale — **640 / 700 / 760 /
 900** down, **1728 / 2240 / 2560 / 3200 / 3840** up — documented inline in `index.css`
 (the "Responsive — phone & touch adaptations" and "Large-screen scale ramp" blocks).
 What each does:
 
-- **560** — the movie modal's internal poster + info split stacks.
 - **640** — the *phone* breakpoint. Navigation moves to a fixed **bottom tab bar**
   (below); section headers (`.sec-head`) stack to a title row + full-width controls;
   user boards go single-column; the stats window control spans the row and the
   added-by-member bars shrink their name column (`188px → 112px`) so the track keeps
   width; poster grids become denser thumbnail grids; modal chrome tightens.
-- **700** — the hero stacks (poster above text) and page / top-nav padding tightens.
+- **700** — the hero stacks (poster above text), page / top-nav padding tightens, and the
+  movie modal's rail becomes a row with its credit columns stacked (§4). It replaced the
+  old 560 stack point when the modal went from 560px to 880px wide.
 - **760** — the stat strip drops 3 columns → 2.
 - **900** — the stat strip drops 6 columns → 3, and the stats two-column sections
   (weekday | hourly, genres | decades) collapse to one.

@@ -1081,7 +1081,7 @@
   .modal { width: min(960px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
   /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
   .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
-  .modal--movie { width: min(560px, 100%); }
+  .modal--movie { width: min(880px, 100%); }
   .modal--form { width: min(460px, 100%); }
   /* Capped mode (`<Modal capped>`): the surface owns the scroll instead of the veil,
      so it centers in the window at any content length and chrome pinned outside the
@@ -1131,8 +1131,11 @@
   /* watched grid<->list crossfade */
   .watch-body { animation: mg-fadeUp var(--dur-base) var(--ease); }
 
-  /* movie detail modal */
-  .moviemodal__hero { position: relative; height: 168px; isolation: isolate; background-size: cover; background-position: center; }
+  /* movie detail modal — an 880px capped surface (`.modal--movie` + `<Modal capped>`):
+     backdrop, then a rail of poster + links out beside the reading column, then the
+     cast strip. The width is what makes the rest work: the overview stops running
+     narrow next to the poster and the cast strip shows nine cards before it scrolls. */
+  .moviemodal__hero { position: relative; height: 260px; isolation: isolate; background-size: cover; background-position: center; }
   /* Real backdrop crossfading in over the always-painted procedural duotone —
      the wide twin of the poster pattern (HeroBackdrop). The scrim ::after and
      close button sit above it; the img starts faded out and transitions in. */
@@ -1145,19 +1148,42 @@
   }
   @media (prefers-reduced-motion: reduce) { .moviemodal__hero__shimmer { animation: none; } }
   .moviemodal__hero::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(0deg, var(--surface), transparent 72%), linear-gradient(95deg, rgba(8,9,14,0.5), transparent 60%); }
-  .moviemodal__close { position: absolute; top: 12px; right: 12px; z-index: 3; background: rgba(8,9,14,0.45); color: #fff; backdrop-filter: blur(6px); }
+  /* Anchored to the surface (`.modal--capped` is the positioned ancestor), not to
+     the hero, so it stays put while the hero scrolls under it. */
+  .moviemodal__close { position: absolute; top: 12px; right: 12px; z-index: 4; background: rgba(8,9,14,0.45); color: #fff; backdrop-filter: blur(6px); }
   .moviemodal__close:hover { background: rgba(8,9,14,0.7); color: #fff; border-color: transparent; }
-  .moviemodal__body { display: flex; gap: 20px; padding: 0 26px 26px; margin-top: -56px; position: relative; z-index: 1; }
-  .moviemodal__poster { width: 120px; flex: none; }
-  .moviemodal__poster .poster { box-shadow: 0 24px 44px -22px rgba(0,0,0,0.8); }
-  .moviemodal__info { flex: 1; min-width: 0; padding-top: 64px; }
-  .moviemodal__info h3 { margin: 0 0 12px; font-family: var(--font-display); font-size: 23px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.05; }
+  .moviemodal__body { display: flex; gap: 30px; padding: 0 30px 28px; margin-top: -68px; position: relative; z-index: 1; }
+  .moviemodal__rail { width: 172px; flex: none; display: flex; flex-direction: column; gap: 14px; }
+  /* A whisper of lift where the poster overlaps the backdrop — the old 120px
+     poster's shadow reads oversaturated at 172px, especially in light mode. */
+  .moviemodal__rail .poster { box-shadow: 0 10px 24px -16px rgba(0,0,0,0.42); }
+  .moviemodal__info { flex: 1; min-width: 0; padding-top: 76px; }
+  .moviemodal__info h3 { margin: 0 0 12px; font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -0.018em; line-height: 1.05; }
   .moviemodal__tag { margin: 14px 0 0; font-style: italic; font-size: 14px; color: var(--ink-2); }
-  .moviemodal__overview { margin: 14px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
-  .moviemodal__by { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); margin-top: 18px; }
-  .moviemodal__links { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .moviemodal__overview { margin: 14px 0 0; font-size: 14.5px; line-height: 1.62; color: var(--ink-2); }
+  /* The links out, in the rail under the poster: quiet mono text with a small
+     icon. Three ghost buttons read as three things to do; three mono lines read
+     as reference material attached to the film, which is what they are. */
+  .moviemodal__links { display: flex; flex-direction: column; gap: 7px; padding-top: 4px; border-top: 1px solid var(--line); }
+  .moviemodal__links a { display: flex; align-items: center; gap: 7px; padding-top: 3px; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
+  .moviemodal__links a:hover,
+  .moviemodal__links a:focus-visible { color: var(--accent); }
+  .moviemodal__links svg { width: 13px; height: 13px; }
   /* "Directed by …" / "Written by …" — quiet prose lines with the names lifted. */
-  .moviemodal__credits { margin: 12px 0 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-3); }
+  .moviemodal__credits { margin: 12px 0 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
+  /* The credit block: the credit lines and the attribution beside them, split by
+     a rule. `align-items: stretch` so the rule spans the whole block rather than
+     only the line the attribution needs — a one-line right column next to a
+     two-line left one still looks deliberate. The rule is on the adjacent-sibling
+     selector, so a film with no credits at all gets the attribution alone. */
+  .moviemodal__credit { display: flex; align-items: stretch; gap: 22px; margin-top: 12px; }
+  .moviemodal__credit .moviemodal__credits { margin: 0; }
+  .moviemodal__credits + .moviemodal__by { padding-left: 22px; border-left: 1px solid var(--line); }
+  .moviemodal__by b { font-weight: 550; color: var(--ink-2); }
+  /* Credits land with the lazy detail, so their rows are reserved at the real
+     line height (1lh) while it's in flight — a 12px skeleton bar in a 12px box
+     would under-reserve and the block would grow under the reader. */
+  .moviemodal__credits__ghost { display: flex; align-items: center; height: 1lh; }
   .moviemodal__person { font-weight: 550; color: var(--ink-2); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
   .moviemodal__person:hover,
   .moviemodal__person:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
@@ -1166,7 +1192,7 @@
      to fill) when TMDB has no headshot; hidden entirely when cast is empty.
      Each card links out to the person's TMDB page (F-002) — hover/focus lifts
      the name to gold; the people rails on Stats reuse the same visuals. */
-  .castrow { display: flex; gap: 14px; overflow-x: auto; padding: 2px 26px 24px; }
+  .castrow { display: flex; gap: 14px; overflow-x: auto; padding: 2px 30px 28px; }
   .castcard { flex: 0 0 84px; margin: 0; display: flex; flex-direction: column; gap: 7px; }
   a.castcard { text-decoration: none; color: inherit; border-radius: var(--r-sm); }
   a.castcard:hover .castcard__name,
@@ -1179,9 +1205,19 @@
   .castcard__caption { display: flex; flex-direction: column; gap: 2px; }
   .castcard__name { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink); transition: color var(--dur-fast) var(--ease); }
   .castcard__role { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink-3); }
-  @media (max-width: 560px) {
-    .moviemodal__body { flex-direction: column; gap: 14px; }
+  /* Narrow: the rail becomes a row (links beside the poster, bottom-aligned so
+     they clear the backdrop the poster overlaps) and the credit columns stack,
+     the rule turning into a top border. */
+  @media (max-width: 700px) {
+    .moviemodal__hero { height: 190px; }
+    .moviemodal__body { flex-direction: column; gap: 16px; padding: 0 20px 22px; }
+    .moviemodal__rail { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 16px; width: auto; }
+    .moviemodal__rail .poster { width: 118px; flex: none; }
+    .moviemodal__links { align-self: flex-end; padding-top: 0; border-top: 0; gap: 10px; }
     .moviemodal__info { padding-top: 0; }
+    .castrow { padding: 2px 20px 22px; }
+    .moviemodal__credit { flex-direction: column; gap: 10px; }
+    .moviemodal__credits + .moviemodal__by { padding: 10px 0 0; border-left: 0; border-top: 1px solid var(--line); width: 100%; }
   }
 
   /* "More actions" menu — bespoke portalled floating surface (moviepickarr/Menu.tsx)
@@ -1244,9 +1280,10 @@
 
   /* ============================================================
      Responsive — phone & touch adaptations
-     Breakpoint scale (content-driven): 560 (modal-internal stack),
-     640 (phone: bottom nav + single-column reflows), 700 (hero stack
-     + page padding), 760 (stat strip 4→2), 900 (stat two-col). Plus
+     Breakpoint scale (content-driven): 640 (phone: bottom nav +
+     single-column reflows), 700 (hero stack + page padding + the
+     movie modal's rail-to-row), 760 (stat strip 4→2), 900 (stat
+     two-col). Plus
      capability queries — hover:none / pointer:coarse — so touch users
      get every action without a hover, and tap targets grow.
      ============================================================ */

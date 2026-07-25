@@ -169,26 +169,29 @@ jobs:
             dist/*.rpm
 
   docker:
-    name: Build Docker images
-    runs-on: ubuntu-latest
+    name: Build Docker images (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     needs: [web, go]
     permissions:
       contents: read
       packages: write
     strategy:
-      fail-fast: true
+      # One architecture failing says nothing about the others, and the
+      # emulated targets flake. Cancelling the whole matrix over a riscv64
+      # segfault means re-running fourteen builds to recover one.
+      fail-fast: false
       matrix:
         # A PR only needs proof the image still builds, so it covers the two
         # platforms people actually run. Branch and tag pushes, which publish,
-        # build the full set below:
+        # build the full set.
         #
-        #   linux/arm64/v8.2  Neoverse + Raspberry Pi
-        #   linux/arm64/v8.4  AWS Graviton3
-        #   linux/arm64/v9.2  Apple M4
+        # linux/arm64 builds on a native arm64 runner, so the one emulated
+        # instruction in ci.Dockerfile (the runner stage's apk add) runs for
+        # real there. Everything else still goes through QEMU.
         #
         # linux/amd64/v4, linux/mips64 and linux/mips64le stay out: no runner
         # or user has asked for them.
-        platform: ${{ fromJSON(github.event_name == 'pull_request' && '["linux/amd64","linux/arm64"]' || '["linux/386","linux/amd64","linux/amd64/v2","linux/amd64/v3","linux/arm/v6","linux/arm/v7","linux/arm64","linux/arm64/v8.2","linux/arm64/v8.4","linux/arm64/v9","linux/arm64/v9.2","linux/ppc64le","linux/riscv64","linux/s390x"]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"platform":"linux/amd64","runner":"ubuntu-latest"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm"}]' || '[{"platform":"linux/386","runner":"ubuntu-latest"},{"platform":"linux/amd64","runner":"ubuntu-latest"},{"platform":"linux/amd64/v2","runner":"ubuntu-latest"},{"platform":"linux/amd64/v3","runner":"ubuntu-latest"},{"platform":"linux/arm/v6","runner":"ubuntu-latest"},{"platform":"linux/arm/v7","runner":"ubuntu-latest"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm"},{"platform":"linux/ppc64le","runner":"ubuntu-latest"},{"platform":"linux/riscv64","runner":"ubuntu-latest"},{"platform":"linux/s390x","runner":"ubuntu-latest"}]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -219,7 +222,10 @@ jobs:
           flavor: |
             latest=auto
 
+      # The arm64 runner builds its own architecture, so there is nothing to
+      # emulate and no binfmt handler to register.
       - name: Set up QEMU
+        if: matrix.runner != 'ubuntu-24.04-arm'
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx

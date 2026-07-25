@@ -1,8 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests",
+    "config:best-practices",
     ":semanticCommitTypeAll(ci)"
   ],
   "schedule": [
@@ -42,7 +41,7 @@
       "groupName": "github actions"
     },
     {
-      "description": "Let anything pulled from a public registry sit for a week before it is proposed. Compromised packages are usually caught and pulled within days, and nothing here is urgent enough to be worth being first. Renovate exempts security updates from this, so a real advisory still arrives immediately. Not applied to golang-version: a Go patch release exists to fix CVEs, so delaying it would work against the toolchain pin.",
+      "description": "Let anything pulled from a public registry sit for a week before it is proposed. Compromised packages are usually caught and pulled within days, and nothing here is urgent enough to be worth being first. This deliberately overrides the three days that config:best-practices sets for npm, and extends the same wait to actions, which that preset does not cover. Renovate exempts security updates, so a real advisory still arrives immediately. Not applied to golang-version: a Go patch release exists to fix CVEs, so delaying it would work against the toolchain pin.",
       "matchManagers": [
         "bun",
         "npm",

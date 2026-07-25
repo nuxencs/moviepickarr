@@ -1,0 +1,71 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommitTypeAll(ci)"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "dependencyDashboard": true,
+  "prConcurrentLimit": 3,
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "packageRules": [
+    {
+      "description": "Go module dependencies are not managed by version bumps. A bump PR says a new release exists, not that anything here is affected. govulncheck.yml answers the security half by reachability, latest-deps.yml answers the compatibility half by running the tests against the newest versions nightly. See https://words.filippo.io/dependabot/.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDatasources": [
+        "go"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "The toolchain directive is the exception. govulncheck judges the standard library against whatever it names, and goreleaser builds release binaries with it, so a stale value ships known-vulnerable binaries. Renovate does not touch the go directive, which stays a floor rather than a target.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDatasources": [
+        "golang-version"
+      ],
+      "enabled": true
+    },
+    {
+      "description": "Action bumps arrive as one PR rather than one per action.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github actions"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "BUN_VERSION in the CI workflow. Bun tags releases as bun-v1.2.3.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=oven-sh/bun\\s+BUN_VERSION: \"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "oven-sh/bun",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^bun-v(?<version>.+)$"
+    },
+    {
+      "description": "The golangci-lint version the action installs, which is separate from the action's own tag.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=golangci/golangci-lint\\s+version: (?<currentValue>v\\S+)"
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases"
+    }
+  ]
+}

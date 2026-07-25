@@ -14,6 +14,13 @@
   ],
   "packageRules": [
     {
+      "description": "docker-compose.yml is install documentation, not a deployment. The only image in it is our own release image, so there is nothing here Renovate can usefully bump: it is deliberately untagged so users follow latest, and pinning it in an example would be the wrong advice. Renovate also cannot read it, since the ghcr package needs auth it does not have, which is what put 'No docker auth found' on the dependency dashboard.",
+      "matchManagers": [
+        "docker-compose"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Go module dependencies are not managed by version bumps. A bump PR says a new release exists, not that anything here is affected. govulncheck.yml answers the security half by reachability, latest-deps.yml answers the compatibility half by running the tests against the newest versions nightly. See https://words.filippo.io/dependabot/.",
       "matchManagers": [
         "gomod"

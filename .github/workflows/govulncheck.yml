@@ -1,0 +1,45 @@
+name: govulncheck
+
+# govulncheck reports a vulnerability only when the call graph actually reaches
+# the affected function, so it stays quiet about CVEs in code we never call. The
+# daily schedule matters as much as the push trigger: most vulnerabilities are
+# disclosed long after the dependency landed, and nothing about our own commits
+# would surface them.
+
+on:
+  push:
+    branches:
+      - "master"
+      - "develop"
+  pull_request:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # main.go has //go:embed web/dist, so the Go packages only compile with a
+      # dist directory present. govulncheck only needs the call graph, so a
+      # placeholder index.html is enough to satisfy the embed.
+      - name: Prepare embed placeholder
+        run: mkdir -p web/dist && printf '<!doctype html>\n' > web/dist/index.html
+
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: go.mod
+          go-package: ./...
+          repo-checkout: false

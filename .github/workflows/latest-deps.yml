@@ -1,0 +1,47 @@
+name: Latest deps
+
+# Runs the Go test suite against the newest version of every dependency,
+# without committing anything. This is the half of dependency management that
+# actually pays off: it tells us when an upgrade would break the build, so the
+# upgrade happens on our schedule instead of in a rush behind a CVE. Security
+# patching is handled separately, by govulncheck.yml.
+
+on:
+  schedule:
+    # An hour after govulncheck.yml, so the two don't compete for runners.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test against latest deps
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # main.go has //go:embed web/dist, so the Go packages only compile with a
+      # dist directory present. The unit tests don't serve real assets, so a
+      # placeholder index.html is enough to satisfy the embed.
+      - name: Prepare embed placeholder
+        run: mkdir -p web/dist && printf '<!doctype html>\n' > web/dist/index.html
+
+      - name: Update every dependency
+        run: |
+          go get -u -t ./...
+          go mod tidy
+
+      - name: Show what changed
+        run: git --no-pager diff --no-color go.mod go.sum
+
+      - name: Test Go
+        run: go test -race ./...

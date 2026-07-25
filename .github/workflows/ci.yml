@@ -125,11 +125,27 @@ jobs:
           name: web-dist
           path: web/dist
 
+      # setup-go's own cache is keyed on go.sum alone, so it is written once and
+      # then never refreshed. That is fine for the module cache but wrong for
+      # the build cache: goreleaser cross-compiles seven GOOS/GOARCH pairs whose
+      # compiled packages setup-go never saves, so every run rebuilt all of them
+      # from scratch. Rolling the key on the commit keeps the build cache warm.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      - name: Cache Go modules and cross-compiled build output
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: goreleaser-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            goreleaser-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            goreleaser-${{ runner.os }}-
 
       - name: Run GoReleaser build
         if: github.event_name == 'pull_request'
@@ -228,10 +244,13 @@ jobs:
             latest=auto
 
       # The arm64 runner builds its own architecture, so there is nothing to
-      # emulate and no binfmt handler to register.
+      # emulate and no binfmt handler to register. Everywhere else, register a
+      # handler for this job's target only instead of the default full set.
       - name: Set up QEMU
         if: matrix.runner != 'ubuntu-24.04-arm'
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+        with:
+          platforms: ${{ matrix.platform }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -252,8 +271,17 @@ jobs:
             BUILDTIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
             VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
             REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Without an explicit scope every platform in the matrix writes to the
+          # same one and they overwrite each other's index, so the cache is both
+          # enormous and useless.
+          #
+          # mode=min keeps the runner stage's layers, which is the part worth
+          # caching: `apk add` there is the only instruction that runs under
+          # emulation, and its key is stable across commits. mode=max also
+          # exported the app-builder stage, whose `go build` layer changes with
+          # every source change and so was uploaded every run and never read.
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.platform }}
           provenance: false
 
       - name: Export image digest

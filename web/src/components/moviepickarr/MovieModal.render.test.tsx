@@ -83,7 +83,7 @@ function renderModal({ movie = lean(), detail }: { movie?: Movie; detail?: Movie
 
   render(
     <QueryClientProvider client={client}>
-      <MovieModal movie={movie} onClose={vi.fn()} />
+      <MovieModal movie={movie} open onRequestClose={vi.fn()} onClose={vi.fn()} />
     </QueryClientProvider>,
   );
   return { dialog: screen.getByRole("dialog") };

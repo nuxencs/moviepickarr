@@ -51,6 +51,7 @@ import type {
 
 import { useDismissible } from "@/hooks/useDismissible";
 import { useFlipRail } from "@/hooks/useFlipRail";
+import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
 // Stable reference for the pre-load / empty state so the filters useMemo below
 // doesn't recompute on every render while the server options are in flight.
@@ -116,11 +117,11 @@ export function StatsTab() {
     [dismissRange],
   );
 
-  // The modal is local state. A genre/year chip inside it is a same-route
-  // /stats→/stats nav that never unmounts StatsTab, so the chip itself drives
-  // the close (via MetaChips' onNavigate → the modal's animated `close`) rather
-  // than this component reacting to the search change.
-  const [selected, setSelected] = useState<Movie | null>(null);
+  // Opening the modal pushes a history entry, so browser Back closes it (#196).
+  // A genre/year chip inside it is a same-route /stats→/stats nav that never
+  // unmounts StatsTab; it replaces that entry rather than stacking on it, so
+  // the modal closes without this component reacting to the search change.
+  const { selected, isOpen, open, close, onClosed } = useMovieModal();
 
   // The below-fold panels (leaderboard, weekday/hourly, genres/decades, the two
   // people rails) carry the bulk of the Stats mount cost — FLIP rails, ~45
@@ -410,7 +411,7 @@ export function StatsTab() {
               the count is zero every downstream section drops away with it: zeroed
               member bars and empty charts under an empty filter view are noise, not
               information. */}
-          <MatchedMoviesRail movies={matchedMovies} count={count} filtered={filtered} onSelect={setSelected} />
+          <MatchedMoviesRail movies={matchedMovies} count={count} filtered={filtered} onSelect={open} />
 
           {/* Anchor the IntersectionObserver watches to reveal the below-fold
               panels only as they approach the viewport (see panelsVisible). */}
@@ -449,7 +450,9 @@ export function StatsTab() {
         </>
       )}
 
-      {selectedLive && <MovieModal movie={selectedLive} onClose={() => setSelected(null)} />}
+      {selectedLive && (
+        <MovieModal movie={selectedLive} open={isOpen} onRequestClose={close} onClose={onClosed} />
+      )}
     </div>
   );
 }

@@ -96,7 +96,19 @@ function HeroBackdrop({ hue, src }: { hue: number; src: string | null }) {
 
 /** Read-only detail view for a movie: backdrop, a rail of poster + links out,
  *  the credits with the attribution beside them, overview, and the cast strip. */
-export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => void }) {
+export function MovieModal({
+  movie,
+  open,
+  onRequestClose,
+  onClose,
+}: {
+  movie: Movie;
+  /** False once the backing history entry is gone, which plays the exit (#196). */
+  open: boolean;
+  /** Every dismiss gesture goes here, so all four pop the same entry. */
+  onRequestClose: () => void;
+  onClose: () => void;
+}) {
   // The list payloads are lean (no cast/crew/overview/backdrop), so lazy-load the
   // full record on open. `movie` (the tile's lean object) renders instantly while
   // the detail loads, then the enriched fields fill in. SSE enrichment events
@@ -130,7 +142,13 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
     // itself, so a long record centers in the window instead of dragging the
     // blurred page with it, and the close X — pinned to the surface, outside
     // `.modal__scroll` — stays put while the hero scrolls under it.
-    <Modal onClose={onClose} className="modal--movie" capped>
+    <Modal
+      onClose={onClose}
+      open={open}
+      onRequestClose={onRequestClose}
+      className="modal--movie"
+      capped
+    >
       {(close) => (
         <>
           <button type="button" className="iconbtn moviemodal__close" onClick={close} aria-label="Close">
@@ -165,9 +183,11 @@ export function MovieModal({ movie, onClose }: { movie: Movie; onClose: () => vo
 
               <div className="moviemodal__info">
                 <h3>{m.title}</h3>
-                {/* Pass `close` so a genre/year chip plays the modal's exit
-                    animation before its /stats navigation (see MetaChips). */}
-                <MetaChips movie={m} onNavigate={close} />
+                {/* The chips navigate over the modal's own history entry, which
+                    is what closes it: on /stats that's a same-route search
+                    change, so the surface stays mounted and animates out over
+                    the freshly-filtered view (see MetaChips). */}
+                <MetaChips movie={m} replace />
 
                 {/* "Directed by" and "Added by" are the same kind of line — who
                     is responsible for this — so they read as one block split by

@@ -100,18 +100,19 @@ export function AdderTag({ name, size = 20 }: { name: string; size?: number }) {
 export function MetaChips({
   movie,
   links = [],
-  onNavigate,
+  replace = false,
 }: {
   movie: Movie;
   links?: { label: string; href: string }[];
   /**
-   * Fired when a genre/year chip is clicked, before its navigation commits.
-   * The movie modal passes its `close` here so a chip click plays the exit
-   * animation: on /stats the chip is a same-route nav that keeps the modal
-   * mounted, so it can animate out over the freshly-filtered view (off a
-   * different route the route change unmounts it first — no animation, as before).
+   * Navigate over the current history entry instead of stacking on it. The
+   * movie modal sets it because its own entry is what the chips are leaving
+   * (see useMovieModalHistory): the navigation consumes that entry, which
+   * both closes the modal and keeps the stack flat. Popping it separately
+   * would race the chip's own navigation, and on /stats (a same-route search
+   * change that keeps the modal mounted) the pop could land back on it.
    */
-  onNavigate?: () => void;
+  replace?: boolean;
 }) {
   const year = yearOf(movie.releaseDate);
   const runtime = runtimeLabel(movie.runtime);
@@ -139,7 +140,7 @@ export function MetaChips({
           search={{ ...statsSearchDefaults, year }}
           className={`${dot()} metachip--link`}
           title={`See ${year} stats`}
-          onClick={onNavigate}
+          replace={replace}
         >
           {year}
         </Link>
@@ -161,7 +162,7 @@ export function MetaChips({
           search={{ ...statsSearchDefaults, genre: g }}
           className="genrechip genrechip--link"
           title={`See ${g} stats`}
-          onClick={onNavigate}
+          replace={replace}
         >
           {g}
         </Link>

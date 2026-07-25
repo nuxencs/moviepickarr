@@ -5,6 +5,21 @@ import { useDismissible } from "@/hooks/useDismissible";
 
 interface ModalProps {
   onClose: () => void;
+  /**
+   * The parent's intent. Flipping it to false starts the exit motion, with
+   * `onClose` following once the motion ends. Only a modal whose open-ness
+   * lives outside React needs it (the movie modal, which reads a history
+   * entry); a dialog the parent mounts and unmounts leaves it alone.
+   */
+  open?: boolean;
+  /**
+   * Where Esc / veil-click / the render-prop `close` go instead of dismissing
+   * the surface directly. Passed alongside `open` by a modal that can't close
+   * itself, so all four gestures (those three plus browser Back) take one
+   * path. Fires at most once per mount: each request pops a history entry, and
+   * a second would pop the entry behind the modal.
+   */
+  onRequestClose?: () => void;
   /** Extra class on the `.modal` surface (e.g. `modal--movie` for a narrower width). */
   className?: string;
   /**
@@ -35,6 +50,8 @@ const FOCUSABLE =
  */
 export function Modal({
   onClose,
+  open = true,
+  onRequestClose,
   className,
   dismissible = true,
   capped = false,
@@ -42,8 +59,11 @@ export function Modal({
 }: ModalProps) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onRequestCloseRef = useRef(onRequestClose);
+  onRequestCloseRef.current = onRequestClose;
   const dismissibleRef = useRef(dismissible);
   dismissibleRef.current = dismissible;
+  const requestedRef = useRef(false);
   const surfaceRef = useRef<HTMLDivElement>(null);
 
   // Mounting is parent-controlled, so only the closing phase is used: the
@@ -53,8 +73,23 @@ export function Modal({
 
   const requestClose = useCallback(() => {
     if (!dismissibleRef.current) return;
+    // Hand the close to the parent when it owns one, and let the exit come
+    // back as `open: false`. Otherwise dismiss here, the way it always was.
+    if (onRequestCloseRef.current) {
+      if (requestedRef.current) return;
+      requestedRef.current = true;
+      onRequestCloseRef.current();
+      return;
+    }
     dismiss();
   }, [dismiss]);
+
+  // The parent withdrawing `open` is the other way in, and the only one a
+  // browser Back can take: by the time the popstate lands the state is
+  // already gone, so the motion has to run off its removal, not before it.
+  useEffect(() => {
+    if (!open) dismiss();
+  }, [open, dismiss]);
 
   useEffect(() => {
     const surface = surfaceRef.current;

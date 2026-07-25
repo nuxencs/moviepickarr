@@ -105,6 +105,13 @@ export function dateTimeParts(iso?: string): { date: string; time: string } {
   return { date, time };
 }
 
+/** Full date ("Jul 22, 2026") for the record lines in the detail modal, where a
+ *  relative date ("3d ago") reads as news rather than as a fact about the record. */
+export function fullDate(iso?: string): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 /** Rounded TMDB rating ("8.2") or undefined when unrated. */
 export function ratingLabel(voteAverage?: number): string | undefined {
   if (!voteAverage || voteAverage <= 0) return undefined;

@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-func txClock(t time.Time) func() time.Time { return func() time.Time { return t } }
-
 func TestOIDCTxCodec_SealOpenRoundTrip(t *testing.T) {
 	codec, err := NewOIDCTxCodec("a secret")
 	if err != nil {

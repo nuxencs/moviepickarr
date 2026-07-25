@@ -1,0 +1,18 @@
+version: 2
+
+# Actions only, deliberately. Dependabot on gomod and npm opens a PR for every
+# release of every dependency whether or not the vulnerable or changed code is
+# reachable, and the volume trains you to close the PRs unread. Go dependencies
+# are covered instead by govulncheck.yml (reachability-filtered security) and
+# latest-deps.yml (does the newest version still pass the tests).
+#
+# Action versions are different: there are a handful of them, they pin to a
+# major tag that silently stops receiving fixes when a new major ships, and
+# nothing else in this repo would tell us the pin went stale.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

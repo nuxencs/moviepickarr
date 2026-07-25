@@ -23,17 +23,28 @@ import { Modal } from "@/components/moviepickarr/Modal";
 /** Long enough to outrun exitDelayMs(), whatever the motion tokens say. */
 const AFTER_EXIT = 1000;
 
-function renderModal(props: { capped?: boolean; dismissible?: boolean } = {}) {
+function modalBody(close: () => void) {
+  return (
+    <div className="modal__scroll">
+      <button type="button" onClick={close}>
+        Close
+      </button>
+    </div>
+  );
+}
+
+function renderModal(
+  props: {
+    capped?: boolean;
+    dismissible?: boolean;
+    open?: boolean;
+    onRequestClose?: () => void;
+  } = {},
+) {
   const onClose = vi.fn();
   const view = render(
     <Modal onClose={onClose} className="modal--movie" {...props}>
-      {(close) => (
-        <div className="modal__scroll">
-          <button type="button" onClick={close}>
-            Close
-          </button>
-        </div>
-      )}
+      {modalBody}
     </Modal>,
   );
   return { onClose, view, dialog: screen.getByRole("dialog") };
@@ -132,6 +143,77 @@ describe("Modal", () => {
       view.unmount();
       expect(document.activeElement).toBe(opener);
       opener.remove();
+    });
+  });
+
+  /* A history-backed modal (the movie modal, see #196) can't dismiss itself:
+     the close it wants is a `back()`, and the exit motion has to run off the
+     resulting state change rather than ahead of it. So the shell takes the
+     parent's intent as `open` and hands every gesture to `onRequestClose`.
+     Neither prop is passed by the local-state dialogs, whose behaviour is
+     covered by the cases above. */
+  describe("driven by the parent", () => {
+    it("plays the exit when the parent withdraws open", () => {
+      const onClose = vi.fn();
+      const view = render(
+        <Modal onClose={onClose} open>
+          {modalBody}
+        </Modal>,
+      );
+
+      view.rerender(
+        <Modal onClose={onClose} open={false}>
+          {modalBody}
+        </Modal>,
+      );
+      // Same deal as a self-driven dismissal: on screen until the motion ends.
+      expect(screen.queryByRole("dialog")).not.toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+
+      runExit();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["Escape", () => fireEvent.keyDown(document, { key: "Escape" })],
+      ["a veil click", (dialog: HTMLElement) => fireEvent.mouseDown(veilOf(dialog))],
+      ["the render-prop close", () => fireEvent.click(screen.getByRole("button", { name: "Close" }))],
+    ])("asks the parent to close on %s instead of closing itself", (_name, gesture) => {
+      const onRequestClose = vi.fn();
+      const { onClose, dialog } = renderModal({ onRequestClose });
+
+      gesture(dialog);
+      runExit();
+
+      expect(onRequestClose).toHaveBeenCalledTimes(1);
+      // The parent owns the close; nothing happens until `open` comes back false.
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeNull();
+    });
+
+    it("asks only once however many gestures land", () => {
+      const onRequestClose = vi.fn();
+      const { dialog } = renderModal({ onRequestClose });
+
+      // Each request pops one history entry, so a double-Escape that asked
+      // twice would pop the entry behind the modal and leave the page.
+      fireEvent.keyDown(document, { key: "Escape" });
+      fireEvent.keyDown(document, { key: "Escape" });
+      fireEvent.mouseDown(veilOf(dialog));
+
+      expect(onRequestClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("stays put on a gesture while pinned open", () => {
+      const onRequestClose = vi.fn();
+      const { dialog } = renderModal({ onRequestClose, dismissible: false });
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      fireEvent.mouseDown(veilOf(dialog));
+      runExit();
+
+      expect(onRequestClose).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeNull();
     });
   });
 });

@@ -33,6 +33,7 @@ import type { Movie } from "@/types/Response";
 import { useToggle } from "@/hooks/hooks";
 import { useFlipRail } from "@/hooks/useFlipRail";
 import { useGridMetrics, virtualRowStyle } from "@/hooks/useGridMetrics";
+import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
 type WatchedView = "grid" | "list";
 
@@ -56,7 +57,8 @@ export function MoviesTab() {
     itemProps: poolItemProps,
   } = useFlipRail<Movie>(pooled ?? [], (m) => String(m.movieID));
 
-  const [selected, setSelected] = useState<Movie | null>(null);
+  // Opening the modal pushes a history entry, so browser Back closes it (#196).
+  const { selected, isOpen, open, close, onClosed } = useMovieModal();
 
   // The modal renders from the live lists so SSE-driven refetches (enrichment
   // lands seconds after an add) flow into an open modal; the stored object is
@@ -112,7 +114,7 @@ export function MoviesTab() {
                 key={key}
                 data-flip-exit={exiting || undefined}
                 {...poolItemProps(key)}
-                {...openProps(() => setSelected(movie))}
+                {...openProps(() => open(movie))}
               >
                 <Poster
                   title={movie.title}
@@ -140,10 +142,17 @@ export function MoviesTab() {
         watched={watched}
         isPending={watchedPending}
         isError={watchedError}
-        onOpen={setSelected}
+        onOpen={open}
       />
 
-      {selectedLive && <MovieModal movie={selectedLive} onClose={() => setSelected(null)} />}
+      {selectedLive && (
+        <MovieModal
+          movie={selectedLive}
+          open={isOpen}
+          onRequestClose={close}
+          onClose={onClosed}
+        />
+      )}
     </>
   );
 }

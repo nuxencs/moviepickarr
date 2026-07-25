@@ -44,7 +44,11 @@ window.scrollTo = (() => {}) as typeof window.scrollTo;
 
 /** The app paths that sit under the pathless `_app` layout. Add one when a
  *  page test needs it; an absent path fails the match, it doesn't fall back. */
-const APP_PATHS = ["/admin", "/settings"] as const;
+const APP_PATHS = ["/", "/admin", "/settings", "/stats"] as const;
+
+/** An app path, optionally with a query string on it (the Stats tab keeps its
+ *  whole view in the search params, and a test may need them present). */
+type AppHref = (typeof APP_PATHS)[number] | `${(typeof APP_PATHS)[number]}?${string}`;
 
 function buildRouter(ui: ReactNode, path: string) {
   const rootRoute = createRootRoute();
@@ -73,9 +77,9 @@ function buildRouter(ui: ReactNode, path: string) {
 }
 
 export interface ProviderOptions {
-  /** Path the memory history starts at, which decides the route the subject
-   *  renders as. Must be one of APP_PATHS. */
-  path: (typeof APP_PATHS)[number];
+  /** Href the memory history starts at, whose path decides the route the
+   *  subject renders as. That path must be one of APP_PATHS. */
+  path: AppHref;
   /** Seed the query cache before the first render, so a page under test reads
    *  its data instead of waiting on a request. */
   seed: (queryClient: QueryClient) => void;
@@ -97,6 +101,8 @@ export async function renderWithProviders(ui: ReactNode, { path, seed }: Provide
   });
   seed(queryClient);
 
+  // Handed back so a test can drive history the way the browser's own back
+  // button does, and read the location the subject navigated to.
   const router = buildRouter(ui, path);
 
   render(
@@ -110,4 +116,5 @@ export async function renderWithProviders(ui: ReactNode, { path, seed }: Provide
   );
 
   await router.load();
+  return { router };
 }

@@ -17,6 +17,8 @@ import { statsSearchDefaults, validateStatsSearch } from "@/components/moviepick
 
 import type { QueryClient } from "@tanstack/react-query";
 
+import { clearMovieModalHistory } from "@/hooks/useMovieModalHistory";
+
 interface RouterContext {
   queryClient: QueryClient;
 }
@@ -144,6 +146,10 @@ export const router = createRouter({
   context: { queryClient },
   defaultPreload: "intent",
 });
+
+// A refresh with the movie modal open lands on a clean page, so the entry's
+// location state is stripped here, before the first render (see #196).
+clearMovieModalHistory(router);
 
 declare module "@tanstack/react-router" {
   interface Register {

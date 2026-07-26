@@ -318,8 +318,8 @@
    pixel-identical and hover is what asks "can I act here" — a truthful yes on
    yours. Persistent on desktop would put sixty buttons on sixty posters. It is
    also the only thing a guest board is missing, so on someone else's board its
-   absence says "not your board" and nothing else. On your own it still doubles
-   as the lock's only signal, which is what #234 takes off it. */
+   absence says "not your board" and nothing else — and only that, since #234
+   took the lock off it: a refusal now stays put and goes inert instead. */
 .mem-act {
   position: absolute;
   right: 7px;
@@ -349,12 +349,17 @@
 .mem-act:focus-visible {
   opacity: 1;
 }
-.mem-act:hover:not(:disabled) {
+.mem-act:hover:not([aria-disabled="true"]) {
   background: var(--accent-soft);
   border-color: var(--accent-line);
   color: var(--accent);
 }
-.mem-act:disabled {
+/* A refused control is inert, not absent, and it is `aria-disabled` rather than
+   natively disabled so it can still take focus — which is what makes the reveal
+   rule above fire for a keyboard user and lets its name carry the reason.
+   Nothing else changes: the dim is on the ink, never on the opacity the reveal
+   owns, so a locked mid-draw board is pixel-identical at rest to an open one. */
+.mem-act[aria-disabled="true"] {
   cursor: not-allowed;
   color: var(--ink-3);
   border-color: var(--line);
@@ -371,6 +376,11 @@
   .mem-act svg {
     width: 13px;
     height: 13px;
+  }
+  /* Persistent here, so a refused control is on screen at rest and the fade
+     does the work the hover reveal does on a pointer. */
+  .mem-act[aria-disabled="true"] {
+    opacity: 0.6;
   }
 }
 

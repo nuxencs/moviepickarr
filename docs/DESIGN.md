@@ -502,8 +502,9 @@ mid-spin — or any client opening the board during a draw — fetched the post-
 the missing tile gave the winner away behind the reel. The client-side pool hold (the draw
 machine releasing the pool on land) still covers cached clients; the two agree. While the
 draw is held the **pool is frozen**: demote and delete are refused for every pool tile
-(the held winner included, so no answer singles it out) and the board's demote button
-disables with "A draw is in progress"; the stash is unaffected.
+(the held winner included, so no answer singles it out) and the board's demote control goes
+inert in place, named "Move back to stash, a draw is in progress" on all three tiles alike;
+the stash is unaffected, so promoting stays live through a draw.
 The reel is a **pure reducer + store**: `drawMachine.ts` folds `movie:drawn` /
 `movie:revealed` / scroll-done / confirm / tick events into `[state, commands]`, and
 `drawStore.ts` (a `useSyncExternalStore` singleton) runs the effects. `Hero.tsx`,

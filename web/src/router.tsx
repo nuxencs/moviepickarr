@@ -12,6 +12,7 @@ import { queryClient } from "@/api/QueryClient";
 
 import { AppLayout, RootShell, Shell } from "@/components/moviepickarr/AppShell";
 import { Hero } from "@/components/moviepickarr/Hero";
+import { validateMembersSearch } from "@/components/moviepickarr/membersSearch";
 import { MoviesTab } from "@/components/moviepickarr/MoviesTab";
 import { statsSearchDefaults, validateStatsSearch } from "@/components/moviepickarr/statsSearch";
 
@@ -100,6 +101,11 @@ const moviesRoute = createRoute({
 const usersRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/users",
+  // Which member's board is open lives in the URL (see membersSearch). No
+  // stripSearchParams here, unlike /stats: the rail's rows always carry an
+  // explicit id, and an id that doesn't resolve has to stay in the URL rather
+  // than be canonicalised out from under whoever pasted it.
+  validateSearch: validateMembersSearch,
   component: lazyRouteComponent(() => import("@/pages/UsersPage"), "UsersPage"),
 });
 

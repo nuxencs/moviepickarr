@@ -51,7 +51,10 @@ export function Avatar({
       className={`avatar${loading ? " avatar--loading" : ""}`}
       style={{ ["--s" as string]: `${size}px`, backgroundImage: avatarBg(h) }}
     >
-      {initialsOf(name)}
+      {/* The initials are art, not text: they are a fallback for a photo that
+          is itself decorative (alt=""), and every call site writes the name
+          next to them. Spoken, they turn each one into "AD Ada". */}
+      <span aria-hidden="true">{initialsOf(name)}</span>
       {showImg && (
         <img
           ref={imgRef}

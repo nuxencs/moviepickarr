@@ -155,6 +155,54 @@ func TestToAPIMovieMeta_FoldsCredits(t *testing.T) {
 	}
 }
 
+// The detail payload carries the film's real status, so a surface holding a
+// full record can tell a stash film from a pool one without a proxy. Asserted
+// against the marshaled bytes: the frontend reads the wire key.
+func TestToFullMovie_CarriesStatus(t *testing.T) {
+	t.Parallel()
+
+	movie := domain.Movie{ID: 7, Title: "The Matrix", Status: string(domain.MovieStatusStash)}
+
+	got := toFullMovie(&movie, nil, nil)
+	if got.Status != "stash" {
+		t.Fatalf("expected status %q, got %q", "stash", got.Status)
+	}
+
+	gotJSON, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(gotJSON), `"status":"stash"`) {
+		t.Fatalf("expected status on the full payload, got %s", gotJSON)
+	}
+}
+
+// The tile class does not carry status, whatever the movie's real status is.
+// The watched list ships hundreds of these, so the tile does not grow.
+func TestToLeanTile_OmitsStatus(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []domain.MovieStatus{
+		domain.MovieStatusPool,
+		domain.MovieStatusStash,
+		domain.MovieStatusCurrent,
+		domain.MovieStatusWatched,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			t.Parallel()
+
+			movie := domain.Movie{ID: 7, Title: "The Matrix", Status: string(status)}
+			tileJSON, err := json.Marshal(toLeanTile(&movie, nil))
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if strings.Contains(string(tileJSON), `"status"`) {
+				t.Fatalf("expected status absent from the lean tile, got %s", tileJSON)
+			}
+		})
+	}
+}
+
 func TestMovieLinkDerivation(t *testing.T) {
 	t.Parallel()
 
@@ -193,7 +241,7 @@ func TestToAPIUserMeta_ShipsLeanTiles(t *testing.T) {
 
 	tmdb := 603
 	user := &domain.User{ID: 1, Name: "Alice"}
-	pool := []*domain.Movie{{ID: 7, Title: "The Matrix", TMDBID: &tmdb, AddedByID: 1}}
+	pool := []*domain.Movie{{ID: 7, Title: "The Matrix", TMDBID: &tmdb, AddedByID: 1, Status: string(domain.MovieStatusPool)}}
 
 	poster, backdrop := "/p.jpg", "/b.jpg"
 	meta := metaByID{7: &domain.MovieMetadata{
@@ -220,8 +268,10 @@ func TestToAPIUserMeta_ShipsLeanTiles(t *testing.T) {
 			t.Fatalf("expected tile field %s in %s", want, respJSON)
 		}
 	}
-	// Modal-only fields are structurally absent from the board payload.
-	for _, key := range []string{"backdropPath", "tagline", "overview", "cast", "crew"} {
+	// Modal-only fields, status included, are structurally absent from the
+	// board payload: the tile stays byte-for-byte what it was, and the boards
+	// already know which list a tile came from.
+	for _, key := range []string{"backdropPath", "tagline", "overview", "cast", "crew", "status"} {
 		if strings.Contains(string(respJSON), `"`+key+`"`) {
 			t.Fatalf("expected %q omitted from lean board tile, got %s", key, respJSON)
 		}

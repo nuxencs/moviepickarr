@@ -69,6 +69,12 @@ type leanMovieTile struct {
 type fullMovie struct {
 	leanMovieTile
 
+	// Status is the film's real place in the app (pool / stash / current /
+	// watched). Detail-class only: a surface holding a full record reads it
+	// instead of guessing membership from a proxy like "has no watchedAt".
+	// Always set, so no omitempty.
+	Status domain.MovieStatus `json:"status"`
+
 	// Draw-reveal coordination. Set only on the movie:drawn event and the
 	// current-movie endpoint. DrawnAt is when the current movie was drawn
 	// (drives resuming the cross-client reveal spin after a reload); RevealAt
@@ -170,7 +176,12 @@ func toLeanTile(movie *domain.Movie, md *domain.MovieMetadata) leanMovieTile {
 // toFullMovie builds the detail-class response, folding the modal-only
 // metadata (backdrop, tagline, overview) and credits onto the tile.
 func toFullMovie(movie *domain.Movie, md *domain.MovieMetadata, credits []domain.MovieCredit) fullMovie {
-	resp := fullMovie{leanMovieTile: toLeanTile(movie, md)}
+	resp := fullMovie{
+		leanMovieTile: toLeanTile(movie, md),
+		// domain.Movie.Status is still a bare string (the repo ports take one
+		// too); the wire class is where the value gets its type back.
+		Status: domain.MovieStatus(movie.Status),
+	}
 	if md != nil {
 		if md.BackdropPath != nil {
 			resp.BackdropPath = *md.BackdropPath

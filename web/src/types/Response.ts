@@ -8,6 +8,13 @@ export interface CreditPerson {
     job?: string;
 }
 
+// Where a film sits in the app. Mirrors the server's domain.MovieStatus.
+export type MovieStatus = "pool" | "stash" | "current" | "watched";
+
+// The two statuses a member can move a film between (POST /movies/:id/move).
+// Derived from MovieStatus so renaming a status breaks here too.
+export type MoveTarget = Extract<MovieStatus, "pool" | "stash">;
+
 export interface Movie {
     movieID: number;
     title: string;
@@ -16,6 +23,13 @@ export interface Movie {
     addedByID: number;
     addedByName: string;
     watchedAt?: string;
+
+    // The film's real place in the app, carried by the detail payload only
+    // (GET /movies/:id, current, pool). A lean list tile has no status, so it
+    // is absent on the tile object the modal renders while its detail request
+    // is in flight: read it the way cast and overview are read, as a field
+    // that arrives with the detail.
+    status?: MovieStatus;
 
     // Draw-reveal coordination — present only on the current-movie endpoint and
     // the movie:drawn event. drawnAt is when the current movie was drawn;

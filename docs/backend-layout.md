@@ -152,7 +152,14 @@
   answer `ErrDrawInProgress` for every pool tile, the held winner included, so no
   answer singles it out; stashes stay editable), and the held tile still **counts
   against the per-user cap** (`poolLimit`), so a draw doesn't quietly buy its
-  adder a fourth slot.
+  adder a fourth slot. The **pool lock** is the other refusal on the same rows:
+  with it set, `Delete` answers `ErrPoolLocked` for a pooled movie, the way the
+  move handler already does for promote and demote, so a locked pool can't be
+  shrunk out from under the draw it was locked in for. The caller reads the lock
+  and passes it in (`settingsService.GetPoolLock`); the service orders the two
+  refusals so an unrevealed draw still answers first. Stashes stay deletable:
+  adds aren't lock-checked either, and the lock is the pool's, not a member's
+  list's.
 
 ## Logging
 

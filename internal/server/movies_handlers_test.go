@@ -601,3 +601,57 @@ func TestHandleAddMovie_LandsInStashEvenWithPoolRoom(t *testing.T) {
 		t.Fatalf("expected Dune stashed, got %#v", stashed)
 	}
 }
+
+func TestHandleDeleteMovie_PoolLock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Dana")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	pooled, err := movieRepo.Add(ctx, "Locked In", "pool", user.ID)
+	if err != nil {
+		t.Fatalf("create pooled movie: %v", err)
+	}
+	stashed, err := movieRepo.Add(ctx, "Just Parked", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create stashed movie: %v", err)
+	}
+
+	if err := h.settingsService.SetPoolLock(ctx, true); err != nil {
+		t.Fatalf("lock the pool: %v", err)
+	}
+
+	del := func(id int) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/movies/%d", id), nil)
+		req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		return resp.StatusCode
+	}
+
+	if status := del(pooled.ID); status != fiber.StatusForbidden {
+		t.Fatalf("delete pooled movie while locked = %d, want 403", status)
+	}
+	if _, err := movieRepo.FindByID(ctx, pooled.ID); err != nil {
+		t.Fatalf("expected the pooled movie to survive the refusal: %v", err)
+	}
+
+	// The lock is the pool's, not a member's list's.
+	if status := del(stashed.ID); status != fiber.StatusNoContent {
+		t.Fatalf("delete stashed movie while locked = %d, want 204", status)
+	}
+
+	if err := h.settingsService.SetPoolLock(ctx, false); err != nil {
+		t.Fatalf("unlock the pool: %v", err)
+	}
+	if status := del(pooled.ID); status != fiber.StatusNoContent {
+		t.Fatalf("delete pooled movie while unlocked = %d, want 204", status)
+	}
+}

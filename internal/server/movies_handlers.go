@@ -124,7 +124,9 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 		// The movies_tmdb_id_unique index rejects a second row for the same
 		// film. The stash row was already inserted above, so remove it before
 		// reporting — otherwise every duplicate add leaves an orphan behind.
-		_ = h.movieService.Delete(ctx, movieRecord.ID)
+		// Not lock-checked: the row is a stash add this request just made, and
+		// the lock never stood between the add and its rollback.
+		_ = h.movieService.Delete(ctx, movieRecord.ID, false)
 		if errors.Is(err, domain.ErrConflict) {
 			return writeError(c, fmt.Errorf("%w: movie is already in the library", domain.ErrConflict))
 		}
@@ -273,11 +275,17 @@ func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
 		return writeNotAdder(c)
 	}
 
-	// The state rules (deletable statuses, and the freeze while a draw is
-	// unrevealed) live in the service, which owns the active draw. Checking the
-	// status here too would answer differently for the held winner than for the
-	// tile beside it, which is exactly the tell the freeze exists to remove.
-	if err := h.movieService.Delete(ctx, movieID); err != nil {
+	poolLocked, err := h.settingsService.GetPoolLock(ctx)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	// The state rules (deletable statuses, the freeze while a draw is unrevealed,
+	// and which of the two refusals the lock yields to) live in the service,
+	// which owns the active draw. Refusing the lock here instead would answer
+	// differently for the held winner than for the tile beside it, which is
+	// exactly the tell the freeze exists to remove.
+	if err := h.movieService.Delete(ctx, movieID, poolLocked); err != nil {
 		return writeError(c, err)
 	}
 

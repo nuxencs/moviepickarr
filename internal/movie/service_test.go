@@ -133,7 +133,67 @@ func (r *testMovieRepo) GetCurrent(context.Context) (*domain.Movie, error) {
 	}
 	return nil, sql.ErrNoRows
 }
-func (r *testMovieRepo) Delete(context.Context, int) error { panic("unexpected call") }
+
+func (r *testMovieRepo) Delete(_ context.Context, id int) error {
+	if _, ok := r.movies[id]; !ok {
+		return sql.ErrNoRows
+	}
+	delete(r.movies, id)
+	return nil
+}
+
+// TestDeleteUnderPoolLock covers the lock's promise: once the pool is locked
+// its composition is fixed, so the adder can't shrink the candidate set out
+// from under the draw it was locked in for. The stash sits outside the lock and
+// stays deletable, matching the add path, which has no lock check either.
+func TestDeleteUnderPoolLock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	newSvc := func() (*testMovieRepo, *Service) {
+		repo := &testMovieRepo{
+			movies: map[int]*domain.Movie{
+				1: {ID: 1, Title: "Pooled", Status: string(domain.MovieStatusPool)},
+				2: {ID: 2, Title: "Stashed", Status: string(domain.MovieStatusStash)},
+			},
+		}
+		return repo, NewService(repo, DrawConfig{})
+	}
+
+	repo, svc := newSvc()
+	if err := svc.Delete(ctx, 1, true); !errors.Is(err, domain.ErrPoolLocked) {
+		t.Fatalf("delete pooled movie while locked = %v, want ErrPoolLocked", err)
+	}
+	if _, ok := repo.movies[1]; !ok {
+		t.Fatal("expected the pooled movie to survive the refusal")
+	}
+
+	if err := svc.Delete(ctx, 2, true); err != nil {
+		t.Fatalf("delete stashed movie while locked: %v", err)
+	}
+	if _, ok := repo.movies[2]; ok {
+		t.Fatal("expected the stashed movie to be gone")
+	}
+
+	// Unlocked, the pool row goes as it always did.
+	repo, svc = newSvc()
+	if err := svc.Delete(ctx, 1, false); err != nil {
+		t.Fatalf("delete pooled movie while unlocked: %v", err)
+	}
+	if _, ok := repo.movies[1]; ok {
+		t.Fatal("expected the pooled movie to be gone")
+	}
+
+	// Both rules apply at once: the unrevealed draw answers first, so nothing
+	// about the lock distinguishes a mid-draw tile from any other.
+	_, svc = newSvc()
+	if _, err := svc.DrawRandom(ctx, "client-abc"); err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	if err := svc.Delete(ctx, 1, true); !errors.Is(err, domain.ErrDrawInProgress) {
+		t.Fatalf("delete the held winner while locked = %v, want ErrDrawInProgress", err)
+	}
+}
 
 func TestActiveDrawLifecycle(t *testing.T) {
 	t.Parallel()

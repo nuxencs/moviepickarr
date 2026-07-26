@@ -389,6 +389,15 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   Each placeholder holds the space its real content will take, so nothing grows under the
   reader: the credit rows are reserved at one line height each
   (`.moviemodal__credits__ghost`, `height: 1lh`), not at the height of the skeleton bar.
+  Both halves of the block are themed (`--skel-bg`, `--skel-sweep`), and both flip: on a
+  dark page the block sits *above* the surface under a white sweep, on a light page it
+  sits *below* under a dark one. It has to work that way because this is the one shimmer
+  that sweeps the page's own surface. In light, `--surface-2` is 0.005 off `--bg`, so the
+  old fixed pair left the whole loading state invisible (#219). The sibling shimmers
+  (poster, avatar, modal hero) keep their hard-coded white: they sweep an opaque duotone
+  or initials gradient, which reads the same in both themes. One wrinkle, since the cast
+  card composes both classes: `.castcard__photo` declares its own frame background later
+  in the file, so `.castcard__photo.skel` restates the fill to win the tie.
 - **`prefers-reduced-motion`**: the global block zeroes animation/transition *duration
   AND delay* (so staggered reveals don't pop in) and collapses iteration counts.
   Loaders are the one exception — `.mg-spin` keeps spinning (essential motion). Any new

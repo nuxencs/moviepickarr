@@ -25,6 +25,18 @@ if (!window.matchMedia) {
   })) as unknown as typeof window.matchMedia;
 }
 
+// jsdom has no layout, so it ships no ResizeObserver either. The overflow cues
+// that use one (the Members rail's bottom fade) ask a question jsdom can only
+// answer "no" to, so the stub is a no-op: it exists to keep the component from
+// throwing, not to simulate a resize.
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 if (!HTMLImageElement.prototype.decode) {
   HTMLImageElement.prototype.decode = () => Promise.resolve();
 }

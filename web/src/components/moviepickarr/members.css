@@ -1,0 +1,262 @@
+/* The Members page: a rail of members beside one board pane (#231).
+   Namespaced under .mem*, colours and motion from the global tokens
+   (index.css). The stash markup inside the pane is still the incumbent's
+   (.stash, .srow); the wall replaces it in #232.
+
+   Nothing here measures anything in JS. Column counts, cell sizes and the
+   shell's height are CSS, because the root zoom ramp (index.css §13) means a
+   JS pixel and a CSS pixel are different sizes. */
+
+.mem {
+  /* The rail's width is not a chosen number: it is three pool posters plus
+     their gaps plus the drawer's padding. The poster size is the choice and
+     the column follows, so everything in the rail shares a right edge with the
+     third poster. */
+  --mem-post: 128px;
+  --mem-gap: 14px;
+  --mem-pad: 16px;
+  --mem-row: 52px;
+}
+
+/* One column by default; the two-column shell starts at 761 (below that is the
+   mobile push, #236). Every track takes minmax(0, 1fr): a bare 1fr floors at
+   the track's max-content width, which is what overflows the page at 375. */
+.mem__shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+/* ---- two scrollers, not one page -------------------------------------- */
+
+/* The roster and the stash are separate things to move through, so above 760
+   they scroll separately and the page itself does not scroll: reaching the
+   bottom of a 40-film stash used to drag the roster off screen with it. */
+@media (min-width: 761px) {
+  /* The shell's 110px bottom padding clears the phone tab bar and the rubber
+     band. With nothing below the fold there is nothing to clear. */
+  .shell:has(.mem) {
+    padding-bottom: 30px;
+  }
+  /* index.css floors .app at 100vh, and the root zoom ramp does not divide a
+     viewport unit by the zoom it applies: from 1728px up that floor is a zoom
+     step taller than the viewport, so the page scrolls ~64px with nothing to
+     show. This page takes its height from the viewport itself, so it has no
+     use for the floor. */
+  .app:has(.mem) {
+    min-height: 0;
+  }
+
+  .mem__shell {
+    grid-template-columns:
+      calc(3 * var(--mem-post) + 2 * var(--mem-gap) + 2 * var(--mem-pad))
+      minmax(0, 1fr);
+    gap: 32px;
+    align-items: stretch;
+    /* Fixed chrome above and below, all of it px in index.css: the 63px nav,
+       the shell's 40px top padding, the section head, and the padding below. */
+    --mem-chrome: 185px;
+    /* The root zoom ramp does not divide viewport units by the zoom it
+       applies, so inside a zoomed root 100dvh is one step too tall and the
+       page scrolls by the difference (88px at 1.08). Every other length here
+       is an ordinary CSS px and scales with the root, so dvh is brought into
+       the same space instead. --zoom is the ramp's own step, published beside
+       it in index.css §13 because `zoom` cannot be read back. */
+    height: calc(100dvh / var(--zoom, 1) - var(--mem-chrome));
+  }
+
+  .mem-rail {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* A classic scrollbar takes width out of a column whose width was chosen
+       to fit three posters exactly, so it is out of the layout and a fade at
+       the bottom edge is the cue instead. */
+    scrollbar-width: none;
+  }
+  .mem-rail::-webkit-scrollbar {
+    width: 0;
+  }
+  /* Only when there is more rail below. Painted over a rail that fits, the
+     fade would just be dimming the last member's name. The flag behind it is a
+     comparison, not a size (see UsersTab), so the zoom ramp does not reach
+     it. */
+  .mem-rail[data-overflow="true"] {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  }
+
+  /* The pane keeps its scrollbar, unlike the rail: nothing about its width is
+     derived from a poster, so the few px cost nothing, and a stash deeper than
+     the pane needs to say so. */
+  .mem-pane {
+    min-height: 0;
+    overflow-y: auto;
+    padding-left: 32px;
+    border-left: 1px solid var(--line);
+  }
+  /* The pane is the scroller now, so the incumbent stash list stops being one
+     of its own: a box scrolling inside a scrolling pane eats the flick. */
+  .mem-pane .stash__list {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* ---- the rail ---------------------------------------------------------- */
+
+.mem-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The selection is a 2px accent line down the row's left edge, the nav bar's
+   tab underline turned on its side. Not a filled box and not a sliding marker:
+   a row's height depends on whether it is open, so a fixed pitch cannot place
+   one and measuring in JS hits the zoom ramp. The open row draws the line down
+   its own full height, drawer included, and the drawer's opening is the
+   movement. */
+.mem-row {
+  position: relative;
+}
+.mem-row[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.mem-row__link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  height: var(--mem-row);
+  /* Clear of the selection line in the rail's left edge. */
+  padding: 0 var(--mem-pad);
+  border-radius: var(--r-md);
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.mem-row__link:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+/* The line carries the selection, so the row takes no fill of its own. The
+   name goes gold, the way an active nav tab goes to full ink. */
+.mem-row__link[aria-current="page"] {
+  background: none;
+  color: var(--ink);
+}
+.mem-row__link[aria-current="page"] .mem-row__nm {
+  color: var(--accent);
+}
+.mem-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+/* One line and an ellipsis, never a wrap: the shut row's pitch is fixed.
+   Desktop leaves this about 333px, roughly 40 characters. */
+.mem-row__nm {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* .mono for the tabular figures: this is a column of counts, one per member,
+   and proportional digits make it rag. */
+.mem-row__ct {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* What the row says when it is shut. Open, the pool itself is right there. */
+.mem-pips {
+  display: inline-flex;
+  gap: 3px;
+}
+.mem-pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  border: 1px solid var(--line-2);
+}
+.mem-pip[data-filled="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---- the drawer -------------------------------------------------------- */
+
+/* 0fr → 1fr, so the drawer opens without anything measuring a height.
+
+   Every drawer stays mounted, open or not. Unmounting the shut one's contents
+   collapses it instantly while the new one animates, so the rail loses a
+   drawer's height and grows it back — and 0fr → 1fr needs both rows present to
+   interpolate at all. Mounted, the two transitions are the same curve over the
+   same duration in opposite directions and they sum to a constant. */
+.mem-drop {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease);
+}
+.mem-drop[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.mem-drop__inner {
+  overflow: hidden;
+  min-height: 0;
+}
+/* The padding lives one level in from the grid item. On the item it outlives
+   the row collapsing to 0fr, so every shut drawer keeps its padding and the
+   pair stops summing to a constant across a switch. */
+.mem-drop__body {
+  padding: 6px var(--mem-pad) 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mem-drop { transition: none; }
+}
+
+/* Three pool posters across the rail, which is exactly as wide as they are.
+   Empty slots are drawn (.pslot--empty, index.css) and aria-hidden: always
+   exactly the pool size in slots, never reordered — the draw is random, so a
+   slot carries no priority. No heading, because the drawer hangs off the
+   member's own row. */
+.mem-pool {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--mem-gap);
+}
+
+/* ---- the pane ---------------------------------------------------------- */
+
+/* Desktop carries no board header: the selected rail row already says whose
+   board this is and how full it is. */
+.mem-pane .board__search {
+  margin-bottom: 22px;
+}
+
+/* One step down, on the 900 the rest of the app already uses (DESIGN.md §13). */
+@media (max-width: 900px) {
+  /* The rail cannot go on taking 444px out of a 900px page. Still three
+     posters wide, and still larger than a stash poster. */
+  .mem { --mem-post: 112px; --mem-gap: 12px; }
+  .mem__shell { gap: 24px; }
+  .mem-pane { padding-left: 24px; }
+  /* The bottom tab bar arrives here (index.css), so the board stops above it
+     rather than under it. */
+  .shell:has(.mem) { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .mem__shell { --mem-chrome: calc(231px + env(safe-area-inset-bottom)); }
+  /* The pane is too narrow to hold a title and a search field on one line. */
+  .mem-pane .stash__head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .mem-pane .stash__head .field { max-width: none; }
+}

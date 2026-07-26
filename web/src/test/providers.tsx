@@ -32,6 +32,7 @@ import {
 import { render } from "@testing-library/react";
 
 import { AudioProvider } from "@/components/AudioProvider";
+import { validateMembersSearch } from "@/components/moviepickarr/membersSearch";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 import type { ReactNode } from "react";
@@ -44,7 +45,14 @@ window.scrollTo = (() => {}) as typeof window.scrollTo;
 
 /** The app paths that sit under the pathless `_app` layout. Add one when a
  *  page test needs it; an absent path fails the match, it doesn't fall back. */
-const APP_PATHS = ["/", "/admin", "/settings", "/stats"] as const;
+const APP_PATHS = ["/", "/admin", "/settings", "/stats", "/users"] as const;
+
+/** The real validators, for the pages whose search params are the subject
+ *  rather than scenery: without one, `?member=3` reaches the page as the
+ *  string "3" and the test proves nothing about what the app does. */
+const VALIDATORS: Partial<Record<(typeof APP_PATHS)[number], (s: Record<string, unknown>) => object>> = {
+  "/users": validateMembersSearch,
+};
 
 /** An app path, optionally with a query string on it (the Stats tab keeps its
  *  whole view in the search params, and a test may need them present). */
@@ -59,7 +67,12 @@ function buildRouter(ui: ReactNode, path: string) {
   const appLayout = createRoute({ getParentRoute: () => rootRoute, id: "_app" });
 
   const appRoutes = APP_PATHS.map((p) =>
-    createRoute({ getParentRoute: () => appLayout, path: p, component: subject }),
+    createRoute({
+      getParentRoute: () => appLayout,
+      path: p,
+      component: subject,
+      validateSearch: VALIDATORS[p],
+    }),
   );
 
   // Sits beside the layout, not under it, same as the app. Nothing asserts on

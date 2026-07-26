@@ -1,28 +1,32 @@
 /* ============================================================
-   Render test for the Members page status line (#230).
+   Render tests for the Members page: the status line (#230) and the rail of
+   members beside one pane (#231).
 
-   Which words the line uses is a pure question and poolLock.test.ts owns it:
-   the whole state table is asserted there against membersStatus, and none of
-   it is repeated here. What that test can't see is the split that makes the
-   line bearable to listen to: the visible span carries every clause and is
-   silent, while a visually-hidden role="status" carries the round and draw
-   clauses alone. Merge them and every promote arriving over SSE re-reads the
-   whole string at anyone using a screen reader.
+   Which words the status line uses is a pure question and poolLock.test.ts
+   owns it: the whole state table is asserted there against membersStatus, and
+   none of it is repeated here. What that test can't see is the split that
+   makes the line bearable to listen to: the visible span carries every clause
+   and is silent, while a visually-hidden role="status" carries the round and
+   draw clauses alone. Merge them and every promote arriving over SSE re-reads
+   the whole string at anyone using a screen reader.
 
-   So this file checks the split survives the trip into the DOM: the live
-   region is the hidden one, occupancy moving announces nothing, and the head
-   states no member count until it has a roster to count.
+   The rail's rules are split the same way. Which member the URL selects is
+   pure and membersSearch.test.ts owns it; what only exists once the page
+   renders is here: that a row is a link carrying an explicit id, what a row
+   announces, and that a shut drawer is inert.
    ============================================================ */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SettingsKeys, UsersKeys } from "@/api/query_keys";
+import { AuthKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 
 import { UsersTab } from "@/components/moviepickarr/UsersTab";
 
-import type { Movie, User } from "@/types/Response";
+import type { MeResponse, Movie, User } from "@/types/Response";
+
+import { renderWithProviders } from "@/test/providers";
 
 vi.mock("@/api/APIClient", () => ({
   APIClient: {
@@ -43,35 +47,63 @@ function movie(movieID: number): Movie {
   };
 }
 
-/** A member with `pooled` of their three slots filled. */
-function member(userID: number, pooled: number): User {
+/** A member with `pooled` of their three slots filled and `stashed` in stash. */
+function member(userID: number, pooled: number, stashed = 0, name = `Member ${userID}`): User {
   const currentPool: Record<string, Movie> = {};
   for (let i = 0; i < pooled; i++) currentPool[`${userID}${i}`] = movie(userID * 10 + i);
-  return { userID, name: `Member ${userID}`, currentPool, stash: {}, createdAt: "2026-07-01T00:00:00Z" };
+  const stash: Record<string, Movie> = {};
+  for (let i = 0; i < stashed; i++) stash[`s${userID}${i}`] = movie(userID * 100 + i);
+  return { userID, name, currentPool, stash, createdAt: "2026-07-01T00:00:00Z" };
 }
 
-function renderTab({ users, locked = false }: { users?: User[]; locked?: boolean }) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  });
-  // Seeded rather than fetched: the line is the subject, not the requests.
-  if (users) client.setQueryData(UsersKeys.list(), users);
-  client.setQueryData(SettingsKeys.poolLock(), locked);
+function session(id: number): MeResponse {
+  return {
+    id,
+    displayName: `Member ${id}`,
+    username: null,
+    role: "member",
+    hasLocalLogin: true,
+    hasLinkedIdentity: false,
+    otherSessions: 0,
+  };
+}
 
-  render(
-    <QueryClientProvider client={client}>
-      <UsersTab />
-    </QueryClientProvider>,
-  );
-  return client;
+/** Renders the page as the /users route, so its search params resolve. */
+async function renderTab({
+  users,
+  locked = false,
+  meID,
+  href = "/users",
+}: {
+  users?: User[];
+  locked?: boolean;
+  meID?: number;
+  href?: `/users` | `/users?${string}`;
+}) {
+  // Captured out of the seed so a test can push the roster the way SSE does.
+  let client!: QueryClient;
+  const { router } = await renderWithProviders(<UsersTab />, {
+    path: href,
+    seed: (queryClient) => {
+      client = queryClient;
+      // Seeded rather than fetched: the page is the subject, not the requests.
+      if (users) queryClient.setQueryData(UsersKeys.list(), users);
+      queryClient.setQueryData(SettingsKeys.poolLock(), locked);
+      if (meID !== undefined) queryClient.setQueryData(AuthKeys.me(), session(meID));
+    },
+  });
+  return { client, router };
 }
 
 /** The visually-hidden live region, whatever it currently says. */
 const liveRegion = () => document.querySelector('[role="status"]');
 
+/** The rail's rows, in DOM order. */
+const railRows = () => within(screen.getByRole("navigation", { name: "Members" })).getAllByRole("link");
+
 describe("the Members status line", () => {
-  it("puts every clause on the visible span and keeps it out of the live region", () => {
-    renderTab({ users: [member(1, 3), member(2, 3)], locked: true });
+  it("puts every clause on the visible span and keeps it out of the live region", async () => {
+    await renderTab({ users: [member(1, 3), member(2, 3)], locked: true });
 
     const visible = document.querySelector(".sec-status");
     expect(visible?.textContent).toBe("6 of 6 slots filled · round closed");
@@ -84,7 +116,7 @@ describe("the Members status line", () => {
   });
 
   it("announces nothing when occupancy moves", async () => {
-    const client = renderTab({ users: [member(1, 1), member(2, 0)] });
+    const { client } = await renderTab({ users: [member(1, 1), member(2, 0)] });
     expect(document.querySelector(".sec-status")?.textContent).toBe("1 of 6 slots filled");
     expect(liveRegion()?.textContent).toBe("");
 
@@ -98,7 +130,7 @@ describe("the Members status line", () => {
   });
 
   it("says ready to lock, out loud, once every pool fills", async () => {
-    const client = renderTab({ users: [member(1, 3), member(2, 2)] });
+    const { client } = await renderTab({ users: [member(1, 3), member(2, 2)] });
     expect(liveRegion()?.textContent).toBe("");
 
     client.setQueryData(UsersKeys.list(), [member(1, 3), member(2, 3)]);
@@ -106,12 +138,117 @@ describe("the Members status line", () => {
     await waitFor(() => expect(liveRegion()?.textContent).toBe("ready to lock"));
   });
 
-  it("heads a pending roster with a bare Members and no announcement", () => {
-    renderTab({});
+  it("heads a pending roster with a bare Members and no announcement", async () => {
+    await renderTab({});
 
     expect(screen.getByRole("heading", { name: "Members" })).toBeTruthy();
     expect(document.querySelector(".sec-count")).toBeNull();
     expect(document.querySelector(".sec-status")).toBeNull();
     expect(liveRegion()?.textContent).toBe("");
+  });
+});
+
+describe("the rail of members", () => {
+  const roster = [member(1, 1, 14, "Ada"), member(2, 3, 4, "Bo"), member(3, 0, 0, "Cleo")];
+
+  it("sorts the session member first and selects their board on arrival", async () => {
+    await renderTab({ users: roster, meID: 2 });
+
+    const rows = railRows();
+    expect(rows.map((r) => r.querySelector(".mem-row__nm")?.textContent)).toEqual([
+      "Bo",
+      "Ada",
+      "Cleo",
+    ]);
+    expect(rows[0].getAttribute("aria-current")).toBe("page");
+    expect(rows.slice(1).every((r) => r.getAttribute("aria-current") === null)).toBe(true);
+  });
+
+  it("carries an explicit id on every row, the session member's included", async () => {
+    await renderTab({ users: roster, meID: 2 });
+
+    expect(railRows().map((r) => r.getAttribute("href"))).toEqual([
+      "/users?member=2",
+      "/users?member=1",
+      "/users?member=3",
+    ]);
+  });
+
+  it("announces a row from its contents: name, stash depth, pool occupancy", async () => {
+    await renderTab({ users: roster, meID: 2 });
+
+    // Three parts, in DOM order, none of them authored as an aria-label, so
+    // the visible and the spoken strings cannot drift. The avatar's initials
+    // are aria-hidden, or the row would open with "AD".
+    //
+    // The name is run together here because jsdom has no layout and the
+    // accessible-name algorithm separates on display: a browser blockifies
+    // these spans (the row is a grid, the text a flex column) and reads
+    // "Ada, 14 in stash, 2 of 3 slots filled". What this pins is the parts and
+    // their order.
+    const ada = railRows()[1];
+    expect(ada.getAttribute("aria-label")).toBeNull();
+    expect(ada).toBe(screen.getByRole("link", { name: "Ada14 in stash1 of 3 slots filled" }));
+    expect(within(ada).getByRole("img").getAttribute("aria-label")).toBe("1 of 3 slots filled");
+  });
+
+  it("drops the pips off the open row and keeps its stash count", async () => {
+    await renderTab({ users: roster, meID: 2 });
+
+    const [own, ada] = railRows();
+    expect(within(own).queryByRole("img")).toBeNull();
+    expect(own.textContent).toContain("4 in stash");
+    expect(within(ada).queryByRole("img")).not.toBeNull();
+  });
+
+  it("keeps every drawer mounted and makes the shut ones inert", async () => {
+    await renderTab({ users: roster, meID: 2 });
+
+    const drawers = document.querySelectorAll(".mem-drop__inner");
+    expect(drawers.length).toBe(3);
+    // Three slots in every drawer, open or shut: the pool is always drawn at
+    // its full size, filled or dashed.
+    drawers.forEach((d) => expect(d.querySelectorAll(".pslot").length).toBe(3));
+    expect(drawers[0].hasAttribute("inert")).toBe(false);
+    expect(drawers[1].hasAttribute("inert")).toBe(true);
+    expect(drawers[2].hasAttribute("inert")).toBe(true);
+  });
+
+  it("draws empty pool slots as dashed cells that say nothing", async () => {
+    await renderTab({ users: roster, meID: 3, href: "/users?member=3" });
+
+    const open = document.querySelectorAll(".mem-drop__inner")[0];
+    const empties = open.querySelectorAll(".pslot--empty");
+    expect(empties.length).toBe(3);
+    empties.forEach((slot) => expect(slot.getAttribute("aria-hidden")).toBe("true"));
+  });
+
+  it("opens the board the URL names, and only that one", async () => {
+    await renderTab({ users: roster, meID: 2, href: "/users?member=3" });
+
+    const rows = railRows();
+    expect(rows[2].getAttribute("aria-current")).toBe("page");
+    expect(rows[0].getAttribute("aria-current")).toBeNull();
+    // The pane is that member's: "Cleo's board", not the session member's.
+    expect(screen.getByRole("region", { name: "Cleo's board" })).toBeTruthy();
+  });
+
+  it("silently falls back to your own board on an id that does not resolve, without rewriting the URL", async () => {
+    const { router } = await renderTab({ users: roster, meID: 2, href: "/users?member=404" });
+
+    expect(railRows()[0].getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("region", { name: "Your board" })).toBeTruthy();
+    expect(document.querySelector(".empty.text-destructive")).toBeNull();
+    expect(router.state.location.href).toBe("/users?member=404");
+  });
+
+  it("pushes a history entry per member, so Back returns to the previous one", async () => {
+    const { router } = await renderTab({ users: roster, meID: 2 });
+
+    await router.navigate({ to: "/users", search: { member: 3 } });
+    await waitFor(() => expect(railRows()[2].getAttribute("aria-current")).toBe("page"));
+
+    router.history.back();
+    await waitFor(() => expect(railRows()[0].getAttribute("aria-current")).toBe("page"));
   });
 });

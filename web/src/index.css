@@ -1450,11 +1450,16 @@
    a height guard so ultrawide-but-short panels don't over-scale.
    Discrete steps preserve the fixed-scale ethos (§3 / §13).
    ============================================================ */
-@media (min-width: 1728px) { :root { zoom: 1.08; } }
-@media (min-width: 2240px) { :root { zoom: 1.14; } }
-@media (min-width: 2560px) and (min-height: 1300px) { :root { zoom: 1.22; } }
-@media (min-width: 3200px) and (min-height: 1700px) { :root { zoom: 1.34; } }
-@media (min-width: 3840px) and (min-height: 1700px) { :root { zoom: 1.46; } }
+/* `--zoom` carries the same number as a custom property, because `zoom` itself
+   cannot be read back in CSS. A viewport unit is NOT divided by the zoom the
+   root applies, so anything sizing itself off dvh/vh has to divide by this to
+   land in the same space (the Members shell does). Keep the two in step. */
+:root { --zoom: 1; }
+@media (min-width: 1728px) { :root { zoom: 1.08; --zoom: 1.08; } }
+@media (min-width: 2240px) { :root { zoom: 1.14; --zoom: 1.14; } }
+@media (min-width: 2560px) and (min-height: 1300px) { :root { zoom: 1.22; --zoom: 1.22; } }
+@media (min-width: 3200px) and (min-height: 1700px) { :root { zoom: 1.34; --zoom: 1.34; } }
+@media (min-width: 3840px) and (min-height: 1700px) { :root { zoom: 1.46; --zoom: 1.46; } }
 
 /* Respect reduced-motion: neutralize entrances, transitions, and the live pulse. */
 @media (prefers-reduced-motion: reduce) {

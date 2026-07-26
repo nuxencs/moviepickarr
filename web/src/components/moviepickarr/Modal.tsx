@@ -44,9 +44,48 @@ const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /**
+ * Body-scroll lock, shared by every open Modal rather than saved and restored
+ * per instance: a dialog opened from inside another dialog would otherwise hand
+ * the page its scroll back the moment the inner one unmounts, depending on
+ * which instance happened to capture the pre-lock value. Only the first lock
+ * reads the page's own styles and only the last release puts them back.
+ */
+let scrollLocks = 0;
+let releaseScroll: (() => void) | null = null;
+
+function lockBodyScroll() {
+  if (scrollLocks++ === 0) {
+    // Compensate for the removed scrollbar so the page doesn't jump right.
+    // (No-op where scrollbars are overlay — width is 0.)
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    releaseScroll = () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }
+  return () => {
+    if (--scrollLocks === 0) {
+      releaseScroll?.();
+      releaseScroll = null;
+    }
+  };
+}
+
+/**
  * Portalled modal shell with matching enter AND exit animations, Esc / veil-click
  * dismissal, body-scroll lock, and a focus trap (focus moves in on open, cycles
  * inside, and returns to the opener on close) so it behaves like a real dialog.
+ *
+ * A Modal opened from inside another Modal portals in as a sibling, not a
+ * descendant, so all three of those gestures are gated on being the topmost
+ * surface (#220): Escape reaches one dialog, the veil under the top dialog is
+ * inert, and Tab cycles the dialog on top instead of the one behind it.
  */
 export function Modal({
   onClose,
@@ -69,7 +108,10 @@ export function Modal({
   // Mounting is parent-controlled, so only the closing phase is used: the
   // exit motion plays, then onClosed tells the parent to unmount. Focus
   // returns to the opener in the unmount cleanup below, not via the machine.
-  const { closing, dismiss } = useDismissible({ onClosed: () => onCloseRef.current() });
+  const { closing, dismiss, isTopmost } = useDismissible({
+    parentMounted: true,
+    onClosed: () => onCloseRef.current(),
+  });
 
   const requestClose = useCallback(() => {
     if (!dismissibleRef.current) return;
@@ -83,6 +125,14 @@ export function Modal({
     }
     dismiss();
   }, [dismiss]);
+
+  // Esc and the veil are gestures aimed at whatever is on top; the render-prop
+  // `close` is not, so it stays a straight programmatic close (a nested confirm
+  // has to be able to close the dialog it was opened from).
+  const requestCloseFromGesture = useCallback(() => {
+    if (!isTopmost()) return;
+    requestClose();
+  }, [isTopmost, requestClose]);
 
   // The parent withdrawing `open` is the other way in, and the only one a
   // browser Back can take: by the time the popstate lands the state is
@@ -100,6 +150,9 @@ export function Modal({
     (surface?.querySelector<HTMLElement>("input,textarea,select") ?? surface)?.focus();
 
     const onKey = (e: KeyboardEvent) => {
+      // The listener is on `document`, so every mounted Modal hears this key.
+      // Only the one on top answers it.
+      if (!isTopmost()) return;
       if (e.key === "Escape") {
         requestClose();
         return;
@@ -125,27 +178,23 @@ export function Modal({
       }
     };
 
-    // Lock body scroll, compensating for the removed scrollbar so the page
-    // doesn't jump right. (No-op where scrollbars are overlay — width is 0.)
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    const prevOverflow = document.body.style.overflow;
-    const prevPaddingRight = document.body.style.paddingRight;
-    document.body.style.overflow = "hidden";
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
+    const unlockScroll = lockBodyScroll();
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = prevOverflow;
-      document.body.style.paddingRight = prevPaddingRight;
+      unlockScroll();
       document.removeEventListener("keydown", onKey);
-      // Return focus to whatever opened the modal.
+      // Return focus to whatever opened the modal. For a dialog opened from
+      // inside another one that is a control on the surface behind it, which
+      // is where the member left off.
       opener?.focus?.();
     };
-  }, [requestClose]);
+  }, [requestClose, isTopmost]);
 
   return createPortal(
-    <div className={`modal-veil${closing ? " modal-veil--closing" : ""}`} onMouseDown={requestClose}>
+    <div
+      className={`modal-veil${closing ? " modal-veil--closing" : ""}`}
+      onMouseDown={requestCloseFromGesture}
+    >
       <div
         ref={surfaceRef}
         role="dialog"

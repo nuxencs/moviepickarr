@@ -54,6 +54,8 @@ const MARGIN = 8;
  * to the trigger; on select that happens *before* the action's Modal mounts, so
  * the Modal captures the trigger as its opener and moves focus inside itself —
  * the trigger never sits focused behind a dialog where Enter would reopen the menu.
+ * The other direction works too: a menu opened from inside a dialog is the topmost
+ * surface, so Esc closes the menu and leaves the dialog behind it up (#220).
  */
 export function Menu({ actions, label, icon, align = "end", className }: MenuProps) {
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -62,7 +64,7 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
-  const { open, closing, show, dismiss } = useDismissible({
+  const { open, closing, show, dismiss, isTopmost } = useDismissible({
     restoreFocusTo: triggerRef,
     onClosed: () => setPlacement(null),
   });
@@ -132,13 +134,16 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
         place();
       });
     };
+    // Both listeners are on `document` and capture before anything else sees
+    // the event, so they defer to a surface opened on top of the menu (#220).
     const onPointerDown = (e: PointerEvent) => {
+      if (!isTopmost()) return;
       const node = e.target as Node;
       if (menuRef.current?.contains(node) || triggerRef.current?.contains(node)) return;
       requestClose("outside");
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && isTopmost()) {
         e.stopPropagation();
         requestClose("escape");
       }
@@ -155,7 +160,7 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open, closing, place, requestClose]);
+  }, [open, closing, place, requestClose, isTopmost]);
 
   const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End", "Tab"].includes(e.key)) return;

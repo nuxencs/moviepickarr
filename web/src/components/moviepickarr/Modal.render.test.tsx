@@ -16,8 +16,10 @@
    ============================================================ */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Menu } from "@/components/moviepickarr/Menu";
 import { Modal } from "@/components/moviepickarr/Modal";
 
 /** Long enough to outrun exitDelayMs(), whatever the motion tokens say. */
@@ -214,6 +216,157 @@ describe("Modal", () => {
 
       expect(onRequestClose).not.toHaveBeenCalled();
       expect(screen.queryByRole("dialog")).not.toBeNull();
+    });
+  });
+
+  /* A confirm opened from inside a dialog (#220): both surfaces portal into
+     <body> as siblings, so nothing about the DOM tells the outer one that
+     something is on top of it. Escape, the veil and the Tab trap all have to
+     stop at the topmost surface, or one press takes the whole stack down. */
+  describe("opened from inside another modal", () => {
+    /** Outer dialog with its own field; the inner one mounts on demand. */
+    function renderNested() {
+      const onOuterClose = vi.fn();
+      const onInnerClose = vi.fn();
+
+      function Nested() {
+        const [outer, setOuter] = useState(true);
+        const [inner, setInner] = useState(false);
+        if (!outer) return null;
+        return (
+          <Modal
+            onClose={() => {
+              setOuter(false);
+              onOuterClose();
+            }}
+          >
+            {(close) => (
+              <>
+                <button type="button" onClick={() => setInner(true)}>
+                  Delete
+                </button>
+                <button type="button" onClick={close}>
+                  Close outer
+                </button>
+                {inner && (
+                  <Modal
+                    onClose={() => {
+                      setInner(false);
+                      onInnerClose();
+                    }}
+                  >
+                    {(closeInner) => (
+                      <button type="button" onClick={closeInner}>
+                        Cancel
+                      </button>
+                    )}
+                  </Modal>
+                )}
+              </>
+            )}
+          </Modal>
+        );
+      }
+
+      render(<Nested />);
+      act(() => void fireEvent.click(screen.getByRole("button", { name: "Delete" })));
+      const [, innerDialog] = screen.getAllByRole("dialog");
+      return { onOuterClose, onInnerClose, inner: innerDialog };
+    }
+
+    it("gives Escape to the inner dialog alone", () => {
+      const { onOuterClose, onInnerClose } = renderNested();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      runExit();
+
+      expect(onInnerClose).toHaveBeenCalledTimes(1);
+      expect(onOuterClose).not.toHaveBeenCalled();
+      // The outer dialog is still there, and now answers Escape itself.
+      expect(screen.getAllByRole("dialog")).toHaveLength(1);
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      runExit();
+      expect(onOuterClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the outer veil inert while the inner dialog is up", () => {
+      const { onOuterClose, onInnerClose, inner } = renderNested();
+
+      // The inner veil sits over the outer one, so this is the click a member
+      // lands when aiming past the confirm.
+      fireEvent.mouseDown(veilOf(inner));
+      runExit();
+
+      expect(onInnerClose).toHaveBeenCalledTimes(1);
+      expect(onOuterClose).not.toHaveBeenCalled();
+    });
+
+    it("stops the outer focus trap from cycling past the dialog on top of it", () => {
+      // jsdom lays nothing out, so every element's offsetParent is null and the
+      // trap's visibility filter would drop all of its items. Stand one in.
+      const offsetParent = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetParent");
+      Object.defineProperty(HTMLElement.prototype, "offsetParent", {
+        configurable: true,
+        get: () => document.body,
+      });
+      try {
+        renderNested();
+        const last = screen.getByRole("button", { name: "Close outer" });
+        last.focus();
+
+        fireEvent.keyDown(document, { key: "Tab" });
+
+        // Tabbing off the outer surface's last item used to wrap back to its
+        // first; with a dialog on top, the outer surface owns no Tab at all.
+        expect(document.activeElement).toBe(last);
+        expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Delete" }));
+      } finally {
+        if (offsetParent) Object.defineProperty(HTMLElement.prototype, "offsetParent", offsetParent);
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetParent;
+      }
+    });
+
+    /* The rule is the shared machine's, not the Modal's: a Menu opened from
+       inside a dialog is just another surface on the stack, and the one on top
+       is the one Escape reaches. */
+    it("gives Escape to a menu opened inside the dialog, not the dialog", () => {
+      const onClose = vi.fn();
+      render(
+        <Modal onClose={onClose}>
+          {() => <Menu label="More actions" actions={[{ label: "Edit", onSelect: () => {} }]} />}
+        </Modal>,
+      );
+      act(() => screen.getByRole("button", { name: "More actions" }).click());
+      expect(screen.getByRole("menu")).not.toBeNull();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      runExit();
+
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+
+      // With the menu gone the dialog is back on top and takes the next press.
+      fireEvent.keyDown(document, { key: "Escape" });
+      runExit();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("holds the body-scroll lock until the last dialog is gone", () => {
+      document.body.style.overflow = "visible";
+      const { onInnerClose } = renderNested();
+
+      expect(document.body.style.overflow).toBe("hidden");
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      runExit();
+      expect(onInnerClose).toHaveBeenCalledTimes(1);
+      // The outer dialog is still open: the page must not scroll behind it.
+      expect(document.body.style.overflow).toBe("hidden");
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      runExit();
+      expect(document.body.style.overflow).toBe("visible");
     });
   });
 });

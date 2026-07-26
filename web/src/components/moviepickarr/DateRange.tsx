@@ -108,6 +108,7 @@ export function DateRangePopover({
   initial,
   triggerRef,
   closing = false,
+  isTopmost,
   onApply,
   onDismiss,
 }: {
@@ -117,6 +118,9 @@ export function DateRangePopover({
    *  toggle owns open/close — no double-fire. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
   closing?: boolean;
+  /** From the parent's `useDismissible`: false once a surface has opened on top
+   *  of the popover, which then owns Esc and outside-clicks (#220). */
+  isTopmost: () => boolean;
   onApply: (range: DayRange) => void;
   /** Dismiss without applying. `restoreFocus` is false for an outside click
    *  (focus follows the click) and true for Cancel/Esc. */
@@ -139,12 +143,13 @@ export function DateRangePopover({
     // Capturing pointerdown + Esc, matching Menu.tsx / FilterChipMenu. The
     // trigger is excluded so its toggle handles open/close itself.
     const onPointerDown = (e: PointerEvent) => {
+      if (!isTopmost()) return;
       const node = e.target as Node;
       if (ref.current?.contains(node) || triggerRef?.current?.contains(node)) return;
       onDismiss(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && isTopmost()) {
         e.stopPropagation();
         onDismiss(true);
       }
@@ -155,7 +160,7 @@ export function DateRangePopover({
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [onDismiss, triggerRef]);
+  }, [onDismiss, triggerRef, isTopmost]);
 
   const select = (date: Date) => {
     setRange((r) => {

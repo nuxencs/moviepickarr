@@ -90,7 +90,7 @@ function FilterChipMenu<T extends string | number>({
   const listRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
-  const { open, closing, show, dismiss } = useDismissible({ restoreFocusTo: triggerRef });
+  const { open, closing, show, dismiss, isTopmost } = useDismissible({ restoreFocusTo: triggerRef });
   // Unique anchor ident so the dropdown can tether to THIS chip — and flip to
   // its right edge on narrow screens — via CSS anchor positioning where it is
   // supported. Older engines fall back to the plain left-aligned drop (below).
@@ -182,12 +182,13 @@ function FilterChipMenu<T extends string | number>({
     if (!open || closing) return;
 
     const onPointerDown = (e: PointerEvent) => {
+      if (!isTopmost()) return;
       const node = e.target as Node;
       if (menuRef.current?.contains(node) || triggerRef.current?.contains(node)) return;
       requestClose("outside");
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && isTopmost()) {
         e.stopPropagation();
         requestClose("escape");
       }
@@ -199,7 +200,7 @@ function FilterChipMenu<T extends string | number>({
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open, closing, requestClose]);
+  }, [open, closing, requestClose, isTopmost]);
 
 
   const select = (next: T) => {

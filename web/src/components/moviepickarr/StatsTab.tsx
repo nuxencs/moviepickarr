@@ -334,6 +334,7 @@ export function StatsTab() {
               id={rangeId}
               triggerRef={customRef}
               closing={range.closing}
+              isTopmost={range.isTopmost}
               initial={customRange}
               onDismiss={closeRange}
               onApply={(r) =>

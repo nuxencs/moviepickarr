@@ -48,7 +48,7 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
 
-  const { open, closing, show, dismiss } = useDismissible({ restoreFocusTo: triggerRef });
+  const { open, closing, show, dismiss, isTopmost } = useDismissible({ restoreFocusTo: triggerRef });
 
   // Focus returns to the avatar on every dismissal except an outside click,
   // where focus follows the pointer instead.
@@ -62,11 +62,12 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
   useEffect(() => {
     if (!open || closing) return;
     const onPointerDown = (e: PointerEvent) => {
+      if (!isTopmost()) return;
       if (rootRef.current?.contains(e.target as Node)) return;
       requestClose(true);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && isTopmost()) {
         e.stopPropagation();
         requestClose(false);
       }
@@ -77,7 +78,7 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open, closing, requestClose]);
+  }, [open, closing, requestClose, isTopmost]);
 
   // Single-device logout, mirroring the account page: end this session, drop the
   // cached actor so the login screen doesn't flash a stale "still signed in"

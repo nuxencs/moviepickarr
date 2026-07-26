@@ -264,6 +264,14 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   machine, `useDismissible` (`web/src/hooks/useDismissible.ts`), so every floating
   surface dismisses the same way. The `ProfilePanel` rides it too; its inline
   `VolumeControl` owns no dismissal of its own.
+- **Esc, outside-click and the focus trap belong to the topmost surface only.** A
+  dialog opened from inside another one (a confirm over the movie modal) portals in
+  as a sibling, so neither surface can see the other through the DOM. `useDismissible`
+  keeps a stack of the surfaces on screen and hands out `isTopmost()`; a surface with
+  something over it lets those gestures pass. A surface holds its place on the stack
+  through its exit motion, so a second Esc mid-close can't take the one underneath
+  with it. The body-scroll lock is refcounted for the same reason: the page gets its
+  scroll back when the last dialog closes, not the first.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
   buttons). Widths: `.modal` 960px, `.modal--movie` 880px, `.modal--form` 460px.

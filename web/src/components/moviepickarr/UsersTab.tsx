@@ -19,10 +19,11 @@ import { drawStore } from "@/components/moviepickarr/drawStore";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { Menu } from "@/components/moviepickarr/Menu";
 import { isSelf } from "@/components/moviepickarr/ownership";
+import { membersStatus, type RosterOccupancy } from "@/components/moviepickarr/poolLock";
 import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
-import { UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
+import { Skeleton, UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
 import { toast } from "@/components/ui/toast-api";
 
@@ -41,13 +42,49 @@ export function UsersTab() {
   const { data: me } = useQuery(MeQueryOptions());
   const [searchUser, setSearchUser] = useState<User | null>(null);
 
+  // The page status line: one answer to "are we ready" for the whole group, so
+  // nobody has to count pips across six boards. The words and the composition
+  // live in poolLock.ts; this only gathers the three inputs.
+  const { data: isLocked, isPending: lockPending } = useQuery(SettingsGetPoolLockQueryOptions());
+  const drawPhase = useSyncExternalStore(drawStore.subscribe, () => drawStore.getState().phase);
+  const occupancy = useMemo<RosterOccupancy>(() => {
+    if (usersError) return { state: "error" };
+    // The lock is a second query, so a full roster can land before it. Stay
+    // pending until both are in: reading a locked round as `ready to lock` for
+    // a frame would announce a thing to go do that isn't there to be done.
+    if (usersPending || lockPending || !users) return { state: "pending" };
+    return {
+      state: "ready",
+      // Raw slot occupancy across everybody. It never moves for a draw: the
+      // server leaves the winner in its pool until the reveal, and a count that
+      // dropped early would give the film away.
+      filled: users.reduce((n, user) => n + Object.keys(user.currentPool).length, 0),
+      slots: users.length * POOL_SIZE,
+    };
+  }, [users, usersPending, usersError, lockPending]);
+  const status = membersStatus(occupancy, !!isLocked, drawPhase);
+
   return (
     <>
       <div className="block">
         <div className="sec-head">
           <div className="sec-title">
             <h2>Members</h2>
-            <span className="sec-count">{plural(users?.length ?? 0, "person", "people")}</span>
+            {/* No count until there's a roster to count: "0 people" while the
+                query is in flight states the one number this slot exists for,
+                wrongly. The row is flex, so leaving it out moves nothing. */}
+            {users && <span className="sec-count">{plural(users.length, "person", "people")}</span>}
+            {status.text === null ? (
+              <Skeleton w={132} h={12} />
+            ) : (
+              <span className="sec-status mono">{status.text}</span>
+            )}
+            {/* Split off the visible span on purpose: this region carries the
+                round and draw clauses only, never occupancy. See membersStatus
+                for why. Empty means nothing to announce. */}
+            <span className="vis-hidden" role="status">
+              {status.announce}
+            </span>
           </div>
         </div>
 

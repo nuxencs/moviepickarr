@@ -23,7 +23,7 @@ import {
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { StatNumber } from "@/components/moviepickarr/numberRoll";
 import { isSelf } from "@/components/moviepickarr/ownership";
-import { canLockPool } from "@/components/moviepickarr/poolLock";
+import { canLockPool, ROUND_CLOSED, ROUND_OPEN } from "@/components/moviepickarr/poolLock";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { chunkRows, filterWatched } from "@/components/moviepickarr/search";
 import { toast } from "@/components/ui/toast-api";
@@ -85,7 +85,7 @@ export function MoviesTab() {
           <div className="sec-title">
             <h2>In the Pool</h2>
             <span className="sec-count">
-              <StatNumber value={pooled?.length ?? 0} /> locked in · round {isLocked ? "closed" : "open"}
+              <StatNumber value={pooled?.length ?? 0} /> locked in · {isLocked ? ROUND_CLOSED : ROUND_OPEN}
             </span>
           </div>
           <div className="watched-controls">

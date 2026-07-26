@@ -70,6 +70,10 @@
   --shadow:    0 24px 60px -20px rgba(0,0,0,0.7), 0 8px 22px -12px rgba(0,0,0,0.6);
   --shadow-sm: 0 8px 22px -14px rgba(0,0,0,0.65);
   --poster-ring: oklch(1 0 0 / 0.10);
+  /* Skeleton fill + sweep: the block sits above the surface, the sweep
+     lightens. Both invert in .light; DESIGN.md's skeleton note has the why. */
+  --skel-bg:    var(--surface-2);
+  --skel-sweep: oklch(1 0 0 / 0.08);
   color-scheme: dark;
 }
 
@@ -88,6 +92,10 @@
   --shadow:    0 24px 50px -24px rgba(20,24,40,0.28), 0 6px 18px -12px rgba(20,24,40,0.18);
   --shadow-sm: 0 8px 20px -14px rgba(20,24,40,0.22);
   --poster-ring: oklch(0.2 0.02 264 / 0.12);
+  /* Inverted: the block sits below the surface, the sweep darkens. --surface-2
+     is only 0.005 off --bg here, so it can't be the fill. */
+  --skel-bg:    var(--surface-3);
+  --skel-sweep: oklch(0.2 0.02 264 / 0.07);
   color-scheme: light;
 }
 
@@ -238,11 +246,13 @@
 
   /* Skeleton placeholder block — a surface tile with the same shimmer sweep the
      posters use, so route/data loading states show the page's shape instead of a
-     bare "Loading…" line. Reuses mg-shimmer; honors reduced-motion. */
-  .skel { position: relative; overflow: hidden; background: var(--surface-2); border-radius: var(--r-sm); }
+     bare "Loading…" line. Reuses mg-shimmer; honors reduced-motion. Fill and
+     sweep are tokens because both flip with the theme, unlike the sibling
+     shimmers that sweep an opaque duotone. */
+  .skel { position: relative; overflow: hidden; background: var(--skel-bg); border-radius: var(--r-sm); }
   .skel::after {
     content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);
+    background: linear-gradient(105deg, transparent 25%, var(--skel-sweep) 50%, transparent 75%);
     animation: mg-shimmer 1.4s ease-in-out infinite;
   }
   .skel--poster { aspect-ratio: 2 / 3; border-radius: var(--r-md); width: 100%; }
@@ -1200,6 +1210,10 @@
   /* Inward ring — the scrolling .castrow clips outward rings at its edges. */
   a.castcard:focus-visible { outline-offset: -2px; }
   .castcard__photo { aspect-ratio: 2 / 3; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--poster-ring); }
+  /* The pending cast card composes both classes, and the frame background above
+     is declared later at equal specificity, so it would beat the skeleton fill.
+     Only the pending state moves; the loaded frame stays as it was. */
+  .castcard__photo.skel { background: var(--skel-bg); }
   .castcard__photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .castcard__photo .avatar { width: 100%; height: 100%; border-radius: 0; font-size: 17px; }
   .castcard__caption { display: flex; flex-direction: column; gap: 2px; }

@@ -1,7 +1,7 @@
-/* The Members page: a rail of members beside one board pane (#231).
+/* The Members page: a rail of members beside one board pane (#231), the pane
+   holding that member's stash as a wall of untitled posters (#232).
    Namespaced under .mem*, colours and motion from the global tokens
-   (index.css). The stash markup inside the pane is still the incumbent's
-   (.stash, .srow); the wall replaces it in #232.
+   (index.css).
 
    Nothing here measures anything in JS. Column counts, cell sizes and the
    shell's height are CSS, because the root zoom ramp (index.css §13) means a
@@ -95,11 +95,47 @@
     padding-left: 32px;
     border-left: 1px solid var(--line);
   }
-  /* The pane is the scroller now, so the incumbent stash list stops being one
-     of its own: a box scrolling inside a scrolling pane eats the flick. */
-  .mem-pane .stash__list {
-    max-height: none;
-    overflow: visible;
+
+  /* A height, not a max-height, and a whole number of rows of it.
+     Sized to its contents the box collapsed by several hundred pixels between a
+     14-film member and a 0-film one and dragged everything under it up with it,
+     which is the per-member jitter this layout spent three tickets removing and
+     worst at the moment the wall has nothing to look at. Reserved in full,
+     every member's pane is the same height and only the contents change.
+
+     The number of rows is what the pane has room for, rounded down, rather than
+     a constant: the pane's own height comes from the viewport, so a constant
+     either overflows the pane on a short window (putting the head and the
+     wall's bottom edge out of reach behind a second scrollbar) or strands a few
+     hundred pixels of nothing under the wall on a tall one. Rounding down is
+     what keeps the last row whole — the incumbent's 380px box cut its last row
+     clean in half. It still depends on the viewport alone, so it does not move
+     between one member and the next.
+
+     Below 760 the wall stops being a scroller and the page carries it (#236),
+     so the reserve belongs to the two-column shell alone. */
+  .mem-wallbox {
+    /* The room under the head, plus one gap: rows are counted by their pitch
+       (a row and the gap above the next), and the last row has no gap after. */
+    --mem-avail: calc(
+      100dvh / var(--zoom, 1) - var(--mem-chrome) - var(--mem-headh) + var(--mem-wgap)
+    );
+    --mem-pitch: calc(var(--mem-rowh) + var(--mem-wgap));
+    height: calc(max(var(--mem-pitch), round(down, var(--mem-avail), var(--mem-pitch))) - var(--mem-wgap));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* The cell width is measured against .mem-stash, which does not know a
+       classic scrollbar has taken width out of the box inside it — the last
+       column ends up clipped. Out of the layout, with the fade as the cue. */
+    scrollbar-width: none;
+  }
+  .mem-wallbox::-webkit-scrollbar {
+    width: 0;
+  }
+  /* Only when there is more wall below; over one that fits it would just dim
+     the last row. Same comparison-not-a-size as the rail's. */
+  .mem-wallbox[data-overflow="true"] {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
   }
 }
 
@@ -237,12 +273,224 @@
   gap: var(--mem-gap);
 }
 
-/* ---- the pane ---------------------------------------------------------- */
+/* ---- posters ----------------------------------------------------------- */
 
-/* Desktop carries no board header: the selected rail row already says whose
-   board this is and how full it is. */
-.mem-pane .board__search {
-  margin-bottom: 22px;
+/* One control per poster: promote on a stash tile, demote on a pool one, and
+   never both. Hover-revealed, so at rest your wall and a guest's are
+   pixel-identical and hover is what asks "can I act here" — a truthful yes on
+   yours. Persistent on desktop would put sixty buttons on sixty posters. */
+.mem-act {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  /* Over the poster's own gradient and grain layers. */
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--ink);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.mem-act svg {
+  width: 15px;
+  height: 15px;
+}
+.mem-tile:hover .mem-act,
+.pslot--filled:hover .mem-act,
+.mem-act:focus-visible {
+  opacity: 1;
+}
+.mem-act:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.mem-act:disabled {
+  cursor: not-allowed;
+  color: var(--ink-3);
+  border-color: var(--line);
+}
+@media (hover: none) {
+  /* Nothing to hover with, so the one control has to sit on the poster. */
+  .mem-act {
+    opacity: 1;
+    width: 26px;
+    height: 26px;
+    right: 6px;
+    bottom: 6px;
+  }
+  .mem-act svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+/* The app's poster zoom, on the image inside the clipping frame and never as a
+   transform on the frame — the same treatment the Movies tiles, the search
+   results and the stats rail already take. No background change and no lift:
+   buttons in this language do not lift. */
+.mem-tile:hover .poster__img,
+.mem-tile:has(:focus-visible) .poster__img,
+.pslot--filled:hover .poster__img,
+.pslot--filled:has(:focus-visible) .poster__img {
+  transform: scale(var(--poster-zoom));
+}
+.mem-tile:active .poster__img,
+.pslot--filled:active .poster__img {
+  transform: scale(var(--poster-zoom-press));
+}
+
+/* ---- the pane: the stash wall ------------------------------------------ */
+
+/* The head is a fixed height, and --mem-headh is that height plus its margin:
+   the wall counts the rows it has room for and has to know what sits above it.
+   Keep the two in step. */
+.mem-stash__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  margin-bottom: 12px;
+}
+.mem-stash__id {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+/* The pane's one heading, and the last thing on it saying whose board this is.
+   The incumbent stash-head scale, reused rather than reinvented: under the
+   page's own "Members" at 20px, and the same size as a rail name, so a person's
+   name looks like a name wherever it appears here. Not the mono-uppercase `.l`
+   class the old pool label used — that ships "ADA'S STASH".
+
+   Not a flex row either: "Your" and "stash" are one phrase, and a flex gap
+   would open between the two words. Plain inline text, so the ellipsis is the
+   block's own, and never a wrap — a heading that wrapped would start one
+   member's wall a line lower than another's. */
+.mem-stash__title {
+  margin: 0;
+  font-size: 14px;
+  /* Pinned, not inherited: the stacked head's height is one of these lines plus
+     the field, and --mem-headh is that sum written out. */
+  line-height: 21px;
+  font-weight: 600;
+  color: var(--ink-2);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Symmetric emphasis: the possessive token takes the ink and the noun steps
+   back, in both directions. Lifting "Your" alone would be a self-mark rendered
+   in colour, which this page has refused everywhere else. */
+.mem-stash__who {
+  color: var(--ink);
+}
+.mem-stash__id .sec-count {
+  font-size: 12px;
+}
+.mem-stash__head .field {
+  height: 34px;
+  width: 210px;
+  flex: none;
+  margin-left: auto;
+}
+
+/* The wall fills the width it is given: the cell comes from the container's own
+   inline size against a fixed column count, so there is no dead gutter on the
+   right the way a fixed cell plus auto-fill leaves. Row height follows from the
+   cell — all of it in CSS, because the root zoom ramp means a JS pixel and a
+   CSS pixel are different sizes.
+
+   Six columns is the floor, not a preference: the pane is what the rail leaves
+   over, and four columns across it puts a stash poster above the rail's 128px
+   pool poster, inverting the ranking the two bands exist to express. 96px is
+   the smallest size at which the art still identifies a film, which is the
+   premise of dropping the titles. */
+.mem-stash {
+  container-type: inline-size;
+}
+.mem-wallbox {
+  --mem-cols: 6;
+  --mem-wgap: 18px;
+  /* The head above the wall: 34px and its 12px margin. */
+  --mem-headh: 46px;
+  --mem-cell: calc((100cqw - (var(--mem-cols) - 1) * var(--mem-wgap)) / var(--mem-cols));
+  --mem-rowh: calc(var(--mem-cell) * 1.5);
+}
+.mem-wall {
+  display: grid;
+  grid-template-columns: repeat(var(--mem-cols), var(--mem-cell));
+  grid-auto-rows: var(--mem-rowh);
+  gap: var(--mem-wgap);
+}
+/* Centred in the height the box holds, per DESIGN.md §8. Left in the first row
+   band it would read as a poster that failed to load rather than as a statement
+   about the wall. The auto row is what lets it centre. */
+.mem-wall--empty {
+  height: 100%;
+  grid-auto-rows: auto;
+  align-content: center;
+}
+.mem-wall__empty {
+  grid-column: 1 / -1;
+  /* The wall carries no captions, but any text that does land in a narrow cell
+     has to break inside a word: a long single word runs out over its
+     neighbour. */
+  overflow-wrap: anywhere;
+}
+
+.mem-tile {
+  position: relative;
+}
+
+/* Adding a movie is an act on the stash, so it is the stash's first cell rather
+   than a button floating above the pane. Unlabelled: a dashed cell with a plus
+   in it is not ambiguous, and the words were the only text left in a pane made
+   of art, which made them read as a heading. */
+.mem-addtile {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.mem-addtile svg {
+  width: 24px;
+  height: 24px;
+}
+.mem-addtile:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The wall sheds a column at a time down the range: six at 1200, five at 1000,
+   four at 900, three at 800. The steps sit a pixel inside each width so the
+   width itself keeps the count named for it. */
+@media (max-width: 1199px) {
+  .mem-wallbox { --mem-cols: 5; }
+}
+@media (max-width: 999px) {
+  .mem-wallbox { --mem-cols: 4; }
+}
+@media (max-width: 899px) {
+  .mem-wallbox { --mem-cols: 3; }
 }
 
 /* One step down, on the 900 the rest of the app already uses (DESIGN.md §13). */
@@ -256,7 +504,9 @@
      rather than under it. */
   .shell:has(.mem) { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
   .mem__shell { --mem-chrome: calc(231px + env(safe-area-inset-bottom)); }
-  /* The pane is too narrow to hold a title and a search field on one line. */
-  .mem-pane .stash__head { flex-direction: column; align-items: stretch; gap: 10px; }
-  .mem-pane .stash__head .field { max-width: none; }
+  /* The pane is too narrow to hold the heading and the field on one line. */
+  /* The 21px heading line and the 34px field with 10px between them. */
+  .mem-stash__head { flex-direction: column; align-items: stretch; gap: 10px; height: 65px; }
+  .mem-stash__head .field { width: 100%; margin-left: 0; }
+  .mem-wallbox { --mem-headh: 77px; }
 }

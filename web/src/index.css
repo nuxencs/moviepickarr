@@ -783,7 +783,6 @@
   .board__id { display: flex; align-items: center; gap: 12px; }
   .board__id .nm { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
   .board__id .ct { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
-  .board__search { width: 100%; justify-content: center; margin-bottom: 22px; }
 
   .poolbox { margin-bottom: 24px; }
   .poolbox__label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
@@ -793,32 +792,14 @@
   /* Non-interactive placeholder — the pool is filled by promoting from the stash. */
   .pslot--empty { border-style: dashed; border-color: var(--line-2); }
   .pslot--filled .poster { width: 100%; }
-  /* full-poster demote overlay with a centered move-down (mirrors the empty-slot plus) */
-  .pslot__demote {
-    position: absolute; inset: 0; z-index: 5; border: none; cursor: pointer;
-    display: grid; place-items: center; color: #fff;
-    background: rgba(8,9,14,0.55); backdrop-filter: blur(1px);
-    opacity: 0; transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease);
-  }
-  .pslot__demote svg { width: 22px; height: 22px; }
-  .pslot--filled:hover .pslot__demote, .pslot__demote:focus-visible { opacity: 1; }
-  .pslot__demote:hover { background: rgba(8,9,14,0.72); }
-  .pslot__demote:disabled { cursor: not-allowed; }
+  /* The demote control on a filled slot is the wall's corner action (.mem-act,
+     members.css): one language for the one control a poster carries, on both
+     bands. The full-poster overlay it replaced could not be made persistent
+     under `hover: none` without covering the art it sat on. */
 
+  /* Still the loading skeleton's shape (Skeletons.tsx). The rendered board is
+     the rail plus the wall now, both of them in members.css. */
   .stash { display: flex; flex-direction: column; }
-  .stash__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 10px; }
-  .stash__head h3 { margin: 0; font-size: 14px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
-  .stash__head .sec-count { font-size: 12px; }
-  .stash__head .field { height: 34px; max-width: 160px; }
-  .stash__list { display: flex; flex-direction: column; max-height: 380px; overflow-y: auto; }
-  .srow { display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-bottom: 1px solid var(--line); transition: background var(--dur) var(--ease); }
-  .srow:hover { background: var(--surface-2); }
-  .srow .poster { width: 28px; flex: none; }
-  .srow .poster .poster__title { display: none; }
-  .srow .sr-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .srow .sr-actions { display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur) var(--ease); }
-  .srow:hover .sr-actions,
-  .srow:focus-within .sr-actions { opacity: 1; }
 
   /* ---- Stats tab ---- */
   .stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -1032,6 +1013,7 @@
   }
   .movietile:hover .poster__img,
   .movietile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
+  .movietile:active .poster__img { transform: scale(var(--poster-zoom-press)); }
   .movietile:focus-visible { outline-offset: -2px; }
   .movietile__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .movietile__title { font-size: 12.5px; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--dur-fast) var(--ease); }
@@ -1399,19 +1381,11 @@
   /* ---- Touch (no hover): every action must be reachable without a pointer ---- */
   @media (hover: none) {
     /* row actions are hover-revealed on desktop; show them on touch */
-    .wrow .wr-actions,
-    .srow .sr-actions { opacity: 1; }
+    .wrow .wr-actions { opacity: 1; }
 
-    /* pool demote: the full-cover hover scrim becomes a small persistent
-       bottom-right button so the poster art stays visible */
-    .pslot__demote {
-      opacity: 1;
-      inset: auto 6px 6px auto;
-      width: 40px; height: 40px;
-      border-radius: var(--r-md);
-      background: rgba(8,9,14,0.66); backdrop-filter: blur(4px);
-    }
-    .pslot__demote svg { width: 18px; height: 18px; }
+    /* The Members boards' controls used to be here too. Both are gone: the
+       stash rows are a wall of posters now and the pool demote shares its
+       corner action, which carries its own touch rules (members.css). */
 
     /* search results: keep the poster visible, pin a persistent Add button.
        The overlay's caption block is hidden (the .r-info caption below the

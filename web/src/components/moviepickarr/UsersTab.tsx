@@ -1,37 +1,25 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
-import {
-  LinkIcon,
-  MoveDownIcon,
-  MoveUpIcon,
-  PencilIcon,
-  PlusIcon,
-  SearchIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { MoveDownIcon, MoveUpIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import { MeQueryOptions, SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
 
-import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { drawStore } from "@/components/moviepickarr/drawStore";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { orderMembers, selectedMember } from "@/components/moviepickarr/membersSearch";
-import { Menu } from "@/components/moviepickarr/Menu";
 import { isSelf } from "@/components/moviepickarr/ownership";
 import { membersStatus, type RosterOccupancy } from "@/components/moviepickarr/poolLock";
 import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
 import { Skeleton, UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
-import { DeletionDialog } from "@/components/ui/deletion-dialog";
+import { filterStash, missLine } from "@/components/moviepickarr/stashWall";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie, User } from "@/types/Response";
-
-import { useToggle } from "@/hooks/hooks";
 
 import "@/components/moviepickarr/members.css";
 
@@ -362,7 +350,7 @@ function PoolSlots({
             {isOwnBoard && !isLocked && (
               <button
                 type="button"
-                className="pslot__demote"
+                className="mem-act"
                 onClick={() => demoteMutation.mutate(movie.movieID)}
                 disabled={demoteMutation.isPending || drawInFlight}
                 aria-label="Move back to stash"
@@ -384,9 +372,22 @@ function PoolSlots({
 }
 
 /**
- * The pane: the selected member's stash, and on your own board the way to add
- * to it. Still the incumbent's rows, moved rather than rebuilt — the wall of
- * posters is #232.
+ * The pane: the selected member's stash as a wall of untitled posters, and on
+ * your own board the way to add to it.
+ *
+ * The wall is six columns of 96px posters with no caption under the tile, which
+ * is what the density prototypes settled (docs/findings/members-204-stash):
+ * dropping the caption buys half again as many films at a size where the art
+ * still identifies one. Six is also the floor — four columns puts a stash
+ * poster above the rail's 128px pool poster and inverts the ranking the layout
+ * exists to express — so the ceiling on poster size here is arithmetic off the
+ * rail's width, not taste.
+ *
+ * Order is fixed title-ascending and there is no sort control: the only keys
+ * that are always present are title and date-added, the rest arrive with
+ * enrichment and would reorder the wall under you as SSE lands, and an untitled
+ * tile makes no key but title verifiable by looking. The field below is the
+ * find-a-film path in its place.
  */
 function StashPane({
   user,
@@ -405,31 +406,74 @@ function StashPane({
     () => Object.values(user.stash).sort((a, b) => a.title.localeCompare(b.title)),
     [user.stash],
   );
-  const filteredStash = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return q ? stash.filter((m) => m.title.toLowerCase().includes(q)) : stash;
-  }, [stash, filter]);
+  const filteredStash = useMemo(() => filterStash(stash, filter), [stash, filter]);
 
   const poolFull = Object.keys(user.currentPool).length >= POOL_SIZE;
   const firstName = user.name.split(" ")[0];
+  // Names split deliberately: the rail carries the full name, because a roster
+  // has to separate two people who share a first one; the heading carries the
+  // first, because "Ada's stash" reads like speech. Two members sharing a first
+  // name give two identically titled panes, which is a known limit.
+  const who = isOwnBoard ? "Your" : possessive(firstName);
+  const headingID = `mem-stash-${user.userID}`;
+
+  // The scrollbar is out of the layout (see members.css), so a fade at the
+  // bottom edge is the only sign there is more wall below — and conditional, or
+  // it dims the last row for nothing. A comparison, not a size, so the root
+  // zoom ramp does not reach it. Same shape as the rail's, one scroller up.
+  const wallRef = useRef<HTMLDivElement>(null);
+  const [wallOverflows, setWallOverflows] = useState(false);
+
+  // Your own board's add tile sits at cell 0 of the wall, so the act of growing
+  // the stash lives inside the thing it grows. It is suppressed under any
+  // filter, hit or miss: a dashed cell one keystroke from a row of search hits
+  // reads as a result.
+  const addTile = isOwnBoard && !filter.trim();
+  // The cell count, not the film count: the add tile is a cell too, and a term
+  // that matches every film takes it away without moving the other number.
+  const cells = filteredStash.length + (addTile ? 1 : 0);
+
+  useEffect(() => {
+    const wall = wallRef.current;
+    if (!wall) return;
+    const check = () => setWallOverflows(wall.scrollHeight > wall.clientHeight + 1);
+    check();
+    // The observer catches the width changing under it, which moves both the
+    // column count and the cell height and so the number of rows.
+    const ro = new ResizeObserver(check);
+    ro.observe(wall);
+    return () => ro.disconnect();
+  }, [cells]);
+  // Four empty states, and only one of them is prose. Your own empty wall is the
+  // add tile and nothing else — the add affordance is not reachable from the
+  // empty state, it *is* the empty state, and a sentence beside one dashed cell
+  // would be the only words in a pane emptied of them. Everything else says so
+  // in one line, because a blank pane cannot be told apart from a switch that
+  // failed. No name in it (the heading two lines up has it) and no "yet", which
+  // is an expectation you do not get to hold about someone else's stash.
+  const emptyLine =
+    filteredStash.length > 0 || addTile
+      ? null
+      : filter.trim()
+        ? missLine(filter)
+        : "This stash is empty";
 
   return (
-    <section
-      className="mem-pane"
-      aria-label={isOwnBoard ? "Your board" : `${possessive(firstName)} board`}
-    >
-      {isOwnBoard && (
-        <button type="button" className="btn btn--ghost board__search" onClick={onOpenSearch}>
-          <PlusIcon />
-          Add to {possessive(firstName)} stash
-        </button>
-      )}
-
-      <div className="stash">
-        <div className="stash__head">
-          <h3>
-            Stash <span className="sec-count">{stash.length}</span>
-          </h3>
+    <section className="mem-pane" aria-labelledby={headingID}>
+      <div className="mem-stash">
+        <div className="mem-stash__head">
+          {/* The positive self-mark, and the last thing on the pane saying whose
+              board you are looking at. Emphasis is symmetric: the possessive
+              token takes the ink and the noun steps back, in both directions, so
+              lifting "Your" alone is never a self-mark rendered in colour. One
+              line with an end ellipsis and a title — a heading that wrapped
+              would start one member's wall a line lower than another's. */}
+          <div className="mem-stash__id">
+            <h3 id={headingID} className="mem-stash__title" title={`${who} stash`}>
+              <span className="mem-stash__who">{who}</span> stash
+            </h3>
+            <span className="sec-count">{stash.length}</span>
+          </div>
           <label className="field">
             <SearchIcon />
             <input
@@ -441,22 +485,38 @@ function StashPane({
             />
           </label>
         </div>
-        <div className="stash__list">
-          {filteredStash.length === 0 ? (
-            <div className="empty">
-              {filter ? `Nothing matches "${filter}"` : "Stash is empty"}
-            </div>
-          ) : (
-            filteredStash.map((movie) => (
-              <StashRow
-                key={movie.movieID}
-                movie={movie}
-                poolFull={poolFull}
-                locked={isLocked}
-                isOwnBoard={isOwnBoard}
-              />
-            ))
-          )}
+
+        <div className="mem-wallbox" ref={wallRef} data-overflow={wallOverflows}>
+          <div className={`mem-wall${emptyLine ? " mem-wall--empty" : ""}`}>
+            {addTile && (
+              // No label under it: a dashed cell with a plus in it is not
+              // ambiguous, and spelling it out was the only text left in the
+              // pane, which made it read as a heading rather than as a cell.
+              // Icon-only, so the name is authored.
+              <button
+                type="button"
+                className="mem-addtile"
+                onClick={onOpenSearch}
+                aria-label={`Add to ${possessive(firstName)} stash`}
+                title={`Add to ${possessive(firstName)} stash`}
+              >
+                <PlusIcon />
+              </button>
+            )}
+            {emptyLine ? (
+              <p className="empty mem-wall__empty">{emptyLine}</p>
+            ) : (
+              filteredStash.map((movie) => (
+                <StashTile
+                  key={movie.movieID}
+                  movie={movie}
+                  poolFull={poolFull}
+                  locked={isLocked}
+                  isOwnBoard={isOwnBoard}
+                />
+              ))
+            )}
+          </div>
         </div>
       </div>
     </section>
@@ -464,10 +524,10 @@ function StashPane({
 }
 
 // Memoized because the stash filter lives in the pane above: without it every
-// keystroke re-renders every matching row, and a row is not cheap (three
-// mutation hooks, a poster, a menu, two dialogs). The props are the movie object
-// straight out of the query cache plus primitives, so the memo holds while typing.
-const StashRow = memo(function StashRow({
+// keystroke re-renders every surviving tile, and at 60 films that is 60 posters
+// and 60 mutation hooks. The props are the movie object straight out of the
+// query cache plus primitives, so the memo holds while typing.
+const StashTile = memo(function StashTile({
   movie,
   poolFull,
   locked,
@@ -478,80 +538,31 @@ const StashRow = memo(function StashRow({
   locked: boolean;
   isOwnBoard: boolean;
 }) {
-  const [editOpen, toggleEdit] = useToggle(false);
-  const [deleteOpen, toggleDelete] = useToggle(false);
-
-  // The row only renders these actions on your own board (isOwnBoard).
+  // Promote to the pool: the one control the tile carries, and only on your own
+  // board. Edit and delete are not here — they move to the movie modal, which
+  // is also what will make the poster itself openable.
   const moveMutation = useMutation({
     mutationFn: () => APIClient.board.moveMovie(movie.movieID, "pool"),
     onError: () => toast.error("Failed to move movie"),
   });
-  const deleteMutation = useMutation({
-    mutationFn: () => APIClient.board.deleteMovie(movie.movieID),
-    onSuccess: () => toast.success(`${movie.title} deleted`),
-    onError: () => toast.error("Failed to delete movie"),
-  });
-  const editMutation = useMutation({
-    mutationFn: (payload: { title: string; link: string }) =>
-      APIClient.board.updateMovie(movie.movieID, payload.title, payload.link),
-    onSuccess: () => {
-      toast.success(`${movie.title} updated`);
-      toggleEdit();
-    },
-    onError: () => toast.error("Failed to update movie"),
-  });
 
   return (
-    <>
-      <EditMovieDialog
-        isOpen={editOpen}
-        onClose={toggleEdit}
-        initialTitle={movie.title}
-        initialLink={movie.link}
-        isSaving={editMutation.isPending}
-        onSubmit={(payload) => editMutation.mutate({ title: payload.title, link: payload.link })}
-      />
-      <DeletionDialog
-        isOpen={deleteOpen}
-        onClose={toggleDelete}
-        onConfirm={() => deleteMutation.mutate()}
-        title="Delete movie"
-        description={`Delete ${movie.title}? This cannot be undone.`}
-        confirmText="Delete"
-      />
-
-      <div className="srow">
-        <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
-        <span className="sr-title">{movie.title}</span>
-        <div className="sr-actions">
-          {movie.link && (
-            <a className="iconbtn" href={movie.link} target="_blank" rel="noopener noreferrer" aria-label="Open link">
-              <LinkIcon />
-            </a>
-          )}
-          {isOwnBoard && (
-            <>
-              <button
-                type="button"
-                className="iconbtn"
-                onClick={() => moveMutation.mutate()}
-                disabled={locked || poolFull || moveMutation.isPending}
-                aria-label="Promote to pool"
-                title={poolFull ? "Pool is full" : locked ? "Pool is locked" : "Promote to pool"}
-              >
-                <MoveUpIcon />
-              </button>
-              <Menu
-                label="More actions"
-                actions={[
-                  { icon: <PencilIcon />, label: "Edit", onSelect: toggleEdit },
-                  { icon: <Trash2Icon />, label: "Delete", onSelect: toggleDelete, danger: true },
-                ]}
-              />
-            </>
-          )}
-        </div>
-      </div>
-    </>
+    // The native tooltip is what names an untitled poster on hover; the image's
+    // alt carries the same title for anyone not hovering anything.
+    <div className="mem-tile" title={movie.title}>
+      <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
+      {isOwnBoard && (
+        <button
+          type="button"
+          className="mem-act"
+          onClick={() => moveMutation.mutate()}
+          disabled={locked || poolFull || moveMutation.isPending}
+          aria-label="Promote to pool"
+          title={poolFull ? "Pool is full" : locked ? "Pool is locked" : "Promote to pool"}
+        >
+          <MoveUpIcon />
+        </button>
+      )}
+    </div>
   );
 });

@@ -75,9 +75,9 @@
   username+password for a member with no local login, `409` if one exists).
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
-  `fullMovie` (detail payload: embeds `leanMovieTile` plus the draw/reveal coordination
-  fields `drawnAt`/`revealAt`/`serverNow`/`drawClientId`/`revealed`, modal metadata, and
-  `cast`/`crew`). A handler returning `leanMovieTile` cannot accidentally ship credits or
+  `fullMovie` (detail payload: embeds `leanMovieTile` plus the film's `status`, the
+  draw/reveal coordination fields `drawnAt`/`revealAt`/`serverNow`/`drawClientId`/`revealed`,
+  modal metadata, and `cast`/`crew`). A handler returning `leanMovieTile` cannot accidentally ship credits or
   prose, which keeps the list payloads small; the mappers (`toLeanTile`/`toFullMovie` and
   their slice forms) are the single projection from `domain.Movie` to the wire.
 

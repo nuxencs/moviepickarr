@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, MeResponse, Movie, RemoveResult, RosterMember, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, MeResponse, Movie, MoveTarget, RemoveResult, RosterMember, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 // Carries the HTTP status alongside the human-readable message so callers can
 // branch on it (the login page shows the uniform banner only for a 401, and
@@ -317,7 +317,7 @@ export const APIClient = {
                     watchedAt,
                 },
             }),
-        moveMovie: (movieID: number, target: "pool" | "stash") =>
+        moveMovie: (movieID: number, target: MoveTarget) =>
             appClient.Post<Movie>(`api/v1/movies/${movieID}/move`, {
                 body: { target },
             }),

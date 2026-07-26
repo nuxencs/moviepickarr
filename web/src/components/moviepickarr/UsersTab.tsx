@@ -10,6 +10,7 @@ import { Avatar } from "@/components/moviepickarr/Bits";
 import { drawStore } from "@/components/moviepickarr/drawStore";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { orderMembers, selectedMember } from "@/components/moviepickarr/membersSearch";
+import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { isSelf } from "@/components/moviepickarr/ownership";
 import { membersStatus, type RosterOccupancy } from "@/components/moviepickarr/poolLock";
 import { possessive } from "@/components/moviepickarr/possessive";
@@ -20,6 +21,8 @@ import { filterStash, missLine } from "@/components/moviepickarr/stashWall";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie, User } from "@/types/Response";
+
+import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
 import "@/components/moviepickarr/members.css";
 
@@ -37,6 +40,12 @@ const POOL_SIZE = 3;
  * Which member is selected is an address (`/users?member=<userID>`, see
  * membersSearch), not component state, so a board can be linked to and Back
  * returns to the member you were looking at before.
+ *
+ * Every filled poster on either band is a button opening the movie modal, which
+ * is the one way into a film's record from this page — never gated on whose
+ * board it is, on the lock or on a draw. What a board you cannot act on is
+ * missing is exactly one thing, the corner action on its tiles, so the absence
+ * says "not your board" and nothing else.
  */
 export function UsersTab() {
   const { data: users, isPending: usersPending, isError: usersError } = useQuery(UsersGetAllQueryOptions());
@@ -46,6 +55,13 @@ export function UsersTab() {
   // and no delete action.
   const { data: me } = useQuery(MeQueryOptions());
   const [searchUser, setSearchUser] = useState<User | null>(null);
+
+  // Opening a film's record pushes a history entry, so browser Back closes it
+  // (#196). The film handed over is the tile's own lean object and is not
+  // re-derived from the roster as the Stats tab does: the modal lazy-loads the
+  // full record itself and SSE invalidates that query, so the live source is
+  // already the one inside the modal.
+  const { selected: openMovie, isOpen, open, close, onClosed } = useMovieModal();
 
   // The page status line: one answer to "are we ready" for the whole group, so
   // nobody has to count pips across six boards. The words and the composition
@@ -167,6 +183,7 @@ export function UsersTab() {
                   isOwnBoard={isSelf(me?.id, user.userID)}
                   isLocked={!!isLocked}
                   drawInFlight={drawInFlight}
+                  onOpen={open}
                 />
               ))}
             </nav>
@@ -181,6 +198,7 @@ export function UsersTab() {
               isOwnBoard={isSelf(me?.id, selected.userID)}
               isLocked={!!isLocked}
               onOpenSearch={() => setSearchUser(selected)}
+              onOpen={open}
             />
           </div>
         ) : (
@@ -194,6 +212,10 @@ export function UsersTab() {
 
       {searchUser && (
         <SearchModal userName={searchUser.name} onClose={() => setSearchUser(null)} />
+      )}
+
+      {openMovie && (
+        <MovieModal movie={openMovie} open={isOpen} onRequestClose={close} onClose={onClosed} />
       )}
     </>
   );
@@ -216,12 +238,14 @@ function RailRow({
   isOwnBoard,
   isLocked,
   drawInFlight,
+  onOpen,
 }: {
   user: User;
   active: boolean;
   isOwnBoard: boolean;
   isLocked: boolean;
   drawInFlight: boolean;
+  onOpen: (movie: Movie) => void;
 }) {
   const pool = useMemo(
     () => Object.values(user.currentPool).sort((a, b) => a.title.localeCompare(b.title)),
@@ -284,6 +308,7 @@ function RailRow({
               isOwnBoard={isOwnBoard}
               isLocked={isLocked}
               drawInFlight={drawInFlight}
+              onOpen={onOpen}
             />
           </div>
         </div>
@@ -305,6 +330,42 @@ function PoolPips({ filled }: { filled: number }) {
 }
 
 /**
+ * A film's poster, as the button that opens its record. The same cell on both
+ * bands and on every board: what the lock and the draw freeze is moving a film,
+ * never reading one, so this is not gated on anything.
+ *
+ * It is a sibling of the corner action, never its parent — a poster that
+ * contained the promote button would be a button inside a button. The native
+ * tooltip and the authored name are the same string, so the shown and the
+ * spoken names cannot drift; the image's alt would name it too, but only while
+ * there is a photo to carry one.
+ */
+function PosterButton({
+  movie,
+  showArt = true,
+  onOpen,
+}: {
+  movie: Movie;
+  /** Whether to fetch the art. False in a drawer nobody has opened (see RailRow). */
+  showArt?: boolean;
+  onOpen: (movie: Movie) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="mem-open"
+      onClick={() => onOpen(movie)}
+      aria-label={movie.title}
+      title={movie.title}
+    >
+      {showArt && (
+        <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
+      )}
+    </button>
+  );
+}
+
+/**
  * The open row's contents: that member's pool, always exactly POOL_SIZE slots
  * and never reordered — the draw is random, so a slot carries no priority.
  *
@@ -320,6 +381,7 @@ function PoolSlots({
   isOwnBoard,
   isLocked,
   drawInFlight,
+  onOpen,
 }: {
   pool: Movie[];
   /** Whether this drawer has been open. The slots are always drawn — they are
@@ -329,6 +391,7 @@ function PoolSlots({
   isOwnBoard: boolean;
   isLocked: boolean;
   drawInFlight: boolean;
+  onOpen: (movie: Movie) => void;
 }) {
   // Demote a pooled movie back to the stash. The move endpoint is directional
   // (target = destination) and idempotent, so a repeat click is a safe no-op.
@@ -343,10 +406,8 @@ function PoolSlots({
       {Array.from({ length: POOL_SIZE }).map((_, i) => {
         const movie = pool[i];
         return movie ? (
-          <div className="pslot pslot--filled" key={movie.movieID} title={movie.title}>
-            {showArt && (
-              <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
-            )}
+          <div className="pslot pslot--filled" key={movie.movieID}>
+            <PosterButton movie={movie} showArt={showArt} onOpen={onOpen} />
             {isOwnBoard && !isLocked && (
               <button
                 type="button"
@@ -361,9 +422,10 @@ function PoolSlots({
             )}
           </div>
         ) : (
-          // Empty slots are non-interactive placeholders. Movies reach the pool
-          // by being promoted from the stash, not added directly here — a clickable
-          // "+" misleadingly implied a direct pool add (it opened the stash search).
+          // The one cell on either board that answers nothing, and identical on
+          // both: there is no film here to open. Movies reach the pool by being
+          // promoted from the stash, not added directly here — a clickable "+"
+          // misleadingly implied a direct pool add (it opened the stash search).
           <div className="pslot pslot--empty" key={`empty-${i}`} aria-hidden="true" />
         );
       })}
@@ -394,11 +456,13 @@ function StashPane({
   isOwnBoard,
   isLocked,
   onOpenSearch,
+  onOpen,
 }: {
   user: User;
   isOwnBoard: boolean;
   isLocked: boolean;
   onOpenSearch: () => void;
+  onOpen: (movie: Movie) => void;
 }) {
   const [filter, setFilter] = useState("");
 
@@ -513,6 +577,7 @@ function StashPane({
                   poolFull={poolFull}
                   locked={isLocked}
                   isOwnBoard={isOwnBoard}
+                  onOpen={onOpen}
                 />
               ))
             )}
@@ -526,31 +591,32 @@ function StashPane({
 // Memoized because the stash filter lives in the pane above: without it every
 // keystroke re-renders every surviving tile, and at 60 films that is 60 posters
 // and 60 mutation hooks. The props are the movie object straight out of the
-// query cache plus primitives, so the memo holds while typing.
+// query cache plus primitives, plus an onOpen that is stable across renders
+// (useMovieModal's useCallback), so the memo holds while typing.
 const StashTile = memo(function StashTile({
   movie,
   poolFull,
   locked,
   isOwnBoard,
+  onOpen,
 }: {
   movie: Movie;
   poolFull: boolean;
   locked: boolean;
   isOwnBoard: boolean;
+  onOpen: (movie: Movie) => void;
 }) {
   // Promote to the pool: the one control the tile carries, and only on your own
-  // board. Edit and delete are not here — they move to the movie modal, which
-  // is also what will make the poster itself openable.
+  // board. Edit and delete are not here — they live in the movie modal, which
+  // the poster itself opens.
   const moveMutation = useMutation({
     mutationFn: () => APIClient.board.moveMovie(movie.movieID, "pool"),
     onError: () => toast.error("Failed to move movie"),
   });
 
   return (
-    // The native tooltip is what names an untitled poster on hover; the image's
-    // alt carries the same title for anyone not hovering anything.
-    <div className="mem-tile" title={movie.title}>
-      <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
+    <div className="mem-tile">
+      <PosterButton movie={movie} onOpen={onOpen} />
       {isOwnBoard && (
         <button
           type="button"

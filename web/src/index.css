@@ -437,7 +437,10 @@
      Layout: nav · hero · tabs
      ============================================================ */
   .shell { max-width: 1240px; margin: 0 auto; padding: 40px 32px 110px; }
-  @media (max-width: 700px) { .shell { padding: 28px 18px 90px; } }
+  /* Bottom padding is spelled out rather than folded into the shorthand: every
+     width in this block is also under the 900 bar breakpoint, so the clearance
+     belongs here instead of depending on which block the cascade reads last. */
+  @media (max-width: 700px) { .shell { padding: 28px 18px; padding-bottom: calc(76px + env(safe-area-inset-bottom)); } }
 
   /* Fixed (not sticky) so the bar stays pinned to the viewport during trackpad
      rubber-band overscroll at the top. .app reserves 63px (62px + border) so
@@ -1294,15 +1297,14 @@
 
   /* ============================================================
      Responsive — phone & touch adaptations
-     Breakpoint scale (content-driven): 640 (phone: bottom nav +
-     single-column reflows), 700 (hero stack + page padding + the
-     movie modal's rail-to-row), 760 (stat strip 4→2), 900 (stat
-     two-col). Plus
+     Breakpoint scale (content-driven): 640 (single-column reflows),
+     700 (hero stack + page padding + the movie modal's rail-to-row),
+     760 (stat strip 4→2), 900 (bottom nav + stat two-col). Plus
      capability queries — hover:none / pointer:coarse — so touch users
      get every action without a hover, and tap targets grow.
      ============================================================ */
 
-  /* Bottom tab bar: styled here, revealed only on phones (640 block). */
+  /* Bottom tab bar: styled here, revealed below 900 (the block further down). */
   .navbar-bottom {
     display: none;
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
@@ -1327,13 +1329,22 @@
   .navbar-bottom__tab:not([data-active="true"]):focus-visible { color: var(--ink-2); }
   .navbar-bottom__tab:active { background: var(--surface-2); }
 
-  /* ---- Phone: bottom nav + single-column reflows ---- */
-  @media (max-width: 640px) {
+  /* ---- Bottom nav: the top tab row no longer fits ----
+     Nothing in .nav__inner shrinks, so once the row outgrows the viewport the
+     profile avatar (sign-out, theme, volume, preferences) is pushed past the
+     right edge, and body { overflow-x: hidden } means it cannot be scrolled to.
+     Measured against the fixture data, the row stops fitting at 794px for an
+     admin (4 tabs, Roster included) and 677px for a member. 900 clears both
+     with room for longer labels; a fifth tab has to move it again. */
+  @media (max-width: 900px) {
     .nav__tabs { display: none; }
     .navbar-bottom { display: grid; }
     /* clear the fixed bottom bar (height + the iOS home-indicator inset) */
     .shell { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  }
 
+  /* ---- Phone: single-column reflows ---- */
+  @media (max-width: 640px) {
     /* stacked section headers: title row, then full-width controls */
     .sec-head { flex-direction: column; align-items: stretch; gap: 14px; }
     .sec-head .sec-title { justify-content: space-between; }
@@ -1459,9 +1470,9 @@
 .mg-toast[data-type="error"] .mg-toast__icon { color: var(--danger); }
 .mg-toast[data-type="info"] .mg-toast__icon { color: var(--ink-2); }
 
-/* On phones the bottom-right toaster would land on the fixed bottom tab bar;
+/* Wherever the bottom tab bar shows, the bottom-right toaster would land on it;
    lift it above the bar (+ the iOS home-indicator inset). */
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   [data-sonner-toaster][data-y-position="bottom"] {
     bottom: calc(72px + env(safe-area-inset-bottom)) !important;
   }

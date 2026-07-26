@@ -683,8 +683,7 @@ Breakpoints are content-driven but drawn from one tidy scale — **640 / 700 / 7
 (the "Responsive — phone & touch adaptations" and "Large-screen scale ramp" blocks).
 What each does:
 
-- **640** — the *phone* breakpoint. Navigation moves to a fixed **bottom tab bar**
-  (below); section headers (`.sec-head`) stack to a title row + full-width controls;
+- **640** — the *phone* breakpoint. Section headers (`.sec-head`) stack to a title row + full-width controls;
   user boards go single-column; the stats window control spans the row and the
   added-by-member bars shrink their name column (`188px → 112px`) so the track keeps
   width; poster grids become denser thumbnail grids; modal chrome tightens.
@@ -692,8 +691,9 @@ What each does:
   movie modal's rail becomes a row with its credit columns stacked (§4). It replaced the
   old 560 stack point when the modal went from 560px to 880px wide.
 - **760** — the stat strip drops 3 columns → 2.
-- **900** — the stat strip drops 6 columns → 3, and the stats two-column sections
-  (weekday | hourly, genres | decades) collapse to one.
+- **900** — navigation moves to a fixed **bottom tab bar** (below); the stat strip drops
+  6 columns → 3, and the stats two-column sections (weekday | hourly, genres | decades)
+  collapse to one.
 
 **Large screens.** A mirror of the phone pass, scaling *up*. Above the 1240px column the
 whole UI steps up through a discrete root `zoom` ramp (`:root { zoom }` at 1728 / 2240 /
@@ -713,13 +713,21 @@ riding the ramp for free); where a portal is unavoidable (the row `Menu` escapin
 step on top of the zoom (taller `--hero-body-h`, roomier padding, a higher title ceiling)
 so the centerpiece feels grander, not merely bigger (§7).
 
-**Bottom tab bar.** Below 640px the top-bar tabs (`.nav__tabs`) hide and a fixed
-`.navbar-bottom` renders the 3 tabs in thumb reach; the wordmark (a home control: click it
-to return to the Movies tab from any tab) + theme toggle stay in the top bar. The active tab is gold-tinted — there is no sliding underline there (the
-`.tab__ink` slider is desktop-only, and `NavBar`'s `measure()` skips when the top tabs
-are `display:none`). The bar carries `padding-bottom: env(safe-area-inset-bottom)`, the
+**Bottom tab bar.** Below 900px the top-bar tabs (`.nav__tabs`) hide and a fixed
+`.navbar-bottom` renders the tabs (4 for an admin, Roster included) in thumb reach; the
+wordmark (a home control: click it to return to the Movies tab from any tab) + the profile
+avatar stay in the top bar. The active tab is gold-tinted — there is no sliding underline
+there (the `.tab__ink` slider is desktop-only, and `NavBar`'s `measure()` skips when the top
+tabs are `display:none`). The bar carries `padding-bottom: env(safe-area-inset-bottom)`, the
 `.shell` reserves clearance for it, and `index.html` sets `viewport-fit=cover`; the
-bottom-right toaster is lifted above the bar on phones.
+bottom-right toaster is lifted above the bar at the same width.
+
+The 900 is a clearance number, not a device class: nothing in `.nav__inner` shrinks, so once
+the top row stops fitting, the avatar (and with it sign-out, theme, volume, preferences) is
+pushed off the right edge with no way to scroll to it. Measured against the fixture data the
+row runs out of room at 794px for an admin and 677px for a member, so 900 clears both with
+slack for longer labels. A fifth tab moves the number again; the top bar is never made to
+compress instead, since that trades a loud break for a quiet one.
 
 **Touch (`@media (hover: none)`).** Every hover-revealed control must be reachable
 without a pointer. On touch: watched/stash row actions (`.wr-actions`, `.sr-actions`)
@@ -745,7 +753,7 @@ buttons grow toward the 44px touch minimum.
 5. The hero stays dimensionally static (§7); 3+ line taglines truncate.
 6. Copy: verb+object buttons, "Failed to X" errors, `plural()` for counts, no em dashes.
 7. Gold = action/selection/state only. Danger = the single `--danger` ramp.
-8. Responsiveness is structural (bottom nav + single-column reflows below 640; a discrete
+8. Responsiveness is structural (bottom nav below 900, single-column reflows below 640; a discrete
    root `zoom` ramp scales the whole UI up on large screens — §13), never per-element fluid
    type. Every hover-revealed action needs a `hover: none` fallback so touch users can
    reach it (§13).

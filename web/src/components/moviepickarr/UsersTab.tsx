@@ -15,6 +15,7 @@ import { isSelf } from "@/components/moviepickarr/ownership";
 import { membersStatus, type RosterOccupancy } from "@/components/moviepickarr/poolLock";
 import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
+import { actionLabel, type ActionKind, refusalOf, type Refusal } from "@/components/moviepickarr/refusals";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
 import { Skeleton, UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
 import { filterStash, missLine } from "@/components/moviepickarr/stashWall";
@@ -46,6 +47,10 @@ const POOL_SIZE = 3;
  * board it is, on the lock or on a draw. What a board you cannot act on is
  * missing is exactly one thing, the corner action on its tiles, so the absence
  * says "not your board" and nothing else.
+ *
+ * Absence means only that. A full pool, a locked round and a draw in flight are
+ * all temporary, so they leave the control where it is and turn it inert with
+ * the reason on it (see refusals.ts and TileAction) rather than taking it away.
  */
 export function UsersTab() {
   const { data: users, isPending: usersPending, isError: usersError } = useQuery(UsersGetAllQueryOptions());
@@ -197,6 +202,7 @@ export function UsersTab() {
               user={selected}
               isOwnBoard={isSelf(me?.id, selected.userID)}
               isLocked={!!isLocked}
+              drawInFlight={drawInFlight}
               onOpenSearch={() => setSearchUser(selected)}
               onOpen={open}
             />
@@ -366,6 +372,53 @@ function PosterButton({
 }
 
 /**
+ * The one corner action a tile carries: promote on a stash poster, demote on a
+ * pool one. Rendered only on your own board, and only ever one per tile.
+ *
+ * A refusal keeps it and makes it inert with `aria-disabled` and a click that
+ * returns early, never with native `disabled`. A natively disabled button
+ * cannot take focus, which would make the focus reveal in members.css dead code
+ * exactly when it matters and leave a keyboard user tabbing a locked wall
+ * without ever meeting the action, let alone the reason for it. The reason
+ * rides the accessible name and the tooltip together, where the focus and the
+ * pointer already are; nothing is drawn on the tile, because every refusal here
+ * is true of the whole wall at once (refusals.ts).
+ */
+function TileAction({
+  kind,
+  refusal,
+  onActivate,
+}: {
+  kind: ActionKind;
+  refusal: Refusal | null;
+  onActivate: () => void;
+}) {
+  const label = actionLabel(kind, refusal);
+  return (
+    <button
+      type="button"
+      className="mem-act"
+      // Not `false` when it runs: the attribute is absent, so an allowed
+      // control is the same markup it was before any of this.
+      aria-disabled={refusal ? true : undefined}
+      onClick={() => {
+        if (refusal) return;
+        onActivate();
+      }}
+      aria-label={label}
+      title={label}
+    >
+      {/* No glyph swap for a refusal. A blocked mark was drawn and measured at
+          26px, where it is legible and unambiguous — and it lost anyway: a full
+          pool refuses every promote, so it stamped a forbidden sign across
+          every poster on a wall stripped down to art, and read as though the
+          films were barred rather than the destination full. */}
+      {kind === "promote" ? <MoveUpIcon /> : <MoveDownIcon />}
+    </button>
+  );
+}
+
+/**
  * The open row's contents: that member's pool, always exactly POOL_SIZE slots
  * and never reordered — the draw is random, so a slot carries no priority.
  *
@@ -394,12 +447,17 @@ function PoolSlots({
   onOpen: (movie: Movie) => void;
 }) {
   // Demote a pooled movie back to the stash. The move endpoint is directional
-  // (target = destination) and idempotent, so a repeat click is a safe no-op.
-  // Gated on isOwnBoard, so it only renders on your own board.
+  // (target = destination) and idempotent, so a repeat click is a safe no-op —
+  // which is why an in-flight move does not disable the button. Gated on
+  // isOwnBoard, so it only renders on your own board.
   const demoteMutation = useMutation({
     mutationFn: (movieID: number) => APIClient.board.moveMovie(movieID, "stash"),
     onError: () => toast.error("Failed to move movie"),
   });
+
+  // Read for the rule's sake and never true of a demote: the way out of a full
+  // pool is exactly this control, so it is refusalOf that drops it, not here.
+  const poolFull = pool.length >= POOL_SIZE;
 
   return (
     <div className="mem-pool">
@@ -408,17 +466,12 @@ function PoolSlots({
         return movie ? (
           <div className="pslot pslot--filled" key={movie.movieID}>
             <PosterButton movie={movie} showArt={showArt} onOpen={onOpen} />
-            {isOwnBoard && !isLocked && (
-              <button
-                type="button"
-                className="mem-act"
-                onClick={() => demoteMutation.mutate(movie.movieID)}
-                disabled={demoteMutation.isPending || drawInFlight}
-                aria-label="Move back to stash"
-                title={drawInFlight ? "A draw is in progress" : "Move back to stash"}
-              >
-                <MoveDownIcon />
-              </button>
+            {isOwnBoard && (
+              <TileAction
+                kind="demote"
+                refusal={refusalOf({ kind: "demote", isLocked, drawInFlight, poolFull })}
+                onActivate={() => demoteMutation.mutate(movie.movieID)}
+              />
             )}
           </div>
         ) : (
@@ -455,12 +508,16 @@ function StashPane({
   user,
   isOwnBoard,
   isLocked,
+  drawInFlight,
   onOpenSearch,
   onOpen,
 }: {
   user: User;
   isOwnBoard: boolean;
   isLocked: boolean;
+  /** Passed down whole rather than pre-judged: a draw does not refuse a promote,
+   *  and refusalOf is the one place that decides so. */
+  drawInFlight: boolean;
   onOpenSearch: () => void;
   onOpen: (movie: Movie) => void;
 }) {
@@ -576,6 +633,7 @@ function StashPane({
                   movie={movie}
                   poolFull={poolFull}
                   locked={isLocked}
+                  drawInFlight={drawInFlight}
                   isOwnBoard={isOwnBoard}
                   onOpen={onOpen}
                 />
@@ -597,18 +655,21 @@ const StashTile = memo(function StashTile({
   movie,
   poolFull,
   locked,
+  drawInFlight,
   isOwnBoard,
   onOpen,
 }: {
   movie: Movie;
   poolFull: boolean;
   locked: boolean;
+  drawInFlight: boolean;
   isOwnBoard: boolean;
   onOpen: (movie: Movie) => void;
 }) {
   // Promote to the pool: the one control the tile carries, and only on your own
   // board. Edit and delete are not here — they live in the movie modal, which
-  // the poster itself opens.
+  // the poster itself opens. Idempotent like the demote, so an in-flight move
+  // does not disable it either.
   const moveMutation = useMutation({
     mutationFn: () => APIClient.board.moveMovie(movie.movieID, "pool"),
     onError: () => toast.error("Failed to move movie"),
@@ -618,16 +679,11 @@ const StashTile = memo(function StashTile({
     <div className="mem-tile">
       <PosterButton movie={movie} onOpen={onOpen} />
       {isOwnBoard && (
-        <button
-          type="button"
-          className="mem-act"
-          onClick={() => moveMutation.mutate()}
-          disabled={locked || poolFull || moveMutation.isPending}
-          aria-label="Promote to pool"
-          title={poolFull ? "Pool is full" : locked ? "Pool is locked" : "Promote to pool"}
-        >
-          <MoveUpIcon />
-        </button>
+        <TileAction
+          kind="promote"
+          refusal={refusalOf({ kind: "promote", isLocked: locked, drawInFlight, poolFull })}
+          onActivate={() => moveMutation.mutate()}
+        />
       )}
     </div>
   );

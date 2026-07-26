@@ -275,10 +275,51 @@
 
 /* ---- posters ----------------------------------------------------------- */
 
-/* One control per poster: promote on a stash tile, demote on a pool one, and
+/* The poster is the button, on both bands and on every board: it opens the
+   film's record, which is the one way into it from this page. Two SIBLING
+   interactive layers per cell, never nested — this one filling the cell, the
+   corner action (.mem-act) sitting over it — so the corner action's own hit
+   area is its own and a poster cannot contain a button.
+
+   The focus ring is drawn rather than outlined, and it is the one place on this
+   page where that is not the app's ordinary treatment. An outline cannot work
+   here in either direction: outward it is shaved off by the pool slot's clip
+   and by the wall's scroller at the top row, and inward the poster paints over
+   it — the art is a positioned, isolated layer of its own, the same reason a
+   ring does not work on the stats people cards (DESIGN.md §3). So it is a layer
+   instead, over the art, hugging the poster's own radius. */
+.mem-open {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--r-md);
+}
+.mem-open:focus-visible {
+  outline: none;
+}
+.mem-open:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Over the poster, under the corner action (z-index 5), which stays whole. */
+  z-index: 1;
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  pointer-events: none;
+}
+
+/* One corner action per poster: promote on a stash tile, demote on a pool one, and
    never both. Hover-revealed, so at rest your wall and a guest's are
    pixel-identical and hover is what asks "can I act here" — a truthful yes on
-   yours. Persistent on desktop would put sixty buttons on sixty posters. */
+   yours. Persistent on desktop would put sixty buttons on sixty posters. It is
+   also the only thing a guest board is missing, so on someone else's board its
+   absence says "not your board" and nothing else. On your own it still doubles
+   as the lock's only signal, which is what #234 takes off it. */
 .mem-act {
   position: absolute;
   right: 7px;
@@ -336,7 +377,8 @@
 /* The app's poster zoom, on the image inside the clipping frame and never as a
    transform on the frame — the same treatment the Movies tiles, the search
    results and the stats rail already take. No background change and no lift:
-   buttons in this language do not lift. */
+   buttons in this language do not lift. Never gated on whose board it is: the
+   zoom is the tile answering that it opens, which it does on every board. */
 .mem-tile:hover .poster__img,
 .mem-tile:has(:focus-visible) .poster__img,
 .pslot--filled:hover .poster__img,

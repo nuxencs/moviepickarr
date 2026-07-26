@@ -1,6 +1,7 @@
 /* ============================================================
    Render tests for the Members page: the status line (#230), the rail of
-   members beside one pane (#231) and the pane's wall of posters (#232).
+   members beside one pane (#231), the pane's wall of posters (#232) and every
+   poster opening the movie modal (#233).
 
    Which words the status line uses is a pure question and poolLock.test.ts
    owns it: the whole state table is asserted there against membersStatus, and
@@ -34,6 +35,10 @@ vi.mock("@/api/APIClient", () => ({
     board: { getAll: vi.fn(), moveMovie: vi.fn(), deleteMovie: vi.fn(), updateMovie: vi.fn() },
     settings: { getLock: vi.fn() },
     auth: { me: vi.fn() },
+    // The modal lazy-loads the full record on open. It never resolves here, so
+    // what the modal shows is the tile's own lean object — which is the point:
+    // the poster that was clicked is the film that opens.
+    movies: { get: vi.fn(() => new Promise<never>(() => {})) },
   },
 }));
 
@@ -294,25 +299,35 @@ describe("the stash wall", () => {
     );
   });
 
-  it("carries exactly one control per tile on your own board and none on a guest's", async () => {
+  it("carries exactly one corner action per tile on your own board and none on a guest's", async () => {
     await renderTab({ users: roster, meID: 1 });
 
     const tiles = wall().querySelectorAll(".mem-tile");
     expect(tiles.length).toBe(3);
-    tiles.forEach((tile) => {
+    tiles.forEach((tile, i) => {
+      // Two buttons and no more: the poster itself, which opens the record
+      // (#233), and the one corner action.
       const controls = within(tile as HTMLElement).getAllByRole("button");
-      expect(controls.length).toBe(1);
-      expect(controls[0].getAttribute("aria-label")).toBe("Promote to pool");
+      expect(controls.map((c) => c.getAttribute("aria-label"))).toEqual([
+        `Film ${100 + i}`,
+        "Promote to pool",
+      ]);
     });
     // Edit, delete and the link out are gone from the tile: they belong to the
-    // movie modal, which is where every poster on this page is headed.
+    // movie modal, which is where every poster on this page now goes.
     expect(within(wall()).queryByRole("link")).toBeNull();
     expect(within(wall()).queryByRole("button", { name: "More actions" })).toBeNull();
 
     cleanup();
     await renderTab({ users: roster, meID: 2, href: "/users?member=1" });
-    expect(wall().querySelectorAll(".mem-tile").length).toBe(3);
-    expect(within(wall()).queryAllByRole("button")).toEqual([]);
+    const guestTiles = wall().querySelectorAll(".mem-tile");
+    expect(guestTiles.length).toBe(3);
+    guestTiles.forEach((tile, i) => {
+      // The poster and nothing beside it: the corner action is the whole of
+      // what a guest board is missing.
+      const controls = within(tile as HTMLElement).getAllByRole("button");
+      expect(controls.map((c) => c.getAttribute("aria-label"))).toEqual([`Film ${100 + i}`]);
+    });
   });
 
   it("puts an unlabelled add tile at cell 0 of your own wall, with a name for it", async () => {
@@ -372,5 +387,88 @@ describe("the stash wall", () => {
     const head = document.querySelector(".mem-stash__head") as HTMLElement;
     expect(within(head).queryAllByRole("button")).toEqual([]);
     expect(within(head).getAllByRole("textbox").length).toBe(1);
+  });
+});
+
+/* Every poster opens the modal (#233). The point of the ticket is what a board
+   you cannot act on is made of: the same buttons as your own, minus the corner
+   action. So each case here is asserted on both boards, and the empty pool slot
+   is the one cell that answers nothing on either. */
+describe("opening a film's record", () => {
+  // Ada: two of three pool slots, three in stash. Cleo: one and two.
+  const roster = [member(1, 2, 3, "Ada"), member(2, 1, 2, "Cleo Sands")];
+
+  const wall = () => document.querySelector(".mem-wall") as HTMLElement;
+  /** The selected member's pool, which is the only drawer that is not inert. */
+  const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;
+  const dialog = () => screen.getByRole("dialog");
+
+  it("makes every filled poster a button, on your own board and on a guest's", async () => {
+    await renderTab({ users: roster, meID: 1 });
+
+    // Named by the film, not by an authored verb: the poster is the film, and
+    // the role already says it is a button. Both bands, one language.
+    expect(
+      Array.from(openPool().querySelectorAll<HTMLElement>(".pslot--filled .mem-open")).map((b) =>
+        b.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Film 10", "Film 11"]);
+    expect(
+      Array.from(wall().querySelectorAll<HTMLElement>(".mem-open")).map((b) =>
+        b.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Film 100", "Film 101", "Film 102"]);
+
+    cleanup();
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+
+    expect(openPool().querySelectorAll(".pslot--filled .mem-open").length).toBe(1);
+    expect(wall().querySelectorAll(".mem-open").length).toBe(2);
+  });
+
+  it("opens the clicked film from a pool slot, on a board that is not yours", async () => {
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+
+    fireEvent.click(openPool().querySelector(".pslot--filled .mem-open") as HTMLElement);
+
+    await waitFor(() => expect(within(dialog()).getByRole("heading").textContent).toBe("Film 20"));
+  });
+
+  it("opens the clicked film from the stash wall, on a board that is not yours", async () => {
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+
+    fireEvent.click(wall().querySelectorAll(".mem-open")[1] as HTMLElement);
+
+    await waitFor(() => expect(within(dialog()).getByRole("heading").textContent).toBe("Film 201"));
+  });
+
+  it("closes on Back, so the modal costs one history entry per open", async () => {
+    const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+
+    fireEvent.click(wall().querySelectorAll(".mem-open")[0] as HTMLElement);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeNull());
+
+    router.history.back();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // Back landed on the board it was opened from, not on the page before it:
+    // the entry the open pushed carries the same URL and differs only by state.
+    expect(router.state.location.href).toBe("/users?member=2");
+  });
+
+  it("leaves the empty pool slot the only cell that answers nothing, identically on both boards", async () => {
+    await renderTab({ users: roster, meID: 1 });
+    const own = Array.from(openPool().querySelectorAll(".pslot--empty")).map((s) => s.outerHTML);
+    expect(own.length).toBe(1);
+
+    cleanup();
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+    const guest = Array.from(openPool().querySelectorAll(".pslot--empty")).map((s) => s.outerHTML);
+
+    expect(guest.length).toBe(2);
+    // Same markup down to the attribute: an empty slot is a statement about the
+    // pool, never about who is looking at it.
+    expect(new Set([...own, ...guest]).size).toBe(1);
+    guest.forEach((slot) => expect(slot).toContain('aria-hidden="true"'));
+    expect(openPool().querySelectorAll(".pslot--empty button").length).toBe(0);
   });
 });

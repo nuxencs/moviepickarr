@@ -93,6 +93,16 @@ old shadcn primitives.
 - **Inputs:** `.field` — a 42px filled wrapper with a leading icon and gold
   focus-within border. All text inputs use this; there is no bare/hollow input style.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
+- **Section head:** `.sec-head` holds a `.sec-title` (the `h2` plus its data) on the left
+  and the section's controls on the right. The data slot is mono `--ink-3` text: a count
+  (`.sec-count`, 14px) and, where a page also has round state to report, a status line
+  (`.sec-status`, 12px, `+0.01em`, `nowrap` released at 760) beside it. Two spans, not
+  one, and the status steps down a size, because two mono spans at the same size on one
+  baseline read as a run-on string. Movies fuses its count and round word into a single
+  14px `.sec-count` and stays that way; Members splits them (`4 people` + `9 of 12 slots
+  filled · round closed`). A count slot states no number until there is one to state: a
+  head that says `0 people` while the query is in flight is wrong about the one thing it
+  is there for.
 - **Segmented control:** `.seg` — neutral surface-3 active (the Movies watched
   grid/list toggle, filled to match the `.field` search beside it). Inside
   `.statsfilters` the seg is restyled to the chips' dialect — transparent with a
@@ -417,6 +427,17 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
 - **Hover-revealed controls** (row actions, etc.) must also reveal on `:focus-within`
   so keyboard users can reach them. Card/tile hover effects must also fire on
   `:focus-visible`.
+- **A live region announces the part worth interrupting for, not the whole line.** Where
+  a status line mixes facts that change at different rates, split it: the visible span
+  carries every clause and stays silent, and a second `.vis-hidden` `role="status"`
+  carries only the clauses that change what the page's controls will do. The Members
+  status line is the pattern (`membersStatus` in `poolLock.ts` composes both strings and
+  documents the split): occupancy ticks on every other member's promote arriving over
+  SSE, so a single region over all three clauses would re-read the string each time,
+  while round and draw state is rare and worth hearing. `.vis-hidden` is the app's one
+  off-screen utility and must stay the clip-rect recipe: `display: none` and
+  `visibility: hidden` both pull the node out of the accessibility tree, which turns any
+  region wearing it into dead code that still looks correct in the markup.
 
 ---
 

@@ -1,6 +1,6 @@
 /* ============================================================
-   Render tests for the Members page: the status line (#230) and the rail of
-   members beside one pane (#231).
+   Render tests for the Members page: the status line (#230), the rail of
+   members beside one pane (#231) and the pane's wall of posters (#232).
 
    Which words the status line uses is a pure question and poolLock.test.ts
    owns it: the whole state table is asserted there against membersStatus, and
@@ -13,11 +13,12 @@
    The rail's rules are split the same way. Which member the URL selects is
    pure and membersSearch.test.ts owns it; what only exists once the page
    renders is here: that a row is a link carrying an explicit id, what a row
-   announces, and that a shut drawer is inert.
+   announces, and that a shut drawer is inert. The wall's filter and its miss
+   line are pure too and stashWall.test.ts owns those.
    ============================================================ */
 
 import { QueryClient } from "@tanstack/react-query";
-import { screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AuthKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
@@ -229,15 +230,15 @@ describe("the rail of members", () => {
     const rows = railRows();
     expect(rows[2].getAttribute("aria-current")).toBe("page");
     expect(rows[0].getAttribute("aria-current")).toBeNull();
-    // The pane is that member's: "Cleo's board", not the session member's.
-    expect(screen.getByRole("region", { name: "Cleo's board" })).toBeTruthy();
+    // The pane is that member's: "Cleo's stash", not the session member's.
+    expect(screen.getByRole("region", { name: "Cleo's stash" })).toBeTruthy();
   });
 
   it("silently falls back to your own board on an id that does not resolve, without rewriting the URL", async () => {
     const { router } = await renderTab({ users: roster, meID: 2, href: "/users?member=404" });
 
     expect(railRows()[0].getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("region", { name: "Your board" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Your stash" })).toBeTruthy();
     expect(document.querySelector(".empty.text-destructive")).toBeNull();
     expect(router.state.location.href).toBe("/users?member=404");
   });
@@ -250,5 +251,126 @@ describe("the rail of members", () => {
 
     router.history.back();
     await waitFor(() => expect(railRows()[0].getAttribute("aria-current")).toBe("page"));
+  });
+});
+
+/* The wall (#232). What the cells look like is CSS and belongs to the browser
+   pass — the column count, the reserved height and the hover reveal are all
+   sizes, and jsdom has no layout. What is here is what the markup decides:
+   whose stash the pane says it is, what names it, how many controls a tile
+   carries, and which of the four empty states renders. */
+describe("the stash wall", () => {
+  const roster = [member(1, 1, 3, "Ada"), member(2, 0, 0, "Cleo Sands")];
+
+  /** The pane's wall, whatever it currently holds. */
+  const wall = () => document.querySelector(".mem-wall") as HTMLElement;
+  const typeFilter = (term: string) =>
+    fireEvent.change(screen.getByRole("textbox", { name: /^Search / }), {
+      target: { value: term },
+    });
+
+  it("heads your own board with Your stash and someone else's with their first name", async () => {
+    await renderTab({ users: roster, meID: 1 });
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Your stash");
+
+    cleanup();
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+    // The first name, not the full one the rail carries: "Cleo's stash" reads
+    // like speech where "Cleo Sands' stash" reads like a record.
+    const heading = screen.getByRole("heading", { level: 3 });
+    expect(heading.textContent).toBe("Cleo's stash");
+    expect(heading.getAttribute("title")).toBe("Cleo's stash");
+    // Symmetric emphasis: the possessive token is the marked one on both boards.
+    expect(heading.querySelector(".mem-stash__who")?.textContent).toBe("Cleo's");
+  });
+
+  it("names the pane by that heading rather than by an authored label", async () => {
+    await renderTab({ users: roster, meID: 1 });
+
+    const pane = screen.getByRole("region", { name: "Your stash" });
+    expect(pane.getAttribute("aria-label")).toBeNull();
+    expect(pane.getAttribute("aria-labelledby")).toBe(
+      screen.getByRole("heading", { level: 3 }).id,
+    );
+  });
+
+  it("carries exactly one control per tile on your own board and none on a guest's", async () => {
+    await renderTab({ users: roster, meID: 1 });
+
+    const tiles = wall().querySelectorAll(".mem-tile");
+    expect(tiles.length).toBe(3);
+    tiles.forEach((tile) => {
+      const controls = within(tile as HTMLElement).getAllByRole("button");
+      expect(controls.length).toBe(1);
+      expect(controls[0].getAttribute("aria-label")).toBe("Promote to pool");
+    });
+    // Edit, delete and the link out are gone from the tile: they belong to the
+    // movie modal, which is where every poster on this page is headed.
+    expect(within(wall()).queryByRole("link")).toBeNull();
+    expect(within(wall()).queryByRole("button", { name: "More actions" })).toBeNull();
+
+    cleanup();
+    await renderTab({ users: roster, meID: 2, href: "/users?member=1" });
+    expect(wall().querySelectorAll(".mem-tile").length).toBe(3);
+    expect(within(wall()).queryAllByRole("button")).toEqual([]);
+  });
+
+  it("puts an unlabelled add tile at cell 0 of your own wall, with a name for it", async () => {
+    await renderTab({ users: roster, meID: 1 });
+
+    const add = within(wall()).getByRole("button", { name: "Add to Ada's stash" });
+    expect(add.textContent).toBe("");
+    expect(wall().firstElementChild).toBe(add);
+
+    // Not on someone else's board: the stash is self-service.
+    cleanup();
+    await renderTab({ users: roster, meID: 2, href: "/users?member=1" });
+    expect(within(wall()).queryByRole("button", { name: /^Add to / })).toBeNull();
+  });
+
+  it("suppresses the add tile under any filter, hit or miss", async () => {
+    await renderTab({ users: roster, meID: 1 });
+
+    typeFilter("Film 1");
+    expect(within(wall()).queryByRole("button", { name: /^Add to / })).toBeNull();
+    expect(wall().querySelectorAll(".mem-tile").length).toBe(3);
+
+    typeFilter("zzz");
+    expect(within(wall()).queryByRole("button", { name: /^Add to / })).toBeNull();
+  });
+
+  it("makes the add tile the whole of your own empty wall", async () => {
+    await renderTab({ users: [member(1, 0, 0, "Ada")], meID: 1 });
+
+    expect(within(wall()).getByRole("button", { name: "Add to Ada's stash" })).toBeTruthy();
+    // No prose beside it: the add tile is the empty state, not a route to one.
+    expect(wall().querySelector(".mem-wall__empty")).toBeNull();
+  });
+
+  it("says a guest's empty stash is empty, in one line and without their name", async () => {
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+
+    expect(wall().querySelector(".mem-wall__empty")?.textContent).toBe("This stash is empty");
+  });
+
+  it("reads a filter miss the same way on both boards", async () => {
+    await renderTab({ users: roster, meID: 1 });
+    typeFilter("dune");
+    expect(wall().querySelector(".mem-wall__empty")?.textContent).toBe('Nothing matches "dune"');
+
+    cleanup();
+    await renderTab({ users: roster, meID: 2, href: "/users?member=1" });
+    typeFilter("dune");
+    expect(wall().querySelector(".mem-wall__empty")?.textContent).toBe('Nothing matches "dune"');
+  });
+
+  it("leaves the pane head one control: the search field", async () => {
+    await renderTab({ users: roster, meID: 1 });
+
+    // No sort control, in either direction and under no key. The order is fixed
+    // title-ascending and the field is the only way to act on the wall's shape.
+    const head = document.querySelector(".mem-stash__head") as HTMLElement;
+    expect(within(head).queryAllByRole("button")).toEqual([]);
+    expect(within(head).getAllByRole("textbox").length).toBe(1);
   });
 });

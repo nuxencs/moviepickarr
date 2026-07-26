@@ -123,7 +123,7 @@ export function NavBar() {
         </div>
       </nav>
 
-      {/* Fixed bottom tab bar (phones only). Thumb-reach navigation; the active
+      {/* Fixed bottom tab bar, shown below 900px. Thumb-reach navigation; the active
           tab is gold-tinted instead of carrying the desktop underline slider.
           Hidden at the same breakpoint where the top-bar tabs reappear. */}
       <nav className="navbar-bottom" aria-label="Primary">

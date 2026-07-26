@@ -231,7 +231,10 @@ func (s *Service) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbI
 	return s.movieRepo.SetExternalIDs(ctx, id, tmdbID, imdbID)
 }
 
-func (s *Service) Delete(ctx context.Context, id int) error {
+// Delete removes a stash or pool row. poolLocked is the pool lock, read by the
+// caller (the move handler reads it the same way): the ordering of the two
+// refusals belongs here, next to the draw the service owns.
+func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return err
@@ -242,6 +245,14 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 	// status check below — it is "current", not "pool"). Stashes stay deletable.
 	if held, ok := s.heldDraw(); ok && (movie.Status == "pool" || movie.ID == held.MovieID) {
 		return domain.ErrDrawInProgress
+	}
+
+	// A locked pool has a fixed set of candidates, and deleting a pooled movie
+	// shrinks it just as surely as demoting one does, so the lock refuses both.
+	// The stash sits outside it: adds aren't lock-checked, so deletes aren't
+	// either.
+	if poolLocked && movie.Status == "pool" {
+		return domain.ErrPoolLocked
 	}
 
 	if movie.Status != "pool" && movie.Status != "stash" {

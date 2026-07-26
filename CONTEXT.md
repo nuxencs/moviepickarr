@@ -86,6 +86,13 @@ but the contents stay readable by any authenticated member.
 The shared set of movies eligible for the next draw. Each member may hold at
 most 3 movies in it.
 
+**Pool lock**:
+An admin switch that fixes the pool's composition ahead of a draw. While it is
+set, no movie enters or leaves the pool: promote, demote, and deleting a pooled
+movie are all refused. The stash is untouched by it (adds, edits, and deletes
+there carry on), and an unrevealed draw outranks it, so a frozen tile reports
+the draw rather than the lock.
+
 **Promote / Demote**:
 Moving a movie from stash to pool, and back. The only transitions a member
 performs by hand.

@@ -344,8 +344,14 @@
   width: 15px;
   height: 15px;
 }
+/* Revealed by focus anywhere in the tile, not by focus on the control itself:
+   the wall is walked with the arrows now (#235), and Tab from the focused
+   poster is what reaches the action — so a keyboard user has to be able to see
+   it is there before pressing Tab into it. Same rule the poster zoom takes. */
 .mem-tile:hover .mem-act,
 .pslot--filled:hover .mem-act,
+.mem-tile:has(:focus-visible) .mem-act,
+.pslot--filled:has(:focus-visible) .mem-act,
 .mem-act:focus-visible {
   opacity: 1;
 }

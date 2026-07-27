@@ -1,7 +1,15 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
 import { MoveDownIcon, MoveUpIcon, PlusIcon, SearchIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { APIClient } from "@/api/APIClient";
 import { MeQueryOptions, SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
@@ -18,10 +26,11 @@ import { Poster } from "@/components/moviepickarr/Poster";
 import { actionLabel, type ActionKind, refusalOf, type Refusal } from "@/components/moviepickarr/refusals";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
 import { Skeleton, UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
-import { filterStash, missLine } from "@/components/moviepickarr/stashWall";
+import { columnCount, filterStash, landingCell, missLine, nextCell } from "@/components/moviepickarr/stashWall";
 import { toast } from "@/components/ui/toast-api";
 
 import type { Movie, User } from "@/types/Response";
+import type { RefObject } from "react";
 
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
@@ -51,6 +60,13 @@ const POOL_SIZE = 3;
  * Absence means only that. A full pool, a locked round and a draw in flight are
  * all temporary, so they leave the control where it is and turn it inert with
  * the reason on it (see refusals.ts and TileAction) rather than taking it away.
+ *
+ * The page has one roving region and one not, deliberately (#235). The wall is
+ * a run without a bound — sixty films is a hundred and twenty tab stops — so it
+ * is a roving-tabindex list with arrow keys, two tab stops on your own board and
+ * one on a guest's. The rail is a handful of rows, so it is a handful of plain
+ * tab stops. Above both of those: focus moves only when the thing it is sitting
+ * on goes away, and then to the nearest thing that is still there.
  */
 export function UsersTab() {
   const { data: users, isPending: usersPending, isError: usersError } = useQuery(UsersGetAllQueryOptions());
@@ -113,6 +129,13 @@ export function UsersTab() {
   // not a size, so the root zoom ramp does not touch it.
   const railRef = useRef<HTMLElement>(null);
   const [railOverflows, setRailOverflows] = useState(false);
+
+  // Switching member remounts the pane (it is keyed below), which takes the
+  // focused wall tile with it and drops focus to the document. The pane cannot
+  // remember that across its own remount, so the flag lives one level up: the
+  // outgoing pane raises it on the way out and the incoming one lands focus on
+  // its heading. A ref, not state — nothing renders differently for it.
+  const paneLostFocus = useRef(false);
   useEffect(() => {
     const rail = railRef.current;
     if (!rail) return;
@@ -205,6 +228,7 @@ export function UsersTab() {
               drawInFlight={drawInFlight}
               onOpenSearch={() => setSearchUser(selected)}
               onOpen={open}
+              lostFocus={paneLostFocus}
             />
           </div>
         ) : (
@@ -270,6 +294,11 @@ function RailRow({
     if (active) setEverOpened(true);
   }, [active]);
 
+  // Where focus goes when the last film leaves this member's pool: the row the
+  // pool hangs off, which is the nearest thing to the slot that emptied and is
+  // still on screen (#235).
+  const linkRef = useRef<HTMLAnchorElement>(null);
+
   return (
     <div className="mem-row" data-active={active}>
       {/* Always an explicit id, your own included: strip it off your own board
@@ -281,6 +310,7 @@ function RailRow({
         search={{ member: user.userID }}
         className="mem-row__link"
         aria-current={active ? "page" : undefined}
+        ref={linkRef}
       >
         <Avatar name={user.name} size={30} />
         <span className="mem-row__text">
@@ -315,6 +345,7 @@ function RailRow({
               isLocked={isLocked}
               drawInFlight={drawInFlight}
               onOpen={onOpen}
+              rowLinkRef={linkRef}
             />
           </div>
         </div>
@@ -349,11 +380,20 @@ function PoolPips({ filled }: { filled: number }) {
 function PosterButton({
   movie,
   showArt = true,
+  cell,
+  tabIndex,
   onOpen,
 }: {
   movie: Movie;
   /** Whether to fetch the art. False in a drawer nobody has opened (see RailRow). */
   showArt?: boolean;
+  /** This poster's index in its band, so the band can find it again by number
+   *  after the film that was there has moved (#235). Both bands use the same
+   *  attribute: they are separate containers and each looks only inside itself. */
+  cell?: number;
+  /** -1 on every wall poster but the one holding the roving index. Left off in
+   *  the pool, where three slots are three ordinary tab stops. */
+  tabIndex?: number;
   onOpen: (movie: Movie) => void;
 }) {
   return (
@@ -363,12 +403,27 @@ function PosterButton({
       onClick={() => onOpen(movie)}
       aria-label={movie.title}
       title={movie.title}
+      data-cell={cell}
+      tabIndex={tabIndex}
     >
       {showArt && (
         <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
       )}
     </button>
   );
+}
+
+/**
+ * Whether focus is still where the move that is landing left it: on the control
+ * that is going, or dropped to the document because it has already gone.
+ *
+ * The page's rule is that focus moves only when the thing it is sitting on goes
+ * away, and clicking a control is not a promise to stay on it — click promote,
+ * then click into the search field, and the roster arriving a moment later must
+ * not pull focus out of the field being typed in.
+ */
+function focusStillOn(band: HTMLElement | null): boolean {
+  return document.activeElement === document.body || !!band?.contains(document.activeElement);
 }
 
 /**
@@ -387,10 +442,16 @@ function PosterButton({
 function TileAction({
   kind,
   refusal,
+  tabIndex,
   onActivate,
 }: {
   kind: ActionKind;
   refusal: Refusal | null;
+  /** -1 on every wall tile but the one holding the roving index, so Tab from
+   *  the focused poster reaches its own corner action and then leaves the wall.
+   *  Left off in the pool. A refusal never touches it: an inert control is
+   *  still a control you can reach, which is where its reason is written. */
+  tabIndex?: number;
   onActivate: () => void;
 }) {
   const label = actionLabel(kind, refusal);
@@ -398,6 +459,7 @@ function TileAction({
     <button
       type="button"
       className="mem-act"
+      tabIndex={tabIndex}
       // Not `false` when it runs: the attribute is absent, so an allowed
       // control is the same markup it was before any of this.
       aria-disabled={refusal ? true : undefined}
@@ -435,6 +497,7 @@ function PoolSlots({
   isLocked,
   drawInFlight,
   onOpen,
+  rowLinkRef,
 }: {
   pool: Movie[];
   /** Whether this drawer has been open. The slots are always drawn — they are
@@ -445,32 +508,72 @@ function PoolSlots({
   isLocked: boolean;
   drawInFlight: boolean;
   onOpen: (movie: Movie) => void;
+  /** The member's own row, where focus goes when the last film leaves the pool. */
+  rowLinkRef: RefObject<HTMLAnchorElement | null>;
 }) {
   // Demote a pooled movie back to the stash. The move endpoint is directional
   // (target = destination) and idempotent, so a repeat click is a safe no-op —
   // which is why an in-flight move does not disable the button. Gated on
   // isOwnBoard, so it only renders on your own board.
   const demoteMutation = useMutation({
-    mutationFn: (movieID: number) => APIClient.board.moveMovie(movieID, "stash"),
-    onError: () => toast.error("Failed to move movie"),
+    mutationFn: ({ movieID }: { movieID: number; slot: number }) =>
+      APIClient.board.moveMovie(movieID, "stash"),
+    // The band is about to lose the control the click is on, so note where it
+    // was. Which slot, not which element: the one that lands there is a
+    // different node, and this one is on its way out of the DOM.
+    //
+    // On the way out rather than on the way back: the move and the roster are
+    // separate round trips, and the roster arriving over SSE first is ordinary.
+    // Noted on success, a fast SSE would beat the note and focus would sit on
+    // nothing. A failed move drops it again, having moved nothing.
+    onMutate: (moved) => {
+      landing.current = moved;
+    },
+    onError: () => {
+      landing.current = null;
+      toast.error("Failed to move movie");
+    },
   });
+
+  const bandRef = useRef<HTMLDivElement>(null);
+  const landing = useRef<{ movieID: number; slot: number } | null>(null);
+
+  // A demote that has landed: the roster has come back over SSE without the
+  // film in it, so the slot that held it now holds the next one along. Keyed on
+  // the film being gone rather than on the request returning — the two are
+  // separate round trips, and focusing between them would land on the tile that
+  // is about to unmount and drop focus to the document.
+  useEffect(() => {
+    const moved = landing.current;
+    if (!moved || pool.some((movie) => movie.movieID === moved.movieID)) return;
+    landing.current = null;
+    if (!focusStillOn(bandRef.current)) return;
+    const to = landingCell(moved.slot, pool.length);
+    // An empty slot is not focusable and the pool does not reflow around one,
+    // so an emptied pool hands focus back to the row it hangs off.
+    if (to === null) {
+      rowLinkRef.current?.focus();
+      return;
+    }
+    bandRef.current?.querySelector<HTMLElement>(`.mem-open[data-cell="${to}"]`)?.focus();
+  }, [pool, rowLinkRef]);
 
   // Read for the rule's sake and never true of a demote: the way out of a full
   // pool is exactly this control, so it is refusalOf that drops it, not here.
   const poolFull = pool.length >= POOL_SIZE;
 
   return (
-    <div className="mem-pool">
+    <div className="mem-pool" ref={bandRef}>
       {Array.from({ length: POOL_SIZE }).map((_, i) => {
         const movie = pool[i];
         return movie ? (
           <div className="pslot pslot--filled" key={movie.movieID}>
-            <PosterButton movie={movie} showArt={showArt} onOpen={onOpen} />
+            <PosterButton movie={movie} showArt={showArt} cell={i} onOpen={onOpen} />
             {isOwnBoard && (
               <TileAction
                 kind="demote"
                 refusal={refusalOf({ kind: "demote", isLocked, drawInFlight, poolFull })}
-                onActivate={() => demoteMutation.mutate(movie.movieID)}
+                onActivate={() => demoteMutation.mutate({ movieID: movie.movieID, slot: i })}
               />
             )}
           </div>
@@ -503,6 +606,13 @@ function PoolSlots({
  * enrichment and would reorder the wall under you as SSE lands, and an untitled
  * tile makes no key but title verifiable by looking. The field below is the
  * find-a-film path in its place.
+ *
+ * The wall is a roving-tabindex list and not a `role="grid"` (#235). Six columns
+ * is a CSS artifact of the container-derived cell width and the wall is an A-Z
+ * list of films, so announcing grid coordinates would be describing the
+ * stylesheet. One cell holds tabindex 0 at a time; the arrows move it, so the
+ * whole wall is two tab stops on your own board (the poster, then its corner
+ * action) and one on a guest's, whatever it is holding.
  */
 function StashPane({
   user,
@@ -511,6 +621,7 @@ function StashPane({
   drawInFlight,
   onOpenSearch,
   onOpen,
+  lostFocus,
 }: {
   user: User;
   isOwnBoard: boolean;
@@ -520,6 +631,9 @@ function StashPane({
   drawInFlight: boolean;
   onOpenSearch: () => void;
   onOpen: (movie: Movie) => void;
+  /** Raised on the way out when focus was inside this pane, and read on the way
+   *  in: the pane is keyed on the member, so a switch is an unmount. */
+  lostFocus: RefObject<boolean>;
 }) {
   const [filter, setFilter] = useState("");
 
@@ -565,6 +679,115 @@ function StashPane({
     ro.observe(wall);
     return () => ro.disconnect();
   }, [cells]);
+
+  // The cell holding the wall's one tab stop. Clamped rather than trusted: the
+  // roster arrives over SSE, so the wall can lose the cell the index names
+  // without anybody touching the keyboard.
+  const [roving, setRoving] = useState(0);
+  const cell = Math.min(roving, Math.max(cells - 1, 0));
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  /** The poster in a given cell, which is the cell's roving element. */
+  const cellAt = useCallback(
+    (index: number) => gridRef.current?.querySelector<HTMLElement>(`[data-cell="${index}"]`),
+    [],
+  );
+  const focusCell = useCallback(
+    (index: number) => {
+      setRoving(index);
+      cellAt(index)?.focus();
+    },
+    [cellAt],
+  );
+
+  // Back to the first cell on a filter change, as on a member switch (which is
+  // a remount, so it costs nothing here). That lands Tab out of the field on
+  // Add on your own board and on the first match on a guest's, which is the
+  // right emphasis in both cases. Keeping the index across a filter would mean
+  // matching identity between two filtered lists to land on "reset" anyway in
+  // the common case. The index only: focus stays in the field being typed in.
+  useEffect(() => setRoving(0), [filter]);
+
+  // Whatever focus lands on inside the wall takes the index with it, so the
+  // arrows always move from the cell you are actually on. Without this a
+  // pointer and the keyboard disagree the moment they are mixed: click a
+  // poster, press an arrow, and focus jumps from wherever the index was last
+  // left. The corner action counts as its own tile's cell.
+  const onWallFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const marked = target.hasAttribute("data-cell")
+      ? target
+      : target.closest(".mem-tile")?.querySelector("[data-cell]");
+    const index = Number(marked?.getAttribute("data-cell"));
+    if (Number.isInteger(index)) setRoving(index);
+  };
+
+  const onWallKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Chords belong to the browser: Home with a modifier is not this wall's.
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const columns = gridRef.current
+      ? columnCount(getComputedStyle(gridRef.current).gridTemplateColumns)
+      : 1;
+    const to = nextCell(e.key, cell, cells, columns);
+    if (to === null) return;
+    // Only for a move that lands: an arrow the wall refuses is left to the
+    // scroller, which is the ordinary thing for a key nothing answered.
+    e.preventDefault();
+    focusCell(to);
+  };
+
+  // A promote that has landed. Same shape and the same reason as the pool's
+  // (see PoolSlots): keyed on the film being gone from the wall rather than on
+  // the request returning, or focus lands on a tile that is about to unmount.
+  const landing = useRef<{ movieID: number; cell: number } | null>(null);
+  const onPromoting = useCallback((movieID: number | null, from: number) => {
+    landing.current = movieID === null ? null : { movieID, cell: from };
+  }, []);
+  useEffect(() => {
+    const moved = landing.current;
+    if (!moved || filteredStash.some((movie) => movie.movieID === moved.movieID)) return;
+    landing.current = null;
+    if (!focusStillOn(gridRef.current)) return;
+    const to = landingCell(moved.cell, cells);
+    // The poster taking the vacated cell, never that cell's corner action: the
+    // third promote fills the pool, so it would strand you on a control that
+    // has just been refused.
+    if (to === null) {
+      headingRef.current?.focus();
+      return;
+    }
+    focusCell(to);
+  }, [filteredStash, cells, focusCell]);
+
+  // Whether focus is inside this pane at all, which is what says a tile
+  // unmounting under it was a loss rather than a departure. React's onFocus and
+  // onBlur are focusin and focusout, so they bubble and cover every control.
+  const holdsFocus = useRef(false);
+  // Removing the focused node fires no blur, so focus goes to the document with
+  // nothing to say it left. That is the one case worth recovering, and the
+  // pane's heading is where it goes: a click on a rail row moves focus to the
+  // row itself, which is a departure and is left alone.
+  useEffect(() => {
+    if (!holdsFocus.current || document.activeElement !== document.body) return;
+    holdsFocus.current = false;
+    headingRef.current?.focus();
+  });
+  useEffect(() => {
+    if (!lostFocus.current) return;
+    lostFocus.current = false;
+    headingRef.current?.focus();
+    // The other half of the same rule, across the remount a member switch is.
+    // Mount only; the effect above owns every later loss.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(
+    () => () => {
+      if (holdsFocus.current) lostFocus.current = true;
+    },
+    [lostFocus],
+  );
+
   // Four empty states, and only one of them is prose. Your own empty wall is the
   // add tile and nothing else — the add affordance is not reachable from the
   // empty state, it *is* the empty state, and a sentence beside one dashed cell
@@ -580,7 +803,16 @@ function StashPane({
         : "This stash is empty";
 
   return (
-    <section className="mem-pane" aria-labelledby={headingID}>
+    <section
+      className="mem-pane"
+      aria-labelledby={headingID}
+      onFocus={() => {
+        holdsFocus.current = true;
+      }}
+      onBlur={() => {
+        holdsFocus.current = false;
+      }}
+    >
       <div className="mem-stash">
         <div className="mem-stash__head">
           {/* The positive self-mark, and the last thing on the pane saying whose
@@ -590,7 +822,16 @@ function StashPane({
               line with an end ellipsis and a title — a heading that wrapped
               would start one member's wall a line lower than another's. */}
           <div className="mem-stash__id">
-            <h3 id={headingID} className="mem-stash__title" title={`${who} stash`}>
+            {/* Focusable but never a tab stop: it is where focus goes when the
+                thing holding it is taken away, and the pane it names is the
+                nearest thing that is still there (#235). */}
+            <h3
+              id={headingID}
+              className="mem-stash__title"
+              title={`${who} stash`}
+              ref={headingRef}
+              tabIndex={-1}
+            >
               <span className="mem-stash__who">{who}</span> stash
             </h3>
             <span className="sec-count">{stash.length}</span>
@@ -608,36 +849,57 @@ function StashPane({
         </div>
 
         <div className="mem-wallbox" ref={wallRef} data-overflow={wallOverflows}>
-          <div className={`mem-wall${emptyLine ? " mem-wall--empty" : ""}`}>
+          {/* The keys are handled on the wall rather than per cell, so they
+              answer from the corner action too: an arrow from there moves to
+              the next poster the same way it does from a poster. */}
+          <div
+            className={`mem-wall${emptyLine ? " mem-wall--empty" : ""}`}
+            ref={gridRef}
+            onKeyDown={onWallKeyDown}
+            onFocus={onWallFocus}
+          >
             {addTile && (
               // No label under it: a dashed cell with a plus in it is not
               // ambiguous, and spelling it out was the only text left in the
               // pane, which made it read as a heading rather than as a cell.
               // Icon-only, so the name is authored.
+              // Inside the roving list rather than a stop before it, which is
+              // what puts Tab out of the field on Add without costing the wall
+              // a third tab stop.
               <button
                 type="button"
                 className="mem-addtile"
                 onClick={onOpenSearch}
                 aria-label={`Add to ${possessive(firstName)} stash`}
                 title={`Add to ${possessive(firstName)} stash`}
+                data-cell={0}
+                tabIndex={cell === 0 ? 0 : -1}
               >
                 <PlusIcon />
               </button>
             )}
             {emptyLine ? (
+              // Not a tab stop at all: a wall with no matches has no cells, so
+              // Tab out of the field goes straight past it to the line here.
               <p className="empty mem-wall__empty">{emptyLine}</p>
             ) : (
-              filteredStash.map((movie) => (
-                <StashTile
-                  key={movie.movieID}
-                  movie={movie}
-                  poolFull={poolFull}
-                  locked={isLocked}
-                  drawInFlight={drawInFlight}
-                  isOwnBoard={isOwnBoard}
-                  onOpen={onOpen}
-                />
-              ))
+              filteredStash.map((movie, i) => {
+                const index = i + (addTile ? 1 : 0);
+                return (
+                  <StashTile
+                    key={movie.movieID}
+                    movie={movie}
+                    cell={index}
+                    roving={cell === index}
+                    poolFull={poolFull}
+                    locked={isLocked}
+                    drawInFlight={drawInFlight}
+                    isOwnBoard={isOwnBoard}
+                    onOpen={onOpen}
+                    onPromoting={onPromoting}
+                  />
+                );
+              })
             )}
           </div>
         </div>
@@ -653,18 +915,28 @@ function StashPane({
 // (useMovieModal's useCallback), so the memo holds while typing.
 const StashTile = memo(function StashTile({
   movie,
+  cell,
+  roving,
   poolFull,
   locked,
   drawInFlight,
   isOwnBoard,
   onOpen,
+  onPromoting,
 }: {
   movie: Movie;
+  /** This tile's index in the wall, which counts the add tile as a cell. */
+  cell: number;
+  /** Whether this tile holds the wall's tab stop (see StashPane). */
+  roving: boolean;
   poolFull: boolean;
   locked: boolean;
   drawInFlight: boolean;
   isOwnBoard: boolean;
   onOpen: (movie: Movie) => void;
+  /** A promote leaving this cell, and a null film withdrawing one that failed.
+   *  Stable across renders, so the memo holds while the filter is typed in. */
+  onPromoting: (movieID: number | null, cell: number) => void;
 }) {
   // Promote to the pool: the one control the tile carries, and only on your own
   // board. Edit and delete are not here — they live in the movie modal, which
@@ -672,16 +944,24 @@ const StashTile = memo(function StashTile({
   // does not disable it either.
   const moveMutation = useMutation({
     mutationFn: () => APIClient.board.moveMovie(movie.movieID, "pool"),
-    onError: () => toast.error("Failed to move movie"),
+    // The tile is about to leave the wall, so the pane is told which cell it
+    // was in. It cannot land focus itself: it will not be here to do it. On the
+    // way out, for the reason the demote's onMutate gives.
+    onMutate: () => onPromoting(movie.movieID, cell),
+    onError: () => {
+      onPromoting(null, cell);
+      toast.error("Failed to move movie");
+    },
   });
 
   return (
     <div className="mem-tile">
-      <PosterButton movie={movie} onOpen={onOpen} />
+      <PosterButton movie={movie} cell={cell} tabIndex={roving ? 0 : -1} onOpen={onOpen} />
       {isOwnBoard && (
         <TileAction
           kind="promote"
           refusal={refusalOf({ kind: "promote", isLocked: locked, drawInFlight, poolFull })}
+          tabIndex={roving ? 0 : -1}
           onActivate={() => moveMutation.mutate()}
         />
       )}

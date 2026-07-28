@@ -136,8 +136,14 @@ async function renderTab({
 /** The visually-hidden live region, whatever it currently says. */
 const liveRegion = () => document.querySelector('[role="status"]');
 
-/** The rail's rows, in DOM order. */
-const railRows = () => within(screen.getByRole("navigation", { name: "Members" })).getAllByRole("link");
+/** The rail's rows, in DOM order. Every drawer also holds a link to that
+ *  member's stash (#236); in a browser only the open drawer's is reachable,
+ *  since the rest are inert, but jsdom does not model that — so the rows are
+ *  picked out by class rather than by counting links. */
+const railRows = () =>
+  within(screen.getByRole("navigation", { name: "Members" }))
+    .getAllByRole("link")
+    .filter((link) => link.classList.contains("mem-row__link"));
 
 describe("the Members status line", () => {
   it("puts every clause on the visible span and keeps it out of the live region", async () => {
@@ -912,5 +918,229 @@ describe("moving around the wall with the keyboard", () => {
 
     await waitFor(() => expect(wall().querySelectorAll(".mem-tile").length).toBe(3));
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: /^Search / }));
+  });
+});
+
+/* The mobile push (#236). Below 760px the two columns are two screens: the rail,
+   where selecting a member opens their pool in place, and the pushed board over
+   the top of it. The address has two halves to match — `member` says whose pool
+   the rail has open, `stash` says you have gone on to their films — because one
+   key saying both would mean tapping a member always left the rail, and nobody
+   else's pool would be reachable on a phone at all.
+
+   Which screen is drawn is CSS and jsdom has no layout, so what is here is what
+   the markup and the focus rules decide: that `stash` is the pushed flag and a
+   rail row does not set it, that the live region is out of the head the push
+   removes, what the back bar carries, and where focus goes on the way in and
+   out. The four columns at 375, the single scroller and the head's removal are
+   sizes, and they belong to the browser pass. */
+describe("the mobile push", () => {
+  const roster = [member(1, 1, 3, "Ada"), member(2, 2, 2, "Bo")];
+  const heading = () => screen.getByRole("heading", { level: 3 });
+  const pushedFlag = () => document.querySelector(".mem")?.getAttribute("data-pushed");
+  /** The open drawer's way on to that member's films. */
+  const toStash = () =>
+    document.querySelector(".mem-drop__inner:not([inert]) .mem-tostash") as HTMLAnchorElement;
+  const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;
+
+  // The push's width is a media query, and jsdom answers every one of them
+  // "no" (see setupDom). A phone is that one query saying yes; everything else
+  // still says no, so nothing else in the tree changes with it.
+  const realMatchMedia = window.matchMedia;
+  const onAPhone = () => {
+    window.matchMedia = ((query: string) => ({
+      ...realMatchMedia(query),
+      matches: query.includes("max-width: 760px"),
+    })) as unknown as typeof window.matchMedia;
+  };
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+  });
+
+  it("reads the pushed state off the URL rather than holding a flag", async () => {
+    const { router } = await renderTab({ users: roster, meID: 1 });
+    expect(pushedFlag()).toBe("false");
+
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+    await waitFor(() => expect(pushedFlag()).toBe("true"));
+
+    router.history.back();
+    await waitFor(() => expect(pushedFlag()).toBe("false"));
+  });
+
+  it("selects a member without leaving the rail, so every pool stays reachable", async () => {
+    const { router } = await renderTab({ users: roster, meID: 1 });
+
+    // A rail row carries the member and nothing else. On a phone that opens
+    // Bo's pool where it stands; the wall is a second, deliberate move.
+    expect(railRows().map((r) => r.getAttribute("href"))).toEqual([
+      "/users?member=1",
+      "/users?member=2",
+    ]);
+
+    await router.navigate({ to: "/users", search: { member: 2 } });
+    await waitFor(() => expect(railRows()[1].getAttribute("aria-current")).toBe("page"));
+    expect(pushedFlag()).toBe("false");
+    // Bo's pool, open on the rail screen: two filled slots of three.
+    expect(openPool().querySelectorAll(".pslot--filled").length).toBe(2);
+  });
+
+  it("pushes from the open drawer, and only from the open one", async () => {
+    const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+
+    expect(toStash().getAttribute("href")).toBe("/users?member=2&stash=true");
+    // Every drawer holds one, so the rail keeps its height across a switch,
+    // but a shut drawer is inert and its link is not reachable.
+    expect(document.querySelectorAll(".mem-tostash").length).toBe(2);
+    expect(toStash().textContent).toBe("Stash2");
+
+    fireEvent.click(toStash());
+    await waitFor(() => expect(pushedFlag()).toBe("true"));
+    expect(router.state.location.href).toBe("/users?member=2&stash=true");
+  });
+
+  it("keeps the live region out of the head the pushed screen removes", async () => {
+    await renderTab({ users: roster, meID: 1, locked: true, href: "/users?member=2&stash=true" });
+
+    // A display: none live region announces nothing, and the head goes whole on
+    // this screen — so the region cannot be inside it. It is the pushed
+    // screen's only round-state signal.
+    expect(liveRegion()?.closest(".sec-head")).toBeNull();
+    expect(liveRegion()?.textContent).toBe("round closed");
+  });
+
+  it("puts the way back and the occupancy pips in the back bar", async () => {
+    const { router } = await renderTab({
+      users: roster,
+      meID: 1,
+      href: "/users?member=2&stash=true",
+    });
+
+    // The pane is keyed on the member, so the bar is re-queried after a switch.
+    const bar = () => document.querySelector(".mem-backbar") as HTMLElement;
+    // Two things and no more: the rail is a screen away, so the pips are the
+    // only occupancy signal here and they have to announce as one.
+    expect(within(bar()).getByRole("button").textContent).toBe("All members");
+    expect(within(bar()).getByRole("img").getAttribute("aria-label")).toBe("2 of 3 slots filled");
+
+    // Plain history-back, not a link to the rail: the entry before this one is
+    // wherever you came from, and on a cold deep link that is out of the app.
+    await router.navigate({ to: "/users", search: { member: 1, stash: true } });
+    await waitFor(() => expect(heading().textContent).toBe("Your stash"));
+    fireEvent.click(within(bar()).getByRole("button"));
+    await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
+  });
+
+  it("carries the stash count in the pane heading", async () => {
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2&stash=true" });
+
+    // Beside the rail the row carries the number and CSS hides this one; on the
+    // pushed screen the rail is another screen, so the heading is where it is.
+    const id = heading().closest(".mem-stash__id") as HTMLElement;
+    expect(id.querySelector(".sec-count")?.textContent).toBe("2");
+  });
+
+  it("moves focus to the pane heading on the push", async () => {
+    onAPhone();
+    const { router } = await renderTab({ users: roster, meID: 1 });
+
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+
+    // The rail has gone, so focus has to go somewhere, and the heading is the
+    // one guaranteed moment a screen-reader user meets the self-mark.
+    await waitFor(() => expect(document.activeElement).toBe(heading()));
+    expect(heading().textContent).toBe("Bo's stash");
+  });
+
+  it("treats a pop between two boards as an entry", async () => {
+    onAPhone();
+    const { router } = await renderTab({
+      users: roster,
+      meID: 1,
+      href: "/users?member=1&stash=true",
+    });
+
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+    await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
+
+    router.history.back();
+    // Back onto your own board is an arrival at a board, not a return to the
+    // rail: the heading takes focus the same way the push does.
+    await waitFor(() => expect(heading().textContent).toBe("Your stash"));
+    expect(document.activeElement).toBe(heading());
+  });
+
+  it("restores focus to the stash link of the board you were on", async () => {
+    onAPhone();
+    const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+    const left = toStash();
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+    await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
+
+    router.history.back();
+
+    // The control you left from, in the drawer that is open again — not the top
+    // of the page, and not your own row.
+    await waitFor(() => expect(document.activeElement).toBe(left));
+    // And in the open drawer, which is the part jsdom cannot check for itself:
+    // it does not model `inert`, so a link in a shut drawer takes focus here
+    // and takes none in a browser. Asserted on the DOM instead.
+    expect(left.closest(".mem-drop__inner")?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("restores nothing when the board you left is no longer the open one", async () => {
+    onAPhone();
+    const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+    const bosLink = toStash();
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+    await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
+
+    // Only reachable by resizing mid-stack: switching member beside the rail
+    // and coming back pops from one member's board to another's rail. Bo's
+    // drawer is shut by then, and a shut drawer is inert, so its link cannot
+    // take focus — calling focus on it would report a restore that did not
+    // happen. Where focus does land is the pane's own rule (#235); what is
+    // pinned here is that it is not the link in the drawer nobody opened.
+    await router.navigate({ to: "/users", search: { member: 1 } });
+
+    await waitFor(() => expect(pushedFlag()).toBe("false"));
+    expect(bosLink.closest(".mem-drop__inner")?.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement).not.toBe(bosLink);
+  });
+
+  it("moves nothing when the rail itself changes member", async () => {
+    onAPhone();
+    const { router } = await renderTab({ users: roster, meID: 1 });
+    const rail = railRows()[1];
+    rail.focus();
+
+    // Both rows are still on screen and so is the pool that just opened:
+    // nothing was taken away, so nothing is handed on.
+    await router.navigate({ to: "/users", search: { member: 2 } });
+    await waitFor(() => expect(railRows()[1].getAttribute("aria-current")).toBe("page"));
+    expect(document.activeElement).toBe(rail);
+  });
+
+  it("leaves focus alone beside the rail", async () => {
+    const { router } = await renderTab({ users: roster, meID: 1 });
+    const rail = railRows()[1];
+    rail.focus();
+
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+    await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
+
+    // Nothing was taken away: both columns are on screen, so a switch costs a
+    // desktop user neither their place in the rail nor an announcement.
+    expect(document.activeElement).toBe(rail);
+  });
+
+  it("does not move focus for a cold deep link", async () => {
+    onAPhone();
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2&stash=true" });
+
+    // Arriving on a board is not a push, and the page has not taken anything
+    // away from anybody: focus starts where a loaded page starts.
+    expect(heading().textContent).toBe("Bo's stash");
+    expect(document.activeElement).toBe(document.body);
   });
 });

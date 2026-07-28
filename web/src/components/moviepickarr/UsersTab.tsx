@@ -1,6 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useSearch } from "@tanstack/react-router";
-import { MoveDownIcon, MoveUpIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { Link, useRouter, useSearch } from "@tanstack/react-router";
+import {
+  ArrowLeftIcon,
+  ChevronRightIcon,
+  MoveDownIcon,
+  MoveUpIcon,
+  PlusIcon,
+  SearchIcon,
+} from "lucide-react";
 import {
   memo,
   useCallback,
@@ -39,6 +46,17 @@ import "@/components/moviepickarr/members.css";
 const POOL_SIZE = 3;
 
 /**
+ * The width below which the pane is a screen of its own rather than a column
+ * beside the rail (#236). Which screen you are on is CSS — this is read only to
+ * decide where focus goes, since a push that takes the rail away has to hand
+ * focus somewhere and a member switch beside the rail must not move it at all.
+ * Keep in step with the media queries in members.css.
+ */
+const PUSH_WIDTH = "(max-width: 760px)";
+
+const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
+
+/**
  * The Members page: a rail of members beside one board pane.
  *
  * The rail carries every member equally, one row each, with the two numbers
@@ -50,6 +68,21 @@ const POOL_SIZE = 3;
  * Which member is selected is an address (`/users?member=<userID>`, see
  * membersSearch), not component state, so a board can be linked to and Back
  * returns to the member you were looking at before.
+ *
+ * Below 760px that address grows a second half and becomes the mobile push
+ * (#236). The two columns are two screens there: the rail is the whole screen,
+ * where selecting a member opens their pool in place exactly as it does beside
+ * the pane, and `stash` in the URL pushes that member's films over the top of
+ * it. Two keys because the narrow layout has two levels — whose pool the rail
+ * has open, and whether you have gone on to their wall — and one key saying
+ * both would mean a phone could only reach a member by leaving the rail, with
+ * nobody else's pool reachable at all.
+ *
+ * Both halves are the URL rather than a flag of their own, so a resize to
+ * desktop lands on the same board rather than on a state built at 375px, and
+ * `stash` simply does nothing up there: the pane is already beside the rail.
+ * Which screen is drawn is CSS; the only thing read here is where focus goes
+ * when the rail is taken away and put back.
  *
  * Every filled poster on either band is a button opening the movie modal, which
  * is the one way into a film's record from this page — never gated on whose
@@ -109,7 +142,7 @@ export function UsersTab() {
   // useSearch keys off the route id, which is `/_app/users` while the URL stays
   // `/users` (the page hangs off the pathless app layout) — same split the
   // Stats tab documents.
-  const { member } = useSearch({ from: "/_app/users" });
+  const { member, stash } = useSearch({ from: "/_app/users" });
   const ordered = useMemo(() => orderMembers(users, me?.id), [users, me?.id]);
   const selected = selectedMember(ordered, member, me?.id);
 
@@ -136,6 +169,49 @@ export function UsersTab() {
   // outgoing pane raises it on the way out and the incoming one lands focus on
   // its heading. A ref, not state — nothing renders differently for it.
   const paneLostFocus = useRef(false);
+
+  // The pane's heading, held here rather than inside the pane: it is where the
+  // push lands focus, and the pane is keyed on the member, so on a switch the
+  // node the parent focuses is the incoming one (a parent's effect runs after
+  // its children have mounted).
+  const paneHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Every drawer's stash link, by member. The rail outlives the push — it is
+  // display: none, not unmounted — so returning can put focus back on the
+  // control that opened the screen being left. It is reachable when it is
+  // wanted: coming back puts that member's own drawer open, and a shut drawer
+  // is inert.
+  const stashLinks = useRef(new Map<number, HTMLAnchorElement>());
+
+  // What the URL named last render, so a navigation can be told from an
+  // arrival: a cold deep link is not a push and must not move focus. One ref
+  // for the three, because they are one thing — the address as it was — and
+  // reading two of them from different renders would be the bug this exists to
+  // avoid.
+  const last = useRef({ pushed: !!stash, member, selectedID: selected?.userID });
+  useEffect(() => {
+    const was = last.current;
+    last.current = { pushed: !!stash, member, selectedID: selected?.userID };
+    if ((was.pushed === !!stash && was.member === member) || !isPushWidth()) return;
+    // Onto a board: the rail has gone, so the screen's own heading takes focus
+    // — the one guaranteed moment a screen-reader user meets the self-mark. A
+    // pop between two boards is an entry too, and lands the same way.
+    if (stash) {
+      paneHeadingRef.current?.focus();
+      return;
+    }
+    // Back to the rail, and only from the pushed screen: switching member on
+    // the rail itself takes nothing away, so it moves nothing. Focus goes to
+    // the stash link of the board you were on, which is the control you left
+    // from.
+    //
+    // Only when that board is still the open one, which in a phone's own
+    // history it always is. Resizing to desktop mid-stack, switching member
+    // there and coming back can pop straight from one member's board to
+    // another's rail, and the link in a shut drawer is inert: focusing it does
+    // nothing at all, so this would report a restore it did not make.
+    if (!was.pushed || was.selectedID === undefined || was.selectedID !== selected?.userID) return;
+    stashLinks.current.get(was.selectedID)?.focus();
+  }, [stash, member, selected?.userID]);
   useEffect(() => {
     const rail = railRef.current;
     if (!rail) return;
@@ -158,7 +234,23 @@ export function UsersTab() {
 
   return (
     <>
-      <div className="block mem">
+      {/* Pushed is the URL, not a flag: below 760 the head goes with the rail
+          (see members.css). The whole head, `Members / 6 people` included, not
+          just the status line — the pushed screen's title is the possessive
+          heading, and two titles do not fit at 375px. */}
+      <div className="block mem" data-pushed={!!stash}>
+        {/* Split off the visible status span on purpose: this region carries
+            the round and draw clauses only, never occupancy (see
+            membersStatus). Empty means nothing to announce.
+
+            Outside the head it is drawn beside, and deliberately: the head is
+            removed on the pushed screen and a display: none live region
+            announces nothing, so this — that screen's only round-state signal —
+            sits where the removal cannot reach it. */}
+        <span className="vis-hidden" role="status">
+          {status.announce}
+        </span>
+
         <div className="sec-head">
           <div className="sec-title">
             <h2>Members</h2>
@@ -171,12 +263,6 @@ export function UsersTab() {
             ) : (
               <span className="sec-status mono">{status.text}</span>
             )}
-            {/* Split off the visible span on purpose: this region carries the
-                round and draw clauses only, never occupancy. See membersStatus
-                for why. Empty means nothing to announce. */}
-            <span className="vis-hidden" role="status">
-              {status.announce}
-            </span>
           </div>
         </div>
 
@@ -212,6 +298,7 @@ export function UsersTab() {
                   isLocked={!!isLocked}
                   drawInFlight={drawInFlight}
                   onOpen={open}
+                  stashLinks={stashLinks}
                 />
               ))}
             </nav>
@@ -229,6 +316,7 @@ export function UsersTab() {
               onOpenSearch={() => setSearchUser(selected)}
               onOpen={open}
               lostFocus={paneLostFocus}
+              headingRef={paneHeadingRef}
             />
           </div>
         ) : (
@@ -269,6 +357,7 @@ function RailRow({
   isLocked,
   drawInFlight,
   onOpen,
+  stashLinks,
 }: {
   user: User;
   active: boolean;
@@ -276,6 +365,9 @@ function RailRow({
   isLocked: boolean;
   drawInFlight: boolean;
   onOpen: (movie: Movie) => void;
+  /** The page's register of stash links by member, so returning from the mobile
+   *  push can put focus back on the control it left from (#236). */
+  stashLinks: RefObject<Map<number, HTMLAnchorElement>>;
 }) {
   const pool = useMemo(
     () => Object.values(user.currentPool).sort((a, b) => a.title.localeCompare(b.title)),
@@ -298,6 +390,18 @@ function RailRow({
   // pool hangs off, which is the nearest thing to the slot that emptied and is
   // still on screen (#235).
   const linkRef = useRef<HTMLAnchorElement>(null);
+
+  // The drawer's stash link, registered with the page: it is the control the
+  // mobile push is made from, so it is the one focus comes back to (#236).
+  const holdStashLink = useCallback(
+    (el: HTMLAnchorElement | null) => {
+      if (el) stashLinks.current.set(user.userID, el);
+      return () => {
+        stashLinks.current.delete(user.userID);
+      };
+    },
+    [stashLinks, user.userID],
+  );
 
   return (
     <div className="mem-row" data-active={active}>
@@ -347,6 +451,31 @@ function RailRow({
               onOpen={onOpen}
               rowLinkRef={linkRef}
             />
+
+            {/* The way on to this member's films, below 760 only (members.css
+                draws it there and nowhere else). It is the second half of the
+                address, so it is a link and not a button: the pushed screen
+                can be shared, Back leaves it, and the row above stays the
+                thing that opens the pool. Tapping a member never leaves the
+                rail, which is what keeps everybody else's pool reachable on a
+                phone; going on to the wall is a deliberate second move.
+
+                In every drawer rather than the open one alone, so the rail
+                keeps a constant height across a switch. A shut drawer is
+                inert, so this is only ever reachable on the board it belongs
+                to — which is also why the name is `Stash 14` and does not
+                repeat whose: exactly one of these is ever exposed, and the row
+                directly above it carries the member. */}
+            <Link
+              to="/users"
+              search={{ member: user.userID, stash: true }}
+              className="mem-tostash"
+              ref={holdStashLink}
+            >
+              Stash
+              <span className="mem-tostash__ct mono">{stashCount}</span>
+              <ChevronRightIcon />
+            </Link>
           </div>
         </div>
       </div>
@@ -622,6 +751,7 @@ function StashPane({
   onOpenSearch,
   onOpen,
   lostFocus,
+  headingRef,
 }: {
   user: User;
   isOwnBoard: boolean;
@@ -634,7 +764,11 @@ function StashPane({
   /** Raised on the way out when focus was inside this pane, and read on the way
    *  in: the pane is keyed on the member, so a switch is an unmount. */
   lostFocus: RefObject<boolean>;
+  /** The pane's heading, held by the page: it is where focus goes when a tile
+   *  is taken from under it, and where the mobile push lands (#236). */
+  headingRef: RefObject<HTMLHeadingElement | null>;
 }) {
+  const router = useRouter();
   const [filter, setFilter] = useState("");
 
   const stash = useMemo(
@@ -643,7 +777,8 @@ function StashPane({
   );
   const filteredStash = useMemo(() => filterStash(stash, filter), [stash, filter]);
 
-  const poolFull = Object.keys(user.currentPool).length >= POOL_SIZE;
+  const pooled = Object.keys(user.currentPool).length;
+  const poolFull = pooled >= POOL_SIZE;
   const firstName = user.name.split(" ")[0];
   // Names split deliberately: the rail carries the full name, because a roster
   // has to separate two people who share a first one; the heading carries the
@@ -687,7 +822,6 @@ function StashPane({
   const cell = Math.min(roving, Math.max(cells - 1, 0));
 
   const gridRef = useRef<HTMLDivElement>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
   /** The poster in a given cell, which is the cell's roving element. */
   const cellAt = useCallback(
     (index: number) => gridRef.current?.querySelector<HTMLElement>(`[data-cell="${index}"]`),
@@ -758,7 +892,9 @@ function StashPane({
       return;
     }
     focusCell(to);
-  }, [filteredStash, cells, focusCell]);
+    // headingRef is a prop now (the page holds it, so the push can land on it),
+    // which is why it is listed: it is a ref object and never changes.
+  }, [filteredStash, cells, focusCell, headingRef]);
 
   // Whether focus is inside this pane at all, which is what says a tile
   // unmounting under it was a loss rather than a departure. React's onFocus and
@@ -813,6 +949,29 @@ function StashPane({
         holdsFocus.current = false;
       }}
     >
+      {/* The mobile push's back bar, drawn only below 760 (members.css) and so
+          always in the DOM: which screen this is is a media query, and a render
+          condition on it would have to survive a resize.
+
+          It carries the way back and the pips, and nothing else. The pips are
+          the only occupancy signal on this screen — the rail is not here, a
+          promote fills a pool one screen away, and the move is silent unless it
+          fails — which is why they take role="img" and a label. Nothing is
+          pinned: the app scrolls under a fixed 63px nav, so top: 0 parks a
+          sticky bar behind it, and a bar with a background would be a permanent
+          band of chrome across a screen made of art. Going back for the pips is
+          one flick. */}
+      <div className="mem-backbar">
+        {/* Plain history-back. The router's history exposes no can-go-back, so
+            a cold deep link exits the app — what Back does on any deep-linked
+            detail screen. */}
+        <button type="button" className="mem-back" onClick={() => router.history.back()}>
+          <ArrowLeftIcon />
+          All members
+        </button>
+        <PoolPips filled={pooled} />
+      </div>
+
       <div className="mem-stash">
         <div className="mem-stash__head">
           {/* The positive self-mark, and the last thing on the pane saying whose
@@ -824,7 +983,10 @@ function StashPane({
           <div className="mem-stash__id">
             {/* Focusable but never a tab stop: it is where focus goes when the
                 thing holding it is taken away, and the pane it names is the
-                nearest thing that is still there (#235). */}
+                nearest thing that is still there (#235). It is also where the
+                mobile push lands, which is the one guaranteed moment a
+                screen-reader user meets the self-mark (#236) — so the
+                tabIndex={-1} is load-bearing, not dead code. */}
             <h3
               id={headingID}
               className="mem-stash__title"
@@ -834,6 +996,11 @@ function StashPane({
             >
               <span className="mem-stash__who">{who}</span> stash
             </h3>
+            {/* The count, on the pushed screen only (members.css hides it above
+                760). Beside the rail the row carries it in every state, and a
+                second copy in the pane put "who has the deepest stash" across
+                two type scales 600px apart; pushed, the rail is another screen
+                and the heading is where the number has to be. */}
             <span className="sec-count">{stash.length}</span>
           </div>
           <label className="field">

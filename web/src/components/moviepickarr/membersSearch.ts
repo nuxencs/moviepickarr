@@ -15,6 +15,22 @@ import type { User } from "@/types/Response";
 export interface MembersSearch {
   /** The selected member's user id. Absent means "me". */
   member?: number;
+  /**
+   * Their stash as a screen of its own, which is what the layout below 760px
+   * pushes to (#236). Beside the rail it changes nothing: the pane is already
+   * there, so this is the second half of a mobile address rather than a second
+   * view.
+   *
+   * Two levels, because the narrow layout has two: `member` says whose pool the
+   * rail has open, and this says you have gone on to their films. One key
+   * cannot say both, and a phone that could only reach a member by leaving the
+   * rail would have no way to see anybody else's pool.
+   *
+   * Only ever `true`. False is spelled by leaving it out, so a plain `/users`
+   * does not come back as `/users?stash=false` (the router serializes whatever
+   * the validator returns).
+   */
+  stash?: true;
 }
 
 /**
@@ -33,10 +49,16 @@ export function validateMembersSearch(search: Record<string, unknown>): MembersS
   // A number from a programmatic navigation, a string off the URL, nothing
   // else: Number() alone reads `true` as 1 and `["4"]` as 4, which would make
   // a malformed navigation select somebody's board.
+  // A boolean from a programmatic navigation, the string off the URL, nothing
+  // else. Anything that is not a plain yes drops out, so a stray `?stash=0`
+  // reads as the rail rather than as the pushed screen.
+  const stash =
+    search.stash === true || search.stash === "true" ? ({ stash: true } as const) : {};
+
   const raw = search.member;
-  if (typeof raw !== "number" && typeof raw !== "string") return {};
+  if (typeof raw !== "number" && typeof raw !== "string") return { ...stash };
   const id = Number(raw);
-  return Number.isSafeInteger(id) && id > 0 ? { member: id } : {};
+  return Number.isSafeInteger(id) && id > 0 ? { member: id, ...stash } : { ...stash };
 }
 
 /**

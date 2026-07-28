@@ -94,9 +94,13 @@
     display: none;
   }
 
-  /* The back bar belongs to the pushed screen alone. Hidden here rather than
-     left unrendered, so a resize does not depend on a React flag. */
-  .mem-backbar {
+  /* The back bar and the drawer's stash link belong to the pushed screen
+     alone: beside the rail the pane is already on screen, so a link to it
+     would go nowhere and a way back would be a way back from nothing. Hidden
+     here rather than left unrendered, so a resize does not depend on a React
+     flag — and the drawer keeps the height it has at every width. */
+  .mem-backbar,
+  .mem-tostash {
     display: none;
   }
 
@@ -585,11 +589,12 @@
 
 /* ---- the push, below 760 ----------------------------------------------- */
 
-/* Two columns become two screens (#236). The rail is the whole screen with the
-   selected member's pool open in place, and a member in the URL pushes their
-   stash over the top of it: `member` present is the pushed state, so it is a
-   read of the address and survives a resize by construction — a flag built at
-   375px would have to mean something at 1440px.
+/* Two columns become two screens (#236). The rail is the whole screen, where
+   selecting a member opens their pool in place exactly as it does beside the
+   pane, and `stash` in the URL pushes that member's films over the top of it.
+   Both halves are the address, so they survive a resize by construction — a
+   flag built at 375px would have to mean something at 1440px — and the second
+   one is inert up there, where the pane is already beside the rail.
 
    Which screen you are on is this media query and the data attribute, never a
    width read in JS. The only thing JS reads is where focus goes when the rail
@@ -605,6 +610,43 @@
      every cell in the wall (77px a poster becomes 71px). */
   .mem-pane {
     padding-left: 0;
+  }
+
+  /* The way on to the open member's films, and the whole reason the rail keeps
+     its drawers on a phone: the row opens a pool, this leaves for the wall. A
+     row across the drawer's full width, so the target is the width of the
+     three posters above it and there is nothing to miss. */
+  .mem-tostash {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    margin-top: 14px;
+    padding: 0 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    color: var(--ink);
+    font-size: 13.5px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  /* The count sits with the word rather than at the far edge: the chevron is
+     what owns the right end, and it is what says this leads somewhere. */
+  .mem-tostash__ct {
+    color: var(--ink-3);
+    font-weight: 500;
+  }
+  .mem-tostash svg {
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+    color: var(--ink-3);
+  }
+  .mem-tostash:hover,
+  .mem-tostash:focus-visible {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
   }
 
   /* The whole head goes on the pushed screen, `Members / 6 people` included

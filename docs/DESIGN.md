@@ -427,6 +427,25 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
 - **Hover-revealed controls** (row actions, etc.) must also reveal on `:focus-within`
   so keyboard users can reach them. Card/tile hover effects must also fire on
   `:focus-visible`.
+- **Roving tabindex where the run is unbounded, plain tab stops where it is a handful.**
+  A wall of films is as long as somebody's stash, so it gets one tab stop and arrow keys
+  (`nextCell` in `stashWall.ts`; left/right step through the list, up/down step by a row,
+  Home/End go to the ends). A rail of six member rows stays six ordinary tab stops. The
+  Members page runs both side by side and is the pattern. A roving list is a **list**, not
+  a `role="grid"`: the Members wall's column count is a container-query artifact of the
+  cell width, so grid coordinates would be announcing the stylesheet. The column count is
+  read back off the resolved `grid-template-columns` rather than computed in JS, since a
+  JS pixel and a CSS pixel are different sizes under the root zoom ramp (§13). The roving
+  index resets to the first cell on any content change — a filter, a switch of subject —
+  which also decides where Tab out of the field above it lands.
+- **Focus moves only when the thing it is sitting on goes away**, and then to the nearest
+  thing that is still there: the item taking the vacated index, else the one before it,
+  else the region's heading (focusable at `tabIndex={-1}`, never a tab stop). Removing a
+  focused node fires no blur, so the recovery keys on focus having reached the document
+  body with the region still believing it holds focus — a click that moved focus somewhere
+  real is a departure and is left alone. Where the move is a mutation, note the vacated
+  index in `onMutate` and land focus when the item is actually gone from the list, not
+  when the request returns: the two are separate round trips and SSE routinely wins.
 - **A live region announces the part worth interrupting for, not the whole line.** Where
   a status line mixes facts that change at different rates, split it: the visible span
   carries every clause and stays silent, and a second `.vis-hidden` `role="status"`

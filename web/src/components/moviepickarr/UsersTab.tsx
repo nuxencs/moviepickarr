@@ -183,18 +183,15 @@ export function UsersTab() {
   const stashLinks = useRef(new Map<number, HTMLAnchorElement>());
 
   // What the URL named last render, so a navigation can be told from an
-  // arrival: a cold deep link is not a push and must not move focus.
-  const lastPushed = useRef(!!stash);
-  const lastMember = useRef(member);
-  const lastSelected = useRef(selected?.userID);
+  // arrival: a cold deep link is not a push and must not move focus. One ref
+  // for the three, because they are one thing — the address as it was — and
+  // reading two of them from different renders would be the bug this exists to
+  // avoid.
+  const last = useRef({ pushed: !!stash, member, selectedID: selected?.userID });
   useEffect(() => {
-    const was = lastPushed.current;
-    const from = lastMember.current;
-    const fromID = lastSelected.current;
-    lastPushed.current = !!stash;
-    lastMember.current = member;
-    lastSelected.current = selected?.userID;
-    if ((was === !!stash && from === member) || !isPushWidth()) return;
+    const was = last.current;
+    last.current = { pushed: !!stash, member, selectedID: selected?.userID };
+    if ((was.pushed === !!stash && was.member === member) || !isPushWidth()) return;
     // Onto a board: the rail has gone, so the screen's own heading takes focus
     // — the one guaranteed moment a screen-reader user meets the self-mark. A
     // pop between two boards is an entry too, and lands the same way.
@@ -205,9 +202,15 @@ export function UsersTab() {
     // Back to the rail, and only from the pushed screen: switching member on
     // the rail itself takes nothing away, so it moves nothing. Focus goes to
     // the stash link of the board you were on, which is the control you left
-    // from. The resolved member, so a dead id in the URL restores nothing
-    // rather than the wrong row.
-    if (was && fromID !== undefined) stashLinks.current.get(fromID)?.focus();
+    // from.
+    //
+    // Only when that board is still the open one, which in a phone's own
+    // history it always is. Resizing to desktop mid-stack, switching member
+    // there and coming back can pop straight from one member's board to
+    // another's rail, and the link in a shut drawer is inert: focusing it does
+    // nothing at all, so this would report a restore it did not make.
+    if (!was.pushed || was.selectedID === undefined || was.selectedID !== selected?.userID) return;
+    stashLinks.current.get(was.selectedID)?.focus();
   }, [stash, member, selected?.userID]);
   useEffect(() => {
     const rail = railRef.current;

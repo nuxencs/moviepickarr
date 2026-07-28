@@ -1082,6 +1082,30 @@ describe("the mobile push", () => {
     // The control you left from, in the drawer that is open again — not the top
     // of the page, and not your own row.
     await waitFor(() => expect(document.activeElement).toBe(left));
+    // And in the open drawer, which is the part jsdom cannot check for itself:
+    // it does not model `inert`, so a link in a shut drawer takes focus here
+    // and takes none in a browser. Asserted on the DOM instead.
+    expect(left.closest(".mem-drop__inner")?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("restores nothing when the board you left is no longer the open one", async () => {
+    onAPhone();
+    const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+    const bosLink = toStash();
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+    await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
+
+    // Only reachable by resizing mid-stack: switching member beside the rail
+    // and coming back pops from one member's board to another's rail. Bo's
+    // drawer is shut by then, and a shut drawer is inert, so its link cannot
+    // take focus — calling focus on it would report a restore that did not
+    // happen. Where focus does land is the pane's own rule (#235); what is
+    // pinned here is that it is not the link in the drawer nobody opened.
+    await router.navigate({ to: "/users", search: { member: 1 } });
+
+    await waitFor(() => expect(pushedFlag()).toBe("false"));
+    expect(bosLink.closest(".mem-drop__inner")?.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement).not.toBe(bosLink);
   });
 
   it("moves nothing when the rail itself changes member", async () => {

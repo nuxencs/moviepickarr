@@ -598,8 +598,17 @@
 
    Which screen you are on is this media query and the data attribute, never a
    width read in JS. The only thing JS reads is where focus goes when the rail
-   is taken away and when it comes back (see UsersTab). */
-@media (max-width: 760px) {
+   is taken away and when it comes back (see UsersTab).
+
+   The negation of the two-column block rather than `max-width: 760px`, so the
+   two of them partition the axis exactly. A fractional viewport width, which
+   browser zoom and a non-integer device pixel ratio both produce routinely,
+   falls between 760 and 761 and matches neither query — and no decimal is
+   enough, since whatever the number there is a width just above it. This page
+   cannot afford that gap: the back bar and the drawer's stash link are drawn
+   here and hidden there, so falling through both puts two unstyled controls on
+   a layout that is neither screen. */
+@media not (min-width: 761px) {
   .mem[data-pushed="true"] .mem-rail,
   .mem[data-pushed="false"] .mem-pane {
     display: none;

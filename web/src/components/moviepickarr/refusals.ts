@@ -9,8 +9,14 @@
 // for a per-tile mark to express and the board draws nothing for a refusal.
 // What is left is a string, which is why the rule lives here as a pure function
 // and the markup only spends it.
+//
+// The movie modal's delete (#237) is refused by two of the same three flags and
+// says so in the same words, so its rule lives here too — one place where the
+// round and the draw are turned into a reason, whatever surface asks.
 
 import { ROUND_CLOSED } from "@/components/moviepickarr/poolLock";
+
+import type { MovieStatus } from "@/types/Response";
 
 /** The one control a tile carries: promote on a stash poster, demote on a pool one. */
 export type ActionKind = "promote" | "demote";
@@ -75,4 +81,47 @@ export function refusalOf({
  */
 export function actionLabel(kind: ActionKind, refusal: Refusal | null): string {
   return refusal ? `${VERB[kind]}, ${REASON[refusal]}` : VERB[kind];
+}
+
+/** The statuses a film can be deleted from — the same two the server accepts.
+ *  A watched film is history and the held winner is mid-draw, so neither is
+ *  offered the control at all: absence is the permanent boundary here, as it is
+ *  on a board that isn't yours. */
+export function isDeletable(status: MovieStatus | undefined): boolean {
+  return status === "stash" || status === "pool";
+}
+
+/**
+ * Why deleting this film is refused, or null when it isn't.
+ *
+ * Restates the server's own two refusals (movie.Service.Delete): a draw in
+ * flight freezes the pool, and a locked round fixes the candidate set, so both
+ * refuse a pool film and neither touches a stash one. Stash adds aren't
+ * lock-checked, so stash deletes aren't either.
+ *
+ * Precedence is drawing > locked, matching refusalOf: a mid-draw locked pool
+ * film reads `a draw is in progress`, which is the part that will pass on its
+ * own in a minute.
+ */
+export function deleteRefusalOf({
+  status,
+  isLocked,
+  drawInFlight,
+}: {
+  status: MovieStatus | undefined;
+  isLocked: boolean;
+  drawInFlight: boolean;
+}): Refusal | null {
+  if (status !== "pool") return null;
+  if (drawInFlight) return "drawing";
+  if (isLocked) return "locked";
+  return null;
+}
+
+/** What the modal's delete button is called: the verb, then the reason it won't
+ *  run. One string for the accessible name and the tooltip, as on a tile. Not
+ *  an ActionKind, because delete is not one of the two moves a tile carries —
+ *  it lives on the film's own record — but it refuses in the same words. */
+export function deleteLabel(refusal: Refusal | null): string {
+  return refusal ? `Delete, ${REASON[refusal]}` : "Delete";
 }

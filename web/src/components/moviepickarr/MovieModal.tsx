@@ -1,14 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
-import { ExternalLinkIcon, XIcon } from "lucide-react";
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ExternalLinkIcon, PencilIcon, Trash2Icon, XIcon } from "lucide-react";
+import { Fragment, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { MovieDetailQueryOptions } from "@/api/queries";
+import { APIClient } from "@/api/APIClient";
+import { MeQueryOptions, MovieDetailQueryOptions, SettingsGetPoolLockQueryOptions } from "@/api/queries";
 
+import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
+import { drawStore } from "@/components/moviepickarr/drawStore";
 import { backdropBg, backdropUrl, externalLinks, fullDate, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/moviepickarr/lib";
 import { Modal } from "@/components/moviepickarr/Modal";
+import { isSelf } from "@/components/moviepickarr/ownership";
 import { Poster } from "@/components/moviepickarr/Poster";
+import { deleteLabel, deleteRefusalOf, isDeletable } from "@/components/moviepickarr/refusals";
 import { SkeletonText } from "@/components/moviepickarr/Skeletons";
+import { DeletionDialog } from "@/components/ui/deletion-dialog";
+import { toast } from "@/components/ui/toast-api";
 
 import type { CreditPerson, Movie } from "@/types/Response";
 
@@ -94,8 +101,136 @@ function HeroBackdrop({ hue, src }: { hue: number; src: string | null }) {
   );
 }
 
-/** Read-only detail view for a movie: backdrop, a rail of poster + links out,
- *  the credits with the attribution beside them, overview, and the cast strip. */
+/**
+ * Rename and delete, at the foot of the modal's rail.
+ *
+ * Whether it is drawn at all is derived from the movie in hand, not handed down
+ * as a prop (#237): the alternative rule reads, to a member, "you may rename a
+ * film you added, if you opened it from Members" — the same film on the same
+ * surface reached by the same gesture from the pool wall would offer nothing,
+ * and no part of the interface could account for the difference.
+ *
+ * Both actions are adder-only server-side on both endpoints, with no admin
+ * override, so a guest's record simply opens without this block: absence is the
+ * expression of permission here, the same as it is on a board that isn't yours.
+ *
+ * Edit is two capabilities in one dialog and the weaker one is what Members
+ * wants: a rename, of a string the poster wall does not even show. The link
+ * field is the load-bearing half — writing it re-points the film's IMDb
+ * identity and re-enriches it — so it stays, whatever the dialog's flat copy
+ * makes of it.
+ */
+function MovieActions({
+  movie,
+  /** The modal's own open-ness. A child dialog is mounted only while it holds,
+   *  so browser Back — which withdraws it — closes both at once and "Back
+   *  closes the modal" stays one rule. */
+  open,
+  /** Delete lands on the film's record, so its success takes the record away:
+   *  same path as every other dismissal, so the history entry is popped once. */
+  onDeleted,
+}: {
+  movie: Movie;
+  open: boolean;
+  onDeleted: () => void;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const { data: isLocked, isPending: lockPending } = useQuery(SettingsGetPoolLockQueryOptions());
+  // The pool is frozen server-side while a draw is unrevealed — the winner is
+  // still shown as a pool tile — so the refusal is restated here rather than
+  // letting a confirmed delete come back 409. Same store the boards read.
+  const drawInFlight = useSyncExternalStore(
+    drawStore.subscribe,
+    () => drawStore.getState().phase !== "idle",
+  );
+  const refusal = deleteRefusalOf({ status: movie.status, isLocked: !!isLocked, drawInFlight });
+  const label = deleteLabel(refusal);
+
+  const editMutation = useMutation({
+    mutationFn: (payload: { title: string; link: string }) =>
+      APIClient.board.updateMovie(movie.movieID, payload.title, payload.link),
+    onSuccess: () => {
+      toast.success(`${movie.title} updated`);
+      setEditOpen(false);
+    },
+    onError: () => toast.error("Failed to update movie"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => APIClient.board.deleteMovie(movie.movieID),
+    onSuccess: () => {
+      toast.success(`${movie.title} deleted`);
+      onDeleted();
+    },
+    // The refusals above are restated from the server, not enforced by it a
+    // second time, so a race (someone else locks the round mid-confirm) lands
+    // here — after the destructive confirm, which is the one place a toast is
+    // the right report.
+    onError: () => toast.error("Failed to delete movie"),
+  });
+
+  return (
+    <div className="moviemodal__actions">
+      <button type="button" className="moviemodal__act" onClick={() => setEditOpen(true)} title="Edit">
+        <PencilIcon />
+        Edit
+      </button>
+
+      {/* The lock is a second query and a deep-linked record can land before it.
+          Until it answers, an unlocked default would offer a live delete on a
+          pooled film in a closed round, and the refusal would arrive as a toast
+          after the destructive confirm — which is the one report the round's own
+          rules are not supposed to need. Waiting is the same wait the block is
+          already making for the status, and it is over in a frame. */}
+      {isDeletable(movie.status) && !lockPending && (
+        <button
+          type="button"
+          className="moviemodal__act moviemodal__act--danger"
+          // Inert in place, never natively disabled: a disabled button can't
+          // take focus, and the reason the control won't run is written on the
+          // control (see TileAction in UsersTab).
+          aria-disabled={refusal ? true : undefined}
+          onClick={() => {
+            if (refusal) return;
+            setDeleteOpen(true);
+          }}
+          // The row says "Delete"; the reason a refused one won't run rides on
+          // the accessible name and the tooltip rather than in the label, which
+          // would wrap the word to a second line at the rail's 172px.
+          aria-label={label}
+          title={label}
+        >
+          <Trash2Icon />
+          Delete
+        </button>
+      )}
+
+      <EditMovieDialog
+        isOpen={open && editOpen}
+        onClose={() => setEditOpen(false)}
+        initialTitle={movie.title}
+        initialLink={movie.link}
+        isSaving={editMutation.isPending}
+        onSubmit={(payload) => editMutation.mutate({ title: payload.title, link: payload.link })}
+      />
+
+      <DeletionDialog
+        isOpen={open && deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => deleteMutation.mutate()}
+        title="Delete movie"
+        description={`Delete "${movie.title}"? This can't be undone.`}
+      />
+    </div>
+  );
+}
+
+/** A movie's own record: backdrop, a rail of poster + links out, the credits
+ *  with the attribution beside them, overview, and the cast strip — and, for
+ *  the member who added it, the two actions on the film itself (see
+ *  MovieActions). */
 export function MovieModal({
   movie,
   open,
@@ -121,6 +256,14 @@ export function MovieModal({
   // that's genuinely empty (query settled, not pending) renders nothing rather
   // than a perma-skeleton; a full list object (pool) shows its data immediately.
   const detailLoading = isPending;
+
+  const { data: me } = useQuery(MeQueryOptions());
+  // Both actions are adder-only server-side, so the block belongs to the adder
+  // and to nobody else. It waits for the status, which is a detail field: the
+  // lean tile object has none, and it is what decides whether delete is offered
+  // at all. So the pair arrives with the rest of the detail, the way the
+  // credits and the overview do.
+  const canAct = m.status !== undefined && isSelf(me?.id, m.addedByID);
 
   const hue = hueOf(m.title);
   const links = externalLinks(m);
@@ -169,16 +312,26 @@ export function MovieModal({
                   showTitle={!m.posterPath}
                 />
 
-                {links.length > 0 && (
-                  <div className="moviemodal__links">
-                    {links.map((link) => (
-                      <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer">
-                        <ExternalLinkIcon />
-                        {link.label}
-                      </a>
-                    ))}
-                  </div>
-                )}
+                {/* `display: contents` in the rail's column, so the links and the
+                    actions stack under the poster as if this weren't here. It
+                    exists for the narrow layout, where the rail is a row and the
+                    two blocks go side by side: the wrapper is what bottom-aligns
+                    them to the poster together, so the actions start on the first
+                    link instead of on their own bottom edge. */}
+                <div className="moviemodal__railfoot">
+                  {links.length > 0 && (
+                    <div className="moviemodal__links">
+                      {links.map((link) => (
+                        <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer">
+                          <ExternalLinkIcon />
+                          {link.label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+
+                  {canAct && <MovieActions movie={m} open={open} onDeleted={onRequestClose} />}
+                </div>
               </div>
 
               <div className="moviemodal__info">

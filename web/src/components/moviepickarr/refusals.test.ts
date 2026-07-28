@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { refusalOf, actionLabel } from "@/components/moviepickarr/refusals";
+import {
+  actionLabel,
+  deleteLabel,
+  deleteRefusalOf,
+  isDeletable,
+  refusalOf,
+} from "@/components/moviepickarr/refusals";
 
 describe("refusalOf", () => {
   const open = { isLocked: false, drawInFlight: false, poolFull: false };
@@ -62,5 +68,57 @@ describe("actionLabel", () => {
 
   it("says round closed in the words the status line uses", () => {
     expect(actionLabel("demote", "locked")).toBe("Move back to stash, round closed");
+  });
+});
+
+describe("isDeletable", () => {
+  it("takes the two statuses the server deletes from", () => {
+    expect(isDeletable("stash")).toBe(true);
+    expect(isDeletable("pool")).toBe(true);
+  });
+
+  it("leaves history and the held winner alone", () => {
+    expect(isDeletable("watched")).toBe(false);
+    expect(isDeletable("current")).toBe(false);
+  });
+
+  it("says no while the status is still on its way with the detail", () => {
+    expect(isDeletable(undefined)).toBe(false);
+  });
+});
+
+describe("deleteRefusalOf", () => {
+  const open = { isLocked: false, drawInFlight: false };
+
+  it("refuses nothing on an open round", () => {
+    expect(deleteRefusalOf({ status: "pool", ...open })).toBeNull();
+    expect(deleteRefusalOf({ status: "stash", ...open })).toBeNull();
+  });
+
+  it("refuses a pooled film while the round is closed", () => {
+    expect(deleteRefusalOf({ status: "pool", ...open, isLocked: true })).toBe("locked");
+  });
+
+  it("refuses a pooled film while a draw is out", () => {
+    expect(deleteRefusalOf({ status: "pool", ...open, drawInFlight: true })).toBe("drawing");
+  });
+
+  it("leaves the stash alone throughout: stash adds are not lock-checked either", () => {
+    expect(deleteRefusalOf({ status: "stash", isLocked: true, drawInFlight: true })).toBeNull();
+  });
+
+  it("says drawing ahead of locked, as a move does", () => {
+    expect(deleteRefusalOf({ status: "pool", isLocked: true, drawInFlight: true })).toBe("drawing");
+  });
+});
+
+describe("deleteLabel", () => {
+  it("names the action alone when nothing refuses it", () => {
+    expect(deleteLabel(null)).toBe("Delete");
+  });
+
+  it("puts the reason after the verb, in the same words a tile uses", () => {
+    expect(deleteLabel("drawing")).toBe("Delete, a draw is in progress");
+    expect(deleteLabel("locked")).toBe("Delete, round closed");
   });
 });

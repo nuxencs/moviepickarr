@@ -222,7 +222,7 @@ old shadcn primitives.
   (`Bits.tsx`), shared by the hero and the movie modal — the **hero passes `links`**
   so they sit inline after the genres; the **modal omits them** and renders its own
   `.moviemodal__links` column in the rail instead (no duplication).
-- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a read-only record on an
+- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a film's record on an
   880px capped surface (§5): a 260px backdrop (190px narrow), then a 172px **rail** (`.moviemodal__rail`)
   of poster + the links out, beside the reading column. The links are quiet mono lines
   with a small icon, not ghost buttons: three buttons read as three things to do, three
@@ -232,7 +232,25 @@ old shadcn primitives.
   split by a rule that spans the whole block (`align-items: stretch`), because both are
   the same kind of line: who is responsible for this. Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
-  the credit columns stack with the rule turning into a top border. No actions live here.
+  the credit columns stack with the rule turning into a top border.
+- **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`) — rename
+  and delete as two labelled rows (`.moviemodal__act`) at the foot of the rail, stacked
+  under the links at every width and sharing their 13px icon column. They read as
+  controls, not references: the label is sans where the links are mono, and the row
+  lights a background on hover and focus where a link only changes colour, so the
+  destructive red arrives on the pointer instead of sitting at rest. Whether it is drawn
+  is derived from the movie object and
+  never passed in: the adder gets it, everyone else gets nothing, on every surface the
+  modal opens on. It arrives with the detail, since the film's status is a detail field,
+  and the delete waits for the pool-lock query too rather than defaulting to unlocked.
+  A refused delete (a pooled film while the round is locked or a draw is out) stays in
+  place and goes inert with `aria-disabled`, the reason on both the accessible name and
+  the tooltip (`Delete, round closed`) — the same treatment, and the same words, as a
+  board tile's refused move (`refusals.ts`). Below 700px, where the rail is a row, the
+  links and the actions pair off beside the poster inside `.moviemodal__railfoot` (a
+  `display: contents` wrapper in the rail's column layout): tops flush so the first
+  action sits on the first link, a vertical rule between them in place of the stacked
+  one above, and the poster shrinks (to 84px at the floor) rather than the row breaking.
 - **Modal:** the bespoke `Modal` component (§5).
 
 ### Decision: no shadcn primitives

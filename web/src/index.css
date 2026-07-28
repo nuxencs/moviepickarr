@@ -1183,6 +1183,47 @@
   .moviemodal__links a:hover,
   .moviemodal__links a:focus-visible { color: var(--accent); }
   .moviemodal__links svg { width: 13px; height: 13px; }
+  /* Rename and delete, under the links at the foot of the rail: one labelled
+     row each, stacked the way the links are, at every width. Bare icons were
+     tried first and read as decoration once they sat under three lines that
+     each name themselves — "delete" is worth a word. They still aren't links:
+     the label is sans where the links are mono, and the row lights a background
+     on hover where a link only changes colour, so the danger red arrives on
+     hover and focus instead of sitting at rest. The glyph is the links' 13px
+     and the row bleeds its own padding out both sides, so the icon column is
+     shared with the links while the rule stays on the block.
+
+     The row keeps this height on touch: guardrail 8's 44px was tried and makes
+     the pair tower over the 21px links it is meant to line up with, and the
+     label stops starting on the first one. It is a wide row either way, full
+     width in the rail and about 70px beside the links. */
+  .moviemodal__railfoot { display: contents; }
+  /* The numbers are the links': an 18px line with 3px above it, the rule 4px
+     off the first row, and a pitch of 28px down the column (the rows are 3px
+     taller than a link, so the gap is 3px smaller). Two columns of the same
+     kind of line have to keep the same rhythm, or the pair reads as a block
+     that landed on the rail rather than the last part of it. */
+  .moviemodal__actions { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+  .moviemodal__act {
+    display: flex; align-items: center; gap: 7px;
+    margin-inline: -7px; padding: 3px 7px; border: 0; border-radius: var(--r-md);
+    background: transparent; color: var(--ink-3);
+    font: inherit; font-size: 12px; line-height: 18px; text-align: left;
+    cursor: pointer; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  }
+  .moviemodal__act svg { width: 13px; height: 13px; flex: none; }
+  .moviemodal__act:hover, .moviemodal__act:focus-visible { background: var(--surface-3); color: var(--ink); }
+  .moviemodal__act:active { transform: scale(0.98); }
+  .moviemodal__act--danger:hover, .moviemodal__act--danger:focus-visible { background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger); }
+  /* A refused delete is inert, not absent, and it is `aria-disabled` rather
+     than natively disabled so it can still take focus and say why (members.css
+     says the same of a tile's action). So the hover and press states have to be
+     called off by hand: a control that lights up danger-red under the pointer
+     and then does nothing is worse than one that never lit up. */
+  .moviemodal__act[aria-disabled="true"] { cursor: not-allowed; }
+  .moviemodal__act[aria-disabled="true"]:hover,
+  .moviemodal__act[aria-disabled="true"]:focus-visible { background: transparent; color: var(--ink-3); }
+  .moviemodal__act[aria-disabled="true"]:active { transform: none; }
   /* "Directed by …" / "Written by …" — quiet prose lines with the names lifted. */
   .moviemodal__credits { margin: 12px 0 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
   /* The credit block: the credit lines and the attribution beside them, split by
@@ -1229,9 +1270,27 @@
   @media (max-width: 700px) {
     .moviemodal__hero { height: 190px; }
     .moviemodal__body { flex-direction: column; gap: 16px; padding: 0 20px 22px; }
-    .moviemodal__rail { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 16px; width: auto; }
-    .moviemodal__rail .poster { width: 118px; flex: none; }
-    .moviemodal__links { align-self: flex-end; padding-top: 0; border-top: 0; gap: 10px; }
+    /* Two items now, the poster and the block of text columns beside it, so the
+       row holds rather than wraps: the poster shrinks instead (below). */
+    .moviemodal__rail { flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: 14px; width: auto; }
+    /* The poster gives up width before the row breaks: links and actions beside
+       it need ~180px, and at 375 that is more than what's left of 118. Shrinking
+       the thumbnail costs less than dropping both text columns onto their own
+       line under it, with the backdrop already carrying the picture. */
+    .moviemodal__rail .poster { width: 118px; flex: 0 1 auto; min-width: 84px; }
+    .moviemodal__links { padding-top: 0; border-top: 0; gap: 10px; }
+    /* The two blocks pair off beside the poster, tops flush so the first action
+       sits on the first link. They are bottom-aligned as one block, not each on
+       its own, which is what the wrapper is for: two stacks of different heights
+       both hugging the poster's foot would start on different lines. */
+    .moviemodal__railfoot { display: flex; flex: none; align-items: stretch; align-self: flex-end; gap: 14px; }
+    /* Stacked, the rule ran above the actions; side by side it runs between
+       them, and the actions keep their own left edge off it. A film with no
+       links (nothing to divide from) gets neither. */
+    /* The links open up to a 10px gap here, so the rows follow them to keep the
+       31px pitch the two columns share. */
+    .moviemodal__actions { margin: 0; padding-top: 0; border-top: 0; gap: 7px; }
+    .moviemodal__links + .moviemodal__actions { padding-left: 16px; border-left: 1px solid var(--line); }
     .moviemodal__info { padding-top: 0; }
     .castrow { padding: 2px 20px 22px; }
     .moviemodal__credit { flex-direction: column; gap: 10px; }

@@ -18,14 +18,16 @@
    ============================================================ */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MoviesKeys } from "@/api/query_keys";
+import { APIClient } from "@/api/APIClient";
+import { AuthKeys, MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
+import type { DrawPhase } from "@/components/moviepickarr/drawMachine";
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 
-import type { Movie } from "@/types/Response";
+import type { MeResponse, Movie } from "@/types/Response";
 import type { ReactNode } from "react";
 
 // The chips deep-link to /stats; outside a router there's no Link, and the modal
@@ -39,12 +41,38 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 // The detail read never resolves on its own: a test that wants the landed
-// detail seeds the cache, so the "still loading" phase is the default.
+// detail seeds the cache, so the "still loading" phase is the default. The
+// session and the pool lock are seeded the same way.
 vi.mock("@/api/APIClient", () => ({
-  APIClient: { movies: { get: vi.fn(() => new Promise<never>(() => {})) } },
+  APIClient: {
+    movies: { get: vi.fn(() => new Promise<never>(() => {})) },
+    auth: { me: vi.fn(() => new Promise<never>(() => {})) },
+    settings: { getLock: vi.fn(() => new Promise<never>(() => {})) },
+    board: {
+      updateMovie: vi.fn(() => Promise.resolve()),
+      deleteMovie: vi.fn(() => Promise.resolve()),
+    },
+  },
 }));
 
+// The draw store is a module singleton the actions read directly. Faked rather
+// than driven through the machine: what a draw in flight refuses is a function
+// of the phase alone, and drawMachine.test.ts owns how you get there.
+const draw = vi.hoisted(() => ({ phase: "idle" as DrawPhase }));
+vi.mock("@/components/moviepickarr/drawStore", () => ({
+  drawStore: {
+    subscribe: () => () => {},
+    getState: () => ({ phase: draw.phase }),
+  },
+}));
+
+afterEach(() => {
+  draw.phase = "idle";
+  vi.clearAllMocks();
+});
+
 const MOVIE_ID = 42;
+const ADDER_ID = 1;
 
 /** The lean tile object: no overview, credits, cast or backdrop. */
 function lean(overrides: Partial<Movie> = {}): Movie {
@@ -77,16 +105,62 @@ function detailed(overrides: Partial<Movie> = {}): Movie {
   });
 }
 
-function renderModal({ movie = lean(), detail }: { movie?: Movie; detail?: Movie } = {}) {
+function session(id: number): MeResponse {
+  return {
+    id,
+    displayName: `Member ${id}`,
+    username: null,
+    role: "member",
+    hasLocalLogin: true,
+    hasLinkedIdentity: false,
+    otherSessions: 0,
+  };
+}
+
+function renderModal({
+  movie = lean(),
+  detail,
+  meID,
+  locked,
+}: {
+  movie?: Movie;
+  detail?: Movie;
+  /** The session member. Left out, /auth/me never lands and nobody owns the film. */
+  meID?: number;
+  locked?: boolean;
+} = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (detail) client.setQueryData(MoviesKeys.detail(MOVIE_ID), detail);
+  if (meID !== undefined) client.setQueryData(AuthKeys.me(), session(meID));
+  if (locked !== undefined) client.setQueryData(SettingsKeys.poolLock(), locked);
 
+  const onRequestClose = vi.fn();
   render(
     <QueryClientProvider client={client}>
-      <MovieModal movie={movie} open onRequestClose={vi.fn()} onClose={vi.fn()} />
+      <MovieModal movie={movie} open onRequestClose={onRequestClose} onClose={vi.fn()} />
     </QueryClientProvider>,
   );
-  return { dialog: screen.getByRole("dialog") };
+  // The action pair portals its dialogs to the body as siblings of the modal,
+  // so the first dialog is the record itself.
+  return { dialog: screen.getAllByRole("dialog")[0], onRequestClose };
+}
+
+/** The record's own title, which the rail is read before. */
+function title() {
+  return screen.getByRole("heading", { name: "Apocalypse Now" });
+}
+
+/** The confirm that opens over the record, told apart by the heading it carries. */
+function confirmDialog() {
+  return screen
+    .getAllByRole("dialog")
+    .find((d) => within(d).queryByRole("heading", { name: "Delete movie" })) as HTMLElement;
+}
+
+/** Reading order, which is all jsdom can say about where a block sits: there is
+ *  no layout engine here, so the browser owns the rest (see the header). */
+function comesBefore(first: HTMLElement, second: HTMLElement) {
+  return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 }
 
 /** The credit block: the "Directed by" lines and the attribution beside them. */
@@ -169,8 +243,9 @@ describe("MovieModal", () => {
       expect(link.getAttribute("rel")).toContain("noopener");
       expect(link.className).not.toContain("btn");
     }
-    // …and they live in the rail under the poster, not in a trailing row.
-    expect(screen.getByRole("link", { name: "IMDb" }).closest(".moviemodal__rail")).not.toBeNull();
+    // …and they live in the rail beside the record, not in a trailing row: the
+    // rail is read before the title, which is where a trailing row would be.
+    expect(comesBefore(screen.getByRole("link", { name: "IMDb" }), title())).toBe(true);
   });
 
   it("caps the surface so the content scrolls inside it, not the page", () => {
@@ -187,5 +262,171 @@ describe("MovieModal", () => {
     const { dialog } = renderModal({ detail: detailed({ cast: [] }) });
 
     expect(dialog.querySelector(".castrow")).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------
+   The action pair (#237): rename and delete on the film's own record.
+
+   Which refusal a delete meets and how it reads is pure, and refusals.test.ts
+   owns that table. Here is what only the rendered record can answer: who is
+   offered the pair, when it arrives, that a refused delete stays where it is
+   without being disabled, and where each success leaves the modal.
+   ------------------------------------------------------------ */
+describe("MovieModal actions", () => {
+  const edit = () => screen.queryByRole("button", { name: "Edit" });
+  const del = () => screen.queryByRole("button", { name: /^Delete/ });
+
+  it("offers the adder both actions once the detail lands", () => {
+    renderModal({ meID: ADDER_ID, locked: false, detail: detailed({ status: "stash" }) });
+
+    expect(edit()).not.toBeNull();
+    expect(del()).not.toBeNull();
+    // At the foot of the rail: after the last link, and still before the title,
+    // which is where the pair was not to go.
+    expect(comesBefore(screen.getByRole("link", { name: "Letterboxd" }), edit()!)).toBe(true);
+    expect(comesBefore(edit()!, title())).toBe(true);
+  });
+
+  it("holds the delete back until the round state is known, rather than defaulting it open", () => {
+    // No lock seeded, so that query never lands: a pooled film in a round the
+    // page can't describe yet must not offer a delete the server would refuse
+    // after the confirm.
+    renderModal({ meID: ADDER_ID, detail: detailed({ status: "pool" }) });
+
+    expect(edit()).not.toBeNull();
+    expect(del()).toBeNull();
+  });
+
+  it("offers nothing on somebody else's film", () => {
+    renderModal({ meID: ADDER_ID + 1, locked: false, detail: detailed({ status: "stash" }) });
+
+    expect(edit()).toBeNull();
+    expect(del()).toBeNull();
+  });
+
+  it("waits for the detail: the lean tile object carries no status to judge", () => {
+    renderModal({ meID: ADDER_ID });
+
+    expect(edit()).toBeNull();
+    expect(del()).toBeNull();
+  });
+
+  it("deletes a stash film whatever the round is doing", () => {
+    draw.phase = "spinning";
+    renderModal({ meID: ADDER_ID, locked: true, detail: detailed({ status: "stash" }) });
+
+    expect(del()?.getAttribute("aria-disabled")).toBeNull();
+    expect(del()?.getAttribute("aria-label")).toBe("Delete");
+  });
+
+  it("says nothing about deleting a watched film, but still lets it be renamed", () => {
+    renderModal({
+      meID: ADDER_ID,
+      detail: detailed({ status: "watched", watchedAt: "2026-07-21T20:00:00Z" }),
+    });
+
+    expect(edit()).not.toBeNull();
+    expect(del()).toBeNull();
+  });
+
+  it("refuses a pooled film in place while the round is closed", () => {
+    renderModal({ meID: ADDER_ID, locked: true, detail: detailed({ status: "pool" }) });
+
+    const button = del();
+    expect(button?.getAttribute("aria-disabled")).toBe("true");
+    // Inert, never natively disabled: the reason is written on a control a
+    // keyboard user has to be able to reach.
+    expect(button).not.toHaveProperty("disabled", true);
+    expect(button?.getAttribute("aria-label")).toBe("Delete, round closed");
+    expect(button?.getAttribute("title")).toBe("Delete, round closed");
+  });
+
+  it("names the draw first when a locked round and a draw refuse together", () => {
+    draw.phase = "spinning";
+    renderModal({ meID: ADDER_ID, locked: true, detail: detailed({ status: "pool" }) });
+
+    expect(del()?.getAttribute("aria-label")).toBe("Delete, a draw is in progress");
+  });
+
+  it("does nothing when a refused delete is clicked", () => {
+    renderModal({ meID: ADDER_ID, locked: true, detail: detailed({ status: "pool" }) });
+
+    fireEvent.click(del()!);
+
+    expect(screen.queryByRole("heading", { name: "Delete movie" })).toBeNull();
+  });
+
+  it("opens the delete confirm on an allowed film, and its success closes the record", async () => {
+    const { onRequestClose } = renderModal({
+      meID: ADDER_ID,
+      locked: false,
+      detail: detailed({ status: "pool" }),
+    });
+
+    fireEvent.click(del()!);
+    expect(screen.getByRole("heading", { name: "Delete movie" })).not.toBeNull();
+
+    // The confirm's own button, told apart from the rail's control by the
+    // surface it sits on rather than by its (identical) name.
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: "Delete" }));
+
+    await vi.waitFor(() => expect(APIClient.board.deleteMovie).toHaveBeenCalledWith(MOVIE_ID));
+    await vi.waitFor(() => expect(onRequestClose).toHaveBeenCalled());
+  });
+
+  it("keeps the link field on the edit dialog, so the re-point path survives", () => {
+    renderModal({
+      meID: ADDER_ID,
+      detail: detailed({ status: "stash", link: "https://www.imdb.com/title/tt0078788/" }),
+    });
+
+    fireEvent.click(edit()!);
+
+    const link = screen.getByLabelText("Movie link") as HTMLInputElement;
+    expect(link.value).toBe("https://www.imdb.com/title/tt0078788/");
+  });
+
+  it("keeps the record open when an edit saves", async () => {
+    const link = "https://www.imdb.com/title/tt0078788/";
+    const { onRequestClose } = renderModal({
+      meID: ADDER_ID,
+      detail: detailed({ status: "stash", link }),
+    });
+
+    fireEvent.click(edit()!);
+    fireEvent.change(screen.getByLabelText("Movie title"), { target: { value: "Apocalypse Now Redux" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await vi.waitFor(() =>
+      expect(APIClient.board.updateMovie).toHaveBeenCalledWith(MOVIE_ID, "Apocalypse Now Redux", link),
+    );
+    expect(onRequestClose).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("heading", { name: "Apocalypse Now" }).length).toBeGreaterThan(0);
+  });
+
+  it("takes a child dialog with it when the record's own entry goes", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(MoviesKeys.detail(MOVIE_ID), detailed({ status: "stash" }));
+    client.setQueryData(AuthKeys.me(), session(ADDER_ID));
+
+    const view = render(
+      <QueryClientProvider client={client}>
+        <MovieModal movie={lean()} open onRequestClose={vi.fn()} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(edit()!);
+    expect(screen.getByRole("heading", { name: "Edit movie" })).not.toBeNull();
+
+    // Browser Back pops the record's entry, which reaches the modal as `open`
+    // going false: the child dialog is gone at once while the record plays out.
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <MovieModal movie={lean()} open={false} onRequestClose={vi.fn()} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByRole("heading", { name: "Edit movie" })).toBeNull();
   });
 });

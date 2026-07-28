@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useSearch } from "@tanstack/react-router";
-import { MoveDownIcon, MoveUpIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { Link, useRouter, useSearch } from "@tanstack/react-router";
+import { ArrowLeftIcon, MoveDownIcon, MoveUpIcon, PlusIcon, SearchIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -39,6 +39,17 @@ import "@/components/moviepickarr/members.css";
 const POOL_SIZE = 3;
 
 /**
+ * The width below which the pane is a screen of its own rather than a column
+ * beside the rail (#236). Which screen you are on is CSS — this is read only to
+ * decide where focus goes, since a push that takes the rail away has to hand
+ * focus somewhere and a member switch beside the rail must not move it at all.
+ * Keep in step with the media queries in members.css.
+ */
+const PUSH_WIDTH = "(max-width: 760px)";
+
+const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
+
+/**
  * The Members page: a rail of members beside one board pane.
  *
  * The rail carries every member equally, one row each, with the two numbers
@@ -50,6 +61,14 @@ const POOL_SIZE = 3;
  * Which member is selected is an address (`/users?member=<userID>`, see
  * membersSearch), not component state, so a board can be linked to and Back
  * returns to the member you were looking at before.
+ *
+ * That address is also the mobile push (#236). Below 760px the two columns
+ * become two screens: with no member in the URL the rail is the whole screen
+ * with your own pool open in place, and a member in it pushes that member's
+ * stash over the top of the rail. Pushed is a read of the URL rather than a
+ * flag of its own, so a resize to desktop lands on the same board rather than
+ * on a state built at 375px. Which screen is drawn is CSS; the only thing read
+ * here is where focus goes when the rail is taken away and put back.
  *
  * Every filled poster on either band is a button opening the movie modal, which
  * is the one way into a film's record from this page — never gated on whose
@@ -136,6 +155,39 @@ export function UsersTab() {
   // outgoing pane raises it on the way out and the incoming one lands focus on
   // its heading. A ref, not state — nothing renders differently for it.
   const paneLostFocus = useRef(false);
+
+  // The pane's heading, held here rather than inside the pane: it is where the
+  // push lands focus, and the pane is keyed on the member, so on a switch the
+  // node the parent focuses is the incoming one (a parent's effect runs after
+  // its children have mounted).
+  const paneHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Every rail row's link, by member. The rail outlives the push — it is
+  // display: none, not unmounted — so returning can put focus back on the row
+  // it left from, which is the trigger that opened the screen being left.
+  const rowLinks = useRef(new Map<number, HTMLAnchorElement>());
+
+  // What the URL named last render, so a navigation can be told from an
+  // arrival: a cold deep link is not a push and must not move focus.
+  const lastMember = useRef(member);
+  const lastSelected = useRef(selected?.userID);
+  useEffect(() => {
+    const from = lastMember.current;
+    const fromID = lastSelected.current;
+    lastMember.current = member;
+    lastSelected.current = selected?.userID;
+    if (from === member || !isPushWidth()) return;
+    // Onto a board: the rail has gone, so the screen's own heading takes focus
+    // — the one guaranteed moment a screen-reader user meets the self-mark. A
+    // pop between two boards is an entry too, and lands the same way.
+    if (member !== undefined) {
+      paneHeadingRef.current?.focus();
+      return;
+    }
+    // Back to the rail: the row whose board you were on, not the top of the
+    // page. The resolved member, so a dead id in the URL restores nothing
+    // rather than the wrong row.
+    if (fromID !== undefined) rowLinks.current.get(fromID)?.focus();
+  }, [member, selected?.userID]);
   useEffect(() => {
     const rail = railRef.current;
     if (!rail) return;
@@ -158,7 +210,23 @@ export function UsersTab() {
 
   return (
     <>
-      <div className="block mem">
+      {/* Pushed is the URL, not a flag: below 760 the head goes with the rail
+          (see members.css). The whole head, `Members / 6 people` included, not
+          just the status line — the pushed screen's title is the possessive
+          heading, and two titles do not fit at 375px. */}
+      <div className="block mem" data-pushed={member !== undefined}>
+        {/* Split off the visible status span on purpose: this region carries
+            the round and draw clauses only, never occupancy (see
+            membersStatus). Empty means nothing to announce.
+
+            Outside the head it is drawn beside, and deliberately: the head is
+            removed on the pushed screen and a display: none live region
+            announces nothing, so this — that screen's only round-state signal —
+            sits where the removal cannot reach it. */}
+        <span className="vis-hidden" role="status">
+          {status.announce}
+        </span>
+
         <div className="sec-head">
           <div className="sec-title">
             <h2>Members</h2>
@@ -171,12 +239,6 @@ export function UsersTab() {
             ) : (
               <span className="sec-status mono">{status.text}</span>
             )}
-            {/* Split off the visible span on purpose: this region carries the
-                round and draw clauses only, never occupancy. See membersStatus
-                for why. Empty means nothing to announce. */}
-            <span className="vis-hidden" role="status">
-              {status.announce}
-            </span>
           </div>
         </div>
 
@@ -212,6 +274,7 @@ export function UsersTab() {
                   isLocked={!!isLocked}
                   drawInFlight={drawInFlight}
                   onOpen={open}
+                  links={rowLinks}
                 />
               ))}
             </nav>
@@ -229,6 +292,7 @@ export function UsersTab() {
               onOpenSearch={() => setSearchUser(selected)}
               onOpen={open}
               lostFocus={paneLostFocus}
+              headingRef={paneHeadingRef}
             />
           </div>
         ) : (
@@ -269,6 +333,7 @@ function RailRow({
   isLocked,
   drawInFlight,
   onOpen,
+  links,
 }: {
   user: User;
   active: boolean;
@@ -276,6 +341,9 @@ function RailRow({
   isLocked: boolean;
   drawInFlight: boolean;
   onOpen: (movie: Movie) => void;
+  /** The page's register of rail links by member, so returning from the mobile
+   *  push can put focus back on the row it left from (#236). */
+  links: RefObject<Map<number, HTMLAnchorElement>>;
 }) {
   const pool = useMemo(
     () => Object.values(user.currentPool).sort((a, b) => a.title.localeCompare(b.title)),
@@ -296,8 +364,20 @@ function RailRow({
 
   // Where focus goes when the last film leaves this member's pool: the row the
   // pool hangs off, which is the nearest thing to the slot that emptied and is
-  // still on screen (#235).
+  // still on screen (#235). The same node is the row's entry in the page's
+  // register, which is where focus goes when the mobile push is left (#236).
   const linkRef = useRef<HTMLAnchorElement>(null);
+  const holdLink = useCallback(
+    (el: HTMLAnchorElement | null) => {
+      linkRef.current = el;
+      if (el) links.current.set(user.userID, el);
+      return () => {
+        linkRef.current = null;
+        links.current.delete(user.userID);
+      };
+    },
+    [links, user.userID],
+  );
 
   return (
     <div className="mem-row" data-active={active}>
@@ -310,7 +390,7 @@ function RailRow({
         search={{ member: user.userID }}
         className="mem-row__link"
         aria-current={active ? "page" : undefined}
-        ref={linkRef}
+        ref={holdLink}
       >
         <Avatar name={user.name} size={30} />
         <span className="mem-row__text">
@@ -622,6 +702,7 @@ function StashPane({
   onOpenSearch,
   onOpen,
   lostFocus,
+  headingRef,
 }: {
   user: User;
   isOwnBoard: boolean;
@@ -634,7 +715,11 @@ function StashPane({
   /** Raised on the way out when focus was inside this pane, and read on the way
    *  in: the pane is keyed on the member, so a switch is an unmount. */
   lostFocus: RefObject<boolean>;
+  /** The pane's heading, held by the page: it is where focus goes when a tile
+   *  is taken from under it, and where the mobile push lands (#236). */
+  headingRef: RefObject<HTMLHeadingElement | null>;
 }) {
+  const router = useRouter();
   const [filter, setFilter] = useState("");
 
   const stash = useMemo(
@@ -643,7 +728,8 @@ function StashPane({
   );
   const filteredStash = useMemo(() => filterStash(stash, filter), [stash, filter]);
 
-  const poolFull = Object.keys(user.currentPool).length >= POOL_SIZE;
+  const pooled = Object.keys(user.currentPool).length;
+  const poolFull = pooled >= POOL_SIZE;
   const firstName = user.name.split(" ")[0];
   // Names split deliberately: the rail carries the full name, because a roster
   // has to separate two people who share a first one; the heading carries the
@@ -687,7 +773,6 @@ function StashPane({
   const cell = Math.min(roving, Math.max(cells - 1, 0));
 
   const gridRef = useRef<HTMLDivElement>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
   /** The poster in a given cell, which is the cell's roving element. */
   const cellAt = useCallback(
     (index: number) => gridRef.current?.querySelector<HTMLElement>(`[data-cell="${index}"]`),
@@ -758,7 +843,9 @@ function StashPane({
       return;
     }
     focusCell(to);
-  }, [filteredStash, cells, focusCell]);
+    // headingRef is a prop now (the page holds it, so the push can land on it),
+    // which is why it is listed: it is a ref object and never changes.
+  }, [filteredStash, cells, focusCell, headingRef]);
 
   // Whether focus is inside this pane at all, which is what says a tile
   // unmounting under it was a loss rather than a departure. React's onFocus and
@@ -813,6 +900,29 @@ function StashPane({
         holdsFocus.current = false;
       }}
     >
+      {/* The mobile push's back bar, drawn only below 760 (members.css) and so
+          always in the DOM: which screen this is is a media query, and a render
+          condition on it would have to survive a resize.
+
+          It carries the way back and the pips, and nothing else. The pips are
+          the only occupancy signal on this screen — the rail is not here, a
+          promote fills a pool one screen away, and the move is silent unless it
+          fails — which is why they take role="img" and a label. Nothing is
+          pinned: the app scrolls under a fixed 63px nav, so top: 0 parks a
+          sticky bar behind it, and a bar with a background would be a permanent
+          band of chrome across a screen made of art. Going back for the pips is
+          one flick. */}
+      <div className="mem-backbar">
+        {/* Plain history-back. The router's history exposes no can-go-back, so
+            a cold deep link exits the app — what Back does on any deep-linked
+            detail screen. */}
+        <button type="button" className="mem-back" onClick={() => router.history.back()}>
+          <ArrowLeftIcon />
+          All members
+        </button>
+        <PoolPips filled={pooled} />
+      </div>
+
       <div className="mem-stash">
         <div className="mem-stash__head">
           {/* The positive self-mark, and the last thing on the pane saying whose
@@ -824,7 +934,10 @@ function StashPane({
           <div className="mem-stash__id">
             {/* Focusable but never a tab stop: it is where focus goes when the
                 thing holding it is taken away, and the pane it names is the
-                nearest thing that is still there (#235). */}
+                nearest thing that is still there (#235). It is also where the
+                mobile push lands, which is the one guaranteed moment a
+                screen-reader user meets the self-mark (#236) — so the
+                tabIndex={-1} is load-bearing, not dead code. */}
             <h3
               id={headingID}
               className="mem-stash__title"
@@ -834,6 +947,11 @@ function StashPane({
             >
               <span className="mem-stash__who">{who}</span> stash
             </h3>
+            {/* The count, on the pushed screen only (members.css hides it above
+                760). Beside the rail the row carries it in every state, and a
+                second copy in the pane put "who has the deepest stash" across
+                two type scales 600px apart; pushed, the rail is another screen
+                and the heading is where the number has to be. */}
             <span className="sec-count">{stash.length}</span>
           </div>
           <label className="field">

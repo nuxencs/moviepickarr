@@ -86,6 +86,20 @@
     mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   }
 
+  /* The rail and the pane are one screen here, so the count lives in the rail
+     row: it is on every row in every state, and a second copy in the pane
+     600px away put "who has the deepest stash" across two type scales. The
+     pushed screen is where it comes back (#236). */
+  .mem-stash__id .sec-count {
+    display: none;
+  }
+
+  /* The back bar belongs to the pushed screen alone. Hidden here rather than
+     left unrendered, so a resize does not depend on a React flag. */
+  .mem-backbar {
+    display: none;
+  }
+
   /* The pane keeps its scrollbar, unlike the rail: nothing about its width is
      derived from a poster, so the few px cost nothing, and a stash deeper than
      the pane needs to say so. */
@@ -567,4 +581,103 @@
   .mem-stash__head { flex-direction: column; align-items: stretch; gap: 10px; height: 65px; }
   .mem-stash__head .field { width: 100%; margin-left: 0; }
   .mem-wallbox { --mem-headh: 77px; }
+}
+
+/* ---- the push, below 760 ----------------------------------------------- */
+
+/* Two columns become two screens (#236). The rail is the whole screen with the
+   selected member's pool open in place, and a member in the URL pushes their
+   stash over the top of it: `member` present is the pushed state, so it is a
+   read of the address and survives a resize by construction — a flag built at
+   375px would have to mean something at 1440px.
+
+   Which screen you are on is this media query and the data attribute, never a
+   width read in JS. The only thing JS reads is where focus goes when the rail
+   is taken away and when it comes back (see UsersTab). */
+@media (max-width: 760px) {
+  .mem[data-pushed="true"] .mem-rail,
+  .mem[data-pushed="false"] .mem-pane {
+    display: none;
+  }
+
+  /* The pane's left inset is the gutter between it and the rail, and there is
+     no rail beside it here — kept, it is 24px of dead indent that narrows
+     every cell in the wall (77px a poster becomes 71px). */
+  .mem-pane {
+    padding-left: 0;
+  }
+
+  /* The whole head goes on the pushed screen, `Members / 6 people` included
+     and not just the status line: the pushed screen's title is the possessive
+     heading, the line counts every member on a screen about one, and two
+     titles do not fit at 375px. The visually-hidden live region is a sibling
+     of the head rather than a child of it (see UsersTab), so this does not
+     take it with it — it is that screen's only round-state signal, and a
+     display: none live region announces nothing. */
+  .mem[data-pushed="true"] .sec-head {
+    display: none;
+  }
+
+  /* The wall stops being a scroller and the page carries it: one flick, one
+     scroller. The fixed height above 760 answers a collapse between a 14-film
+     member and a 0-film one that cannot happen here — the push hides the rail
+     and the pool with it, so there is nothing above the wall to move and no
+     second member's wall to match. What it did instead was put a ~498px inner
+     scroller into ~363px of room, clipped by the tab bar and eating the flick
+     meant for the page. (The height and the fade are both inside the min-width
+     block, so there is nothing to undo; this is the note saying that is
+     deliberate.)
+
+     The empty wall needs a floor instead: the line is centred in the height
+     the box used to hold, and with none it sits jammed under the field. */
+  .mem-wall--empty {
+    height: auto;
+    min-height: 220px;
+  }
+
+  /* Four columns at about 78px on a 375px screen, from the same container
+     arithmetic the wider walls use. Three across would put a stash poster at
+     the size of a pool one. */
+  .mem-wallbox {
+    --mem-cols: 4;
+    --mem-wgap: 10px;
+  }
+
+  /* Nothing on this screen is pinned, the back bar included. The app scrolls
+     under a fixed 63px nav, so `top: 0` parks a sticky bar behind it and
+     clearing it hard-codes the nav's height in a second place; the bar would
+     also need a background and a hairline to stop posters sliding under bare
+     text, which is a permanent band of chrome across a screen made of art. */
+  .mem-backbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .mem-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    /* This is the only way off the screen and the screen is a phone's, so the
+       target is the touch minimum (DESIGN.md §13) rather than the height of
+       13.5px of text. Padding on the right too: the hit area runs past the
+       word, and there is nothing beside it to reach by mistake. */
+    min-height: 44px;
+    padding: 0 12px 0 0;
+    background: none;
+    border: none;
+    color: var(--ink-2);
+    font-size: 13.5px;
+    cursor: pointer;
+  }
+  /* Both, per DESIGN.md §6: what hover says, focus has to say too. */
+  .mem-back:hover,
+  .mem-back:focus-visible {
+    color: var(--ink);
+  }
+  .mem-back svg {
+    width: 16px;
+    height: 16px;
+  }
 }

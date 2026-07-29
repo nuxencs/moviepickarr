@@ -291,7 +291,7 @@ export function StatsTab() {
   };
 
   return (
-    <div className="block">
+    <div className="mg-rise">
       <div className="stats-head">
         <div className="sec-title items-center">
           <ActivityIcon size={20} style={{ color: "var(--accent)" }} />

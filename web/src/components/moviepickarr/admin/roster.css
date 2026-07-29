@@ -8,8 +8,8 @@
   /* Width + centering come from the shell wrapper (index.css .shell, 1240px), so
      the roster spans the same measure as the movie/member/stats boards. The
      entrance is no longer a single page-level fade: the three peer regions
-     (bar, active table, archived) carry the shared `.block` motion with a
-     per-region `--i` so they cascade in top-down (see RosterPage). */
+     (head, active table, archived) carry the shared `.mg-rise` motion with a
+     per-region `--i` so they cascade in top-down (see RosterSection). */
   padding: 0 4px 64px;
 }
 
@@ -19,17 +19,6 @@
    stacking below 640 all come from the design system. It used to be a private
    .adm-bar that reimplemented .sec-head and had drifted: it never inherited the
    phone rule, which is why the add form stayed 220px wide on a 390px screen. */
-
-/* The section head also carries `.block` for the staggered entrance, and
-   `block` is Tailwind's display utility as well as this app's motion class
-   (index.css). The utility layer outranks .sec-head's own `display: flex`, so
-   the head would render as a plain block and drop the add form onto its own
-   line. This file is imported unlayered, which outranks both, so one property
-   here puts the shared rule back. Anything combining .sec-head with .block
-   needs this; a div that's display:block anyway (the table wraps below) doesn't. */
-.adm .sec-head {
-  display: flex;
-}
 
 /* Secondary count used by the archived-section subheading (not the section title). */
 .adm-count {

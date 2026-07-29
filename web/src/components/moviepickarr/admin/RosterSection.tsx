@@ -306,7 +306,7 @@ export function RosterSection() {
 
   return (
     <div className="adm">
-      <div className="sec-head block" style={{ "--i": 0 } as CSSProperties}>
+      <div className="sec-head mg-rise" style={{ "--i": 0 } as CSSProperties}>
         <div className="sec-title">
           <h2>Roster</h2>
           {!roster.isPending && (
@@ -325,7 +325,7 @@ export function RosterSection() {
         <p className="adm-state">Loading roster…</p>
       ) : (
         <>
-          <div className="adm-tablewrap block" style={{ "--i": 1 } as CSSProperties}>
+          <div className="adm-tablewrap mg-rise" style={{ "--i": 1 } as CSSProperties}>
             <table className="adm-table">
               <thead>
                 <tr>
@@ -367,7 +367,7 @@ export function RosterSection() {
           </div>
 
           {archived.length > 0 && (
-            <div className="adm-archived block" style={{ "--i": 2 } as CSSProperties}>
+            <div className="adm-archived mg-rise" style={{ "--i": 2 } as CSSProperties}>
               <div className="adm-archivedhead">
                 Archived <span className="adm-count">{archived.length}</span>
                 <span className="adm-archivednote">

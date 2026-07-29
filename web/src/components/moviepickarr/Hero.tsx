@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
 import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
@@ -290,7 +291,20 @@ export function Hero() {
               ""
             ) : draw ? (
               <>
-                Current draw · added by <strong className="hero__by">{draw.addedByName}</strong>
+                {/* The same way from a film to whoever stashed it as the modal's
+                    attribution (#238). A push, not a replace: the entry it
+                    leaves is the Movies page's own, so Back comes back to the
+                    draw. The modal replaces because the entry it leaves is the
+                    modal's, and nothing here is holding one. */}
+                Current draw · added by{" "}
+                <Link
+                  to="/users"
+                  search={{ member: draw.addedByID }}
+                  className="hero__by"
+                  title={`See ${possessive(draw.addedByName)} board`}
+                >
+                  {draw.addedByName}
+                </Link>
               </>
             ) : (
               "No movie selected"

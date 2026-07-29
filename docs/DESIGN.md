@@ -504,7 +504,11 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
   renders on tile-grid posters, where the meta row carries no rating.
 - **Top group** (eyebrow + title) is anchored to the top. The title is clamped to 2
   lines; a long title gains a second line that grows *downward* into the negative
-  space without moving anything else.
+  space without moving anything else. The eyebrow's adder name (`.hero__by`) links to
+  that member's board, the same address the modal's attribution uses (§4) — but a
+  **push**, not the modal's replace, since no history entry is being spent here. At
+  full white it has no brighter hover to move to, so the hover is an underline where
+  the meta chips below lift from 84% to white.
 - **Bottom group** (tagline → meta → actions) is pushed to the bottom via
   `margin-top: auto` on `.hero__tag`. The action buttons are effectively pinned to the
   bottom of the hero.

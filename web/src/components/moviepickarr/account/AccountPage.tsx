@@ -156,14 +156,14 @@ export function AccountPage() {
 
   return (
     <div className="acc">
-      <header className="acc__head block" style={{ "--i": 0 } as CSSProperties}>
+      <header className="acc__head mg-rise" style={{ "--i": 0 } as CSSProperties}>
         <h1>Account</h1>
         <p>Manage how you sign in to movie night.</p>
       </header>
 
       {/* You — read-only identity. Naming is an admin concern; the username is
           stable, so there is no rename control here. */}
-      <section className="acc__section block" style={{ "--i": 1 } as CSSProperties}>
+      <section className="acc__section mg-rise" style={{ "--i": 1 } as CSSProperties}>
         <h2 className="acc__label">You</h2>
         <div className="acc__identity">
           <Avatar name={actor.displayName} size={52} />
@@ -180,7 +180,7 @@ export function AccountPage() {
       </section>
 
       {/* Sign-in methods */}
-      <section className="acc__section block" style={{ "--i": 2 } as CSSProperties}>
+      <section className="acc__section mg-rise" style={{ "--i": 2 } as CSSProperties}>
         <h2 className="acc__label">Sign-in</h2>
 
         {hasPassword ? (
@@ -256,7 +256,7 @@ export function AccountPage() {
       </section>
 
       {/* Sessions */}
-      <section className="acc__section block" style={{ "--i": 3 } as CSSProperties}>
+      <section className="acc__section mg-rise" style={{ "--i": 3 } as CSSProperties}>
         <h2 className="acc__label">Sessions</h2>
         <div className="acc__row">
           <span className="acc__rowicon">

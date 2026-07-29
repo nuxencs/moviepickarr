@@ -237,7 +237,7 @@ export function UsersTab() {
           (see members.css). The whole head, `Members / 6 people` included, not
           just the status line — the pushed screen's title is the possessive
           heading, and two titles do not fit at 375px. */}
-      <div className="block mem" data-pushed={!!stash}>
+      <div className="mg-rise mem" data-pushed={!!stash}>
         {/* Split off the visible status span on purpose: this region carries
             the round and draw clauses only, never occupancy (see
             membersStatus). Empty means nothing to announce.

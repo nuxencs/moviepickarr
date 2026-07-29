@@ -230,7 +230,11 @@ old shadcn primitives.
   (`.moviemodal__credit`) puts "Directed by / Written by" and the attribution
   (`.moviemodal__by` — added by, plus the watch date on a watched film) side by side,
   split by a rule that spans the whole block (`align-items: stretch`), because both are
-  the same kind of line: who is responsible for this. Below 700px the rail becomes a row
+  the same kind of line: who is responsible for this. The adder's name is a link to
+  their board (`/users?member=<userID>`) and wears `.moviemodal__person`, the
+  credited-person treatment, since it is the same kind of thing: a name you can follow.
+  It navigates with `replace`, like the meta chips, so following it spends the modal's
+  own history entry. Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
 - **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`) — rename
@@ -500,7 +504,11 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
   renders on tile-grid posters, where the meta row carries no rating.
 - **Top group** (eyebrow + title) is anchored to the top. The title is clamped to 2
   lines; a long title gains a second line that grows *downward* into the negative
-  space without moving anything else.
+  space without moving anything else. The eyebrow's adder name (`.hero__by`) links to
+  that member's board, the same address the modal's attribution uses (§4) — but a
+  **push**, not the modal's replace, since no history entry is being spent here. At
+  full white it has no brighter hover to move to, so the hover is an underline where
+  the meta chips below lift from 84% to white.
 - **Bottom group** (tagline → meta → actions) is pushed to the bottom via
   `margin-top: auto` on `.hero__tag`. The action buttons are effectively pinned to the
   bottom of the hero.

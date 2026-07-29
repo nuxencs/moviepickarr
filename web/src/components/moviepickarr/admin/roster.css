@@ -40,6 +40,9 @@
   display: flex;
   gap: 8px;
 }
+/* The phone rule for both of these lives in index.css's 640 block, sharing a
+   selector with the members board's `.user-add` twin so the two forms can't
+   drift apart again. */
 .adm-field {
   width: 220px;
   height: 40px;

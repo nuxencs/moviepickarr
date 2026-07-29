@@ -382,7 +382,10 @@ export function RosterSection() {
                         <td>
                           <MemberIdentity member={m} isSelf={isSelf(m)} />
                         </td>
-                        <td colSpan={COLUMNS.length} className="adm-muted">
+                        {/* Its own table, with its own shape: identity, one summary
+                            cell, kebab. Not tied to COLUMNS — an active-table
+                            column has no business widening this span. */}
+                        <td colSpan={3} className="adm-muted">
                           {credLabel(m)} · {m.moviesAuthored} added
                         </td>
                         <td className="adm-rowend">

@@ -1402,11 +1402,11 @@
     .sec-head { flex-direction: column; align-items: stretch; gap: 14px; }
     .sec-head .sec-title { justify-content: space-between; }
     .watched-controls__search { flex: 1; }
-    .user-add { width: 100%; }
-    .user-add__field { flex: 1; width: auto; }
-    /* the admin roster's add-&-invite form, same treatment as .user-add above */
-    .adm-add { width: 100%; }
-    .adm-field { flex: 1; width: auto; }
+    /* the members board's add form and the admin roster's add-&-invite form:
+       both go full width and let the field take the slack (.adm* rules live in
+       roster.css, but this one belongs beside its twin) */
+    .user-add, .adm-add { width: 100%; }
+    .user-add__field, .adm-field { flex: 1; width: auto; }
 
     /* stats: the window control owns its row, and the chips below it become a
        two-column grid rather than a ragged wrap. Content-width chips left a
@@ -1414,7 +1414,10 @@
        resized when a filter went active (the gold state adds a clear button),
        so the whole row rearranged itself under your thumb as you used it. A
        fixed grid keeps the filters dimensionally static, the way the hero is. */
-    .statsfilters { display: grid; grid-template-columns: 1fr 1fr; }
+    /* stretch, not the base rule's `center`: grid items that inherit `center`
+       size to their content, so a chip whose label wraps would leave its
+       row-mate short and the pair uneven. */
+    .statsfilters { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }
     .statsfilters .win-control { grid-column: 1 / -1; width: 100%; }
     .statsfilters .seg { display: flex; width: 100%; }
     .statsfilters .seg button { flex: 1; padding: 9px 4px; justify-content: center; }

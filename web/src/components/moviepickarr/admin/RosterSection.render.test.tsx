@@ -69,7 +69,7 @@ const admin: MeResponse = {
   otherSessions: 0,
 };
 
-function renderPage(members: RosterMember[]) {
+function renderSection(members: RosterMember[]) {
   return renderWithProviders(<RosterSection />, {
     path: "/admin",
     seed: (queryClient) => {
@@ -102,13 +102,13 @@ afterEach(() => {
 
 describe("opening a ceremony from a member's row", () => {
   it("shows no dialog until an action is taken", async () => {
-    await renderPage([member()]);
+    await renderSection([member()]);
 
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("opens the remove confirm on the member whose row it came from", async () => {
-    await renderPage([
+    await renderSection([
       member({ id: 7, name: "Cleo", moviesAuthored: 0 }),
       member({ id: 8, name: "Bea", moviesAuthored: 4 }),
     ]);
@@ -122,7 +122,7 @@ describe("opening a ceremony from a member's row", () => {
   });
 
   it("carries the member into the set-login dialog, prefilled with their username", async () => {
-    await renderPage([
+    await renderSection([
       member({ id: 7, name: "Cleo", username: "cleo", hasLocalLogin: true }),
       member({ id: 8, name: "Bea", username: "bea", hasLocalLogin: true }),
     ]);
@@ -135,7 +135,7 @@ describe("opening a ceremony from a member's row", () => {
   });
 
   it("offers a first set, unprefilled, for a member who has SSO but no password", async () => {
-    await renderPage([
+    await renderSection([
       member({ name: "Cleo", username: undefined, hasLocalLogin: false, hasLinkedIdentity: true }),
     ]);
 
@@ -147,7 +147,7 @@ describe("opening a ceremony from a member's row", () => {
 
   it("guards a self-unlink that would strand the account, instead of sending it", async () => {
     // The actor themselves, SSO-only: unlinking would lock them out.
-    await renderPage([
+    await renderSection([
       member({ id: admin.id, name: "Ada", hasLocalLogin: false, hasLinkedIdentity: true }),
     ]);
 
@@ -159,7 +159,7 @@ describe("opening a ceremony from a member's row", () => {
 
 describe("committing a ceremony", () => {
   it("sends the removal for the member the confirm named", async () => {
-    await renderPage([member({ id: 7, name: "Cleo" }), member({ id: 8, name: "Bea" })]);
+    await renderSection([member({ id: 7, name: "Cleo" }), member({ id: 8, name: "Bea" })]);
 
     takeAction("Bea", "Remove member");
     fireEvent.click(within(dialog()).getByRole("button", { name: "Delete member" }));
@@ -171,7 +171,7 @@ describe("committing a ceremony", () => {
   });
 
   it("sends the new login for the member the dialog named", async () => {
-    await renderPage([member({ id: 8, name: "Bea", username: "bea", hasLocalLogin: true })]);
+    await renderSection([member({ id: 8, name: "Bea", username: "bea", hasLocalLogin: true })]);
 
     takeAction("Bea", "Reset password");
     fireEvent.change(within(dialog()).getByLabelText("New password"), {

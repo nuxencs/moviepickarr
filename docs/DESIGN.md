@@ -888,7 +888,7 @@ step on top of the zoom (taller `--hero-body-h`, roomier padding, a higher title
 so the centerpiece feels grander, not merely bigger (§7).
 
 **Bottom tab bar.** Below 900px the top-bar tabs (`.nav__tabs`) hide and a fixed
-`.navbar-bottom` renders the tabs (4 for an admin, Roster included) in thumb reach; the
+`.navbar-bottom` renders the tabs (4 for an admin, Admin included) in thumb reach; the
 wordmark (a home control: click it to return to the Movies tab from any tab) + the profile
 avatar stay in the top bar. The active tab is gold-tinted — there is no sliding underline
 there (the `.tab__ink` slider is desktop-only, and `NavBar`'s `measure()` skips when the top

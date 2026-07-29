@@ -438,6 +438,18 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   or initials gradient, which reads the same in both themes. One wrinkle, since the cast
   card composes both classes: `.castcard__photo` declares its own frame background later
   in the file, so `.castcard__photo.skel` restates the fill to win the tie.
+- **Whole-page skeletons** follow two rules on top of that. *Nothing claims a value it
+  does not have*, which rules out the design's own outline marks even where they look
+  like placeholders: an unfilled pip says "0 of 3 filled" and a dashed pool cell says
+  "this pool is empty", so both shimmer instead and the loading state is one treatment
+  throughout. And they draw *shape, never extent* — a row or tile count is how much of
+  the column shimmers, never a guess at a roster or a stash, and nothing may wire it to
+  either. `MembersSkeleton` is the worked example (#239): it renders the page's own
+  containers, so the shell, rail, pane, head, field, wall box and every cell in it are
+  pixel-identical to the loaded page, and it overdraws the wall behind
+  `overflow: hidden` (`auto` would make the filler tail reachable) with no overflow
+  fade, since a fade promises a scroller. It is `aria-hidden`; the page's
+  visually-hidden live region sits outside it and stays in the tree.
 - **`prefers-reduced-motion`**: the global block zeroes animation/transition *duration
   AND delay* (so staggered reveals don't pop in) and collapses iteration counts.
   Loaders are the one exception — `.mg-spin` keeps spinning (essential motion). Any new

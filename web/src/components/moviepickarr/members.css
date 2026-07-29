@@ -89,8 +89,11 @@
   /* The rail and the pane are one screen here, so the count lives in the rail
      row: it is on every row in every state, and a second copy in the pane
      600px away put "who has the deepest stash" across two type scales. The
-     pushed screen is where it comes back (#236). */
-  .mem-stash__id .sec-count {
+     pushed screen is where it comes back (#236). The skeleton's block is on
+     the same rule rather than a rule of its own, so the two cannot disagree
+     about which widths carry a count (#239). */
+  .mem-stash__id .sec-count,
+  .mem-stash__id .mem-skel__ct {
     display: none;
   }
 
@@ -100,7 +103,8 @@
      here rather than left unrendered, so a resize does not depend on a React
      flag — and the drawer keeps the height it has at every width. */
   .mem-backbar,
-  .mem-tostash {
+  .mem-tostash,
+  .mem-skel__tostash {
     display: none;
   }
 
@@ -474,7 +478,11 @@
 .mem-stash__id .sec-count {
   font-size: 12px;
 }
-.mem-stash__head .field {
+/* The skeleton's block shares the rule rather than restating the numbers, so
+   the room it reserves is the room the real field takes and not an
+   approximation of it (#239). */
+.mem-stash__head .field,
+.mem-stash__head .mem-skel__field {
   height: 34px;
   width: 210px;
   flex: none;
@@ -583,7 +591,8 @@
   /* The pane is too narrow to hold the heading and the field on one line. */
   /* The 21px heading line and the 34px field with 10px between them. */
   .mem-stash__head { flex-direction: column; align-items: stretch; gap: 10px; height: 65px; }
-  .mem-stash__head .field { width: 100%; margin-left: 0; }
+  .mem-stash__head .field,
+  .mem-stash__head .mem-skel__field { width: 100%; margin-left: 0; }
   .mem-wallbox { --mem-headh: 77px; }
 }
 
@@ -705,6 +714,10 @@
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 18px;
+    /* The bar is as tall as the one control in it, written here as well as on
+       .mem-back so the skeleton's shorter block reserves the same band (#239)
+       instead of starting the wall higher than the loaded page does. */
+    min-height: 44px;
   }
   .mem-back {
     display: inline-flex;
@@ -731,4 +744,61 @@
     width: 16px;
     height: 16px;
   }
+
+  /* ---- the skeleton, on the phone ---- */
+
+  /* The way on to the wall is the whole point of the drawer here, so the
+     skeleton reserves it — hidden with the real link above 760 rather than
+     base-hidden, so the two are switched by the same pair of queries. Matched
+     to .mem-tostash's own touch minimum. */
+  .mem-skel__tostash {
+    display: block;
+    height: 44px;
+    margin-top: 14px;
+    border-radius: var(--r-md);
+  }
+  /* The count comes back with the pushed screen, so its block does too. */
+  .mem-skel__ct {
+    width: 22px;
+    height: 11px;
+  }
+  /* The wall stops being a scroller here and the page carries it, so there is
+     no ceiling left to clip the overdraw against and the tail would become
+     page length instead: nine rows of shimmer to flick past on a screen that
+     holds three. Cut to roughly one screen — in CSS, not a width branch in JS,
+     so the no-measurement rule holds at every step of the root zoom ramp. */
+  .mem-skel__wall .mem-wall > :nth-child(n + 13) {
+    display: none;
+  }
 }
+
+/* ---- the loading skeleton (#239) --------------------------------------- */
+
+/* Everything above is shared with the loaded page by construction: the
+   skeleton renders the same containers, so the shell, the rail, the pane, the
+   head, the wall box and every cell in it are the boxes this file already
+   describes. What is left here is only what has no real counterpart. */
+
+/* The rail row is a link in the real thing. Same box, no interaction. */
+.mem-skel .mem-row__link:hover {
+  background: none;
+}
+/* The heading's own line box, so the head is the same column below 900 as it
+   is loaded and the bar sits where the words will. */
+.mem-skel .mem-stash__id {
+  align-items: center;
+  height: 21px;
+}
+.mem-skel__pip {
+  border-radius: 1px;
+}
+
+/* Overdraw and clip. The box is the same reserved height it is on the loaded
+   page, so the tail simply falls outside it — no tile count matched to a
+   stash, and nothing measured. `hidden` rather than the real box's `auto`,
+   because the tail is filler and must not be reachable. Last in the file, so
+   it beats the two-column block's overflow-y. */
+.mem-skel__wall {
+  overflow: hidden;
+}
+

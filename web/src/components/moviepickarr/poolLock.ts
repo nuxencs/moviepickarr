@@ -36,6 +36,12 @@ const DRAW_IN_PROGRESS = "draw in progress";
 const ROSTER_FAILED = "Members failed to load";
 const NO_MEMBERS = "No members yet";
 
+/** Slots in one member's pool. Here rather than on the page, because two
+ *  things draw three slots and only one of them has a roster to count: the
+ *  board draws a member's pool, and the loading skeleton draws the same three
+ *  before any member has arrived. */
+export const POOL_SIZE = 3;
+
 /** How full the group's pools are, or why we can't say yet. `slots` is members
  *  times the pool size, so a zero-member roster arrives as `slots: 0`. */
 export type RosterOccupancy =

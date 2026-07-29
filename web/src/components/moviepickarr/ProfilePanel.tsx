@@ -1,20 +1,15 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { LogOutIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef } from "react";
 
-import { APIClient } from "@/api/APIClient";
-import { AuthKeys } from "@/api/query_keys";
-
-import { apiMessage } from "@/components/moviepickarr/account/account";
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { VolumeControl } from "@/components/moviepickarr/VolumeControl";
 import { useTheme } from "@/components/theme-context";
-import { toast } from "@/components/ui/toast-api";
 
 import type { MeResponse } from "@/types/Response";
 
 import { useDismissible } from "@/hooks/useDismissible";
+import { useLogout } from "@/hooks/useLogout";
 
 /**
  * Resolve dark/light from the `theme` value directly (not the DOM class): the
@@ -41,8 +36,8 @@ function resolveDark(theme: string): boolean {
 export function ProfilePanel({ me }: { me: MeResponse }) {
   const { theme, setTheme } = useTheme();
   const isDark = resolveDark(theme);
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  // Single-device only: "log out everywhere" stays on the account page.
+  const logout = useLogout();
 
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -79,19 +74,6 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
       document.removeEventListener("keydown", onKeyDown, true);
     };
   }, [open, closing, requestClose, isTopmost]);
-
-  // Single-device logout, mirroring the account page: end this session, drop the
-  // cached actor so the login screen doesn't flash a stale "still signed in"
-  // state, then land on the login route. "Log out everywhere" stays on the
-  // account page.
-  const logout = useMutation({
-    mutationFn: () => APIClient.auth.logout(false),
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey: AuthKeys.me() });
-      void navigate({ to: "/login" });
-    },
-    onError: (err) => toast.error(apiMessage(err, "Couldn't log out.")),
-  });
 
   return (
     <div className="profile" ref={rootRef}>
@@ -158,7 +140,7 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
           <button
             type="button"
             className="profile__item profile__item--danger"
-            onClick={() => logout.mutate()}
+            onClick={() => logout.mutate(false)}
             disabled={logout.isPending}
           >
             <LogOutIcon />

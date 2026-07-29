@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { ExternalLinkIcon, PencilIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Fragment, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
@@ -11,6 +12,7 @@ import { drawStore } from "@/components/moviepickarr/drawStore";
 import { backdropBg, backdropUrl, externalLinks, fullDate, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/moviepickarr/lib";
 import { Modal } from "@/components/moviepickarr/Modal";
 import { isSelf } from "@/components/moviepickarr/ownership";
+import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { deleteLabel, deleteRefusalOf, isDeletable } from "@/components/moviepickarr/refusals";
 import { SkeletonText } from "@/components/moviepickarr/Skeletons";
@@ -370,7 +372,21 @@ export function MovieModal({
 
                   <div className="moviemodal__credits moviemodal__by">
                     <span>
-                      Added by <b>{m.addedByName}</b>
+                      {/* The way from a film to whoever stashed it (#238), at
+                          the address the rail established. Replace, like the
+                          chips above and for the same reason: the entry it
+                          leaves is the modal's own, and a push would return to
+                          an entry whose page renders no modal at all. */}
+                      Added by{" "}
+                      <Link
+                        to="/users"
+                        search={{ member: m.addedByID }}
+                        className="moviemodal__person"
+                        title={`See ${possessive(m.addedByName)} board`}
+                        replace
+                      >
+                        {m.addedByName}
+                      </Link>
                       {m.addedAt && ` · ${fullDate(m.addedAt)}`}
                     </span>
                     {m.watchedAt && <span>Watched {fullDate(m.watchedAt)}</span>}

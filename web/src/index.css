@@ -1234,11 +1234,12 @@
   .moviemodal__credit { display: flex; align-items: stretch; gap: 22px; margin-top: 12px; }
   .moviemodal__credit .moviemodal__credits { margin: 0; }
   .moviemodal__credits + .moviemodal__by { padding-left: 22px; border-left: 1px solid var(--line); }
-  .moviemodal__by b { font-weight: 550; color: var(--ink-2); }
   /* Credits land with the lazy detail, so their rows are reserved at the real
      line height (1lh) while it's in flight — a 12px skeleton bar in a 12px box
      would under-reserve and the block would grow under the reader. */
   .moviemodal__credits__ghost { display: flex; align-items: center; height: 1lh; }
+  /* A name you can follow: the credited people out to TMDB, and the adder in to
+     their own board (#238) — one treatment, because they are the same thing. */
   .moviemodal__person { font-weight: 550; color: var(--ink-2); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
   .moviemodal__person:hover,
   .moviemodal__person:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }

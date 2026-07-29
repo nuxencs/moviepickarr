@@ -30,14 +30,36 @@ import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import type { MeResponse, Movie } from "@/types/Response";
 import type { ReactNode } from "react";
 
-// The chips deep-link to /stats; outside a router there's no Link, and the modal
-// isn't the place to test routing (nav.test.ts owns that).
+// The chips deep-link to /stats and the attribution to /users; outside a router
+// there's no Link, and the modal isn't the place to test routing (nav.test.ts
+// owns that). The stub flattens `to` + `search` into an href and puts `replace`
+// on the element, which is all this file asks of a link's destination.
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <a href="/stats" onClick={onClick}>
-      {children}
-    </a>
-  ),
+  Link: ({
+    to,
+    search,
+    replace,
+    children,
+    onClick,
+    ...rest
+  }: {
+    to: string;
+    search?: Record<string, string | number | boolean | undefined>;
+    replace?: boolean;
+    children: ReactNode;
+    onClick?: () => void;
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(search ?? {})
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, String(v)]),
+    ).toString();
+    return (
+      <a href={query ? `${to}?${query}` : to} data-replace={String(Boolean(replace))} onClick={onClick} {...rest}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 // The detail read never resolves on its own: a test that wants the landed
@@ -232,6 +254,31 @@ describe("MovieModal", () => {
     const { dialog } = renderModal({ detail: detailed() });
 
     expect(attribution(dialog).textContent).not.toMatch(/Watched/);
+  });
+
+  /* The adder's name is the way from a film to the person who stashed it
+     (#238). The address is the rail's: /users?member=<id>. Asserted on the lean
+     object, with no detail seeded: the id is on the tile, so the link is there
+     from the first frame on every surface the modal opens from. */
+  it("points the adder's name at their board", () => {
+    const { dialog } = renderModal({ movie: lean({ addedByID: 7, addedByName: "Cleo" }) });
+
+    const link = within(attribution(dialog)).getByRole("link", { name: "Cleo" });
+    expect(link.getAttribute("href")).toBe("/users?member=7");
+  });
+
+  it("navigates over the modal's own entry, the way the chips do", () => {
+    const { dialog } = renderModal({ movie: lean({ addedByID: 7, addedByName: "Cleo" }) });
+
+    // Replace, not push: the entry the link leaves is the modal's own, so
+    // consuming it is what closes the modal. A push would land back on an
+    // entry whose page renders no modal at all (see useMovieModalHistory).
+    // Only the prop is visible here, since the router is a stub — what the
+    // navigation actually does to the entry is pinned on a real router in
+    // UsersTab.render.test.tsx.
+    expect(
+      within(attribution(dialog)).getByRole("link", { name: "Cleo" }).getAttribute("data-replace"),
+    ).toBe("true");
   });
 
   it("renders the external links as quiet links to a new tab, not buttons", () => {

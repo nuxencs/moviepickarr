@@ -230,7 +230,11 @@ old shadcn primitives.
   (`.moviemodal__credit`) puts "Directed by / Written by" and the attribution
   (`.moviemodal__by` — added by, plus the watch date on a watched film) side by side,
   split by a rule that spans the whole block (`align-items: stretch`), because both are
-  the same kind of line: who is responsible for this. Below 700px the rail becomes a row
+  the same kind of line: who is responsible for this. The adder's name is a link to
+  their board (`/users?member=<userID>`) and wears `.moviemodal__person`, the
+  credited-person treatment, since it is the same kind of thing: a name you can follow.
+  It navigates with `replace`, like the meta chips, so following it spends the modal's
+  own history entry. Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
 - **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`) — rename

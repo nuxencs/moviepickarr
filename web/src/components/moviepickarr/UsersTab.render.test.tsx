@@ -493,6 +493,27 @@ describe("opening a film's record", () => {
     expect(router.state.location.href).toBe("/users?member=2");
   });
 
+  /* The record's attribution is a link to the adder's board (#238). It is a
+     link on every surface, this one included: under replace it consumes the
+     modal's own entry, so clicking it here reads as the modal closing onto the
+     board it names, the same as a genre chip clicked on Stats. */
+  it("goes from a film to whoever added it, closing the record onto their board", async () => {
+    const { router } = await renderTab({ users: roster, meID: 1 });
+
+    fireEvent.click(wall().querySelectorAll(".mem-open")[0] as HTMLElement);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeNull());
+
+    // Every film here was added by member 1; open one from Ada's own board and
+    // follow the name to member 1's board.
+    fireEvent.click(within(dialog()).getByRole("link", { name: "Cleo" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(router.state.location.href).toBe("/users?member=1");
+    // Replaced, not stacked: the entry the open pushed is the one that was
+    // spent, so Back leaves the page rather than returning to the record.
+    expect(router.state.location.state.movieModal).toBeUndefined();
+  });
+
   it("leaves the empty pool slot the only cell that answers nothing, identically on both boards", async () => {
     await renderTab({ users: roster, meID: 1 });
     const own = Array.from(openPool().querySelectorAll(".pslot--empty")).map((s) => s.outerHTML);

@@ -98,11 +98,25 @@ old shadcn primitives.
   (`.sec-count`, 14px) and, where a page also has round state to report, a status line
   (`.sec-status`, 12px, `+0.01em`, `nowrap` released at 760) beside it. Two spans, not
   one, and the status steps down a size, because two mono spans at the same size on one
-  baseline read as a run-on string. Movies fuses its count and round word into a single
+  baseline read as a run-on string. `.sec-status` declares no family of its own and is
+  paired with `.mono` in the markup, which is where the tabular figures come from
+  (`font-feature-settings: "tnum" 1`): the occupancy numerator ticks on its own over SSE
+  (§6), and proportional digits would nudge the clauses after it sideways on each tick.
+  Movies fuses its count and round word into a single
   14px `.sec-count` and stays that way; Members splits them (`4 people` + `9 of 12 slots
-  filled · round closed`). A count slot states no number until there is one to state: a
+  filled · round closed`), where `slots` means pool slots — the roster times `POOL_SIZE`,
+  not the roster. A count slot states no number until there is one to state: a
   head that says `0 people` while the query is in flight is wrong about the one thing it
-  is there for.
+  is there for. The status ships as **two nodes**: the visible `.sec-status` carries every
+  clause and is never a live region, and a second `.vis-hidden` `role="status"` beside it
+  carries only the clauses worth interrupting for (§6).
+- **The round's words are one exported vocabulary.** `poolLock.ts` owns them
+  (`ROUND_OPEN`, `ROUND_CLOSED`) and both pages import from it, so neither can drift into
+  a second phrasing for the same flag. Members never renders `ROUND_OPEN`: an open round
+  there reads `ready to lock` once every pool is full and says nothing at all when they
+  aren't, because "round open" beside an occupancy it does not qualify is a word for a
+  state the reader can already count. `membersStatus()` in the same module composes the
+  visible and announced strings from those words, so the split above has one author.
 - **Segmented control:** `.seg` — neutral surface-3 active (the Movies watched
   grid/list toggle, filled to match the `.field` search beside it). Inside
   `.statsfilters` the seg is restyled to the chips' dialect — transparent with a
@@ -272,6 +286,29 @@ the moment of editing/deleting. We removed them:
   takes focus), so the trigger can't sit focused behind a dialog where Enter would
   reopen it. This replaced the last Radix primitive (`ui/dropdown-menu.tsx`, deleted)
   and dropped `@radix-ui/react-dropdown-menu` — **no Radix remains**.
+
+### Decision: what the Members page deliberately leaves out
+
+These are answers, not gaps. Recorded so a later reader does not restore them as missing
+features.
+
+- **No sort control on the wall.** Order is fixed title-ascending. Title and date-added
+  are the only keys always present; the rest arrive with enrichment and would reorder the
+  wall under the reader as SSE lands, and an untitled tile makes no key but title
+  verifiable by looking. The filter field above the wall is the find-a-film path instead.
+- **No self-mark in the rail** — no chip, no tint, no border. On arrival your row is
+  first and selected, and selection already speaks three times (the active row, its
+  `aria-current`, and the pane beside it). The positive self-mark is the pane's
+  possessive heading, which is also where the mobile push lands.
+- **No lock chip on a board.** The round is one fact about the group, so it is stated
+  once, in the page's status line. Per board it would say the same thing four times and
+  imply the flag were per-member.
+- **No refusal mark on a tile.** A refusal lives on the control it refuses and nowhere
+  else. What a board you cannot act on is missing is exactly one thing, the corner
+  action, so the absence says "not your board" and nothing else.
+- **`No members yet` is unreachable**, and stays in `membersStatus` anyway. Reaching the
+  page means being signed in as a member, so the roster is never empty. The branch is the
+  zero case of a total function, not a state with a design behind it.
 
 `web/src/index.css` keeps an `@theme inline` block mapping shadcn-style `--color-*` /
 `--radius-*` aliases onto MG tokens; Tailwind colour utilities (e.g. `text-destructive`)
@@ -487,10 +524,45 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   status line is the pattern (`membersStatus` in `poolLock.ts` composes both strings and
   documents the split): occupancy ticks on every other member's promote arriving over
   SSE, so a single region over all three clauses would re-read the string each time,
-  while round and draw state is rare and worth hearing. `.vis-hidden` is the app's one
-  off-screen utility and must stay the clip-rect recipe: `display: none` and
-  `visibility: hidden` both pull the node out of the accessibility tree, which turns any
-  region wearing it into dead code that still looks correct in the markup.
+  while round and draw state is rare and worth hearing. The off-screen half wears
+  `.vis-hidden` (below).
+- **`.vis-hidden` is the app's one off-screen utility** — an app-wide primitive, not the
+  Members page's, and every future live region or off-screen label uses it rather than
+  rolling its own. It must stay the clip-rect recipe:
+
+  ```css
+  .vis-hidden {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+    white-space: nowrap; border: 0;
+  }
+  ```
+
+  `display: none` and `visibility: hidden` both pull the node out of the accessibility
+  tree. Either one turns a region wearing this class into dead code that still looks
+  correct in the markup: the element is there, the text is there, and nothing is ever
+  announced. The node has to stay rendered and stay in the tree; only the pixels go.
+- **A temporary refusal goes inert with `aria-disabled`, never `disabled`.** This is the
+  app's pattern for a control that is refused right now and allowed a moment later (a
+  full pool, a locked round, a draw in flight), and the reason is that a natively
+  disabled button cannot take focus. Losing focus loses everything the refusal needs: the
+  control leaves the tab order, so its reason is unreachable by keyboard, and a
+  hover-revealed control loses the focus state that reveals it in the first place (the
+  wall's corner action comes up on `.mem-tile:has(:focus-visible)`). `aria-disabled`
+  keeps the control focusable and the click handler returns early instead. The reason
+  rides the accessible name and the `title` together, from the one wording table
+  (`refusals.ts`), so a wall tile and the movie modal refuse a locked-round delete in the
+  same words. The attribute is *absent* rather than `false` when the control is live, so
+  an allowed control is the markup it always was.
+
+  The two surfaces that take it pay for it differently. On the wall tile (`.mem-act`) a
+  refusal moves ink and border colour and nothing else — never `opacity`, which belongs
+  to the hover reveal — so a locked mid-draw board is pixel-identical at rest to an open
+  one. Under `hover: none` there is no reveal to protect, the action sits on the poster
+  permanently, and the refused one takes `opacity: 0.6` instead. The movie modal's delete
+  row (`.moviemodal__act`, §4) has no border and no dim at rest at all, so what it has to
+  do is call its own hover and press states off by hand: a row that lights up danger-red
+  under the pointer and then does nothing is worse than one that never lit up.
 
 ---
 
@@ -678,7 +750,11 @@ actually has movies.
 
 ## 10. Iconography (lucide)
 
-- `PlusIcon` = "add / open the add flow" (board "Add to <name>'s stash" button, "Add user").
+- `PlusIcon` = "add / open the add flow": the Members wall's add tile, the Add button on
+  a search result, the admin roster's "Add & invite". The add tile is drawn on your own board only and the
+  server takes the adder from the session, so the name in its label (`Add to Felix's
+  stash`) is always your own — adding to another member's stash is not a thing the UI can
+  express, and an example that reads as one is describing a pre-auth app.
   Note: empty **pool** slots are non-interactive placeholders (no `+`) — movies enter
   the pool only by being promoted from the stash, so a `+` there would falsely imply a
   direct pool add.

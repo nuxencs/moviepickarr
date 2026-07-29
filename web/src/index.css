@@ -750,7 +750,8 @@
      virtualizer's row measurement a lie. */
   /* Hover zoom lives on the image inside the frame (.poster clips with
      overflow:hidden), not a translate on the frame itself, so the whole tile
-     paints within its own box. Same treatment on the pool and the stats rails. */
+     paints within its own box. Same treatment on the pool, the search results,
+     the stats rails, and the Members wall and pool slots (members.css). */
   .tile:hover .poster__img,
   .tile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .tile:active .poster__img { transform: scale(var(--poster-zoom-press)); }

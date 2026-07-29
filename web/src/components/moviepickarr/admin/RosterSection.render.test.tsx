@@ -1,5 +1,5 @@
 /* ============================================================
-   Render tests for the roster page's dialog wiring (#140).
+   Render tests for the roster section's dialog wiring (#140).
 
    RosterOverlays.render.test.tsx renders each ceremony directly. The gap this
    fills is the path a member actually takes to one: the row kebab, whose
@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthKeys, UsersKeys } from "@/api/query_keys";
 
-import { RosterPage } from "@/components/moviepickarr/admin/RosterPage";
+import { RosterSection } from "@/components/moviepickarr/admin/RosterSection";
 
 import type { MeResponse, RosterMember } from "@/types/Response";
 
@@ -70,7 +70,7 @@ const admin: MeResponse = {
 };
 
 function renderPage(members: RosterMember[]) {
-  return renderWithProviders(<RosterPage />, {
+  return renderWithProviders(<RosterSection />, {
     path: "/admin",
     seed: (queryClient) => {
       queryClient.setQueryData(AuthKeys.me(), admin);

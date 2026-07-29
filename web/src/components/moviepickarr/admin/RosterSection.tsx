@@ -51,7 +51,7 @@ type Dialog =
 const fail = (fallback: string) => (err: unknown) =>
   toast.error(err instanceof ApiError && err.message ? err.message : fallback);
 
-export function RosterPage() {
+export function RosterSection() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: me } = useQuery(MeQueryOptions());
@@ -362,7 +362,7 @@ export function RosterPage() {
 }
 
 // The field keeps its own state so a keystroke re-renders the form and nothing
-// else. Held in RosterPage it re-rendered every roster row per character, and a
+// else. Held in RosterSection it re-rendered every roster row per character, and a
 // row is not cheap: an avatar with a layout effect, cred chips, a menu, and a
 // freshly built action array.
 function AddMemberForm({ onCreated }: { onCreated: (name: string, claimUrl: string) => void }) {

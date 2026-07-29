@@ -23,6 +23,8 @@ import {
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { toast } from "@/components/ui/toast-api";
 
+import { useLogout } from "@/hooks/useLogout";
+
 import "@/components/moviepickarr/account/account.css";
 
 // Only one ceremony is ever open, so a single tag drives the modal switch rather
@@ -73,14 +75,6 @@ export function AccountPage() {
 
   const refreshMe = () => queryClient.invalidateQueries({ queryKey: AuthKeys.me() });
 
-  // Logout clears the session everywhere the client caches it, then lands on the
-  // login screen. removeQueries drops the cached actor so the login page doesn't
-  // briefly bounce a stale "still signed in" back into the app.
-  const goToLogin = () => {
-    queryClient.removeQueries({ queryKey: AuthKeys.me() });
-    void navigate({ to: "/login" });
-  };
-
   const changePassword = useMutation({
     mutationFn: ({ current, next }: { current: string; next: string }) =>
       APIClient.auth.changePassword(current, next),
@@ -130,11 +124,8 @@ export function AccountPage() {
     },
   });
 
-  const logout = useMutation({
-    mutationFn: (all: boolean) => APIClient.auth.logout(all),
-    onSuccess: () => goToLogin(),
-    onError: (err) => toast.error(apiMessage(err, "Couldn't log out.")),
-  });
+  // Both sessions rows: false ends this device, true ends every session.
+  const logout = useLogout();
 
   if (me.isPending) {
     return <p className="acc-state">Loading your account…</p>;

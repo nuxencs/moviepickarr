@@ -46,15 +46,15 @@ export interface MembersSearch {
  * never rewritten out from under whoever pasted it (see selectedMember).
  */
 export function validateMembersSearch(search: Record<string, unknown>): MembersSearch {
-  // A number from a programmatic navigation, a string off the URL, nothing
-  // else: Number() alone reads `true` as 1 and `["4"]` as 4, which would make
-  // a malformed navigation select somebody's board.
   // A boolean from a programmatic navigation, the string off the URL, nothing
   // else. Anything that is not a plain yes drops out, so a stray `?stash=0`
   // reads as the rail rather than as the pushed screen.
   const stash =
     search.stash === true || search.stash === "true" ? ({ stash: true } as const) : {};
 
+  // A number from a programmatic navigation, a string off the URL, nothing
+  // else: Number() alone reads `true` as 1 and `["4"]` as 4, which would make
+  // a malformed navigation select somebody's board.
   const raw = search.member;
   if (typeof raw !== "number" && typeof raw !== "string") return { ...stash };
   const id = Number(raw);

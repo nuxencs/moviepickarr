@@ -40,7 +40,7 @@
   --dur-spin: 6.5s; /* the slot-machine draw reel — scroll + decelerate onto the winner, timed to land on the jingle's payoff */
   --dur-confirm: 10s; /* the settled reel's confirm countdown (OK button fill); read in DrawReel for the auto-reveal timer */
   --dur: var(--dur-base); /* legacy alias — prefer the scale above */
-  --stagger: 0.055s; /* per-index step for cascaded entrances (draw-reveal slots, .block, auth column) */
+  --stagger: 0.055s; /* per-index step for cascaded entrances (draw-reveal slots, .mg-rise, auth column) */
   --poster-zoom: 1.06; /* hover/focus zoom for poster + avatar tiles, scaled inside their clipped frame */
   --poster-zoom-press: 1.03; /* the :active press, eased back from the hover zoom */
 
@@ -727,11 +727,16 @@
   /* Shared page-section entrance. `--i` is an opt-in stagger index: it defaults
      to 0, so a page whose blocks don't set it (Movies / Members / Stats) mounts
      them simultaneously as before. Surfaces with 3+ peer sections, or a
-     front-door moment (auth), set `--i` 0,1,2… per block to cascade top-down at
+     front-door moment (auth), set `--i` 0,1,2… per mg-rise block to cascade top-down at
      55ms apart — the same step the hero draw-reveal uses. `both` fill is
-     required for any delayed block so its pre-delay frame shows the empty start,
+     required for any delayed mg-rise so its pre-delay frame shows the empty start,
      not the resting (opacity 1) value. */
-  .block { animation: mg-fadeUp var(--dur-slow) var(--ease) both; animation-delay: calc(var(--i, 0) * var(--stagger)); }
+  /* Named mg-rise, not `block`: Tailwind ships a `.block` display utility, and
+     its layer outranks this one, so an element carrying the old name silently
+     got `display: block` on top of the animation. Harmless on a plain div,
+     which is every early caller, and invisible until a flex row (`.sec-head`)
+     took it and dropped its right-hand control onto its own line. */
+  .mg-rise { animation: mg-fadeUp var(--dur-slow) var(--ease) both; animation-delay: calc(var(--i, 0) * var(--stagger)); }
   .rule { height: 1px; background: var(--line); margin: 36px 0; }
   .empty { padding: 32px 0; text-align: center; color: var(--ink-2); font-size: 14px; }
 

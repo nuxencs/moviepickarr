@@ -80,7 +80,7 @@ export function MoviesTab() {
   return (
     <>
       {/* ---- In the Pool ---- */}
-      <section className="block">
+      <section className="mg-rise">
         <div className="sec-head">
           <div className="sec-title">
             <h2>In the Pool</h2>
@@ -199,7 +199,7 @@ function WatchedSection({
   const total = watched?.length ?? 0;
 
   return (
-    <section className="block">
+    <section className="mg-rise">
       <div className="sec-head">
         <div className="sec-title">
           <h2>Watched</h2>

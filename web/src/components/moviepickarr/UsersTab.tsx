@@ -25,14 +25,15 @@ import { Avatar } from "@/components/moviepickarr/Bits";
 import { drawStore } from "@/components/moviepickarr/drawStore";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { orderMembers, selectedMember } from "@/components/moviepickarr/membersSearch";
+import { MembersSkeleton } from "@/components/moviepickarr/MembersSkeleton";
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { isSelf } from "@/components/moviepickarr/ownership";
-import { membersStatus, type RosterOccupancy } from "@/components/moviepickarr/poolLock";
+import { membersStatus, POOL_SIZE, type RosterOccupancy } from "@/components/moviepickarr/poolLock";
 import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { actionLabel, type ActionKind, refusalOf, type Refusal } from "@/components/moviepickarr/refusals";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
-import { Skeleton, UsersBodySkeleton } from "@/components/moviepickarr/Skeletons";
+import { Skeleton } from "@/components/moviepickarr/Skeletons";
 import { columnCount, filterStash, landingCell, missLine, nextCell } from "@/components/moviepickarr/stashWall";
 import { toast } from "@/components/ui/toast-api";
 
@@ -42,8 +43,6 @@ import type { RefObject } from "react";
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
 import "@/components/moviepickarr/members.css";
-
-const POOL_SIZE = 3;
 
 /**
  * The width below which the pane is a screen of its own rather than a column
@@ -269,10 +268,11 @@ export function UsersTab() {
         {usersError ? (
           <p className="empty text-destructive">Failed to load members.</p>
         ) : usersPending ? (
-          // Still the incumbent board skeleton; the rail's own is #239.
-          <div className="boards">
-            <UsersBodySkeleton />
-          </div>
+          // The page's own shape, in the page's own containers (#239). Which
+          // screen it is on below 760 is the data-pushed above, which is the
+          // URL in every state — so a cold deep link onto a member's stash
+          // spends the flight on the screen it is arriving at.
+          <MembersSkeleton />
         ) : selected ? (
           <div className="mem__shell">
             {/* A nav of links with aria-current on the selected row, matching

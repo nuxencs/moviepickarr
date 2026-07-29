@@ -1,12 +1,13 @@
-/* Skeleton primitives + the Stats/Users loading bodies.
+/* Skeleton primitives + the Stats loading body.
  *
  * Primitives (Skeleton / SkeletonText / SkeletonPoster) are the reusable atoms —
  * a surface block under the shared `mg-shimmer` sweep, speaking the MG radius
- * tokens. The composite bodies mirror the real layout containers (.stat-strip,
- * .movierail, .boards, .board) so the page's shape shows immediately while the
- * queries load — instead of a bare "Loading…" — and so swapping in real content
- * doesn't shift layout (CLS). The Stats/Users tabs render their header/filter row
- * eagerly and drop the matching body skeleton in while data is in flight. */
+ * tokens. The composite body mirrors the real layout containers (.stat-strip,
+ * .movierail) so the page's shape shows immediately while the queries load —
+ * instead of a bare "Loading…" — and so swapping in real content doesn't shift
+ * layout (CLS). The tab renders its header/filter row eagerly and drops the
+ * body skeleton in while data is in flight. Members has its own, built out of
+ * that page's containers rather than approximating them (MembersSkeleton). */
 
 import type { CSSProperties } from "react";
 
@@ -99,48 +100,3 @@ export function StatsBodySkeleton() {
   );
 }
 
-/** A single member board placeholder: head, search, pool slots, stash grid. */
-function BoardSkeleton() {
-  return (
-    <div className="board">
-      <div className="board__head">
-        <div className="board__id">
-          <Skeleton w={40} h={40} radius="sm" />
-          <div>
-            <SkeletonText w={110} h={15} />
-            <SkeletonText w={132} h={11} style={{ marginTop: 6 }} />
-          </div>
-        </div>
-        <Skeleton w={28} h={28} radius="sm" />
-      </div>
-      <Skeleton w="100%" h={38} radius="md" style={{ marginBottom: 22 }} />
-      <div className="poolbox">
-        <SkeletonText w={120} h={11} style={{ marginBottom: 12 }} />
-        <div className="pool-slots">
-          {range(3).map((_, i) => (
-            <SkeletonPoster key={i} style={{ flex: 1 }} />
-          ))}
-        </div>
-      </div>
-      <div className="stash" style={{ marginTop: 22 }}>
-        <SkeletonText w={84} h={13} style={{ marginBottom: 14 }} />
-        <div className="tile-grid">
-          {range(4).map((_, i) => (
-            <SkeletonPoster key={i} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Users body: the member boards grid. */
-export function UsersBodySkeleton() {
-  return (
-    <>
-      {range(3).map((_, i) => (
-        <BoardSkeleton key={i} />
-      ))}
-    </>
-  );
-}

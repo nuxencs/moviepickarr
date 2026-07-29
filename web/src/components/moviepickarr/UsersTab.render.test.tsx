@@ -192,6 +192,105 @@ describe("the Members status line", () => {
   });
 });
 
+/* The skeleton is shape, and jsdom has no layout — so what is asserted here is
+   what the shape is made of, and everything that would let a real number leak
+   into it. The pixel-identical claim against the loaded page is a browser
+   question and the verify-frontend pass owns it. */
+describe("the Members loading skeleton", () => {
+  const skeleton = () => document.querySelector(".mem-skel");
+
+  it("takes the page's own containers, so the shape is the layout's and not a copy of it", async () => {
+    await renderTab({});
+
+    const skel = skeleton();
+    expect(skel).toBeTruthy();
+    expect(skel?.classList.contains("mem__shell")).toBe(true);
+    expect(skel?.querySelector(".mem-rail")).toBeTruthy();
+    expect(skel?.querySelector(".mem-pane")).toBeTruthy();
+    expect(skel?.querySelector(".mem-wallbox")).toBeTruthy();
+    // The clip, not a scroller: the overdrawn tail is filler and must not be
+    // reachable, which is a class rather than the real box's overflow-y.
+    expect(skel?.querySelector(".mem-wallbox")?.classList.contains("mem-skel__wall")).toBe(true);
+    // No fade, which would promise a scroller there is none of.
+    expect(skel?.querySelector("[data-overflow]")).toBeNull();
+  });
+
+  it("is member-agnostic, with no name and no accent line on any row", async () => {
+    await renderTab({ meID: 1 });
+
+    const rows = skeleton()?.querySelectorAll(".mem-row") ?? [];
+    expect(rows.length).toBe(6);
+    // Nothing in the rail is a link or names anybody, row 0 included: drawing
+    // your own name there is available (the session resolves before the route
+    // renders) and refused.
+    expect(skeleton()?.querySelectorAll("a").length).toBe(0);
+    expect(skeleton()?.textContent).toBe("");
+    expect(skeleton()?.querySelector("[data-active]")).toBeNull();
+  });
+
+  it("opens exactly one drawer, at row 0", async () => {
+    await renderTab({});
+
+    const rows = Array.from(skeleton()?.querySelectorAll(".mem-row") ?? []);
+    const open = rows.map((row) => !!row.querySelector('.mem-drop[data-open="true"]'));
+    expect(open).toEqual([true, false, false, false, false, false]);
+  });
+
+  it("shimmers the pips and the pool slots rather than drawing the marks they stand in for", async () => {
+    await renderTab({});
+
+    // An unfilled pip says "0 of 3 filled" and a dashed cell says "this pool is
+    // empty". Both are claims a loading state does not get to make.
+    const pips = skeleton()?.querySelectorAll(".mem-pips > *") ?? [];
+    expect(pips.length).toBeGreaterThan(0);
+    for (const pip of pips) expect(pip.classList.contains("skel")).toBe(true);
+    expect(skeleton()?.querySelector(".mem-pip")).toBeNull();
+    expect(skeleton()?.querySelector(".pslot--empty")).toBeNull();
+
+    const slots = skeleton()?.querySelectorAll(".mem-pool > *") ?? [];
+    expect(slots.length).toBe(3);
+    for (const slot of slots) expect(slot.classList.contains("skel")).toBe(true);
+  });
+
+  it("overdraws the wall by a fixed shape, wired to no stash", async () => {
+    await renderTab({});
+
+    expect(skeleton()?.querySelectorAll(".mem-wall > *").length).toBe(36);
+  });
+
+  it("stays out of the accessibility tree and leaves the live region in it", async () => {
+    await renderTab({});
+
+    expect(skeleton()?.getAttribute("aria-hidden")).toBe("true");
+    // The one thing the pushed screen says out loud, and the head it sits
+    // beside is the head the push takes away — so it is a sibling, not a child.
+    const region = liveRegion();
+    expect(region).toBeTruthy();
+    expect(region?.closest(".mem-skel")).toBeNull();
+    expect(region?.closest(".sec-head")).toBeNull();
+  });
+
+  it("spends the flight on the screen a deep link is arriving at", async () => {
+    // Below 760 the pushed screen is the pane and the rail is off-canvas, and
+    // which one is drawn is CSS off this flag — which is the URL while the
+    // roster is still in flight, not once it lands.
+    await renderTab({ href: "/users?member=2&stash=true" });
+
+    expect(document.querySelector(".mem")?.getAttribute("data-pushed")).toBe("true");
+    expect(skeleton()).toBeTruthy();
+    // The page head goes with the rail on that screen, in this state and in
+    // the loaded one alike (members.css) — so it is still rendered here, and
+    // the rule that removes it is the same one.
+    expect(document.querySelector(".sec-head")).toBeTruthy();
+  });
+
+  it("draws the rail's screen when the URL names no stash", async () => {
+    await renderTab({ href: "/users?member=2" });
+
+    expect(document.querySelector(".mem")?.getAttribute("data-pushed")).toBe("false");
+  });
+});
+
 describe("the rail of members", () => {
   const roster = [member(1, 1, 14, "Ada"), member(2, 3, 4, "Bo"), member(3, 0, 0, "Cleo")];
 

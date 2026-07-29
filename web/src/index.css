@@ -778,21 +778,11 @@
   /* Fixed desktop width; on phones it flexes to fill the stacked header
      (see the 640px block below), mirroring .watched-controls__search. */
   .user-add__field { width: 240px; }
-  .boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 30px 44px; }
-  /* min-width:0 so the grid item can shrink to its track: the pool slots'
-     aspect-ratio inflates the board's min-content, which would otherwise
-     overflow the single-column mobile track (and the 310px desktop track),
-     pushing the pool + "Add to stash" button past the content edge. */
-  .board { display: flex; flex-direction: column; min-width: 0; }
-  .board__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
-  .board__id { display: flex; align-items: center; gap: 12px; }
-  .board__id .nm { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
-  .board__id .ct { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
-
-  .poolbox { margin-bottom: 24px; }
-  .poolbox__label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
-  .poolbox__label .l { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
-  .pool-slots { display: flex; gap: 9px; }
+  /* The pool slot outlives the grid of boards it was written for: the rail's
+     drawer draws three of them (members.css), and the loading skeleton draws
+     three more. Everything else that framed a board — .boards, .board and its
+     head, .poolbox, .pool-slots, .stash — went with the peer grid and its
+     placeholder. */
   .pslot { flex: 1; aspect-ratio: 2/3; border: 1.5px solid transparent; border-radius: var(--r-md); position: relative; overflow: hidden; }
   /* Non-interactive placeholder — the pool is filled by promoting from the stash. */
   .pslot--empty { border-style: dashed; border-color: var(--line-2); }
@@ -801,10 +791,6 @@
      members.css): one language for the one control a poster carries, on both
      bands. The full-poster overlay it replaced could not be made persistent
      under `hover: none` without covering the art it sat on. */
-
-  /* Still the loading skeleton's shape (Skeletons.tsx). The rendered board is
-     the rail plus the wall now, both of them in members.css. */
-  .stash { display: flex; flex-direction: column; }
 
   /* ---- Stats tab ---- */
   .stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -1417,9 +1403,6 @@
     .watched-controls__search { flex: 1; }
     .user-add { width: 100%; }
     .user-add__field { flex: 1; width: auto; }
-
-    /* one user board per row — no 310px min to overflow a 320px screen */
-    .boards { grid-template-columns: 1fr; gap: 30px; }
 
     /* stats: the window control owns its row; chips wrap below it; bars
        reclaim track width */

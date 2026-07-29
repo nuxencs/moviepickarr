@@ -52,6 +52,8 @@ const WALL_TILES = 36;
  *  take a digit. */
 const NAME_WIDTHS = [86, 104, 72, 96, 80, 110];
 
+/** Local rather than shared with Skeletons.tsx: exporting it from a .tsx trips
+ *  react-refresh, and a one-line Array.from is not worth a new module. */
 const range = (n: number) => Array.from({ length: n });
 
 /** Three shimmer squares where the pips go. Not three unfilled pips: those are

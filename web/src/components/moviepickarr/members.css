@@ -796,9 +796,11 @@
 /* Overdraw and clip. The box is the same reserved height it is on the loaded
    page, so the tail simply falls outside it — no tile count matched to a
    stash, and nothing measured. `hidden` rather than the real box's `auto`,
-   because the tail is filler and must not be reachable. Last in the file, so
-   it beats the two-column block's overflow-y. */
-.mem-skel__wall {
+   because the tail is filler and must not be reachable.
+
+   Both classes in the selector, so this outranks the two-column block's
+   overflow-y on specificity rather than on being further down the file: an
+   append below here would otherwise take the clip away silently. */
+.mem-wallbox.mem-skel__wall {
   overflow: hidden;
 }
-

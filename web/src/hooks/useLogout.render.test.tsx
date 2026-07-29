@@ -14,7 +14,7 @@
    test the button they own; the sequence itself lives here, once.
    ============================================================ */
 
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,11 +54,7 @@ const actor: MeResponse = {
 let cachedAtNavigate: MeResponse | undefined;
 
 function Harness({ all }: { all: boolean }) {
-  const queryClient = useQueryClient();
   const logoutMutation = useLogout();
-  navigate.mockImplementation(() => {
-    cachedAtNavigate = queryClient.getQueryData<MeResponse>(AuthKeys.me());
-  });
   return (
     <button type="button" onClick={() => logoutMutation.mutate(all)} disabled={logoutMutation.isPending}>
       Log out
@@ -69,6 +65,9 @@ function Harness({ all }: { all: boolean }) {
 function renderHook({ all = false }: { all?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   client.setQueryData(AuthKeys.me(), actor);
+  navigate.mockImplementation(() => {
+    cachedAtNavigate = client.getQueryData<MeResponse>(AuthKeys.me());
+  });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
@@ -125,7 +124,7 @@ describe("useLogout", () => {
   });
 
   it("stays put and toasts when the request fails", async () => {
-    logout.mockRejectedValueOnce(new ApiError(500, "Couldn't log out."));
+    logout.mockRejectedValueOnce(new ApiError(503, "Session store is unreachable."));
     const { client, button } = renderHook();
 
     await clickAndSettle(button);
@@ -133,6 +132,17 @@ describe("useLogout", () => {
     expect(navigate).not.toHaveBeenCalled();
     // The session may well still be live, so the cached actor stands.
     expect(client.getQueryData(AuthKeys.me())).toEqual(actor);
+    // The server's own wording, not the fallback: the two differ here so the
+    // branch is actually pinned.
+    expect(toastError).toHaveBeenCalledWith("Session store is unreachable.");
+  });
+
+  it("falls back to its own wording when the failure carries none", async () => {
+    logout.mockRejectedValueOnce(new Error("network down"));
+    const { button } = renderHook();
+
+    await clickAndSettle(button);
+
     expect(toastError).toHaveBeenCalledWith("Couldn't log out.");
   });
 

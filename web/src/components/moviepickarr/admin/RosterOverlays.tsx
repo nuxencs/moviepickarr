@@ -24,10 +24,15 @@ export function MemberIdentity({
   member,
   isSelf,
   size = 34,
+  extras = [],
 }: {
   member: RosterMember;
   isSelf: boolean;
   size?: number;
+  /** The shed columns' values, shown on the sub-line below 640 only (roster.css).
+   *  Rendered on every screen and hidden by CSS above the breakpoint, so nothing
+   *  here depends on a measured width. */
+  extras?: string[];
 }) {
   return (
     <div className="adm-id">
@@ -38,7 +43,15 @@ export function MemberIdentity({
           {isSelf && <span className="adm-tag adm-tag--you">You</span>}
           {member.role === "admin" && <span className="adm-tag adm-tag--admin">Admin</span>}
         </div>
-        <div className="adm-id__sub">{member.username ? `@${member.username}` : "no username"}</div>
+        <div className="adm-id__sub">
+          {member.username ? `@${member.username}` : "no username"}
+          {extras.map((extra) => (
+            <span key={extra} className="adm-id__extra">
+              {" · "}
+              {extra}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );

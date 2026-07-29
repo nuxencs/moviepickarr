@@ -13,20 +13,25 @@
   padding: 0 4px 64px;
 }
 
-/* ---------- top bar: heading + add & invite ---------- */
-/* Heading cluster reuses the shared .sec-title/.sec-count vocabulary (index.css)
-   so Roster's title matches the Movies/Members/Stats tabs (h2, 20px). The bar
-   top-aligns so the heading lands at the same height as those tabs rather than
-   being pushed down by the taller add-&-invite form beside it. */
-.adm-bar {
+/* ---------- section head: heading + add & invite ---------- */
+/* The head is the shared .sec-head/.sec-title (index.css), the same one Movies
+   and Members use, so the Roster section's title, its count, and the phone
+   stacking below 640 all come from the design system. It used to be a private
+   .adm-bar that reimplemented .sec-head and had drifted: it never inherited the
+   phone rule, which is why the add form stayed 220px wide on a 390px screen. */
+
+/* The section head also carries `.block` for the staggered entrance, and
+   `block` is Tailwind's display utility as well as this app's motion class
+   (index.css). The utility layer outranks .sec-head's own `display: flex`, so
+   the head would render as a plain block and drop the add form onto its own
+   line. This file is imported unlayered, which outranks both, so one property
+   here puts the shared rule back. Anything combining .sec-head with .block
+   needs this; a div that's display:block anyway (the table wraps below) doesn't. */
+.adm .sec-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 22px;
-  flex-wrap: wrap;
 }
-/* Secondary count used by the archived-section subheading (not the page title). */
+
+/* Secondary count used by the archived-section subheading (not the section title). */
 .adm-count {
   font-size: 13px;
   color: var(--ink-3);
@@ -87,13 +92,49 @@
   opacity: 0.72;
 }
 
-/* Horizontal scroll on narrow viewports rather than a squashed table. */
+/* The sub-line's shed-column values. Rendered on every screen (RosterSection's
+   COLUMNS array feeds the cells and this line from one definition) and revealed
+   only where the columns themselves are gone. */
+.adm-id__extra {
+  display: none;
+}
+
+/* Between the phone breakpoint and 720 the table still carries all six columns,
+   which don't fit: scroll it rather than squash it. Below 640 it sheds instead
+   (next block), so the min-width has to lift with them. */
 @media (max-width: 720px) {
   .adm-tablewrap {
     overflow-x: auto;
   }
   .adm-table {
     min-width: 620px;
+  }
+}
+
+/* ---- Phone: the table sheds columns instead of scrolling sideways ----
+   Role, Movies and Last active hide, and their values fold into the identity
+   sub-line (@ada · 38 movies · now). What's left is who they are, whether they
+   can log in, and the actions kebab, which is what the roster is for on a
+   phone. Horizontal scroll inside a vertically scrolling page is the thing this
+   replaces. Keep the shed set in step with COLUMNS in RosterSection.tsx. */
+@media (max-width: 640px) {
+  .adm-table [data-shed] {
+    display: none;
+  }
+  .adm-table {
+    min-width: 0;
+  }
+  .adm-id__extra {
+    display: inline;
+  }
+  /* The sub-line now carries three facts, so let it wrap instead of truncating
+     the username, and tighten the row padding the columns used to justify. */
+  .adm-id__sub {
+    line-height: 1.4;
+  }
+  .adm-table thead th,
+  .adm-table tbody td {
+    padding: 12px 12px;
   }
 }
 

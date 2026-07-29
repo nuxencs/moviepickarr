@@ -849,7 +849,18 @@ What each does:
 - **640** — the *phone* breakpoint. Section headers (`.sec-head`) stack to a title row + full-width controls;
   user boards go single-column; the stats window control spans the row and the
   added-by-member bars shrink their name column (`188px → 112px`) so the track keeps
-  width; poster grids become denser thumbnail grids; modal chrome tightens.
+  width; poster grids become denser thumbnail grids; modal chrome tightens. The stats
+  filter chips become a two-column grid under the window control, which spans both:
+  content-width chips left a ragged right edge under an edge-to-edge segmented control,
+  and worse, they resized when a filter went active (the gold state adds a clear button),
+  so the row rearranged itself as you used it. The grid keeps the filters dimensionally
+  static, the rule the hero already follows (§7). The admin roster table sheds its Role,
+  Movies and Last active columns and folds them into the identity sub-line
+  (`@ada · 38 movies · now`), leaving who they are, whether they can log in, and the
+  actions kebab, rather than scrolling a 620px table sideways inside a page that already
+  scrolls down. Both renderings come from one `COLUMNS` array in `RosterSection.tsx`, so a
+  column added later reaches the cell and the sub-line together. Which screen you are on
+  stays CSS: no width is read in JS.
 - **700** — the hero stacks (poster above text), page / top-nav padding tightens, and the
   movie modal's rail becomes a row with its credit columns stacked (§4). It replaced the
   old 560 stack point when the modal went from 560px to 880px wide.

@@ -13,7 +13,7 @@ const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
   movies: FilmIcon,
   users: UsersIcon,
   stats: ChartNoAxesColumnIcon,
-  roster: ShieldIcon,
+  admin: ShieldIcon,
 };
 
 /** Horizontal inset (px) the underline keeps from each edge of the active tab. */
@@ -21,7 +21,7 @@ const INK_INSET = 12;
 
 export function NavBar() {
   const active = useRouterState({ select: (s) => tabFromPath(s.location.pathname) });
-  // The Roster tab only appears for admins. A 401 (not logged in) leaves role
+  // The Admin tab only appears for admins. A 401 (not logged in) leaves role
   // undefined, so it's hidden, never a dead entry a member can't use.
   const { data: me } = useQuery(MeQueryOptions());
   const tabs = tabsForRole(me?.role);
@@ -34,7 +34,7 @@ export function NavBar() {
     movies: null,
     users: null,
     stats: null,
-    roster: null,
+    admin: null,
   });
   const [ink, setInk] = useState<{ left: number; width: number } | null>(null);
 
@@ -54,8 +54,8 @@ export function NavBar() {
   }, [active]);
 
   // Measure before paint so the indicator never flashes at a stale position.
-  // tabs.length is a dep so the pass re-runs when the Roster tab appears once
-  // `me` loads as admin (its ref is null on the first, roster-less render).
+  // tabs.length is a dep so the pass re-runs when the Admin tab appears once
+  // `me` loads as admin (its ref is null on the first, admin-less render).
   useLayoutEffect(() => measure(), [measure, tabs.length]);
 
   // Re-measure on resize and once web fonts settle (font swap changes label width).

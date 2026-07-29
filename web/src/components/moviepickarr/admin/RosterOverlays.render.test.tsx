@@ -241,4 +241,4 @@ describe("InviteReveal", () => {
 
 // UnlinkGuard has no test of its own: it's static copy over a Modal whose
 // close path Modal.render.test.tsx already covers, and it takes no state that
-// could be wired wrong. RosterPage.render.test.tsx covers reaching it.
+// could be wired wrong. RosterSection.render.test.tsx covers reaching it.

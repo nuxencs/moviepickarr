@@ -1,5 +1,5 @@
 /* ============================================================
-   Render test for the navbar's role-gated Roster tab (#140).
+   Render test for the navbar's role-gated Admin tab (#140).
 
    Which tabs an actor gets is a pure question and nav.test.ts owns it: the
    whole role matrix is asserted there against tabsForRole, and none of it is
@@ -8,7 +8,7 @@
    bottom bar) off a `me` that arrives from a query, so a gate that works in the
    model can still leak a link a member shouldn't have.
 
-   That's all this file checks: an admin gets the Roster link, a member doesn't,
+   That's all this file checks: an admin gets the Admin link, a member doesn't,
    in both bars. The sliding underline is layout, and jsdom has no layout
    engine, so it isn't asserted here.
    ============================================================ */
@@ -84,19 +84,19 @@ function renderNav(role: MeResponse["role"]) {
   );
 }
 
-describe("the Roster tab", () => {
+describe("the Admin tab", () => {
   it("reaches the DOM for an admin, in both the top and bottom bars", () => {
     renderNav("admin");
 
-    const roster = screen.getAllByRole("link", { name: "Roster" });
-    expect(roster).toHaveLength(2);
-    expect(roster.every((link) => link.getAttribute("href") === "/admin")).toBe(true);
+    const admin = screen.getAllByRole("link", { name: "Admin" });
+    expect(admin).toHaveLength(2);
+    expect(admin.every((link) => link.getAttribute("href") === "/admin")).toBe(true);
   });
 
   it("is absent for a member, so there's no link to a page they can't use", () => {
     renderNav("member");
 
-    expect(screen.queryByRole("link", { name: "Roster" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Admin" })).toBeNull();
     // The tabs a member does get are still there, so this isn't an empty render.
     expect(screen.getAllByRole("link", { name: "Movies" }).length).toBeGreaterThan(0);
   });

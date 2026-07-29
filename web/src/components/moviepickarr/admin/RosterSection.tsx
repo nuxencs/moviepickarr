@@ -11,7 +11,7 @@ import {
   UnlinkIcon,
   UsersIcon,
 } from "lucide-react";
-import { FormEvent, useState, type CSSProperties } from "react";
+import { FormEvent, useState, type CSSProperties, type ReactNode } from "react";
 
 import { APIClient, ApiError } from "@/api/APIClient";
 import { MeQueryOptions, RosterQueryOptions } from "@/api/queries";
@@ -36,6 +36,69 @@ import type { RosterMember } from "@/types/Response";
 
 import "@/components/moviepickarr/admin/roster.css";
 
+/**
+ * The data columns between the identity and the row kebab, in display order.
+ *
+ * Below 640 the table can't hold six columns on a phone, so the `shed` ones
+ * hide and fold into the identity sub-line instead (roster.css). Both
+ * renderings come from this one array: a column added here reaches the desktop
+ * cell and the phone summary together, or neither. Which screen you are on is
+ * CSS, the way it is everywhere else (cf. UsersTab's PUSH_WIDTH note).
+ *
+ * `summary` returns null where the phone line would only repeat the row: the
+ * admin role is already a tag beside the name, "Member" is the default and goes
+ * unsaid, and a member who has added nothing needs no zero.
+ */
+interface RosterColumn {
+  key: string;
+  header: string;
+  className?: string;
+  shed: boolean;
+  cell: (m: RosterMember) => ReactNode;
+  summary?: (m: RosterMember) => string | null;
+}
+
+const COLUMNS: RosterColumn[] = [
+  {
+    key: "role",
+    header: "Role",
+    shed: true,
+    cell: (m) => <span className="adm-role">{m.role === "admin" ? "Admin" : "Member"}</span>,
+    summary: () => null,
+  },
+  {
+    key: "login",
+    header: "Login",
+    shed: false,
+    cell: (m) => <CredChips member={m} />,
+  },
+  {
+    key: "movies",
+    header: "Movies",
+    className: "adm-num",
+    shed: true,
+    cell: (m) => m.moviesAuthored,
+    summary: (m) => (m.moviesAuthored > 0 ? plural(m.moviesAuthored, "movie") : null),
+  },
+  {
+    key: "seen",
+    header: "Last active",
+    className: "adm-muted",
+    shed: true,
+    cell: (m) => timeAgo(m.lastSeenAt) || "Never",
+    summary: (m) => timeAgo(m.lastSeenAt) || null,
+  },
+];
+
+/** The shed columns' phone line, e.g. "38 movies · now". */
+const summaryOf = (m: RosterMember): string[] =>
+  COLUMNS.filter((c) => c.shed)
+    .map((c) => c.summary?.(m) ?? null)
+    .filter((s): s is string => s !== null);
+
+// Identity + the data columns + the kebab, for the states that span the row.
+const COLUMN_COUNT = COLUMNS.length + 2;
+
 // The one active ceremony. Only one is ever open, so a single tagged union keeps
 // the modal orchestration a plain switch rather than a pile of booleans.
 type Dialog =
@@ -51,7 +114,7 @@ type Dialog =
 const fail = (fallback: string) => (err: unknown) =>
   toast.error(err instanceof ApiError && err.message ? err.message : fallback);
 
-export function RosterPage() {
+export function RosterSection() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: me } = useQuery(MeQueryOptions());
@@ -243,7 +306,7 @@ export function RosterPage() {
 
   return (
     <div className="adm">
-      <div className="adm-bar block" style={{ "--i": 0 } as CSSProperties}>
+      <div className="sec-head block" style={{ "--i": 0 } as CSSProperties}>
         <div className="sec-title">
           <h2>Roster</h2>
           {!roster.isPending && (
@@ -267,17 +330,18 @@ export function RosterPage() {
               <thead>
                 <tr>
                   <th>Member</th>
-                  <th>Role</th>
-                  <th>Login</th>
-                  <th className="adm-num">Added</th>
-                  <th>Last active</th>
+                  {COLUMNS.map((c) => (
+                    <th key={c.key} className={c.className} data-shed={c.shed || undefined}>
+                      {c.header}
+                    </th>
+                  ))}
                   <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {active.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="adm-state">
+                    <td colSpan={COLUMN_COUNT} className="adm-state">
                       No members yet. Add the first one above.
                     </td>
                   </tr>
@@ -285,16 +349,13 @@ export function RosterPage() {
                   active.map((m) => (
                     <tr key={m.id}>
                       <td>
-                        <MemberIdentity member={m} isSelf={isSelf(m)} />
+                        <MemberIdentity member={m} isSelf={isSelf(m)} extras={summaryOf(m)} />
                       </td>
-                      <td>
-                        <span className="adm-role">{m.role === "admin" ? "Admin" : "Member"}</span>
-                      </td>
-                      <td>
-                        <CredChips member={m} />
-                      </td>
-                      <td className="adm-num">{m.moviesAuthored}</td>
-                      <td className="adm-muted">{timeAgo(m.lastSeenAt) || "Never"}</td>
+                      {COLUMNS.map((c) => (
+                        <td key={c.key} className={c.className} data-shed={c.shed || undefined}>
+                          {c.cell(m)}
+                        </td>
+                      ))}
                       <td className="adm-rowend">
                         <Menu label={`Actions for ${m.name}`} actions={rowActions(m)} />
                       </td>
@@ -321,6 +382,9 @@ export function RosterPage() {
                         <td>
                           <MemberIdentity member={m} isSelf={isSelf(m)} />
                         </td>
+                        {/* Its own table, with its own shape: identity, one summary
+                            cell, kebab. Not tied to COLUMNS — an active-table
+                            column has no business widening this span. */}
                         <td colSpan={3} className="adm-muted">
                           {credLabel(m)} · {m.moviesAuthored} added
                         </td>
@@ -362,7 +426,7 @@ export function RosterPage() {
 }
 
 // The field keeps its own state so a keystroke re-renders the form and nothing
-// else. Held in RosterPage it re-rendered every roster row per character, and a
+// else. Held in RosterSection it re-rendered every roster row per character, and a
 // row is not cheap: an avatar with a layout effect, cred chips, a menu, and a
 // freshly built action array.
 function AddMemberForm({ onCreated }: { onCreated: (name: string, claimUrl: string) => void }) {

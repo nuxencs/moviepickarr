@@ -1402,14 +1402,30 @@
     .sec-head { flex-direction: column; align-items: stretch; gap: 14px; }
     .sec-head .sec-title { justify-content: space-between; }
     .watched-controls__search { flex: 1; }
-    .user-add { width: 100%; }
-    .user-add__field { flex: 1; width: auto; }
+    /* the members board's add form and the admin roster's add-&-invite form:
+       both go full width and let the field take the slack (.adm* rules live in
+       roster.css, but this one belongs beside its twin) */
+    .user-add, .adm-add { width: 100%; }
+    .user-add__field, .adm-field { flex: 1; width: auto; }
 
-    /* stats: the window control owns its row; chips wrap below it; bars
-       reclaim track width */
-    .statsfilters .win-control { width: 100%; }
+    /* stats: the window control owns its row, and the chips below it become a
+       two-column grid rather than a ragged wrap. Content-width chips left a
+       short right edge under an edge-to-edge segmented control, and worse, they
+       resized when a filter went active (the gold state adds a clear button),
+       so the whole row rearranged itself under your thumb as you used it. A
+       fixed grid keeps the filters dimensionally static, the way the hero is. */
+    /* stretch, not the base rule's `center`: grid items that inherit `center`
+       size to their content, so a chip whose label wraps would leave its
+       row-mate short and the pair uneven. */
+    .statsfilters { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }
+    .statsfilters .win-control { grid-column: 1 / -1; width: 100%; }
     .statsfilters .seg { display: flex; width: 100%; }
     .statsfilters .seg button { flex: 1; padding: 9px 4px; justify-content: center; }
+    /* the wrap is the grid item; the chip inside it fills the cell */
+    .statsfilters .filterchip-wrap { display: flex; min-width: 0; }
+    .statsfilters .filterchip { flex: 1; min-width: 0; }
+    /* label left, chevron pinned right, so the six chips read as a column pair */
+    .statsfilters .filterchip > button:not(.filterchip__clear) { flex: 1; justify-content: space-between; }
     .barrow { grid-template-columns: 112px 1fr 28px; gap: 12px; }
     .barrow--dow { grid-template-columns: 38px 1fr 22px; }
     .genredonut { flex-direction: column; align-items: flex-start; }

@@ -16,6 +16,9 @@ _Avoid_: user (survives only in code)
 **Roster**:
 The current set of members. Former members can still appear in history as
 adders of watched movies.
+_Avoid_: Roster as the name of the admin surface. The roster is a collection
+shown on the Admin page, which is why the tab reads Admin while the section
+heading on it reads Roster.
 
 **Adder**:
 The member who added a movie. A movie keeps its adder forever, including into

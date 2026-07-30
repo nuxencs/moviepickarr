@@ -138,10 +138,18 @@
   already-verified inputs and never touch an `http.Request` or a session; the RP
   runs off no clock, the tx codec and linker share the injectable one.
 - `internal/movie`: owns the whole draw/reveal lifecycle, including the
-  server-authoritative auto-reveal. `DrawRandom` picks a pooled movie, records an
-  in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`). The HTTP
-  handler publishes `movie:drawn`, then `StartAutoReveal` arms a timer for the time
-  remaining until `RevealAt = DrawnAt + AutoRevealDelay`
+  server-authoritative auto-reveal. `DrawRandom` picks a pooled movie and returns
+  one `DrawResult`: a detached selected movie, the exact pre-draw candidate
+  snapshot, and the in-memory `ActiveDraw`
+  (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`) from the same mutex boundary.
+  It selects a uniform random index from that owned snapshot and validates the
+  index before changing any movie status. The HTTP handler loads candidate
+  metadata after the service releases the mutex, then publishes `movie:drawn`.
+  It does not rebuild the candidate set from a later pool read, so a promotion
+  after draw publication belongs to the next draw and the draw path uses four
+  repository calls instead of seven. `StartAutoReveal` then arms a timer for
+  the time remaining until
+  `RevealAt = DrawnAt + AutoRevealDelay`
   (`DefaultAutoRevealDelay` 16.5s, overridable via `DrawConfig`). A slow payload
   build therefore shortens the scheduled delay instead of moving the advertised
   deadline or letting `movie:revealed` overtake `movie:drawn`. The finalizer is

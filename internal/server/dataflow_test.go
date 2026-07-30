@@ -207,6 +207,100 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	}
 }
 
+type countingDrawRepository struct {
+	*repository.SqliteMoviesRepository
+	poolReads       int
+	repositoryCalls int
+}
+
+func (r *countingDrawRepository) FindByStatus(
+	ctx context.Context,
+	status string,
+) ([]*domain.Movie, error) {
+	r.repositoryCalls++
+	if status == string(domain.MovieStatusPool) {
+		r.poolReads++
+	}
+	return r.SqliteMoviesRepository.FindByStatus(ctx, status)
+}
+
+func (r *countingDrawRepository) FindByID(ctx context.Context, id int) (*domain.Movie, error) {
+	r.repositoryCalls++
+	return r.SqliteMoviesRepository.FindByID(ctx, id)
+}
+
+func (r *countingDrawRepository) GetCurrent(ctx context.Context) (*domain.Movie, error) {
+	r.repositoryCalls++
+	return r.SqliteMoviesRepository.GetCurrent(ctx)
+}
+
+func (r *countingDrawRepository) UpdateStatus(ctx context.Context, id int, status string) error {
+	r.repositoryCalls++
+	return r.SqliteMoviesRepository.UpdateStatus(ctx, id, status)
+}
+
+type countingDrawMetadataRepository struct {
+	domain.MovieMetadataRepo
+	repositoryCalls *int
+}
+
+func (r *countingDrawMetadataRepository) GetMetadataByMovieIDs(
+	ctx context.Context,
+	ids []int,
+) (map[int]*domain.MovieMetadata, error) {
+	(*r.repositoryCalls)++
+	return r.MovieMetadataRepo.GetMetadataByMovieIDs(ctx, ids)
+}
+
+// The draw service already reads the complete eligible pool before choosing a
+// winner. Candidate construction must reuse that snapshot instead of issuing a
+// second pool query after the draw lock has been released.
+func TestHandleGetRandomMovie_ReadsCandidatePoolOnce(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	countingRepo := &countingDrawRepository{SqliteMoviesRepository: movieRepo}
+	h.movieService.Close()
+	h.movieService = movie.NewService(countingRepo, movie.DrawConfig{
+		OnRevealed: revealBroadcaster(h.broker),
+	})
+	h.movieMetadata = &countingDrawMetadataRepository{
+		MovieMetadataRepo: h.movieMetadata,
+		repositoryCalls:   &countingRepo.repositoryCalls,
+	}
+
+	user, err := userRepo.Create(ctx, "Gwen")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, title := range []string{"Heat", "Casino", "Goodfellas"} {
+		if _, err := movieRepo.Add(ctx, title, "pool", user.ID); err != nil {
+			t.Fatalf("seed pool: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/movies/random",
+		strings.NewReader(`{"clientId":"c-test"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if countingRepo.poolReads != 1 {
+		t.Fatalf("pool reads = %d, want 1", countingRepo.poolReads)
+	}
+	if countingRepo.repositoryCalls != 4 {
+		t.Fatalf("draw repository calls = %d, want 4", countingRepo.repositoryCalls)
+	}
+}
+
 // The confirm bar counts down to revealAt, and it can start at any point in the
 // draw (Skip lands the reel early, a tab switch can mount it late). So the draw
 // payload has to say when the server stamped it: the client anchors the

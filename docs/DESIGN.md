@@ -645,10 +645,16 @@ takeover overlay *inside* the hero footprint (`DrawReel.tsx`, `.drawreel*`) that
 a strip of pool-candidate posters past a centre reticle, decelerates onto the
 server-chosen winner, then **settles and holds** — handing off to the reveal only on
 confirmation (see Draw confirm). It animates a result the
-**server already decided** (`ORDER BY RANDOM()`), so the randomness stays honest — the
-reel only adds anticipation. Only **pool candidates** scroll (every tile is a real
-possibility; never the watched library), and the strip is deduped at the landing seam so
-no poster sits beside an identical copy of itself. Motion is the **measure-then-transition**
+**server already decided** (a uniform random index into the owned pre-draw candidate
+snapshot), so the randomness stays honest. The reel only adds anticipation. Only
+**pool candidates** scroll (every tile is a real
+possibility; never the watched library). The server captures that candidate set under
+the same lock that publishes the draw and includes the snapshot in `movie:drawn`.
+A promotion that completes after publication stays visible in the pool but belongs to
+the next draw, never the reel already in flight. Candidate metadata loads after the lock
+is released, from one batch query; the handler does not query the pool again. The strip
+is deduped at the landing seam so no poster sits beside an identical copy of itself.
+Motion is the **measure-then-transition**
 idiom (§6): JS measures the winner tile and glides the track there with a CSS transition
 over `--dur-spin` (6.5s) / `--ease-reel` (easeOutCubic — a higher-order ease-out whose
 deceleration tapers off so the reel floats to a stop rather than braking at a constant rate;

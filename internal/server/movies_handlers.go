@@ -383,15 +383,25 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 
 	var drawn drawnPayload
 	ran, err := h.runMovieNightCommand(c, func() error {
-		selectedMovie, drawErr := h.movieService.DrawRandom(ctx, sanitizeInput(body.ClientID))
+		drawResult, drawErr := h.movieService.DrawRandom(ctx, sanitizeInput(body.ClientID))
 		if drawErr != nil {
 			return drawErr
 		}
 
-		activeDraw, ok := h.movieService.ActiveDraw()
-		if !ok || activeDraw.MovieID != selectedMovie.ID {
-			return domain.ErrInvalidState
-		}
+		selectedMovie := drawResult.Movie
+		activeDraw := drawResult.ActiveDraw
+		published := false
+		defer func() {
+			if !published {
+				// A future early return or panic still announces the persisted
+				// draw before its timer can reveal it. The full reel ceremony
+				// may be unavailable, but the lifecycle keeps progressing.
+				drawn.ServerNow = formatTimePrecise(time.Now().UTC())
+				h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
+			}
+			h.movieService.StartAutoReveal(activeDraw.MovieID, activeDraw.Generation)
+		}()
+
 		payload := toFullMovieBare(selectedMovie)
 		// Carry the authoritative draw time so the clicker (whose own SSE event may
 		// drop) and every other client resume the reveal spin from the same instant,
@@ -403,31 +413,11 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		payload.DrawClientID = activeDraw.DrawClientID
 		drawn = drawnPayload{fullMovie: payload}
 
-		published := false
-		defer func() {
-			if !published {
-				// A future early return or panic still announces the persisted
-				// draw before its timer can reveal it. The full reel ceremony
-				// may be unavailable, but the lifecycle keeps progressing.
-				drawn.ServerNow = formatTimePrecise(time.Now().UTC())
-				h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
-			}
-			h.movieService.StartAutoReveal(selectedMovie.ID, activeDraw.Generation)
-		}()
-
-		// Reel candidates = the pre-draw pool (winner + the rest) as lean tiles WITH
-		// posters. That IS the pool view during an unrevealed draw: the service holds
-		// the winner in it until the reveal, so no reconstruction is needed here. The
-		// winner must carry a poster because the reel lands on it: toFullMovieBare(selected)
-		// alone has none (no metadata), so the tiles — not the bare payload — supply it.
-		// Best-effort: the draw already succeeded, so a pool-load failure must not fail
-		// the response — it just omits candidates and the client falls back to its
-		// local pool cache (the pre-self-contained behaviour).
-		if candidateMovies, poolErr := h.movieService.Pooled(ctx); poolErr != nil {
-			h.log.Warn().Err(poolErr).Msg("failed to load pool for draw candidates (reel falls back to client pool cache)")
-		} else {
-			drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(ctx, candidateMovies))
-		}
+		// Reel candidates are the pool snapshot captured before the winner became
+		// current. Metadata stays outside the draw mutex; only the candidate ids
+		// and movie fields need the draw publication boundary.
+		candidateMovies := drawResult.Candidates
+		drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(ctx, candidateMovies))
 
 		// Stamp the server clock after candidate I/O, immediately before
 		// publication, so revealAt - serverNow is the actual remaining window.

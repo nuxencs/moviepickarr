@@ -201,7 +201,11 @@ export function Modal({
 
       modalLayers.splice(at, 1);
       syncModalLayers();
-      if (wasTopmost) layer.opener?.focus?.();
+      if (wasTopmost) {
+        layer.opener?.focus?.();
+        const fallback = modalLayers[modalLayers.length - 1]?.surface;
+        if (fallback && !fallback.contains(document.activeElement)) fallback.focus();
+      }
     };
   }, []);
 

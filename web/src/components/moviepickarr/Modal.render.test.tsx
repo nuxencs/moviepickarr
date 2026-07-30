@@ -228,10 +228,13 @@ describe("Modal", () => {
     function renderNested() {
       const onOuterClose = vi.fn();
       const onInnerClose = vi.fn();
+      let hideOpener = () => {};
 
       function Nested() {
         const [outer, setOuter] = useState(true);
         const [inner, setInner] = useState(false);
+        const [showOpener, setShowOpener] = useState(true);
+        hideOpener = () => setShowOpener(false);
         if (!outer) return null;
         return (
           <Modal
@@ -242,9 +245,11 @@ describe("Modal", () => {
           >
             {(close) => (
               <>
-                <button type="button" onClick={() => setInner(true)}>
-                  Delete
-                </button>
+                {showOpener && (
+                  <button type="button" onClick={() => setInner(true)}>
+                    Delete
+                  </button>
+                )}
                 <button type="button" onClick={close}>
                   Close outer
                 </button>
@@ -273,7 +278,14 @@ describe("Modal", () => {
       opener.focus();
       act(() => void fireEvent.click(opener));
       const [outerDialog, innerDialog] = screen.getAllByRole("dialog", { hidden: true });
-      return { onOuterClose, onInnerClose, outer: outerDialog, inner: innerDialog, view };
+      return {
+        onOuterClose,
+        onInnerClose,
+        outer: outerDialog,
+        inner: innerDialog,
+        hideOpener,
+        view,
+      };
     }
 
     it("exposes only the top dialog, then restores the outer one", () => {
@@ -314,6 +326,19 @@ describe("Modal", () => {
       } finally {
         pageOpener.remove();
       }
+    });
+
+    it("falls back to the outer dialog when the nested opener disappears", () => {
+      const { outer, hideOpener } = renderNested();
+      act(() => hideOpener());
+      expect(screen.queryByRole("button", { name: "Delete", hidden: true })).toBeNull();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      runExit();
+
+      expect(document.activeElement).toBe(outer);
+      expect(outer.getAttribute("aria-modal")).toBe("true");
+      expect(outer.hasAttribute("inert")).toBe(false);
     });
 
     it("gives Escape to the inner dialog alone", () => {

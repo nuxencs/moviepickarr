@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -342,12 +343,6 @@ func TestHandleEditMovie_DuplicateIMDbRollsBackWholeEdit(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seed metadata marker: %v", err)
 	}
-	if _, err := dbConn.Write.ExecContext(ctx,
-		`CREATE UNIQUE INDEX test_movies_imdb_id_unique ON movies (imdb_id) WHERE imdb_id IS NOT NULL`,
-	); err != nil {
-		t.Fatalf("install IMDb uniqueness: %v", err)
-	}
-
 	cacheNow := time.Now().UTC()
 	h.setCachedStats("warm", statsResponse{SelectedWindow: "all-time"}, cacheNow)
 	client, _ := h.broker.Subscribe()
@@ -405,6 +400,94 @@ func TestHandleEditMovie_DuplicateIMDbRollsBackWholeEdit(t *testing.T) {
 	case got := <-client:
 		t.Fatalf("failed edit broadcast event %q", got.Type)
 	default:
+	}
+}
+
+func TestHandleEditMovie_TitleOnlyNormalizesIMDbWithoutClearingDerivedData(t *testing.T) {
+	t.Setenv("TMDB_API_KEY", "")
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+	metaRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
+	creditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
+
+	user, err := userRepo.Create(ctx, "Legacy IMDb owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	target, err := movieRepo.Add(ctx, "Before", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create target movie: %v", err)
+	}
+	if _, err := dbConn.Write.ExecContext(ctx,
+		`UPDATE movies SET imdb_id = '  TT7654000  ' WHERE id = ?`,
+		target.ID,
+	); err != nil {
+		t.Fatalf("seed legacy IMDb identity: %v", err)
+	}
+	if err := metaRepo.UpsertMetadata(ctx, domain.MovieMetadata{
+		MovieID:  target.ID,
+		Overview: "keep metadata",
+		Genres:   []string{"Drama"},
+	}); err != nil {
+		t.Fatalf("seed metadata: %v", err)
+	}
+	if err := creditsRepo.ReplaceCredits(ctx, target.ID, []domain.MovieCredit{{
+		MovieID:   target.ID,
+		Person:    domain.Person{ID: 7654, Name: "Keep Person"},
+		Kind:      domain.CreditKindCast,
+		Character: "Lead",
+	}}); err != nil {
+		t.Fatalf("seed credits: %v", err)
+	}
+
+	before, err := movieRepo.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("read target before edit: %v", err)
+	}
+	body, err := json.Marshal(map[string]string{
+		"title": "After",
+		"link":  movieLink(before),
+	})
+	if err != nil {
+		t.Fatalf("marshal edit request: %v", err)
+	}
+	req := httptest.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/movies/%d", target.ID),
+		strings.NewReader(string(body)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	updated, err := movieRepo.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("read target after edit: %v", err)
+	}
+	if updated.Title != "After" || updated.IMDbID == nil || *updated.IMDbID != "tt7654000" {
+		t.Fatalf("movie after title-only edit = title %q, IMDb %v", updated.Title, updated.IMDbID)
+	}
+	md, err := metaRepo.GetMetadata(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("read metadata after title-only edit: %v", err)
+	}
+	if md.Overview != "keep metadata" {
+		t.Fatalf("metadata after title-only edit = %q", md.Overview)
+	}
+	gotCredits, err := creditsRepo.GetCreditsByMovieIDs(ctx, []int{target.ID})
+	if err != nil {
+		t.Fatalf("read credits after title-only edit: %v", err)
+	}
+	if rows := gotCredits[target.ID]; len(rows) != 1 || rows[0].Person.Name != "Keep Person" {
+		t.Fatalf("credits after title-only edit = %+v", rows)
 	}
 }
 
@@ -1172,6 +1255,50 @@ func TestHandleAddMovie_LandsInStashEvenWithPoolRoom(t *testing.T) {
 	}
 	if len(stashed) != 1 || stashed[0].Title != "Dune" {
 		t.Fatalf("expected Dune stashed, got %#v", stashed)
+	}
+}
+
+func TestHandleAddMovie_DuplicateIMDbDoesNotCreateMovie(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+
+	user, err := userRepo.Create(ctx, "IMDb adder")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	existing, err := movieRepo.Add(ctx, "Existing", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create existing movie: %v", err)
+	}
+	existingIMDb := "TT7654321"
+	if err := movieRepo.SetExternalIDs(ctx, existing.ID, nil, &existingIMDb); err != nil {
+		t.Fatalf("set existing identity: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/movies",
+		strings.NewReader(`{"title":"Duplicate","link":"https://www.imdb.com/title/tt7654321/"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusConflict {
+		t.Fatalf("expected status 409, got %d", resp.StatusCode)
+	}
+
+	var count int
+	if err := dbConn.Read.QueryRowContext(ctx, `SELECT COUNT(*) FROM movies`).Scan(&count); err != nil {
+		t.Fatalf("count movies: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("movie count after duplicate IMDb add = %d, want 1", count)
 	}
 }
 

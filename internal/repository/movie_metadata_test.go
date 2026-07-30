@@ -48,6 +48,14 @@ func seedMovie(t *testing.T, ctx context.Context, users *SqliteUserRepository, m
 	return movie.ID
 }
 
+func identifyMovieForEnrichment(t *testing.T, ctx context.Context, movies *SqliteMoviesRepository, movieID int) {
+	t.Helper()
+	tmdbID := 1_000_000 + movieID
+	if err := movies.SetExternalIDs(ctx, movieID, &tmdbID, nil); err != nil {
+		t.Fatalf("set movie identity: %v", err)
+	}
+}
+
 func TestUpsertAndGetMetadata_RoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
@@ -98,6 +106,7 @@ func TestUpsertMetadata_Idempotent(t *testing.T) {
 	t.Parallel()
 	ctx, credits, meta, movies, users := setupCreditsRepos(t)
 	movieID := seedMovie(t, ctx, users, movies, "Bob")
+	identifyMovieForEnrichment(t, ctx, movies, movieID)
 
 	first := domain.MovieMetadata{MovieID: movieID, Runtime: 142, Genres: []string{"Drama"}}
 	if err := meta.UpsertMetadata(ctx, first); err != nil {
@@ -226,7 +235,7 @@ func TestSetExternalIDs_RoundTrip(t *testing.T) {
 	}
 
 	tmdbID := 603
-	imdbID := "tt0133093"
+	imdbID := "  TT0133093  "
 	if err := movies.SetExternalIDs(ctx, movieID, &tmdbID, &imdbID); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -257,6 +266,8 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 	ctx, credits, meta, movies, users := setupCreditsRepos(t)
 	idA := seedMovie(t, ctx, users, movies, "Dave")
 	idB := seedMovie(t, ctx, users, movies, "Erin")
+	identifyMovieForEnrichment(t, ctx, movies, idA)
+	identifyMovieForEnrichment(t, ctx, movies, idB)
 
 	// Backfill (zero time): both un-enriched movies are candidates.
 	backfill, err := meta.NeedsEnrichment(ctx, time.Time{}, 100)
@@ -313,6 +324,7 @@ func TestMarkEnrichmentStale_RetriggersNeedsEnrichment(t *testing.T) {
 	t.Parallel()
 	ctx, credits, meta, movies, users := setupCreditsRepos(t)
 	id := seedMovie(t, ctx, users, movies, "Hal")
+	identifyMovieForEnrichment(t, ctx, movies, id)
 
 	// Fully enriched: not a candidate.
 	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: id}); err != nil {
@@ -346,9 +358,10 @@ func TestMarkEnrichmentStale_RetriggersNeedsEnrichment(t *testing.T) {
 func TestNeedsEnrichment_RespectsLimit(t *testing.T) {
 	t.Parallel()
 	ctx, meta, movies, users := setupMetadataRepos(t)
-	seedMovie(t, ctx, users, movies, "Fay")
-	seedMovie(t, ctx, users, movies, "Gus")
-	seedMovie(t, ctx, users, movies, "Ivy")
+	for _, name := range []string{"Fay", "Gus", "Ivy"} {
+		id := seedMovie(t, ctx, users, movies, name)
+		identifyMovieForEnrichment(t, ctx, movies, id)
+	}
 
 	got, err := meta.NeedsEnrichment(ctx, time.Time{}, 2)
 	if err != nil {
@@ -356,6 +369,46 @@ func TestNeedsEnrichment_RespectsLimit(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("expected limit of 2, got %d", len(got))
+	}
+}
+
+func TestNeedsEnrichment_SkipsRowsWithoutUsableIdentity(t *testing.T) {
+	t.Parallel()
+	ctx, meta, movies, users := setupMetadataRepos(t)
+	identityless := seedMovie(t, ctx, users, movies, "No identity")
+	tmdbOnly := seedMovie(t, ctx, users, movies, "TMDB")
+	imdbOnly := seedMovie(t, ctx, users, movies, "IMDb")
+
+	tmdbID := 700_001
+	if err := movies.SetExternalIDs(ctx, tmdbOnly, &tmdbID, nil); err != nil {
+		t.Fatalf("set TMDB identity: %v", err)
+	}
+	imdbID := "tt0700002"
+	if err := movies.SetExternalIDs(ctx, imdbOnly, nil, &imdbID); err != nil {
+		t.Fatalf("set IMDb identity: %v", err)
+	}
+
+	got, err := meta.NeedsEnrichment(ctx, time.Time{}, 100)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if containsID(got, identityless) {
+		t.Fatalf("identityless movie %d entered enrichment backlog", identityless)
+	}
+	if !containsID(got, tmdbOnly) || !containsID(got, imdbOnly) {
+		t.Fatalf("identified movies missing from enrichment backlog: %v", got)
+	}
+
+	newTMDBID := 700_003
+	if err := movies.SetExternalIDs(ctx, identityless, &newTMDBID, nil); err != nil {
+		t.Fatalf("assign identity later: %v", err)
+	}
+	got, err = meta.NeedsEnrichment(ctx, time.Time{}, 100)
+	if err != nil {
+		t.Fatalf("query after identity assignment: %v", err)
+	}
+	if !containsID(got, identityless) {
+		t.Fatalf("movie %d stayed out of backlog after identity assignment", identityless)
 	}
 }
 

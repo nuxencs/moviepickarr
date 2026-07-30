@@ -65,9 +65,9 @@ then passes both identities and every derived row to `ApplyEnrichment`. That
 operation conditionally updates the movie only when both stored ids still match
 the pre-request values. A mismatch discards the old result without writing.
 When they match, the resolved identity, metadata, people, credits, and credits
-completion marker commit in one writer transaction. An identity uniqueness
-conflict remains non-fatal for legacy duplicate rows: their metadata and credits
-still commit without changing the ids, so they leave the backlog.
+completion marker commit in one writer transaction. A resolved identity
+conflict remains non-fatal: metadata and credits still commit without changing
+the stored ids, so the row leaves the backlog.
 
 The enrichment runner remembers one follow-up request when an edit enqueue
 arrives during active TMDB work. It publishes only the final successful attempt.

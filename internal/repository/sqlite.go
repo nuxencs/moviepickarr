@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"moviepickarr/internal/db"
@@ -22,6 +23,21 @@ func unixTimePtr(value sql.NullInt64) *time.Time {
 	}
 	t := db.FromUnix(value.Int64)
 	return &t
+}
+
+func canonicalIMDbID(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func canonicalIMDbIDPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	normalized := canonicalIMDbID(*value)
+	if normalized == "" {
+		return nil
+	}
+	return &normalized
 }
 
 func scanUser(scanner rowScanner) (*domain.User, error) {
@@ -514,6 +530,8 @@ func (d *SqliteMoviesRepository) AddToStash(
 	tmdbID *int,
 	imdbID *string,
 ) (*domain.Movie, error) {
+	imdbID = canonicalIMDbIDPtr(imdbID)
+
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -552,6 +570,7 @@ func (d *SqliteMoviesRepository) AddToStash(
 }
 
 func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
+	imdbID = canonicalIMDbIDPtr(imdbID)
 	query := "UPDATE movies SET tmdb_id = ?, imdb_id = ? WHERE id = ?"
 
 	result, err := d.pool.Write.ExecContext(ctx, query, tmdbID, imdbID, id)
@@ -585,6 +604,8 @@ func (d *SqliteMoviesRepository) EditMovie(
 	title, imdbID string,
 	watchedAt *time.Time,
 ) (*domain.Movie, bool, error) {
+	imdbID = canonicalIMDbID(imdbID)
+
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, false, err
@@ -605,11 +626,14 @@ func (d *SqliteMoviesRepository) EditMovie(
 		return nil, false, domain.ErrInvalidInput
 	}
 
-	currentIMDb := ""
+	storedIMDb := ""
 	if current.IMDbID != nil {
-		currentIMDb = *current.IMDbID
+		storedIMDb = *current.IMDbID
 	}
+	currentIMDb := canonicalIMDbID(storedIMDb)
 	identityChanged := imdbID != currentIMDb
+	identityNeedsNormalization := current.IMDbID != nil &&
+		(storedIMDb != currentIMDb || currentIMDb == "")
 
 	query := "UPDATE movies SET title = ?"
 	args := []any{title}
@@ -619,6 +643,13 @@ func (d *SqliteMoviesRepository) EditMovie(
 	}
 	if identityChanged {
 		query += ", tmdb_id = NULL, imdb_id = ?"
+		if imdbID == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, imdbID)
+		}
+	} else if identityNeedsNormalization {
+		query += ", imdb_id = ?"
 		if imdbID == "" {
 			args = append(args, nil)
 		} else {

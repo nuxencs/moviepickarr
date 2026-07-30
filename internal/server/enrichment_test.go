@@ -67,6 +67,18 @@ func newTestEnricher(m *domain.Movie, tmdb tmdbAPI) (*enrichmentService, *fakeMo
 	return newEnrichmentService(movies, &fakeCandidateRepo{}, tmdb, 15), movies
 }
 
+func TestIMDbExtractionNormalizesCase(t *testing.T) {
+	t.Parallel()
+
+	link := "HTTPS://WWW.IMDB.COM/title/TT0133093/?ref_=test"
+	if got := extractIMDbID(link); got != "tt0133093" {
+		t.Fatalf("extract IMDb id = %q, want tt0133093", got)
+	}
+	if got := sanitizeLink(link); got != "https://www.imdb.com/title/tt0133093/" {
+		t.Fatalf("sanitize IMDb link = %q, want canonical link", got)
+	}
+}
+
 // --- tests -----------------------------------------------------------------
 
 func TestEnrichOne_HappyPath(t *testing.T) {

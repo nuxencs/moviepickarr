@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -71,7 +72,7 @@ var _ Enricher = (*enrichmentService)(nil)
 
 // extractIMDbID pulls the tt-id out of a link, reusing the shared regex.
 func extractIMDbID(link string) string {
-	return imdbIDRegex.FindString(link)
+	return strings.ToLower(imdbIDRegex.FindString(link))
 }
 
 func (s *enrichmentService) NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]domain.EnrichmentCandidate, error) {
@@ -113,7 +114,7 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 
 	// Persist the stable identity on the movie row (idempotent). Prefer the
 	// authoritative imdb_id from details; fall back to what we already had.
-	imdbID := details.IMDbID
+	imdbID := extractIMDbID(details.IMDbID)
 	if imdbID == "" {
 		imdbID = movieIMDbID(m)
 	}
@@ -150,7 +151,7 @@ func movieTMDBID(m *domain.Movie) (int, bool) {
 // movieIMDbID returns the stored IMDb id, if any.
 func movieIMDbID(m *domain.Movie) string {
 	if m.IMDbID != nil && *m.IMDbID != "" {
-		return *m.IMDbID
+		return extractIMDbID(*m.IMDbID)
 	}
 	return ""
 }

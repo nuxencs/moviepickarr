@@ -203,6 +203,7 @@ func TestReplaceCredits_StampsCreditsRefreshedAt(t *testing.T) {
 	t.Parallel()
 	ctx, credits, meta, movies, users := setupCreditsRepos(t)
 	movieID := seedMovie(t, ctx, users, movies, "Dave")
+	identifyMovieForEnrichment(t, ctx, movies, movieID)
 
 	// Metadata enriched, but credits never ingested: the NULL marker keeps the
 	// movie a NeedsEnrichment candidate (credits backfill for existing rows).

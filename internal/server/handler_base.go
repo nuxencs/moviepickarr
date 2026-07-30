@@ -19,7 +19,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var imdbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
+var imdbIDRegex = regexp.MustCompile(`(?i)tt\d{7,8}`)
 
 type handler struct {
 	broker    *eventBroker
@@ -101,10 +101,9 @@ func sanitizeInput(input string) string {
 func sanitizeLink(link string) string {
 	link = strings.TrimSpace(link)
 
-	if strings.Contains(link, "imdb.com") {
-		match := imdbIDRegex.FindString(link)
-		if match != "" {
-			return "https://www.imdb.com/title/" + match + "/"
+	if strings.Contains(strings.ToLower(link), "imdb.com") {
+		if imdbID := extractIMDbID(link); imdbID != "" {
+			return "https://www.imdb.com/title/" + imdbID + "/"
 		}
 	}
 

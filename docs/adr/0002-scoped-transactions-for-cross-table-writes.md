@@ -49,7 +49,16 @@ therefore rolls back every effect of the insert, and no success response or
 event is emitted before commit. The generic `Add` helper remains for fixtures,
 but production code depends on the identified stash operation.
 
-The break-glass admin path remains separate work.
+The break-glass admin seed uses the same scoped seam. `SeedAdmin` first runs an
+authoritative name, archive-state, role, and local-login read on a writer
+transaction. When a new login needs a password hash, that call returns a
+read-only probe result without changing either table. The seed hashes the
+password after the transaction releases the single writer, then calls the store
+again. The second transaction repeats the authoritative read, creates or
+promotes the active member, inserts the local login, and commits. An existing
+login is preserved. Ambiguous and archived matches remain write-free.
+
+This completes the three corrupting partial-write paths tracked by issue #157.
 
 ADR 0001 still governs its two named invite and claim flows. Their accepted
 partial states do not become transactions under this decision.
@@ -66,5 +75,11 @@ partial states do not become transactions under this decision.
   injection must prove rollback, not only returned errors.
 - A create operation that returns its inserted record keeps the response read
   inside the transaction when a failed read must also undo the insert.
+- A failed break-glass login insert rolls back both a fresh admin row and an
+  adopted member's role promotion. Constraint errors still fail boot, but
+  leave the roster and credentials unchanged for the next retry.
+- Password hashing stays outside the seed transaction. Configured no-op boots
+  do not hash again, and a new seed does not hold SQLite's single writer during
+  the Argon2 work.
 - A future corrupting multi-table write can add another scoped operation under
   this pattern without exposing SQL transactions to handlers or services.

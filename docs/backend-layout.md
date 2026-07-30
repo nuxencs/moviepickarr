@@ -204,7 +204,12 @@
 - `internal/repository/local_account.go`: `local_accounts` repository (active-member find by NOCASE username / by user id, active-gated create and password/login-state writes, unique→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete) plus the active-gated `oidc_identities` presence read and `/me` member-identity join.
 - `internal/repository/oidc_identity.go`: `oidc_identities` repository (active-member issuer/subject and user-id reads, active-gated insert and login-snapshot update, collision→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete).
 - `internal/repository/invite.go`: `invites` repository (active-gated create and claim-context read, missing-or-archived→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, mark-used). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`).
-- `internal/repository/admin_seed.go`: boot-only break-glass seed store. Name matching carries archive state so the seed can reject an archived match; admin counts and seed writes are active-only.
+- `internal/repository/admin_seed.go`: boot-only break-glass seed store. Its
+  `SeedAdmin` operation resolves name matches, archive state, role, and
+  local-login presence on one writer transaction. A hash-needed probe writes
+  nothing; the retry commits member creation or promotion with the login.
+  Existing passwords are preserved, archived matches are rejected, and admin
+  counts are active-only. See ADR 0002.
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ### SQLite connections & timestamps (migration `007`)

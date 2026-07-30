@@ -17,6 +17,10 @@ type SqliteMovieMetadataRepository struct {
 	pool *db.Pool
 }
 
+type contextExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func NewSqliteMovieMetadataRepository(pool *db.Pool) *SqliteMovieMetadataRepository {
 	return &SqliteMovieMetadataRepository{pool: pool}
 }
@@ -60,39 +64,64 @@ func scanMetadata(scanner rowScanner) (*domain.MovieMetadata, error) {
 	return md, nil
 }
 
-func (d *SqliteMovieMetadataRepository) UpsertMetadata(ctx context.Context, md domain.MovieMetadata) error {
+func marshalMetadataGenres(md domain.MovieMetadata) (string, error) {
 	genres := md.Genres
 	if genres == nil {
 		genres = []string{} // marshal to "[]", never "null"
 	}
 	genresJSON, err := json.Marshal(genres)
 	if err != nil {
-		return err
+		return "", err
 	}
+	return string(genresJSON), nil
+}
 
+func upsertMovieMetadata(
+	ctx context.Context,
+	exec contextExecer,
+	md domain.MovieMetadata,
+	genresJSON string,
+	refreshCredits bool,
+) error {
+	creditsColumn := ""
+	creditsValue := ""
+	creditsUpdate := ""
+	if refreshCredits {
+		creditsColumn = ", credits_refreshed_at"
+		creditsValue = ", unixepoch()"
+		creditsUpdate = ", credits_refreshed_at = unixepoch()"
+	}
 	query := `
-		INSERT INTO movie_metadata (
-			movie_id, overview, poster_path, backdrop_path,
-			release_date, runtime, genres, vote_average, vote_count, tagline, enriched_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
-		ON CONFLICT(movie_id) DO UPDATE SET
-			overview      = excluded.overview,
-			poster_path   = excluded.poster_path,
-			backdrop_path = excluded.backdrop_path,
-			release_date  = excluded.release_date,
-			runtime       = excluded.runtime,
-			genres        = excluded.genres,
-			vote_average  = excluded.vote_average,
-			vote_count    = excluded.vote_count,
-			tagline       = excluded.tagline,
-			enriched_at   = unixepoch()
-	`
+			INSERT INTO movie_metadata (
+				movie_id, overview, poster_path, backdrop_path,
+				release_date, runtime, genres, vote_average, vote_count, tagline, enriched_at` + creditsColumn + `
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch()` + creditsValue + `)
+			ON CONFLICT(movie_id) DO UPDATE SET
+				overview      = excluded.overview,
+				poster_path   = excluded.poster_path,
+				backdrop_path = excluded.backdrop_path,
+				release_date  = excluded.release_date,
+				runtime       = excluded.runtime,
+				genres        = excluded.genres,
+				vote_average  = excluded.vote_average,
+				vote_count    = excluded.vote_count,
+				tagline       = excluded.tagline,
+				enriched_at   = unixepoch()` + creditsUpdate + `
+		`
 
-	_, err = d.pool.Write.ExecContext(ctx, query,
+	_, err := exec.ExecContext(ctx, query,
 		md.MovieID, md.Overview, md.PosterPath, md.BackdropPath,
-		md.ReleaseDate, md.Runtime, string(genresJSON), md.VoteAverage, md.VoteCount, md.Tagline,
+		md.ReleaseDate, md.Runtime, genresJSON, md.VoteAverage, md.VoteCount, md.Tagline,
 	)
 	return err
+}
+
+func (d *SqliteMovieMetadataRepository) UpsertMetadata(ctx context.Context, md domain.MovieMetadata) error {
+	genresJSON, err := marshalMetadataGenres(md)
+	if err != nil {
+		return err
+	}
+	return upsertMovieMetadata(ctx, d.pool.Write, md, genresJSON, false)
 }
 
 func (d *SqliteMovieMetadataRepository) GetMetadata(ctx context.Context, movieID int) (*domain.MovieMetadata, error) {

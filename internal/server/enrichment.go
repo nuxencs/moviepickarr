@@ -17,6 +17,15 @@ type tmdbAPI interface {
 	MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDetails, error)
 }
 
+type enrichmentMovieStore interface {
+	FindByID(ctx context.Context, id int) (*domain.Movie, error)
+	ApplyEnrichment(ctx context.Context, write domain.MovieEnrichmentWrite) (bool, error)
+}
+
+type enrichmentCandidateStore interface {
+	NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]domain.EnrichmentCandidate, error)
+}
+
 var _ tmdbAPI = (*tmdbClient)(nil)
 
 var (
@@ -24,6 +33,9 @@ var (
 	ErrEnrichNoIMDbID = errors.New("no imdb id in link")
 	// ErrEnrichNotFound means TMDB had no match for the movie.
 	ErrEnrichNotFound = errors.New("no tmdb match")
+	// ErrEnrichSuperseded means the movie identity changed during remote work,
+	// so the fetched result was discarded.
+	ErrEnrichSuperseded = errors.New("movie identity changed during enrichment")
 )
 
 // Enricher enriches movies with TMDB data and reports which movies still need it.
@@ -40,21 +52,19 @@ type enrichResult struct {
 }
 
 type enrichmentService struct {
-	movies    domain.MovieRepo
-	meta      domain.MovieMetadataRepo
-	credits   domain.MovieCreditsRepo
-	tmdb      tmdbAPI
-	castLimit int // cast rows kept per movie (0 = full cast)
+	movies     enrichmentMovieStore
+	candidates enrichmentCandidateStore
+	tmdb       tmdbAPI
+	castLimit  int // cast rows kept per movie (0 = full cast)
 }
 
 func newEnrichmentService(
-	movies domain.MovieRepo,
-	meta domain.MovieMetadataRepo,
-	credits domain.MovieCreditsRepo,
+	movies enrichmentMovieStore,
+	candidates enrichmentCandidateStore,
 	tmdb tmdbAPI,
 	castLimit int,
 ) *enrichmentService {
-	return &enrichmentService{movies: movies, meta: meta, credits: credits, tmdb: tmdb, castLimit: castLimit}
+	return &enrichmentService{movies: movies, candidates: candidates, tmdb: tmdb, castLimit: castLimit}
 }
 
 var _ Enricher = (*enrichmentService)(nil)
@@ -65,7 +75,7 @@ func extractIMDbID(link string) string {
 }
 
 func (s *enrichmentService) NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]domain.EnrichmentCandidate, error) {
-	return s.meta.NeedsEnrichment(ctx, staleBefore, limit)
+	return s.candidates.NeedsEnrichment(ctx, staleBefore, limit)
 }
 
 func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichResult, error) {
@@ -73,6 +83,7 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 	if err != nil {
 		return enrichResult{}, err // e.g. domain.ErrNotFound if the movie was deleted
 	}
+	expected := domain.MovieIdentity{TMDBID: m.TMDBID, IMDbID: m.IMDbID}
 
 	// Prefer the TMDB id already on the movie (search adds, prior enrichment) so
 	// we go straight to details. Otherwise reverse-look-up from the IMDb id.
@@ -110,24 +121,19 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 	if imdbID != "" {
 		imdbPtr = &imdbID
 	}
-	// A conflict means another row already owns this TMDB id (duplicate title
-	// added pre-uniqueness, or two IMDb links resolving to one film). Keep
-	// enriching without the id write: the metadata/credits below still persist
-	// and stamp the row, so it leaves the backlog instead of failing every drain.
-	if err := s.movies.SetExternalIDs(ctx, movieID, &tmdbID, imdbPtr); err != nil && !errors.Is(err, domain.ErrConflict) {
-		return enrichResult{}, err
-	}
-
-	if err := s.meta.UpsertMetadata(ctx, mapDetailsToMetadata(movieID, details)); err != nil {
-		return enrichResult{}, err
-	}
-
-	// Credits go in after the metadata upsert — the credits_refreshed_at stamp
-	// lives on the metadata row. Replace also when the mapped credits are
-	// empty, so credit-less titles still get stamped and leave the backlog.
 	credits := mapCredits(movieID, details.Credits, s.castLimit)
-	if err := s.credits.ReplaceCredits(ctx, movieID, credits); err != nil {
+	applied, err := s.movies.ApplyEnrichment(ctx, domain.MovieEnrichmentWrite{
+		MovieID:  movieID,
+		Expected: expected,
+		Resolved: domain.MovieIdentity{TMDBID: &tmdbID, IMDbID: imdbPtr},
+		Metadata: mapDetailsToMetadata(movieID, details),
+		Credits:  credits,
+	})
+	if err != nil {
 		return enrichResult{}, err
+	}
+	if !applied {
+		return enrichResult{}, fmt.Errorf("%w (movie %d)", ErrEnrichSuperseded, movieID)
 	}
 
 	return enrichResult{TMDBID: tmdbID, Genres: len(details.Genres), Credits: len(credits)}, nil

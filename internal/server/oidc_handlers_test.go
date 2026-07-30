@@ -241,6 +241,29 @@ func TestOIDC_LoginLinkedMintsSession(t *testing.T) {
 	}
 }
 
+func TestOIDC_LoginArchivedIdentityIsUnlinked(t *testing.T) {
+	e := setupOIDCApp(t)
+	member := e.seedMember(t, "Alice", "member")
+	e.linkIdentity(t, member, "alice-sub", "alice@example.com")
+	if _, err := e.pool.Write.ExecContext(context.Background(),
+		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", member); err != nil {
+		t.Fatalf("archive member without cleanup: %v", err)
+	}
+
+	state, nonce, tx := e.begin(t, "/api/v1/auth/oidc/login")
+	e.idp.setIDToken(t, idTokenClaims{
+		Sub: "alice-sub", Aud: testOIDCClientID, Nonce: nonce, Email: "alice@example.com",
+	})
+
+	resp := e.callback(t, "code=abc&state="+state, tx)
+	if got := locationError(t, resp); got != errOIDCUnlinked {
+		t.Fatalf("archived identity error = %q, want %q", got, errOIDCUnlinked)
+	}
+	if findCookie(resp, sessionCookieName) != nil {
+		t.Fatal("archived OIDC login minted a session cookie")
+	}
+}
+
 func TestOIDC_LoginUnlinkedRejectsEphemerally(t *testing.T) {
 	e := setupOIDCApp(t)
 

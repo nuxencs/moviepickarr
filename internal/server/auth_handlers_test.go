@@ -191,6 +191,34 @@ func TestLogin_ValidRoundTripsToMe(t *testing.T) {
 	}
 }
 
+func TestLogin_ArchivedCredentialIsUniformlyRejected(t *testing.T) {
+	e := setupAuthApp(t)
+	id := e.seedMember(t, "Alice", "admin")
+	e.seedLocalLogin(t, id, "alice", "correct horse battery")
+	if _, err := e.pool.Write.ExecContext(context.Background(),
+		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", id); err != nil {
+		t.Fatalf("archive member without cleanup: %v", err)
+	}
+
+	archived := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username": "alice", "password": "correct horse battery",
+	})
+	unknown := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+		"username": "unknown", "password": "correct horse battery",
+	})
+	if archived.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("archived login = %d, want 401", archived.StatusCode)
+	}
+	archivedBody := bodyString(t, archived)
+	unknownBody := bodyString(t, unknown)
+	if archivedBody != unknownBody {
+		t.Fatalf("archived and unknown responses differ: archived=%q unknown=%q", archivedBody, unknownBody)
+	}
+	if sessionCookieValue(archived) != "" {
+		t.Fatal("archived login minted a session cookie")
+	}
+}
+
 func TestMe_RequiresSession(t *testing.T) {
 	e := setupAuthApp(t)
 	resp := e.request(t, http.MethodGet, "/api/v1/auth/me", "", nil)
@@ -522,6 +550,33 @@ func TestAdminSetLocalLogin(t *testing.T) {
 		map[string]string{"username": "newname", "password": "some password ok"})
 	if forbidden.StatusCode != fiber.StatusForbidden {
 		t.Fatalf("non-admin PUT = %d, want 403", forbidden.StatusCode)
+	}
+}
+
+func TestAdminSetLocalLogin_ArchivedMemberIsNotFound(t *testing.T) {
+	e := setupAuthApp(t)
+	adminID := e.seedMember(t, "Admin", "admin")
+	e.seedLocalLogin(t, adminID, "admin", "admin password ok")
+	adminCookie := e.login(t, "admin", "admin password ok")
+
+	target := e.seedMember(t, "Archived", "member")
+	if _, err := e.pool.Write.ExecContext(context.Background(),
+		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", target); err != nil {
+		t.Fatalf("archive target: %v", err)
+	}
+
+	resp := e.request(t, http.MethodPut, "/api/v1/members/"+strconv.Itoa(target)+"/local-login", adminCookie,
+		map[string]string{"username": "archived", "password": "archived password"})
+	if resp.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("set archived login = %d, want 404", resp.StatusCode)
+	}
+	var n int
+	if err := e.pool.Read.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM local_accounts WHERE user_id = ?", target).Scan(&n); err != nil {
+		t.Fatalf("count target credentials: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("archived target gained %d local credentials", n)
 	}
 }
 

@@ -1,8 +1,8 @@
 // Package seed holds the app's one bootstrap into itself: the env-seeded
 // break-glass admin. Onboarding is otherwise invite-only, so a fresh deploy
 // would have no way in without this. The seed runs once per boot, between
-// migrate and serve, and is idempotent, so leaving the env vars set across
-// restarts is safe.
+// migrate and serve, and is idempotent while the named member remains active,
+// so leaving the env vars set across those restarts is safe.
 package seed
 
 import (
@@ -132,6 +132,12 @@ func seedAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, 
 	case 0:
 		return createAdmin(ctx, repo, cfg, log)
 	case 1:
+		if matches[0].Archived {
+			return fmt.Errorf(
+				"member %q is archived; choose unused MPA_ADMIN_NAME and MPA_ADMIN_USERNAME values, then restore this member explicitly",
+				matches[0].Name,
+			)
+		}
 		return adoptAdmin(ctx, repo, matches[0], cfg, log)
 	default:
 		// Ambiguous: two members fold to the same name, so there is no single

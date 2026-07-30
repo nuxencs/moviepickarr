@@ -102,6 +102,25 @@ func (e *userRemoveEnv) countRow(t *testing.T, query string, args ...any) int {
 	return n
 }
 
+func (e *userRemoveEnv) seedResidualAuthRows(t *testing.T, userID int, suffix string) {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Second)
+	stmts := []struct {
+		query string
+		args  []any
+	}{
+		{"INSERT INTO local_accounts (user_id, username, password_hash) VALUES (?, ?, 'hash')", []any{userID, "login-" + suffix}},
+		{"INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (?, 'https://idp.test', ?)", []any{userID, "subject-" + suffix}},
+		{"INSERT INTO sessions (user_id, token_hash, expires_at, last_seen_at) VALUES (?, ?, ?, ?)", []any{userID, "session-" + suffix, db.ToUnix(now.Add(time.Hour)), db.ToUnix(now)}},
+		{"INSERT INTO invites (user_id, token_hash, expires_at) VALUES (?, ?, ?)", []any{userID, "invite-" + suffix, db.ToUnix(now.Add(time.Hour))}},
+	}
+	for _, stmt := range stmts {
+		if _, err := e.pool.Write.ExecContext(e.ctx, stmt.query, stmt.args...); err != nil {
+			t.Fatalf("seed residual auth row (%s): %v", stmt.query, err)
+		}
+	}
+}
+
 // A member who authored no movies is hard-deleted: the row goes, the whole
 // credential set cascades away, and next_up (which pointed at them) nulls out.
 func TestUserRepo_Remove_HardDeletesWhenNoMovies(t *testing.T) {
@@ -297,6 +316,70 @@ func TestUserRepo_Restore_ReactivatesArchivedMember(t *testing.T) {
 	}
 	if got.Name != "Erin" {
 		t.Fatalf("restored member name = %q, want Erin", got.Name)
+	}
+}
+
+func TestUserRepo_Restore_StripsResidualAuthenticationRows(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	erin, err := e.users.Create(e.ctx, "Erin")
+	if err != nil {
+		t.Fatalf("create erin: %v", err)
+	}
+	if _, err := e.movies.Add(e.ctx, "Empire", "pool", erin.ID); err != nil {
+		t.Fatalf("add movie: %v", err)
+	}
+	if _, err := e.users.Remove(e.ctx, erin.ID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	e.seedResidualAuthRows(t, erin.ID, "erin")
+
+	if err := e.users.Restore(e.ctx, erin.ID); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	for _, table := range []string{"local_accounts", "oidc_identities", "sessions", "invites"} {
+		if got := e.countRow(t, "SELECT COUNT(*) FROM "+table+" WHERE user_id = ?", erin.ID); got != 0 {
+			t.Fatalf("restore left %d %s rows, want 0", got, table)
+		}
+	}
+	if e.archivedAt(t, erin.ID).Valid {
+		t.Fatal("restore did not clear archived_at")
+	}
+}
+
+func TestUserRepo_Restore_RollsBackAuthCleanupOnFailure(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	erin, err := e.users.Create(e.ctx, "Erin")
+	if err != nil {
+		t.Fatalf("create erin: %v", err)
+	}
+	if _, err := e.movies.Add(e.ctx, "Empire", "pool", erin.ID); err != nil {
+		t.Fatalf("add movie: %v", err)
+	}
+	if _, err := e.users.Remove(e.ctx, erin.ID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	e.seedResidualAuthRows(t, erin.ID, "rollback")
+
+	if _, err := e.pool.Write.ExecContext(e.ctx, `
+		CREATE TRIGGER fail_restore_session_delete
+		BEFORE DELETE ON sessions
+		BEGIN
+			SELECT RAISE(ABORT, 'forced session delete failure');
+		END`); err != nil {
+		t.Fatalf("install failure trigger: %v", err)
+	}
+
+	if err := e.users.Restore(e.ctx, erin.ID); err == nil {
+		t.Fatal("restore succeeded despite forced session delete failure")
+	}
+	if !e.archivedAt(t, erin.ID).Valid {
+		t.Fatal("failed restore cleared archived_at")
+	}
+	for _, table := range []string{"local_accounts", "oidc_identities", "sessions", "invites"} {
+		if got := e.countRow(t, "SELECT COUNT(*) FROM "+table+" WHERE user_id = ?", erin.ID); got != 1 {
+			t.Fatalf("failed restore left %d %s rows, want rollback to 1", got, table)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"moviepickarr/internal/db"
@@ -34,7 +35,7 @@ const sessionSelect = `
 		s.created_at,
 		u.role
 	FROM sessions s
-	JOIN users u ON u.id = s.user_id`
+	JOIN users u ON u.id = s.user_id AND u.archived_at IS NULL`
 
 func scanAuthSession(scanner rowScanner) (*domain.AuthSession, error) {
 	as := &domain.AuthSession{}
@@ -75,9 +76,12 @@ func (d *SqliteSessionRepository) Create(ctx context.Context, s domain.Session) 
 	query := `
 		INSERT INTO sessions (
 			token_hash, user_id, expires_at, last_seen_at, user_agent, ip, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+		)
+		SELECT ?, ?, ?, ?, ?, ?, ?
+		FROM users
+		WHERE id = ? AND archived_at IS NULL
 	`
-	_, err := d.pool.Write.ExecContext(ctx, query,
+	res, err := d.pool.Write.ExecContext(ctx, query,
 		s.TokenHash,
 		s.UserID,
 		db.ToUnix(s.ExpiresAt),
@@ -85,8 +89,19 @@ func (d *SqliteSessionRepository) Create(ctx context.Context, s domain.Session) 
 		s.UserAgent,
 		s.IP,
 		db.ToUnix(s.CreatedAt),
+		s.UserID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, s.UserID)
+	}
+	return nil
 }
 
 func (d *SqliteSessionRepository) FindByTokenHash(ctx context.Context, tokenHash string) (*domain.AuthSession, error) {

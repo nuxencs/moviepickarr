@@ -40,17 +40,18 @@ type MemberIdentity struct {
 //
 // Constraint violations are translated to domain errors at this boundary: a
 // NOCASE username collision surfaces as ErrConflict and an insert against a
-// missing member as ErrNotFound, so the service layer never imports the driver.
+// missing or archived member as ErrNotFound, so the service layer never imports
+// the driver.
 type LocalAccountRepo interface {
-	// FindByUsername looks a local login up by its NOCASE username, or returns
-	// sql.ErrNoRows when none matches (the unknown-username login branch).
+	// FindByUsername looks an active member's local login up by its NOCASE
+	// username, or returns sql.ErrNoRows when none matches. Archived credentials
+	// are indistinguishable from an unknown username.
 	FindByUsername(ctx context.Context, username string) (*LocalAccount, error)
-	// FindByUserID looks a member's local login up by user id, or returns
-	// sql.ErrNoRows when the member has no local login.
+	// FindByUserID looks an active member's local login up by user id, or returns
+	// sql.ErrNoRows when the member has no local login or is archived.
 	FindByUserID(ctx context.Context, userID int) (*LocalAccount, error)
 	// Create inserts a member's first local login. A NOCASE username collision
-	// returns ErrConflict; an insert against a non-existent member returns
-	// ErrNotFound (the FK to users).
+	// returns ErrConflict; a missing or archived member returns ErrNotFound.
 	Create(ctx context.Context, userID int, username, passwordHash string) error
 	// UpdatePasswordHash rewrites just the password hash (the self-serve
 	// password change). Lockout counters are left untouched.
@@ -70,7 +71,7 @@ type LocalAccountRepo interface {
 	// HasLinkedIdentity reports whether the member holds an oidc_identities row,
 	// the derived hasLinkedIdentity flag and the self-last-credential guard.
 	HasLinkedIdentity(ctx context.Context, userID int) (bool, error)
-	// GetMemberIdentity returns the /auth/me projection for a member, or
-	// sql.ErrNoRows if the member does not exist.
+	// GetMemberIdentity returns the /auth/me projection for an active member, or
+	// sql.ErrNoRows if the member does not exist or is archived.
 	GetMemberIdentity(ctx context.Context, userID int) (*MemberIdentity, error)
 }

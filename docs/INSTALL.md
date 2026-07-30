@@ -77,10 +77,15 @@ all three of `MPA_ADMIN_NAME`, `MPA_ADMIN_USERNAME`, and `MPA_ADMIN_PASSWORD`
 with a working local login. It matches `MPA_ADMIN_NAME` against existing member
 names case-insensitively: no match creates a fresh admin, exactly one match
 adopts that member and makes them an admin, and an ambiguous multi-match is
-skipped and logged. The seed is idempotent and never overwrites an existing
-password, so it is safe to leave the vars set across restarts. Boot fails if the
-trio is set but seeding errors, and warns if no admin exists and no seed is
-configured.
+skipped and logged. Archived members are never adopted. An exact archived match
+fails boot instead of restoring access implicitly. Choose an unused seed name
+and username to bootstrap a fresh admin, then restore the archived member
+through the admin roster.
+
+The seed is idempotent and never overwrites an existing password, so it is safe
+to leave the vars set while the named member remains active. Boot fails if the
+trio is set but seeding errors, and warns if no active admin exists and no seed
+is configured.
 
 ### SSO / OIDC
 

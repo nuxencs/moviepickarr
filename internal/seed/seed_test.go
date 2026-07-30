@@ -1,8 +1,10 @@
 package seed
 
 import (
+	"bytes"
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"moviepickarr/internal/auth"
@@ -217,6 +219,47 @@ func TestAdoptedMemberPasswordPreserved(t *testing.T) {
 	}
 }
 
+// An archived member is an authentication tombstone, not an adoptable seed
+// target. This is the documented "leave the seed configured" restart path:
+// seed an admin, archive them, then boot again with the same trio.
+func TestArchivedMemberIsNotReAdoptedOnRestart(t *testing.T) {
+	repo, pool := setup(t)
+	ctx := context.Background()
+
+	if err := BreakGlassAdmin(ctx, repo, testCfg, true, zerolog.Nop()); err != nil {
+		t.Fatalf("initial seed: %v", err)
+	}
+	adminID := readLocalLogins(t, pool)[0].userID
+
+	movies := repository.NewSqliteMoviesRepository(pool)
+	if _, err := movies.Add(ctx, "Arrival", "pool", adminID); err != nil {
+		t.Fatalf("add authored movie: %v", err)
+	}
+	users := repository.NewSqliteUserRepository(pool)
+	if _, err := users.Remove(ctx, adminID); err != nil {
+		t.Fatalf("archive seeded admin: %v", err)
+	}
+
+	if got := len(readLocalLogins(t, pool)); got != 0 {
+		t.Fatalf("archive left %d local logins, want 0", got)
+	}
+	err := BreakGlassAdmin(ctx, repo, testCfg, true, zerolog.Nop())
+	if err == nil {
+		t.Fatal("restart seed adopted an archived member, want boot error")
+	}
+	for _, key := range []string{"MPA_ADMIN_NAME", "MPA_ADMIN_USERNAME"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Fatalf("restart error %q does not identify %s as part of the recovery", err, key)
+		}
+	}
+	if got := len(readLocalLogins(t, pool)); got != 0 {
+		t.Fatalf("restart recredentialed archived member: %d logins", got)
+	}
+	if role := roleOf(t, pool, adminID); role != "admin" {
+		t.Fatalf("archived role changed to %q, want preserved admin", role)
+	}
+}
+
 // TestAmbiguousMatchSkips covers acceptance criterion 4a: when several members
 // fold to the same name, the seed skips without touching anything and without
 // failing boot.
@@ -313,6 +356,29 @@ func TestNoSeedWithExistingAdminIsQuietNoOp(t *testing.T) {
 	}
 	if got := countUsers(t, pool); got != 1 {
 		t.Fatalf("no-seed path mutated the roster: %d users, want 1", got)
+	}
+}
+
+func TestArchivedAdminDoesNotSuppressNoActiveAdminWarning(t *testing.T) {
+	repo, pool := setup(t)
+	ctx := context.Background()
+
+	adminID := createMember(t, pool, "Former Admin", "admin")
+	movies := repository.NewSqliteMoviesRepository(pool)
+	if _, err := movies.Add(ctx, "Heat", "pool", adminID); err != nil {
+		t.Fatalf("add authored movie: %v", err)
+	}
+	users := repository.NewSqliteUserRepository(pool)
+	if _, err := users.Remove(ctx, adminID); err != nil {
+		t.Fatalf("archive admin: %v", err)
+	}
+
+	var logs bytes.Buffer
+	if err := BreakGlassAdmin(ctx, repo, AdminConfig{}, false, zerolog.New(&logs)); err != nil {
+		t.Fatalf("no-seed path: %v", err)
+	}
+	if !strings.Contains(logs.String(), "no admin members exist") {
+		t.Fatalf("missing zero-active-admin warning: %s", logs.String())
 	}
 }
 

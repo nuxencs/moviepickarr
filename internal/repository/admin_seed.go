@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"moviepickarr/internal/db"
 	"moviepickarr/internal/domain"
@@ -24,7 +25,11 @@ func NewSqliteAdminSeedRepository(pool *db.Pool) *SqliteAdminSeedRepository {
 // (e.g. "Bob" and "bob"): that plurality is exactly the ambiguity the seed
 // checks for.
 func (d *SqliteAdminSeedRepository) FindUsersByNameFold(ctx context.Context, name string) ([]domain.SeedUser, error) {
-	query := "SELECT id, name, role FROM users WHERE name = ? COLLATE NOCASE ORDER BY id"
+	query := `
+		SELECT id, name, role, archived_at IS NOT NULL
+		FROM users
+		WHERE name = ? COLLATE NOCASE
+		ORDER BY id`
 
 	rows, err := d.pool.Read.QueryContext(ctx, query, name)
 	if err != nil {
@@ -35,7 +40,7 @@ func (d *SqliteAdminSeedRepository) FindUsersByNameFold(ctx context.Context, nam
 	users := make([]domain.SeedUser, 0)
 	for rows.Next() {
 		var u domain.SeedUser
-		if err := rows.Scan(&u.ID, &u.Name, &u.Role); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Role, &u.Archived); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -59,14 +64,28 @@ func (d *SqliteAdminSeedRepository) CreateAdmin(ctx context.Context, name string
 }
 
 func (d *SqliteAdminSeedRepository) PromoteToAdmin(ctx context.Context, id int) error {
-	_, err := d.pool.Write.ExecContext(ctx, "UPDATE users SET role = 'admin' WHERE id = ?", id)
-	return err
+	res, err := d.pool.Write.ExecContext(ctx,
+		"UPDATE users SET role = 'admin' WHERE id = ? AND archived_at IS NULL", id)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, id)
+	}
+	return nil
 }
 
 func (d *SqliteAdminSeedRepository) HasLocalAccount(ctx context.Context, userID int) (bool, error) {
 	var exists int
 	err := d.pool.Read.QueryRowContext(ctx,
-		"SELECT EXISTS (SELECT 1 FROM local_accounts WHERE user_id = ?)", userID).Scan(&exists)
+		`SELECT EXISTS (SELECT 1 FROM local_accounts WHERE user_id = ?)
+		 FROM users WHERE id = ? AND archived_at IS NULL`,
+		userID, userID,
+	).Scan(&exists)
 	if err != nil {
 		return false, err
 	}
@@ -74,15 +93,30 @@ func (d *SqliteAdminSeedRepository) HasLocalAccount(ctx context.Context, userID 
 }
 
 func (d *SqliteAdminSeedRepository) CreateLocalAccount(ctx context.Context, userID int, username, passwordHash string) error {
-	_, err := d.pool.Write.ExecContext(ctx,
-		"INSERT INTO local_accounts (user_id, username, password_hash) VALUES (?, ?, ?)",
-		userID, username, passwordHash)
-	return err
+	res, err := d.pool.Write.ExecContext(ctx, `
+		INSERT INTO local_accounts (user_id, username, password_hash)
+		SELECT ?, ?, ?
+		FROM users
+		WHERE id = ? AND archived_at IS NULL`,
+		userID, username, passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, userID)
+	}
+	return nil
 }
 
 func (d *SqliteAdminSeedRepository) CountAdmins(ctx context.Context) (int, error) {
 	var count int
-	err := d.pool.Read.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE role = 'admin'").Scan(&count)
+	err := d.pool.Read.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM users WHERE role = 'admin' AND archived_at IS NULL",
+	).Scan(&count)
 	if err != nil {
 		return 0, err
 	}

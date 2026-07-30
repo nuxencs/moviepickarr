@@ -63,8 +63,9 @@ So the deploy is a hard cutover, in this order:
 1. Set the break-glass admin env vars before the deploy: `MPA_ADMIN_NAME`,
    `MPA_ADMIN_USERNAME`, `MPA_ADMIN_PASSWORD` (all three or the seed is
    skipped). Point `MPA_ADMIN_NAME` at your existing roster name so the seed
-   adopts that member instead of creating a duplicate. See the break-glass
-   section of [`INSTALL.md`](INSTALL.md) for the matching rules.
+   adopts that active member instead of creating a duplicate. An archived match
+   fails boot and is never recredentialed. See the break-glass section of
+   [`INSTALL.md`](INSTALL.md) for the matching rules and recovery path.
 2. Deploy. Boot runs migrate → seed → serve: it applies migration `009` (with a
    pre-migration DB snapshot), seeds/adopts the admin, then starts serving. Boot
    fails loudly if the seed trio is set but seeding errors, and warns if no admin
@@ -78,4 +79,4 @@ So the deploy is a hard cutover, in this order:
    set a password and/or link SSO.
 
 The break-glass seed is idempotent and never overwrites an existing password, so
-it is safe to leave the env vars set across restarts.
+it is safe to leave the env vars set while the named member remains active.

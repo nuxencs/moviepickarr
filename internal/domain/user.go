@@ -79,10 +79,10 @@ type UserRepo interface {
 	// login rows stripped, row and attribution kept). A missing member returns
 	// ErrNotFound.
 	Remove(ctx context.Context, id int) (RemoveOutcome, error)
-	// Restore reactivates an archived member by clearing archived_at. A member
-	// that is not archived (or does not exist) returns ErrNotFound: there is
-	// nothing to restore. Re-issuing a claim invite is the caller's job, since
-	// archiving stripped the credentials.
+	// Restore reactivates an archived member after re-stripping any residual
+	// credential, session, and invite rows. A member that is not archived (or
+	// does not exist) returns ErrNotFound: there is nothing to restore.
+	// Re-issuing a claim invite is the caller's job.
 	Restore(ctx context.Context, id int) error
 }
 

@@ -194,6 +194,13 @@ func removeMember(ctx context.Context, tx *sql.Tx, id, authored int) (domain.Rem
 	}
 	// The users row stays for attribution, so nothing cascades: strip every login
 	// row by hand so the archived member cannot authenticate.
+	if err := deleteUserAuthRows(ctx, tx, id); err != nil {
+		return "", err
+	}
+	return domain.OutcomeArchived, nil
+}
+
+func deleteUserAuthRows(ctx context.Context, tx *sql.Tx, id int) error {
 	for _, stmt := range []string{
 		"DELETE FROM local_accounts WHERE user_id = ?",
 		"DELETE FROM oidc_identities WHERE user_id = ?",
@@ -201,30 +208,42 @@ func removeMember(ctx context.Context, tx *sql.Tx, id, authored int) (domain.Rem
 		"DELETE FROM invites WHERE user_id = ?",
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, id); err != nil {
-			return "", err
+			return err
 		}
 	}
-	return domain.OutcomeArchived, nil
+	return nil
 }
 
-// Restore reactivates an archived member by clearing archived_at. The
-// archived_at IS NOT NULL guard makes a restore of an active or non-existent
-// member a no-op that surfaces as ErrNotFound: there is nothing to restore.
+// Restore reactivates an archived member only after stripping any residual
+// authentication rows. The cleanup and archived_at change share one
+// transaction, so a pre-upgrade credential or session can never become live
+// during restore.
 func (d *SqliteUserRepository) Restore(ctx context.Context, id int) error {
-	query := "UPDATE users SET archived_at = NULL, updated_at = unixepoch() WHERE id = ? AND archived_at IS NOT NULL"
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 
-	result, err := d.pool.Write.ExecContext(ctx, query, id)
-	if err != nil {
+	var exists int
+	if err := tx.QueryRowContext(ctx,
+		"SELECT 1 FROM users WHERE id = ? AND archived_at IS NOT NULL", id,
+	).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: no archived member %d", domain.ErrNotFound, id)
+		}
 		return err
 	}
-	affected, err := result.RowsAffected()
-	if err != nil {
+
+	if err := deleteUserAuthRows(ctx, tx, id); err != nil {
 		return err
 	}
-	if affected == 0 {
-		return fmt.Errorf("%w: no archived member %d", domain.ErrNotFound, id)
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE users SET archived_at = NULL, updated_at = unixepoch() WHERE id = ?", id,
+	); err != nil {
+		return err
 	}
-	return nil
+	return tx.Commit()
 }
 
 // rosterSelect is the admin roster read: one row per member, active and archived,

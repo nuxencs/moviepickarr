@@ -1,7 +1,7 @@
 import { StarIcon } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 
-import { posterBg, posterUrl, ratingLabel } from "@/components/moviepickarr/lib";
+import { posterBg, posterSrcSet, posterUrl, ratingLabel } from "@/components/moviepickarr/lib";
 
 interface PosterProps {
   title: string;
@@ -11,6 +11,8 @@ interface PosterProps {
   showTitle?: boolean;
   /** TMDB rating to render as a top-left badge. */
   voteAverage?: number;
+  /** Render-width hint that opts this poster into compact responsive sources. */
+  sizes?: string;
   className?: string;
 }
 
@@ -23,7 +25,15 @@ interface PosterProps {
 // a parent re-renders for an unrelated reason (e.g. typing in the watched-grid
 // search box re-runs the list map but the surviving tiles' Poster props are
 // unchanged).
-export const Poster = memo(function Poster({ title, hue, posterPath, showTitle = true, voteAverage, className }: PosterProps) {
+export const Poster = memo(function Poster({
+  title,
+  hue,
+  posterPath,
+  showTitle = true,
+  voteAverage,
+  sizes,
+  className,
+}: PosterProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -55,6 +65,8 @@ export const Poster = memo(function Poster({ title, hue, posterPath, showTitle =
           ref={imgRef}
           className="poster__img"
           src={url}
+          srcSet={sizes ? posterSrcSet(posterPath) ?? undefined : undefined}
+          sizes={sizes}
           alt={title}
           loading="lazy"
           onLoad={() => setLoaded(true)}

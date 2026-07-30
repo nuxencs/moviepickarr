@@ -148,8 +148,9 @@ func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
 
 	// No row transitioned. Disambiguate against committed state: a movie already
 	// in the pool (e.g. a duplicate click that lost the race) is an idempotent
-	// no-op; a still-stashed movie means the pool cap was hit; any other status
-	// is an illegal source for a promotion.
+	// no-op; so is the active held winner, which every client-facing read still
+	// projects into that pool. A still-stashed movie means the pool cap was hit;
+	// any other status is an illegal source for a promotion.
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return false, err
@@ -159,6 +160,11 @@ func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
 		return false, nil
 	case "stash":
 		return false, domain.ErrPoolLimitReached
+	case "current":
+		if held, ok := s.heldDrawLocked(); ok && held.MovieID == movie.ID {
+			return false, nil
+		}
+		return false, domain.ErrInvalidState
 	default:
 		return false, domain.ErrInvalidState
 	}

@@ -561,6 +561,37 @@ func titleRepo() *titlePoolRepo {
 	}}
 }
 
+// movableTitlePoolRepo adds the conditional promotion write used by
+// MoveToPool. The shared title repo leaves writes loud by default so a pool
+// view test cannot start mutating state accidentally.
+type movableTitlePoolRepo struct {
+	titlePoolRepo
+}
+
+func (r *movableTitlePoolRepo) PromoteToPoolIfRoom(
+	_ context.Context,
+	id int,
+	maxPool int,
+) (int64, error) {
+	target, ok := r.movies[id]
+	if !ok || target.Status != "stash" {
+		return 0, nil
+	}
+
+	pooled := 0
+	for _, movie := range r.movies {
+		if movie.AddedByID == target.AddedByID && movie.Status == "pool" {
+			pooled++
+		}
+	}
+	if pooled >= maxPool {
+		return 0, nil
+	}
+
+	target.Status = "pool"
+	return 1, nil
+}
+
 // pausingDrawRepo exposes the instant after the winner is persisted as current
 // but before UpdateStatus returns to the service.
 type pausingDrawRepo struct {
@@ -892,6 +923,54 @@ func TestMoveToPoolKeepsHeldWinnerInCapAcrossDrawPublication(t *testing.T) {
 	}
 	if got := repo.movies[4].Status; got != "stash" {
 		t.Fatalf("promotion target status = %q, want stash", got)
+	}
+}
+
+func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
+	t.Parallel()
+
+	repo := &movableTitlePoolRepo{titlePoolRepo: *titleRepo()}
+	svc := NewService(repo, DrawConfig{})
+	t.Cleanup(svc.Close)
+	ctx := context.Background()
+
+	drawn, err := svc.DrawRandom(ctx, "")
+	if err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+
+	// Both tiles are projected into the same pool. Reasserting that directional
+	// target must therefore be the same idempotent no-op for the persisted
+	// current winner as it is for an ordinary pool row.
+	for name, movieID := range map[string]int{
+		"held winner":      drawn.ID,
+		"pooled bystander": 2,
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed, err := svc.MoveToPool(ctx, movieID)
+			if err != nil {
+				t.Fatalf("MoveToPool: %v", err)
+			}
+			if changed {
+				t.Fatal("MoveToPool reported a transition")
+			}
+		})
+	}
+	if got := repo.movies[drawn.ID].Status; got != "current" {
+		t.Fatalf("held winner status = %q, want current", got)
+	}
+
+	// The exception is the active, unrevealed hold, not current status alone.
+	// Once revealed, the same persisted state is an invalid promotion source.
+	if _, flipped := svc.RevealCurrentDraw(); !flipped {
+		t.Fatal("expected reveal to flip the draw")
+	}
+	changed, err := svc.MoveToPool(ctx, drawn.ID)
+	if changed {
+		t.Fatal("revealed current movie transitioned to the pool")
+	}
+	if !errors.Is(err, domain.ErrInvalidState) {
+		t.Fatalf("revealed current MoveToPool error = %v, want ErrInvalidState", err)
 	}
 }
 

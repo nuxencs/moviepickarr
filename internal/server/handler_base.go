@@ -39,10 +39,14 @@ type handler struct {
 	movieService    *movie.Service
 	nextUpService   *nextup.Service
 	settingsService *settings.Service
-	movieMetadata   domain.MovieMetadataRepo
-	movieCredits    domain.MovieCreditsRepo
-	tmdb            *tmdbClient
-	enrichRunner    *enrichRunner
+	// movieNightMu keeps next-up authorization attached to the lifecycle command
+	// and synchronous event publication it admitted. In particular, watch owns
+	// the turn through its rotation and movie:watched broadcast.
+	movieNightMu  sync.Mutex
+	movieMetadata domain.MovieMetadataRepo
+	movieCredits  domain.MovieCreditsRepo
+	tmdb          *tmdbClient
+	enrichRunner  *enrichRunner
 	// posterWall backs the public GET /auth/poster-wall endpoint. Like
 	// enrichRunner it is nil when no TMDB key is set, and the handler then serves
 	// an empty array.

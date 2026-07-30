@@ -63,7 +63,12 @@ export function applyImmediateLifecycleState(
       typeof state?.poolLocked === "boolean" &&
       typeof state.drawInProgress === "boolean"
     ) {
-      queryClient.setQueryData(SettingsKeys.poolLock(), state);
+      // The handler reads the draw gate before entering the broker. A draw or
+      // reveal can broadcast between that read and this event, so a cached
+      // lifecycle fact owns this field while the lock event owns the lock.
+      queryClient.setQueryData<Settings>(SettingsKeys.poolLock(), (current) =>
+        current ? { ...current, poolLocked: state.poolLocked } : state,
+      );
     }
   }
 }

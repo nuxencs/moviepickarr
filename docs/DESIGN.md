@@ -254,7 +254,9 @@ old shadcn primitives.
   board no longer exists; it never links a dead id that would fall back to the viewer's
   board.
   It navigates with `replace`, like the meta chips, so following it spends the modal's
-  own history entry. Below 700px the rail becomes a row
+  own history entry. Each close callback is bound to that entry's token, so a delete
+  response arriving after the record has closed cannot pop a newer record or page.
+  Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
 - **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`) — rename

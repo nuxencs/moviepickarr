@@ -79,13 +79,28 @@ export function useMovieModal() {
     [router],
   );
 
-  const close = useCallback(() => router.history.back(), [router]);
+  // Bind dismissal to the entry visible in this render. Async work started
+  // from one record must not spend a newer record's entry after the first has
+  // already closed.
+  const ownedToken =
+    selected !== null && token !== undefined && token === openedRef.current
+      ? token
+      : null;
+  const close = useCallback(() => {
+    if (
+      ownedToken === null ||
+      router.history.location.state.movieModal !== ownedToken
+    ) {
+      return;
+    }
+    router.history.back();
+  }, [ownedToken, router]);
 
   return {
     /** The film the modal was opened on, live through the exit motion. */
     selected,
     /** Whether the entry this open pushed is still the one we're on. */
-    isOpen: selected !== null && token !== undefined && token === openedRef.current,
+    isOpen: ownedToken !== null,
     open,
     close,
     /** For the `Modal`'s onClose: the motion is done, drop the surface. */

@@ -9,8 +9,6 @@
 // status line that composes them, so Movies and Members can't drift into
 // describing the same flag differently.
 
-import type { DrawPhase } from "@/components/moviepickarr/drawMachine";
-
 /**
  * Whether the session actor may toggle the pool lock. Errs open while /auth/me
  * is still loading (role undefined) so an admin never flashes a disabled toggle
@@ -76,7 +74,7 @@ export interface MembersStatus {
 export function membersStatus(
   occupancy: RosterOccupancy,
   locked: boolean,
-  drawPhase: DrawPhase,
+  drawInProgress: boolean,
 ): MembersStatus {
   // Pending and errored rosters say nothing about the round: the occupancy the
   // round clause qualifies isn't known yet, and an announcement for a line the
@@ -90,7 +88,7 @@ export function membersStatus(
     : occupancy.filled >= occupancy.slots
       ? READY_TO_LOCK
       : null;
-  const draw = drawPhase === "idle" ? null : DRAW_IN_PROGRESS;
+  const draw = drawInProgress ? DRAW_IN_PROGRESS : null;
   const announce = [round, draw].filter((clause): clause is string => clause !== null);
 
   return {

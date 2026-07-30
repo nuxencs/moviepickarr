@@ -386,11 +386,14 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 	if ft.stops == 0 {
 		t.Fatal("expected the watch to cancel the pending auto-reveal")
 	}
+	if notified != 1 {
+		t.Fatalf("expected watch to reveal the draw for other clients, got %d notifications", notified)
+	}
 
-	// A stale deadline firing after the watch must not reveal anything.
+	// A stale deadline firing after the watch must not reveal a second time.
 	ft.fire()
-	if notified != 0 {
-		t.Fatalf("expected no OnRevealed after the draw was cleared, got %d", notified)
+	if notified != 1 {
+		t.Fatalf("expected exactly one OnRevealed after watch, got %d", notified)
 	}
 }
 
@@ -420,6 +423,9 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
 		t.Fatalf("MarkCurrentAsWatched: %v", err)
 	}
+	if len(revealed) != 1 || revealed[0].MovieID != drawA.ID {
+		t.Fatalf("watch should reveal draw A once, got %+v", revealed)
+	}
 	drawB, err := svc.DrawRandom(ctx, "c2")
 	if err != nil {
 		t.Fatalf("DrawRandom B: %v", err)
@@ -432,8 +438,8 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	// callback running now, after B is active. It must not touch B.
 	fireA()
 
-	if len(revealed) != 0 {
-		t.Fatalf("stale auto-reveal fired OnRevealed %d time(s); must not reveal the replacement draw", len(revealed))
+	if len(revealed) != 1 {
+		t.Fatalf("stale auto-reveal added %d notifications; must not reveal the replacement draw", len(revealed)-1)
 	}
 	if ap, ok := svc.ActiveDraw(); !ok || ap.Revealed {
 		t.Fatal("draw B must remain unrevealed after draw A's stale timer fired")
@@ -555,12 +561,88 @@ func titleRepo() *titlePoolRepo {
 	}}
 }
 
+// pausingDrawRepo exposes the instant after the winner is persisted as current
+// but before UpdateStatus returns to the service.
+type pausingDrawRepo struct {
+	titlePoolRepo
+	statusUpdated chan struct{}
+	resume        chan struct{}
+}
+
+func (r *pausingDrawRepo) UpdateStatus(ctx context.Context, id int, status string) error {
+	if err := r.titlePoolRepo.UpdateStatus(ctx, id, status); err != nil {
+		return err
+	}
+	close(r.statusUpdated)
+	<-r.resume
+	return nil
+}
+
 func titles(movies []*domain.Movie) []string {
 	out := make([]string, 0, len(movies))
 	for _, m := range movies {
 		out = append(out, m.Title)
 	}
 	return out
+}
+
+func TestDrawPublicationHidesWinnerAtomically(t *testing.T) {
+	repo := &pausingDrawRepo{
+		titlePoolRepo: *titleRepo(),
+		statusUpdated: make(chan struct{}),
+		resume:        make(chan struct{}),
+	}
+	t.Cleanup(func() { close(repo.resume) })
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	drawDone := make(chan error, 1)
+	go func() {
+		_, err := svc.DrawRandom(ctx, "")
+		drawDone <- err
+	}()
+	<-repo.statusUpdated
+
+	escaped := make(chan string, 3)
+	detail := make(chan *domain.Movie, 1)
+	go func() {
+		movie, _ := svc.GetForDisplay(ctx, 1)
+		detail <- movie
+		escaped <- "detail"
+	}()
+	pool := make(chan []*domain.Movie, 1)
+	go func() {
+		movies, _ := svc.Pooled(ctx)
+		pool <- movies
+		escaped <- "pool"
+	}()
+	gate := make(chan bool, 1)
+	go func() {
+		gate <- svc.DrawInProgress()
+		escaped <- "gate"
+	}()
+
+	// The persisted winner is already current. None of the client-facing reads
+	// may pass the draw publication boundary and observe that half-state.
+	select {
+	case name := <-escaped:
+		t.Fatalf("%s read escaped before the held draw was published", name)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	repo.resume <- struct{}{}
+	if err := <-drawDone; err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	if got := <-detail; got.Status != "pool" {
+		t.Fatalf("detail status = %q, want pool", got.Status)
+	}
+	if got := titles(<-pool); !slices.Contains(got, "Alpha") {
+		t.Fatalf("pool = %v, want held winner Alpha", got)
+	}
+	if inProgress := <-gate; !inProgress {
+		t.Fatal("draw gate opened before publication")
+	}
 }
 
 // The whole point of the pool view: an unrevealed draw stays in the pool, in

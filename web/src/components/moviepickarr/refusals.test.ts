@@ -29,6 +29,11 @@ describe("refusalOf", () => {
     expect(refusalOf({ kind: "demote", ...open, isLocked: true })).toBe("locked");
   });
 
+  it("refuses both directions while the round state is unavailable", () => {
+    expect(refusalOf({ kind: "promote", ...open, stateKnown: false })).toBe("unavailable");
+    expect(refusalOf({ kind: "demote", ...open, stateKnown: false })).toBe("unavailable");
+  });
+
   it("freezes the pool during a draw and leaves the stash alone", () => {
     expect(refusalOf({ kind: "demote", ...open, drawInFlight: true })).toBe("drawing");
     expect(refusalOf({ kind: "promote", ...open, drawInFlight: true })).toBeNull();
@@ -64,6 +69,9 @@ describe("actionLabel", () => {
     expect(actionLabel("promote", "full")).toBe("Move to pool, pool is full");
     expect(actionLabel("promote", "locked")).toBe("Move to pool, round closed");
     expect(actionLabel("demote", "drawing")).toBe("Move back to stash, a draw is in progress");
+    expect(actionLabel("demote", "unavailable")).toBe(
+      "Move back to stash, round state unavailable",
+    );
   });
 
   it("says round closed in the words the status line uses", () => {
@@ -107,6 +115,12 @@ describe("deleteRefusalOf", () => {
     expect(deleteRefusalOf({ status: "stash", isLocked: true, drawInFlight: true })).toBeNull();
   });
 
+  it("refuses a pooled delete while the round state is unavailable", () => {
+    expect(
+      deleteRefusalOf({ status: "pool", ...open, stateKnown: false }),
+    ).toBe("unavailable");
+  });
+
   it("says drawing ahead of locked, as a move does", () => {
     expect(deleteRefusalOf({ status: "pool", isLocked: true, drawInFlight: true })).toBe("drawing");
   });
@@ -120,5 +134,6 @@ describe("deleteLabel", () => {
   it("puts the reason after the verb, in the same words a tile uses", () => {
     expect(deleteLabel("drawing")).toBe("Delete, a draw is in progress");
     expect(deleteLabel("locked")).toBe("Delete, round closed");
+    expect(deleteLabel("unavailable")).toBe("Delete, round state unavailable");
   });
 });

@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
+import { applyImmediateLifecycleState } from "@/api/poolStateCache";
 import { MoviesKeys } from "@/api/query_keys";
 
 import { drawStore } from "@/components/moviepickarr/drawStore";
@@ -142,6 +143,11 @@ export function useSSE() {
           // Gap detection first: a resync still runs this event's own row
           // below, so the frame that revealed the gap isn't itself lost.
           dispatch({ kind: "event", seq: sseEvent.seq });
+
+          // Exact lifecycle facts land before the coalescing window: controls
+          // never spend that window on the prior draw gate, and reveal updates
+          // its cached detail status in the same turn as the gate.
+          applyImmediateLifecycleState(queryClient, sseEvent);
 
           // Draw events drive the machine (identity dedup, the reel,
           // reveal-once, pool-release timing) on top of their table row.

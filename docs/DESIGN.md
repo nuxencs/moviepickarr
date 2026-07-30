@@ -110,6 +110,9 @@ old shadcn primitives.
   is there for. The status ships as **two nodes**: the visible `.sec-status` carries every
   clause and is never a live region, and a second `.vis-hidden` `role="status"` beside it
   carries only the clauses worth interrupting for (§6).
+  Members renders its read-only roster as soon as that query lands; a slow pool-state
+  request holds only the status words and makes move controls inert as
+  `round state unavailable`. It does not replace the loaded roster with a skeleton.
 - **The round's words are one exported vocabulary.** `poolLock.ts` owns them
   (`ROUND_OPEN`, `ROUND_CLOSED`) and both pages import from it, so neither can drift into
   a second phrasing for the same flag. Members never renders `ROUND_OPEN`: an open round
@@ -260,7 +263,14 @@ old shadcn primitives.
   is derived from the movie object and
   never passed in: the adder gets it, everyone else gets nothing, on every surface the
   modal opens on. It arrives with the detail, since the film's status is a detail field,
-  and the delete waits for the pool-lock query too rather than defaulting to unlocked.
+  and a held winner's detail stays projected as pooled until reveal, like every pool
+  listing. Delete waits for the shared pool-state query rather than defaulting to open.
+  That query carries both the pool lock and the server-owned unrevealed-draw gate, and
+  only runs for a pooled film. Stash, current and watched records do not need the gate
+  and do not fetch it. While either the detail lifecycle or pool state is missing,
+  refreshing, or failed, pooled Delete remains in place but inert as
+  `Delete, round state unavailable`. A remote `404` closes the record immediately
+  and is not retried.
   A refused delete (a pooled film while the round is locked or a draw is out) stays in
   place and goes inert with `aria-disabled`, the reason on both the accessible name and
   the tooltip (`Delete, round closed`) — the same treatment, and the same words, as a
@@ -626,10 +636,14 @@ spins**, not just the clicker; it skips for a **pool of one** or under reduced m
 still unrevealed, while the hero **holds its commit** so the reveal never fires mid-spin.
 The **pool holds the winner** for as long as the draw is unrevealed: the draw flips the
 row to `current` immediately, so the server hands the movie back in every pool read
-(`Pooled` / `PooledByUserID`, `withHeldDraw`) until the reveal. Without that, a reload
-mid-spin — or any client opening the board during a draw — fetched the post-draw pool and
-the missing tile gave the winner away behind the reel. The client-side pool hold (the draw
-machine releasing the pool on land) still covers cached clients; the two agree. While the
+(`Pooled` / `PooledByUserID`, `withHeldDraw`) until the reveal. `GET /movies/:id`
+uses the same projection, so opening records cannot identify the winner through its
+status or available actions. The persisted flip and in-memory hold publish under one
+service lock, so concurrent reads cannot observe `current` before the projection exists.
+Without that, a reload mid-spin or any client opening the
+board during a draw fetched the post-draw pool and the missing tile gave the winner away
+behind the reel. The client-side pool hold (the draw machine releasing the pool on land)
+still covers cached clients; the two agree. While the
 draw is held the **pool is frozen**: demote and delete are refused for every pool tile
 (the held winner included, so no answer singles it out) and the board's demote control goes
 inert in place, named "Move back to stash, a draw is in progress" on all three tiles alike;
@@ -637,8 +651,10 @@ the stash is unaffected, so promoting stays live through a draw.
 The reel is a **pure reducer + store**: `drawMachine.ts` folds `movie:drawn` /
 `movie:revealed` / scroll-done / confirm / tick events into `[state, commands]`, and
 `drawStore.ts` (a `useSyncExternalStore` singleton) runs the effects. `Hero.tsx`,
-`DrawReel.tsx`, and `useSSE.ts` all read the one store, so every surface agrees on the
-draw state.
+`DrawReel.tsx`, and `useSSE.ts` all read the one store, so every animation surface agrees
+on the reel state. Mutation refusals do not use that phase. Members and the movie modal
+read the server-owned `drawInProgress` pool state, which remains true when reduced motion
+or a one-film pool skips the reel entirely.
 
 **Reel remounts resume, they don't replay.** The reel is rendered by the Hero, which lives
 on the Movies tab, so switching tabs unmounts it and switching back mounts a new one against
@@ -668,7 +684,9 @@ tab switch restarted it with only ~7s to go). Pressing OK (or letting it fill) c
 **auto-reveal is server-owned**: the movie service arms a timer at `revealAt`
 (`DefaultAutoRevealDelay` 16.5s) and, if no client confirms first, reveals the draw itself
 and broadcasts the same `movie:revealed`, so a reel never hangs if the drawer leaves,
-without each client racing its own timer. The close is **flash-free**: the winner backdrop
+without each client racing its own timer. Marking the winner watched before the reel
+lands also publishes `movie:revealed` first, so animated clients close immediately
+instead of waiting for their fallback deadline. The close is **flash-free**: the winner backdrop
 (preloaded during the spin) is decoded while the reel still covers the hero, then the reel
 drops and the reveal commits in one batched frame — no placeholder leaks through. A reload
 keys off the server `revealed` flag (not a timer): unrevealed re-opens the settled reel
@@ -806,7 +824,10 @@ use tokens so they follow the theme.
   and nothing else. The window never re-arms mid-burst, so a sustained stream still
   flushes on time, and the queue schedules nothing while idle. The pool hold (the
   draw reveal, §4) moved to the flush callback: a spin can start inside the window,
-  so the phase has to be read when the invalidation actually fires.
+  so the phase has to be read when the invalidation actually fires. Exact lifecycle
+  facts bypass that delay: draw, reveal, watch, and pool-lock events patch the cached
+  mutation gate immediately; reveal and watch also patch the open detail lifecycle in
+  the same turn. The queued refetch still reconciles full records afterward.
 - **Routing & URL state (TanStack Router).** Three path routes — `/` (Movies),
   `/stats`, `/users` — defined code-based in `router.tsx`. The root route is the app
   shell (NavBar + `<Outlet/>` + Toaster) and owns the single `useSSE()` mount, so the

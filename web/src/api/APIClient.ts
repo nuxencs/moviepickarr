@@ -348,15 +348,17 @@ export const APIClient = {
         getFilterOptions: (signal?: AbortSignal) =>
             appClient.Get<FilterOptionsResponse>("api/v1/movies/filter-options", { signal }),
         markWatched: () =>
-            appClient.Post<Movie[]>("api/v1/movies/current/watch"),
+            appClient.Post<Movie>("api/v1/movies/current/watch"),
     },
     settings: {
         toggleLock: (lock: boolean) =>
             appClient.Put<Settings>("api/v1/settings/pool-lock", {
                 body: { poolLocked: lock },
             }),
-        getLock: () =>
-            appClient.Get<boolean>("api/v1/settings/pool-lock"),
+        // One pool-state read for both mutation gates. A draw can hold the pool
+        // even when this client skips the reel (reduced motion, one candidate).
+        getPoolState: () =>
+            appClient.Get<Settings>("api/v1/settings/pool-lock"),
         getNextUp: () =>
             appClient.Get<{id: number, name: string}>("api/v1/settings/next-up"),
     },

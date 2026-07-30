@@ -34,38 +34,22 @@
    ============================================================ */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { APIClient } from "@/api/APIClient";
 import { AuthKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 
-import type { DrawPhase } from "@/components/moviepickarr/drawMachine";
 import { UsersTab } from "@/components/moviepickarr/UsersTab";
 
 import type { MeResponse, Movie, User } from "@/types/Response";
 
 import { renderWithProviders } from "@/test/providers";
 
-// The draw store is a module singleton the page reads directly. Faked rather
-// than driven through the machine: what the board does with a draw in flight is
-// a function of the phase alone, and drawMachine.test.ts owns how you get there.
-const draw = vi.hoisted(() => ({ phase: "idle" as DrawPhase }));
-vi.mock("@/components/moviepickarr/drawStore", () => ({
-  drawStore: {
-    // No notifications: every test sets the phase before it renders.
-    subscribe: () => () => {},
-    getState: () => ({ phase: draw.phase }),
-  },
-}));
-afterEach(() => {
-  draw.phase = "idle";
-});
-
 vi.mock("@/api/APIClient", () => ({
   APIClient: {
     board: { getAll: vi.fn(), moveMovie: vi.fn(), deleteMovie: vi.fn(), updateMovie: vi.fn() },
-    settings: { getLock: vi.fn() },
+    settings: { getPoolState: vi.fn() },
     auth: { me: vi.fn() },
     // The modal lazy-loads the full record on open. It never resolves here, so
     // what the modal shows is the tile's own lean object — which is the point:
@@ -110,11 +94,15 @@ function session(id: number): MeResponse {
 async function renderTab({
   users,
   locked = false,
+  drawInProgress = false,
+  seedPoolState = true,
   meID,
   href = "/users",
 }: {
   users?: User[];
   locked?: boolean;
+  drawInProgress?: boolean;
+  seedPoolState?: boolean;
   meID?: number;
   href?: `/users` | `/users?${string}`;
 }) {
@@ -126,7 +114,9 @@ async function renderTab({
       client = queryClient;
       // Seeded rather than fetched: the page is the subject, not the requests.
       if (users) queryClient.setQueryData(UsersKeys.list(), users);
-      queryClient.setQueryData(SettingsKeys.poolLock(), locked);
+      if (seedPoolState) {
+        queryClient.setQueryData(SettingsKeys.poolLock(), { poolLocked: locked, drawInProgress });
+      }
       if (meID !== undefined) queryClient.setQueryData(AuthKeys.me(), session(meID));
     },
   });
@@ -699,22 +689,79 @@ describe("a refused action", () => {
     );
   });
 
-  it("freezes the pool for a draw and leaves the stash alone", async () => {
-    draw.phase = "spinning";
-    await renderTab({ users: roster, meID: 1 });
+  it("freezes a server-held pool when no reel animation runs, and leaves the stash alone", async () => {
+    vi.mocked(APIClient.settings.getPoolState).mockResolvedValueOnce({
+      poolLocked: false,
+      drawInProgress: true,
+    });
+    await renderTab({ users: roster, meID: 1, seedPoolState: false });
 
-    expect(named()).toEqual([
-      "Move back to stash, a draw is in progress",
-      "Move back to stash, a draw is in progress",
-      // The stash is untouched: a draw never refuses a promote.
-      "Move to pool",
-      "Move to pool",
-    ]);
+    await waitFor(() =>
+      expect(named()).toEqual([
+        "Move back to stash, a draw is in progress",
+        "Move back to stash, a draw is in progress",
+        // The stash is untouched: a draw never refuses a promote.
+        "Move to pool",
+        "Move to pool",
+      ]),
+    );
+    expect(document.querySelector(".sec-status")?.textContent).toContain("draw in progress");
+  });
+
+  it("keeps the roster readable while the round state is still loading", async () => {
+    vi.mocked(APIClient.settings.getPoolState).mockReturnValueOnce(
+      new Promise<never>(() => {}),
+    );
+    await renderTab({ users: roster, meID: 1, seedPoolState: false });
+
+    expect(screen.getByRole("link", { name: /Ada/ })).not.toBeNull();
+    expect(new Set(named())).toEqual(
+      new Set([
+        "Move back to stash, round state unavailable",
+        "Move to pool, round state unavailable",
+      ]),
+    );
+  });
+
+  it("fails pooled controls closed when the round-state request errors", async () => {
+    vi.mocked(APIClient.settings.getPoolState).mockRejectedValueOnce(
+      new Error("round state unavailable"),
+    );
+    await renderTab({ users: roster, meID: 1, seedPoolState: false });
+
+    await waitFor(() =>
+      expect(document.querySelector(".sec-status")?.textContent).toBe(
+        "Round state failed to load",
+      ),
+    );
+    expect(
+      named().every((label) => label?.endsWith("round state unavailable") === true),
+    ).toBe(true);
+  });
+
+  it("fails pooled controls closed during a background round-state refresh", async () => {
+    const { client } = await renderTab({ users: roster, meID: 1 });
+    vi.mocked(APIClient.settings.getPoolState).mockReturnValueOnce(
+      new Promise<never>(() => {}),
+    );
+
+    act(() => {
+      void client.invalidateQueries({ queryKey: SettingsKeys.poolLock() });
+    });
+
+    await waitFor(() =>
+      expect(
+        named().every((label) => label?.endsWith("round state unavailable") === true),
+      ).toBe(true),
+    );
   });
 
   it("freezes all three pool tiles identically, so none of them is the winner", async () => {
-    draw.phase = "settled";
-    await renderTab({ users: [member(1, 3, 0, "Ada")], meID: 1 });
+    await renderTab({
+      users: [member(1, 3, 0, "Ada")],
+      meID: 1,
+      drawInProgress: true,
+    });
 
     const demotes = Array.from(document.querySelectorAll<HTMLElement>(".pslot--filled .mem-act"));
     expect(demotes.length).toBe(3);
@@ -724,8 +771,7 @@ describe("a refused action", () => {
   });
 
   it("says the draw ahead of the lock on a pool that is both", async () => {
-    draw.phase = "revealing";
-    await renderTab({ users: roster, meID: 1, locked: true });
+    await renderTab({ users: roster, meID: 1, locked: true, drawInProgress: true });
 
     expect(named()).toEqual([
       "Move back to stash, a draw is in progress",
@@ -744,12 +790,10 @@ describe("a refused action", () => {
         .replace(/ aria-disabled="true"/g, "")
         .replace(/(aria-label|title)="Move[^"]*"/g, '$1=""');
 
-    draw.phase = "spinning";
-    await renderTab({ users: roster, meID: 1, locked: true });
+    await renderTab({ users: roster, meID: 1, locked: true, drawInProgress: true });
     const refused = boardShape();
 
     cleanup();
-    draw.phase = "idle";
     await renderTab({ users: roster, meID: 1 });
 
     // No glyph on the tile, no chip on the pool head, no banner over the page:

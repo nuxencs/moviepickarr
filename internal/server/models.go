@@ -11,7 +11,8 @@ import (
 const timeFormat = time.RFC3339
 
 type settingsResponse struct {
-	PoolLocked bool `json:"poolLocked"`
+	PoolLocked     bool `json:"poolLocked"`
+	DrawInProgress bool `json:"drawInProgress"`
 }
 
 // The Members boards render tile-level data only (poster, title, rating) and
@@ -69,10 +70,11 @@ type leanMovieTile struct {
 type fullMovie struct {
 	leanMovieTile
 
-	// Status is the film's real place in the app (pool / stash / current /
-	// watched). Detail-class only: a surface holding a full record reads it
-	// instead of guessing membership from a proxy like "has no watchedAt".
-	// Always set, so no omitempty.
+	// Status is the film's client-visible place in the app (pool / stash /
+	// current / watched). A held winner stays projected as pooled until reveal,
+	// matching the pool listings. Detail-class only: a surface holding a full
+	// record reads it instead of guessing membership from a proxy like "has no
+	// watchedAt". Always set, so no omitempty.
 	Status domain.MovieStatus `json:"status"`
 
 	// Draw-reveal coordination. Set only on the movie:drawn event and the

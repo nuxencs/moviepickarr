@@ -22,7 +22,7 @@ import type { MovieStatus } from "@/types/Response";
 export type ActionKind = "promote" | "demote";
 
 /** Why the action is refused, or null when it isn't. */
-export type Refusal = "drawing" | "locked" | "full";
+export type Refusal = "unavailable" | "drawing" | "locked" | "full";
 
 const VERB: Record<ActionKind, string> = {
   promote: "Move to pool",
@@ -30,6 +30,7 @@ const VERB: Record<ActionKind, string> = {
 };
 
 const REASON: Record<Refusal, string> = {
+  unavailable: "round state unavailable",
   drawing: "a draw is in progress",
   // The same words the status line uses for the same flag, from the same
   // constant, so the line and the control cannot describe the round differently.
@@ -52,13 +53,17 @@ export function refusalOf({
   isLocked,
   drawInFlight,
   poolFull,
+  stateKnown = true,
 }: {
   kind: ActionKind;
   isLocked: boolean;
   drawInFlight: boolean;
   /** Only ever read for a promote: demoting is the way out of a full pool. */
   poolFull: boolean;
+  /** False while the server-owned round gates are missing or refreshing. */
+  stateKnown?: boolean;
 }): Refusal | null {
+  if (!stateKnown) return "unavailable";
   // A draw freezes the pool and nothing else, identically across all three
   // tiles so that no per-tile difference singles out the held winner. The stash
   // is untouched, so a promote is still live while a draw is out.
@@ -107,12 +112,16 @@ export function deleteRefusalOf({
   status,
   isLocked,
   drawInFlight,
+  stateKnown = true,
 }: {
   status: MovieStatus | undefined;
   isLocked: boolean;
   drawInFlight: boolean;
+  /** False while the server-owned round gates are missing or refreshing. */
+  stateKnown?: boolean;
 }): Refusal | null {
   if (status !== "pool") return null;
+  if (!stateKnown) return "unavailable";
   if (drawInFlight) return "drawing";
   if (isLocked) return "locked";
   return null;

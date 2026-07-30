@@ -27,7 +27,10 @@ func (h *handler) handleSetPoolLock(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	payload := settingsResponse{PoolLocked: *body.PoolLocked}
+	payload := settingsResponse{
+		PoolLocked:     *body.PoolLocked,
+		DrawInProgress: h.movieService.DrawInProgress(),
+	}
 	h.broker.Broadcast(event{Type: "settings:pool-lock-changed", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
@@ -39,7 +42,10 @@ func (h *handler) handleGetPoolLock(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(poolLocked)
+	return c.Status(fiber.StatusOK).JSON(settingsResponse{
+		PoolLocked:     poolLocked,
+		DrawInProgress: h.movieService.DrawInProgress(),
+	})
 }
 
 func (h *handler) handleGetNextUp(c *fiber.Ctx) error {

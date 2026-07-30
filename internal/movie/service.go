@@ -51,9 +51,9 @@ type DrawConfig struct {
 	// StartTimer schedules fn once after d and returns a stop func. Nil uses
 	// time.AfterFunc; tests inject their own to drive the deadline by hand.
 	StartTimer func(d time.Duration, fn func()) (stop func())
-	// OnRevealed observes every reveal flip (manual confirm or auto-reveal)
-	// exactly once per draw. The server wires it to the movie:revealed
-	// broadcast so every client closes its reel off one frame.
+	// OnRevealed observes every reveal flip (manual confirm, auto-reveal, or an
+	// early watch) exactly once per draw. The server wires it to the
+	// movie:revealed broadcast so every client closes its reel off one frame.
 	OnRevealed func(ActiveDraw)
 }
 
@@ -293,6 +293,26 @@ func (s *Service) Get(ctx context.Context, id int) (*domain.Movie, error) {
 	return s.movieRepo.FindByID(ctx, id)
 }
 
+// GetForDisplay returns one movie as clients may see it. A held winner still
+// reads as pooled until reveal, matching every pool listing and preventing the
+// detail endpoint from identifying it while the reel is in flight.
+//
+// Command handlers use Get instead: authorization and mutations need the
+// persisted lifecycle state, not this display projection.
+func (s *Service) GetForDisplay(ctx context.Context, id int) (*domain.Movie, error) {
+	movie, err := s.movieRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	held, ok := s.heldDraw()
+	if !ok {
+		return movie, nil
+	}
+	shown, _ := asHeldPoolMovie(movie, held)
+	return shown, nil
+}
+
 func (s *Service) List(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.List(ctx)
 }
@@ -327,6 +347,18 @@ func isNotFound(err error) bool {
 	return errors.Is(err, domain.ErrNotFound) || errors.Is(err, sql.ErrNoRows)
 }
 
+// asHeldPoolMovie projects the active unrevealed winner into the pool without
+// mutating the repository-owned record. The bool reports whether projection
+// happened.
+func asHeldPoolMovie(movie *domain.Movie, held ActiveDraw) (*domain.Movie, bool) {
+	if movie.ID != held.MovieID || movie.Status != "current" {
+		return movie, false
+	}
+	shown := *movie
+	shown.Status = "pool"
+	return &shown, true
+}
+
 // withHeldDraw puts a drawn-but-unrevealed movie back into a pool listing.
 //
 // DrawRandom flips the winner to "current" the moment it draws, so every pool
@@ -357,7 +389,11 @@ func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, user
 		}
 		return nil, err
 	}
-	if movie.Status != "current" || (userID != 0 && movie.AddedByID != userID) {
+	if userID != 0 && movie.AddedByID != userID {
+		return pooled, nil
+	}
+	shown, ok := asHeldPoolMovie(movie, held)
+	if !ok {
 		return pooled, nil
 	}
 	// A draw that landed between the listing query and the read above leaves the
@@ -368,8 +404,6 @@ func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, user
 		}
 	}
 
-	shown := *movie
-	shown.Status = "pool"
 	at := len(pooled)
 	for i, m := range pooled {
 		if shown.Title < m.Title {
@@ -379,7 +413,7 @@ func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, user
 	}
 	out := make([]*domain.Movie, 0, len(pooled)+1)
 	out = append(out, pooled[:at]...)
-	out = append(out, &shown)
+	out = append(out, shown)
 	out = append(out, pooled[at:]...)
 	return out, nil
 }
@@ -420,6 +454,12 @@ func (s *Service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 // the opaque id of the client that initiated the draw (see ActiveDraw). It
 // gates who sees the reel's confirm button; "" is acceptable (no drawer).
 func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
+	// Keep the persisted status flip and the in-memory hold one publication.
+	// Client-facing reads may query the repository concurrently, but they block
+	// on heldDraw before returning and therefore see either side in full.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	pooled, err := s.movieRepo.FindByStatus(ctx, "pool")
 	if err != nil {
 		return nil, err
@@ -448,7 +488,6 @@ func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movi
 	}
 
 	drawnAt := time.Now().UTC()
-	s.mu.Lock()
 	s.drawGen++
 	s.activeDraw = &ActiveDraw{
 		MovieID:      movie.ID,
@@ -457,36 +496,50 @@ func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movi
 		DrawClientID: clientID,
 	}
 	s.armAutoRevealLocked(s.drawGen)
-	s.mu.Unlock()
 
 	return movie, nil
 }
 
 func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error) {
+	// Publish the persisted lifecycle change and the draw removal together.
+	// This also makes watch race cleanly with the auto-reveal timer.
+	s.mu.Lock()
+
 	current, err := s.movieRepo.GetCurrent(ctx)
 	if err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
 
 	if current == nil {
+		s.mu.Unlock()
 		return nil, domain.ErrNoCurrentDraw
 	}
 
 	watchedAt := time.Now().UTC()
 	if err = s.movieRepo.MarkAsWatched(ctx, current.ID, watchedAt); err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
 
-	// The draw is done: clear the active spin (and its pending auto-reveal,
-	// so a stale timer can't fire against the next draw) so a reload now shows
-	// the result directly rather than replaying the reel.
-	s.mu.Lock()
+	// An early watch is also a reveal for clients still running the reel. Mark
+	// it before clearing so this path and the timer/manual paths notify once.
+	var revealed *ActiveDraw
+	if s.activeDraw != nil && !s.activeDraw.Revealed {
+		s.activeDraw.Revealed = true
+		ap := *s.activeDraw
+		revealed = &ap
+	}
 	s.activeDraw = nil
 	s.cancelAutoRevealLocked()
 	s.mu.Unlock()
 
 	current.Status = "watched"
 	current.WatchedAt = &watchedAt
+
+	if revealed != nil && s.drawCfg.OnRevealed != nil {
+		s.drawCfg.OnRevealed(*revealed)
+	}
 
 	return current, nil
 }
@@ -503,6 +556,14 @@ func (s *Service) ActiveDraw() (ActiveDraw, bool) {
 		return ActiveDraw{}, false
 	}
 	return *s.activeDraw, true
+}
+
+// DrawInProgress reports whether the pool is held for an unrevealed draw.
+// Unlike the client reel phase, this is the server-owned mutation gate: it is
+// true even when reduced motion or a lone candidate skips the animation.
+func (s *Service) DrawInProgress() bool {
+	_, ok := s.heldDraw()
+	return ok
 }
 
 // RevealCurrentDraw marks the active draw as revealed: the drawer confirmed,

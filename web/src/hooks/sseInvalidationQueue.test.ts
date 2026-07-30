@@ -97,7 +97,7 @@ describe("the invalidation queue", () => {
     const clock = manualScheduler();
     const queue = createInvalidationQueue(flush, clock.scheduler);
 
-    // movie:revealed is a pure draw-machine signal: nothing cached stales.
+    // Unknown future events can deliberately carry no cache keys.
     queue.push([]);
     expect(clock.scheduled).toBe(0);
     clock.fire();

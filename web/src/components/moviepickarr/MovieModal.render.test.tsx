@@ -18,13 +18,12 @@
    ============================================================ */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { APIClient } from "@/api/APIClient";
+import { APIClient, ApiError } from "@/api/APIClient";
 import { AuthKeys, MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
-import type { DrawPhase } from "@/components/moviepickarr/drawMachine";
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 
 import type { MeResponse, Movie } from "@/types/Response";
@@ -66,10 +65,18 @@ vi.mock("@tanstack/react-router", () => ({
 // detail seeds the cache, so the "still loading" phase is the default. The
 // session and the pool lock are seeded the same way.
 vi.mock("@/api/APIClient", () => ({
+  ApiError: class ApiError extends Error {
+    readonly status: number;
+
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  },
   APIClient: {
     movies: { get: vi.fn(() => new Promise<never>(() => {})) },
     auth: { me: vi.fn(() => new Promise<never>(() => {})) },
-    settings: { getLock: vi.fn(() => new Promise<never>(() => {})) },
+    settings: { getPoolState: vi.fn(() => new Promise<never>(() => {})) },
     board: {
       updateMovie: vi.fn(() => Promise.resolve()),
       deleteMovie: vi.fn(() => Promise.resolve()),
@@ -77,19 +84,7 @@ vi.mock("@/api/APIClient", () => ({
   },
 }));
 
-// The draw store is a module singleton the actions read directly. Faked rather
-// than driven through the machine: what a draw in flight refuses is a function
-// of the phase alone, and drawMachine.test.ts owns how you get there.
-const draw = vi.hoisted(() => ({ phase: "idle" as DrawPhase }));
-vi.mock("@/components/moviepickarr/drawStore", () => ({
-  drawStore: {
-    subscribe: () => () => {},
-    getState: () => ({ phase: draw.phase }),
-  },
-}));
-
 afterEach(() => {
-  draw.phase = "idle";
   vi.clearAllMocks();
 });
 
@@ -144,17 +139,30 @@ function renderModal({
   detail,
   meID,
   locked,
+  drawInProgress,
+  useDefaultRetry = false,
 }: {
   movie?: Movie;
   detail?: Movie;
   /** The session member. Left out, /auth/me never lands and nobody owns the film. */
   meID?: number;
   locked?: boolean;
+  drawInProgress?: boolean;
+  useDefaultRetry?: boolean;
 } = {}) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = useDefaultRetry
+    ? new QueryClient()
+    : new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+      });
   if (detail) client.setQueryData(MoviesKeys.detail(MOVIE_ID), detail);
   if (meID !== undefined) client.setQueryData(AuthKeys.me(), session(meID));
-  if (locked !== undefined) client.setQueryData(SettingsKeys.poolLock(), locked);
+  if (locked !== undefined || drawInProgress !== undefined) {
+    client.setQueryData(
+      SettingsKeys.poolLock(),
+      { poolLocked: locked ?? false, drawInProgress: drawInProgress ?? false },
+    );
+  }
 
   const onRequestClose = vi.fn();
   render(
@@ -164,7 +172,7 @@ function renderModal({
   );
   // The action pair portals its dialogs to the body as siblings of the modal,
   // so the first dialog is the record itself.
-  return { dialog: screen.getAllByRole("dialog")[0], onRequestClose };
+  return { client, dialog: screen.getAllByRole("dialog")[0], onRequestClose };
 }
 
 /** The record's own title, which the rail is read before. */
@@ -335,14 +343,72 @@ describe("MovieModal actions", () => {
     expect(comesBefore(edit()!, title())).toBe(true);
   });
 
-  it("holds the delete back until the round state is known, rather than defaulting it open", () => {
+  it("keeps delete inert until the round state is known", () => {
     // No lock seeded, so that query never lands: a pooled film in a round the
     // page can't describe yet must not offer a delete the server would refuse
     // after the confirm.
     renderModal({ meID: ADDER_ID, detail: detailed({ status: "pool" }) });
 
     expect(edit()).not.toBeNull();
-    expect(del()).toBeNull();
+    expect(del()?.getAttribute("aria-disabled")).toBe("true");
+    expect(del()?.getAttribute("aria-label")).toBe("Delete, round state unavailable");
+  });
+
+  it("fails delete closed when the round-state request errors", async () => {
+    vi.mocked(APIClient.settings.getPoolState).mockRejectedValueOnce(
+      new Error("round state unavailable"),
+    );
+    renderModal({ meID: ADDER_ID, detail: detailed({ status: "pool" }) });
+
+    await vi.waitFor(() =>
+      expect(del()?.getAttribute("aria-label")).toBe(
+        "Delete, round state unavailable",
+      ),
+    );
+    fireEvent.click(del()!);
+    expect(screen.queryByRole("heading", { name: "Delete movie" })).toBeNull();
+  });
+
+  it("fails delete closed during a background round-state refresh", async () => {
+    const { client } = renderModal({
+      meID: ADDER_ID,
+      locked: false,
+      detail: detailed({ status: "pool" }),
+    });
+    vi.mocked(APIClient.settings.getPoolState).mockReturnValueOnce(
+      new Promise<never>(() => {}),
+    );
+
+    act(() => {
+      void client.invalidateQueries({ queryKey: SettingsKeys.poolLock() });
+    });
+
+    await vi.waitFor(() =>
+      expect(del()?.getAttribute("aria-label")).toBe(
+        "Delete, round state unavailable",
+      ),
+    );
+  });
+
+  it("fails delete closed while a lifecycle detail refresh is in flight", async () => {
+    const { client } = renderModal({
+      meID: ADDER_ID,
+      locked: false,
+      detail: detailed({ status: "pool" }),
+    });
+    vi.mocked(APIClient.movies.get).mockReturnValueOnce(
+      new Promise<never>(() => {}),
+    );
+
+    act(() => {
+      void client.invalidateQueries({ queryKey: MoviesKeys.detail(MOVIE_ID) });
+    });
+
+    await vi.waitFor(() =>
+      expect(del()?.getAttribute("aria-label")).toBe(
+        "Delete, round state unavailable",
+      ),
+    );
   });
 
   it("offers nothing on somebody else's film", () => {
@@ -360,11 +426,21 @@ describe("MovieModal actions", () => {
   });
 
   it("deletes a stash film whatever the round is doing", () => {
-    draw.phase = "spinning";
-    renderModal({ meID: ADDER_ID, locked: true, detail: detailed({ status: "stash" }) });
+    renderModal({
+      meID: ADDER_ID,
+      locked: true,
+      drawInProgress: true,
+      detail: detailed({ status: "stash" }),
+    });
 
     expect(del()?.getAttribute("aria-disabled")).toBeNull();
     expect(del()?.getAttribute("aria-label")).toBe("Delete");
+  });
+
+  it("does not read pool state for a stash film", () => {
+    renderModal({ meID: ADDER_ID, detail: detailed({ status: "stash" }) });
+
+    expect(APIClient.settings.getPoolState).not.toHaveBeenCalled();
   });
 
   it("says nothing about deleting a watched film, but still lets it be renamed", () => {
@@ -390,10 +466,28 @@ describe("MovieModal actions", () => {
   });
 
   it("names the draw first when a locked round and a draw refuse together", () => {
-    draw.phase = "spinning";
-    renderModal({ meID: ADDER_ID, locked: true, detail: detailed({ status: "pool" }) });
+    renderModal({
+      meID: ADDER_ID,
+      locked: true,
+      drawInProgress: true,
+      detail: detailed({ status: "pool" }),
+    });
 
     expect(del()?.getAttribute("aria-label")).toBe("Delete, a draw is in progress");
+  });
+
+  it("refuses pooled delete from the server hold when no reel animation runs", () => {
+    renderModal({
+      meID: ADDER_ID,
+      locked: false,
+      drawInProgress: true,
+      detail: detailed({ status: "pool" }),
+    });
+
+    expect(del()?.getAttribute("aria-disabled")).toBe("true");
+    expect(del()?.getAttribute("aria-label")).toBe("Delete, a draw is in progress");
+    fireEvent.click(del()!);
+    expect(screen.queryByRole("heading", { name: "Delete movie" })).toBeNull();
   });
 
   it("does nothing when a refused delete is clicked", () => {
@@ -450,6 +544,22 @@ describe("MovieModal actions", () => {
     );
     expect(onRequestClose).not.toHaveBeenCalled();
     expect(screen.getAllByRole("heading", { name: "Apocalypse Now" }).length).toBeGreaterThan(0);
+  });
+
+  it("closes a record remotely deleted while it is open without retrying 404", async () => {
+    vi.mocked(APIClient.movies.get).mockRejectedValueOnce(
+      new ApiError(404, "Not Found"),
+    );
+    const { onRequestClose } = renderModal({
+      meID: ADDER_ID,
+      detail: detailed({ status: "stash" }),
+      useDefaultRetry: true,
+    });
+
+    await vi.waitFor(() => expect(onRequestClose).toHaveBeenCalled(), {
+      timeout: 500,
+    });
+    expect(APIClient.movies.get).toHaveBeenCalledTimes(1);
   });
 
   it("takes a child dialog with it when the record's own entry goes", () => {

@@ -1,4 +1,10 @@
-import { ReactNode, useCallback, useEffect, useRef } from "react";
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { useDismissible } from "@/hooks/useDismissible";
@@ -42,6 +48,30 @@ interface ModalProps {
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+interface ModalLayer {
+  surface: HTMLDivElement;
+  opener: HTMLElement | null;
+}
+
+/** Modal surfaces on screen, oldest first. Menus share dismissal ownership but
+ * do not hide the dialog that owns them, so this stack stays modal-only. */
+const modalLayers: ModalLayer[] = [];
+
+function syncModalLayers() {
+  const top = modalLayers.length - 1;
+  modalLayers.forEach(({ surface }, index) => {
+    const covered = index !== top;
+    surface.toggleAttribute("inert", covered);
+    if (covered) {
+      surface.removeAttribute("aria-modal");
+      surface.setAttribute("aria-hidden", "true");
+    } else {
+      surface.setAttribute("aria-modal", "true");
+      surface.removeAttribute("aria-hidden");
+    }
+  });
+}
 
 /**
  * Body-scroll lock, shared by every open Modal rather than saved and restored
@@ -141,14 +171,42 @@ export function Modal({
     if (!open) dismiss();
   }, [open, dismiss]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const surface = surfaceRef.current;
+    if (!surface) return;
     const opener = document.activeElement as HTMLElement | null;
 
     // Move focus into the dialog: prefer the first form field (so a form dialog
     // lands on its input, not the close X); otherwise the surface itself.
-    (surface?.querySelector<HTMLElement>("input,textarea,select") ?? surface)?.focus();
+    (surface.querySelector<HTMLElement>("input,textarea,select") ?? surface).focus();
 
+    // Capture and leave the opener before hiding anything below this surface.
+    // On the way out, reverse that order so focus never targets an inert node.
+    const layer: ModalLayer = { surface, opener };
+    modalLayers.push(layer);
+    syncModalLayers();
+
+    return () => {
+      const at = modalLayers.lastIndexOf(layer);
+      if (at === -1) return;
+      const wasTopmost = at === modalLayers.length - 1;
+
+      // If a whole nested stack leaves in one commit, React may clean up its
+      // parent before its child. Carry the parent's opener through any child
+      // that would otherwise try to focus a control in the detached surface.
+      for (let i = at + 1; i < modalLayers.length; i++) {
+        const above = modalLayers[i];
+        if (above.opener && surface.contains(above.opener)) above.opener = opener;
+      }
+
+      modalLayers.splice(at, 1);
+      syncModalLayers();
+      if (wasTopmost) layer.opener?.focus?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const surface = surfaceRef.current;
     const onKey = (e: KeyboardEvent) => {
       // The listener is on `document`, so every mounted Modal hears this key.
       // Only the one on top answers it.
@@ -183,10 +241,6 @@ export function Modal({
     return () => {
       unlockScroll();
       document.removeEventListener("keydown", onKey);
-      // Return focus to whatever opened the modal. For a dialog opened from
-      // inside another one that is a control on the surface behind it, which
-      // is where the member left off.
-      opener?.focus?.();
     };
   }, [requestClose, isTopmost]);
 

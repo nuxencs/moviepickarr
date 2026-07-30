@@ -268,11 +268,53 @@ describe("Modal", () => {
         );
       }
 
-      render(<Nested />);
-      act(() => void fireEvent.click(screen.getByRole("button", { name: "Delete" })));
-      const [, innerDialog] = screen.getAllByRole("dialog");
-      return { onOuterClose, onInnerClose, inner: innerDialog };
+      const view = render(<Nested />);
+      const opener = screen.getByRole("button", { name: "Delete" });
+      opener.focus();
+      act(() => void fireEvent.click(opener));
+      const [outerDialog, innerDialog] = screen.getAllByRole("dialog", { hidden: true });
+      return { onOuterClose, onInnerClose, outer: outerDialog, inner: innerDialog, view };
     }
+
+    it("exposes only the top dialog, then restores the outer one", () => {
+      const { outer, inner } = renderNested();
+      const opener = outer.querySelector("button") as HTMLButtonElement;
+
+      expect(screen.getAllByRole("dialog")).toEqual([inner]);
+      expect(outer.getAttribute("aria-modal")).toBeNull();
+      expect(outer.getAttribute("aria-hidden")).toBe("true");
+      expect(outer.hasAttribute("inert")).toBe(true);
+      expect(inner.getAttribute("aria-modal")).toBe("true");
+      expect(inner.getAttribute("aria-hidden")).toBeNull();
+      expect(inner.hasAttribute("inert")).toBe(false);
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(outer.getAttribute("aria-hidden")).toBe("true");
+      expect(outer.hasAttribute("inert")).toBe(true);
+      expect(inner.getAttribute("aria-modal")).toBe("true");
+      runExit();
+
+      expect(screen.getByRole("dialog")).toBe(outer);
+      expect(outer.getAttribute("aria-modal")).toBe("true");
+      expect(outer.getAttribute("aria-hidden")).toBeNull();
+      expect(outer.hasAttribute("inert")).toBe(false);
+      expect(document.activeElement).toBe(opener);
+    });
+
+    it("restores the page opener when a whole nested stack unmounts together", () => {
+      const pageOpener = document.createElement("button");
+      document.body.append(pageOpener);
+      pageOpener.focus();
+      try {
+        const { view } = renderNested();
+
+        view.unmount();
+
+        expect(document.activeElement).toBe(pageOpener);
+      } finally {
+        pageOpener.remove();
+      }
+    });
 
     it("gives Escape to the inner dialog alone", () => {
       const { onOuterClose, onInnerClose } = renderNested();
@@ -312,7 +354,7 @@ describe("Modal", () => {
       });
       try {
         renderNested();
-        const last = screen.getByRole("button", { name: "Close outer" });
+        const last = screen.getByRole("button", { name: "Close outer", hidden: true });
         last.focus();
 
         fireEvent.keyDown(document, { key: "Tab" });
@@ -320,7 +362,9 @@ describe("Modal", () => {
         // Tabbing off the outer surface's last item used to wrap back to its
         // first; with a dialog on top, the outer surface owns no Tab at all.
         expect(document.activeElement).toBe(last);
-        expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Delete" }));
+        expect(document.activeElement).not.toBe(
+          screen.getByRole("button", { name: "Delete", hidden: true }),
+        );
       } finally {
         if (offsetParent) Object.defineProperty(HTMLElement.prototype, "offsetParent", offsetParent);
         else delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetParent;
@@ -337,8 +381,12 @@ describe("Modal", () => {
           {() => <Menu label="More actions" actions={[{ label: "Edit", onSelect: () => {} }]} />}
         </Modal>,
       );
+      const dialog = screen.getByRole("dialog");
       act(() => screen.getByRole("button", { name: "More actions" }).click());
       expect(screen.getByRole("menu")).not.toBeNull();
+      expect(dialog.getAttribute("aria-modal")).toBe("true");
+      expect(dialog.getAttribute("aria-hidden")).toBeNull();
+      expect(dialog.hasAttribute("inert")).toBe(false);
 
       fireEvent.keyDown(document, { key: "Escape" });
       runExit();

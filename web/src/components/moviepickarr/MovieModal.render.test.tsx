@@ -511,6 +511,28 @@ describe("MovieModal actions", () => {
     expect(screen.queryByRole("heading", { name: "Delete movie" })).toBeNull();
   });
 
+  it.each([
+    ["edit", "Edit", "Edit movie"],
+    ["delete", "Delete", "Delete movie"],
+  ])("exposes only the %s dialog while it covers the record", (_action, trigger, heading) => {
+    const { dialog: record } = renderModal({
+      meID: ADDER_ID,
+      detail: detailed({ status: "stash" }),
+    });
+
+    const action = screen.getByRole("button", { name: trigger });
+    action.focus();
+    fireEvent.click(action);
+
+    const [visible] = screen.getAllByRole("dialog");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(within(visible).getByRole("heading", { name: heading })).not.toBeNull();
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+    expect(record.getAttribute("aria-modal")).toBeNull();
+    expect(record.getAttribute("aria-hidden")).toBe("true");
+    expect(record.hasAttribute("inert")).toBe(true);
+  });
+
   it("opens the delete confirm on an allowed film, and its success closes the record", async () => {
     const { onRequestClose } = renderModal({
       meID: ADDER_ID,

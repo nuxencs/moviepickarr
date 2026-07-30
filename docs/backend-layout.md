@@ -242,11 +242,14 @@
   same writer transaction before commit. A duplicate `tmdbId` creates no row,
   and a failed response read rolls the insert back. An authored edit similarly
   reads authorization and status, updates its title, optional watched time and
-  identity, marks its metadata stale, and reads its response on one writer
-  transaction. A uniqueness failure returns 409 without committing the other
-  edit fields. The guarded enrichment write treats a resolved-identity conflict
-  as non-fatal (metadata/credits still persist so the legacy duplicate row
-  leaves the backlog).
+  identity, removes metadata and credit joins from the prior identity, and reads
+  its response on one writer transaction. A uniqueness or cleanup failure
+  returns without committing the other edit fields. Shared `people` rows remain.
+  Same-identity edits use three SQL statements. Identity changes use five,
+  adding two primary-key-indexed deletes and one statement over the prior
+  marker-based flow. The guarded enrichment write treats a resolved-identity
+  conflict as non-fatal (metadata/credits still persist so the legacy duplicate
+  row leaves the backlog).
 - Migration files: `-- migrate:fk_off` on the first line makes the runner wrap
   the migration in the SQLite table-rebuild procedure (FKs off around the tx +
   `foreign_key_check` before commit). Version numbering has a permanent gap at
@@ -359,8 +362,10 @@ Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone). A
 manual add or edit still accepts a `link` in the request body, but only to
 extract the IMDb id from it. Nothing is stored as a link. On edit, an unchanged
 IMDb id preserves the stored identity. A changed id clears the prior TMDB id,
-stores the requested IMDb id, and makes the metadata a backfill candidate in
-the same transaction.
+stores the requested IMDb id, and deletes the prior film's metadata and credit
+joins in the same transaction. The missing metadata row keeps the movie in the
+backfill set even when the live enrichment worker is disabled. Shared people
+remain available to other movies.
 
 Enrichment (`EnrichOne`): if the movie already has a `tmdb_id` (search add /
 prior enrichment) it goes straight to `GET /3/movie/{tmdb_id}`; otherwise it

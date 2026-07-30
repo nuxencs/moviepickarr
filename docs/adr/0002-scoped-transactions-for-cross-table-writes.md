@@ -52,11 +52,12 @@ but production code depends on the identified stash operation.
 Authored movie edits use another scoped operation. `EditMovie` reads the movie
 on a writer transaction, then applies ownership and watched-state checks to
 that record. The title, optional watched time, changed external identity, and
-metadata stale marker commit together. Its response read also uses the
-transaction. A failed identity conflict, stale-marker write, or response read
-therefore leaves the movie and its dependent metadata state unchanged. Stats
-cache invalidation, the `movie:updated` event, and enrichment enqueue all run
-after commit.
+removal of metadata and credit rows for the prior identity commit together. Its
+response read also uses the transaction. A failed identity conflict, derived-row
+cleanup, or response read therefore leaves the movie and its dependent data
+unchanged. Shared `people` rows remain because other movies can reference them.
+Stats cache invalidation, the `movie:updated` event, and enrichment enqueue all
+run after commit.
 
 TMDB enrichment keeps its network work outside SQLite. `EnrichOne` first reads
 the movie's exact TMDB and IMDb identity, fetches and maps the remote result,
@@ -100,11 +101,13 @@ partial states do not become transactions under this decision.
 - A create operation that returns its inserted record keeps the response read
   inside the transaction when a failed read must also undo the insert.
 - A failed movie edit does not expose a new title, watched time, or identity
-  without its metadata stale marker and client invalidation. A successful
-  watched edit clears the stats cache before clients hear `movie:updated`.
+  without its derived-data cleanup and client invalidation. A successful
+  identity change serves no metadata or credits from the prior film while it
+  waits for enrichment. A successful watched edit clears the stats cache before
+  clients hear `movie:updated`.
 - An enrichment result fetched for an older identity cannot overwrite a newer
   edit. A failed metadata or credit write rolls back the resolved ids and every
-  derived row, leaving the stale marker or TTL eligible for retry.
+  derived row, leaving the missing metadata row or TTL eligible for retry.
 - TMDB requests, credit mapping, and metadata JSON encoding happen before the
   enrichment transaction. The single writer is held only for local SQL work.
 - A failed break-glass login insert rolls back both a fresh admin row and an

@@ -30,9 +30,22 @@ type watchCurrentAndAdvanceNextUpStore interface {
 	) (watched *domain.Movie, next *domain.User, changed bool, err error)
 }
 
+// editMovieStore is the transaction-bound edit command. Ownership, watched
+// state, movie fields, enrichment staleness, and the response read share one
+// writer transaction so a failed edit has no durable fragment.
+type editMovieStore interface {
+	EditMovie(
+		ctx context.Context,
+		movieID, actorID int,
+		title, imdbID string,
+		watchedAt *time.Time,
+	) (movie *domain.Movie, identityChanged bool, err error)
+}
+
 type movieStore interface {
 	domain.MovieRepo
 	watchCurrentAndAdvanceNextUpStore
+	editMovieStore
 }
 
 // ActiveDraw records the most recent random draw so a reloading client — or one
@@ -281,10 +294,6 @@ func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
 	return false, domain.ErrInvalidState
 }
 
-func (s *Service) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
-	return s.movieRepo.SetExternalIDs(ctx, id, tmdbID, imdbID)
-}
-
 // Delete removes a stash or pool row. poolLocked is the pool lock, read by the
 // caller (the move handler reads it the same way): the ordering of the two
 // refusals belongs here, next to the draw the service owns.
@@ -326,27 +335,13 @@ func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
 	return nil
 }
 
-func (s *Service) Update(ctx context.Context, id int, title string, watchedAt *time.Time) (*domain.Movie, error) {
-	movie, err := s.movieRepo.FindByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if movie.Status != string(domain.MovieStatusWatched) && watchedAt != nil {
-		return nil, domain.ErrInvalidInput
-	}
-
-	if err = s.movieRepo.UpdateTitle(ctx, id, title); err != nil {
-		return nil, err
-	}
-
-	if watchedAt != nil {
-		if err = s.movieRepo.UpdateWatchedAt(ctx, id, watchedAt.UTC()); err != nil {
-			return nil, err
-		}
-	}
-
-	return s.movieRepo.FindByID(ctx, id)
+func (s *Service) Edit(
+	ctx context.Context,
+	movieID, actorID int,
+	title, imdbID string,
+	watchedAt *time.Time,
+) (*domain.Movie, bool, error) {
+	return s.movieRepo.EditMovie(ctx, movieID, actorID, title, imdbID, watchedAt)
 }
 
 func (s *Service) Get(ctx context.Context, id int) (*domain.Movie, error) {

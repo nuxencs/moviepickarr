@@ -29,24 +29,47 @@ func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, erro
 	return &copyMovie, nil
 }
 
-func (r *testMovieRepo) UpdateTitle(_ context.Context, id int, title string) error {
+func (r *testMovieRepo) EditMovie(
+	_ context.Context,
+	id, actorID int,
+	title, imdbID string,
+	watchedAt *time.Time,
+) (*domain.Movie, bool, error) {
 	movie, ok := r.movies[id]
 	if !ok {
-		return sql.ErrNoRows
+		return nil, false, sql.ErrNoRows
 	}
+	if movie.AddedByID != actorID {
+		return nil, false, domain.ErrForbidden
+	}
+	if watchedAt != nil && movie.Status != string(domain.MovieStatusWatched) {
+		return nil, false, domain.ErrInvalidInput
+	}
+
+	currentIMDb := ""
+	if movie.IMDbID != nil {
+		currentIMDb = *movie.IMDbID
+	}
+	identityChanged := imdbID != currentIMDb
+
 	movie.Title = title
 	r.updateTitleHit++
-	return nil
-}
-
-func (r *testMovieRepo) UpdateWatchedAt(_ context.Context, id int, watchedAt time.Time) error {
-	movie, ok := r.movies[id]
-	if !ok {
-		return sql.ErrNoRows
+	if watchedAt != nil {
+		at := watchedAt.UTC()
+		movie.WatchedAt = &at
+		r.updateWatchedAtHit++
 	}
-	movie.WatchedAt = &watchedAt
-	r.updateWatchedAtHit++
-	return nil
+	if identityChanged {
+		movie.TMDBID = nil
+		movie.IMDbID = nil
+		if imdbID != "" {
+			id := imdbID
+			movie.IMDbID = &id
+		}
+	}
+
+	copyMovie := *movie
+	return &copyMovie, identityChanged, nil
 }
 
 func (r *testMovieRepo) List(context.Context) ([]*domain.Movie, error) { panic("unexpected call") }
@@ -575,7 +598,7 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	}
 }
 
-func TestUpdateRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
+func TestEditRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	t.Parallel()
 
 	repo := &testMovieRepo{
@@ -590,7 +613,7 @@ func TestUpdateRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	svc := NewService(repo, DrawConfig{})
 	watchedAt := time.Date(2026, 2, 8, 10, 30, 0, 0, time.UTC)
 
-	_, err := svc.Update(context.Background(), 42, "After", &watchedAt)
+	_, _, err := svc.Edit(context.Background(), 42, 0, "After", "", &watchedAt)
 	if !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
@@ -603,7 +626,7 @@ func TestUpdateRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	}
 }
 
-func TestUpdateWatchedMovieAllowsWatchedAt(t *testing.T) {
+func TestEditWatchedMovieAllowsWatchedAt(t *testing.T) {
 	t.Parallel()
 
 	repo := &testMovieRepo{
@@ -618,7 +641,7 @@ func TestUpdateWatchedMovieAllowsWatchedAt(t *testing.T) {
 	svc := NewService(repo, DrawConfig{})
 	watchedAt := time.Date(2026, 2, 8, 18, 45, 0, 0, time.UTC)
 
-	updated, err := svc.Update(context.Background(), 7, "After", &watchedAt)
+	updated, _, err := svc.Edit(context.Background(), 7, 0, "After", "", &watchedAt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

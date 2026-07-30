@@ -488,6 +488,34 @@ func (d *SqliteMoviesRepository) Add(ctx context.Context, title, status string, 
 	return d.FindByID(ctx, int(id))
 }
 
+func (d *SqliteMoviesRepository) AddToStash(
+	ctx context.Context,
+	title string,
+	userID int,
+	tmdbID *int,
+	imdbID *string,
+) (*domain.Movie, error) {
+	query := `
+		INSERT INTO movies (title, status, added_by_id, tmdb_id, imdb_id)
+		VALUES (?, 'stash', ?, ?, ?)
+	`
+
+	result, err := d.pool.Write.ExecContext(ctx, query, title, userID, tmdbID, imdbID)
+	if err != nil {
+		if db.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("%w: another movie already has this identity", domain.ErrConflict)
+		}
+		return nil, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return d.FindByID(ctx, int(id))
+}
+
 func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {
 	query := "UPDATE movies SET tmdb_id = ?, imdb_id = ? WHERE id = ?"
 

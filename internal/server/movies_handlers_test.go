@@ -609,6 +609,68 @@ func TestHandleAddMovie_LandsInStashEvenWithPoolRoom(t *testing.T) {
 	}
 }
 
+// Regression: a duplicate add used to insert an identityless stash row before
+// the TMDB uniqueness check ran. If its compensating DELETE then failed, the
+// handler still returned 409 and silently left that orphan behind.
+func TestHandleAddMovie_DuplicateIdentityDoesNotLeaveOrphanWhenCleanupFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+
+	user, err := userRepo.Create(ctx, "Casey")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	existing, err := movieRepo.Add(ctx, "Dune", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create existing movie: %v", err)
+	}
+	tmdbID := 438631
+	if err := movieRepo.SetExternalIDs(ctx, existing.ID, &tmdbID, nil); err != nil {
+		t.Fatalf("set existing identity: %v", err)
+	}
+
+	if _, err := dbConn.Write.ExecContext(ctx, `
+		CREATE TRIGGER reject_movie_cleanup
+		BEFORE DELETE ON movies
+		BEGIN
+			SELECT RAISE(ABORT, 'injected cleanup failure');
+		END
+	`); err != nil {
+		t.Fatalf("install cleanup failure: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/movies",
+		strings.NewReader(`{"title":"Dune duplicate","tmdbId":438631}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusConflict {
+		t.Fatalf("expected status 409, got %d", resp.StatusCode)
+	}
+
+	var total, identityless int
+	if err := dbConn.Read.QueryRowContext(ctx, "SELECT COUNT(*) FROM movies").Scan(&total); err != nil {
+		t.Fatalf("count movies: %v", err)
+	}
+	if err := dbConn.Read.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM movies WHERE tmdb_id IS NULL AND imdb_id IS NULL",
+	).Scan(&identityless); err != nil {
+		t.Fatalf("count identityless movies: %v", err)
+	}
+	if total != 1 || identityless != 0 {
+		t.Fatalf("movies after duplicate = %d total, %d identityless; want 1 total, 0 identityless", total, identityless)
+	}
+}
+
 func TestHandleDeleteMovie_PoolLock(t *testing.T) {
 	t.Parallel()
 

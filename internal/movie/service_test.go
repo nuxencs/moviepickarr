@@ -73,7 +73,7 @@ func (r *testMovieRepo) CountByUserIDAndStatus(context.Context, int, string) (in
 	panic("unexpected call")
 }
 
-func (r *testMovieRepo) Add(context.Context, string, string, int) (*domain.Movie, error) {
+func (r *testMovieRepo) AddToStash(context.Context, string, int, *int, *string) (*domain.Movie, error) {
 	panic("unexpected call")
 }
 

@@ -300,7 +300,7 @@ func poolRepo() *testMovieRepo {
 	}
 }
 
-func TestDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
+func TestPublishedDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
 	t.Parallel()
 
 	ft := &fakeTimer{}
@@ -311,17 +311,28 @@ func TestDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
 		OnRevealed:      func(ap ActiveDraw) { revealedDraws = append(revealedDraws, ap) },
 	})
 
-	if _, err := svc.DrawRandom(context.Background(), "c1"); err != nil {
+	drawn, err := svc.DrawRandom(context.Background(), "c1")
+	if err != nil {
 		t.Fatalf("DrawRandom: %v", err)
 	}
-	if ft.starts != 1 || ft.lastDur != 5*time.Second {
-		t.Fatalf("expected one 5s timer armed, got starts=%d dur=%v", ft.starts, ft.lastDur)
+	if ft.starts != 0 {
+		t.Fatalf("timer armed before draw publication: starts=%d", ft.starts)
 	}
-
 	ap, ok := svc.ActiveDraw()
 	if !ok {
 		t.Fatal("expected an active draw")
 	}
+	svc.StartAutoReveal(drawn.ID+1000, ap.Generation)
+	svc.StartAutoReveal(drawn.ID, ap.Generation+1)
+	if ft.starts != 0 {
+		t.Fatalf("stale publication token armed a timer: starts=%d", ft.starts)
+	}
+	svc.StartAutoReveal(drawn.ID, ap.Generation)
+	svc.StartAutoReveal(drawn.ID, ap.Generation)
+	if ft.starts != 1 || ft.lastDur > 5*time.Second {
+		t.Fatalf("expected one timer within the 5s deadline, got starts=%d dur=%v", ft.starts, ft.lastDur)
+	}
+
 	if got := ap.RevealAt.Sub(ap.DrawnAt); got != 5*time.Second {
 		t.Fatalf("revealAt - drawnAt = %v, want 5s", got)
 	}
@@ -338,6 +349,88 @@ func TestDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
 	}
 }
 
+func TestStartAutoRevealUsesRemainingDeadline(t *testing.T) {
+	t.Parallel()
+
+	ft := &fakeTimer{}
+	svc := NewService(poolRepo(), DrawConfig{
+		AutoRevealDelay: 5 * time.Second,
+		StartTimer:      ft.start,
+	})
+	drawn, err := svc.DrawRandom(context.Background(), "c1")
+	if err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	ap, ok := svc.ActiveDraw()
+	if !ok {
+		t.Fatal("expected an active draw")
+	}
+
+	// Simulate payload construction running past the advertised deadline. The
+	// post-publication timer fires immediately; it does not grant a fresh 5s.
+	svc.mu.Lock()
+	svc.activeDraw.RevealAt = time.Now().Add(-time.Second)
+	svc.mu.Unlock()
+	svc.StartAutoReveal(drawn.ID, ap.Generation)
+
+	if ft.starts != 1 || ft.lastDur != 0 {
+		t.Fatalf("expired draw timer starts=%d dur=%v, want one immediate timer", ft.starts, ft.lastDur)
+	}
+}
+
+func TestCloseStopsDelayedAndTriggeredAutoReveal(t *testing.T) {
+	t.Parallel()
+
+	t.Run("arm after close", func(t *testing.T) {
+		ft := &fakeTimer{}
+		svc := NewService(poolRepo(), DrawConfig{StartTimer: ft.start})
+		drawn, err := svc.DrawRandom(context.Background(), "c1")
+		if err != nil {
+			t.Fatalf("DrawRandom: %v", err)
+		}
+		ap, ok := svc.ActiveDraw()
+		if !ok {
+			t.Fatal("expected an active draw")
+		}
+
+		svc.Close()
+		svc.StartAutoReveal(drawn.ID, ap.Generation)
+		if ft.starts != 0 {
+			t.Fatalf("post-close publication armed %d timers, want 0", ft.starts)
+		}
+	})
+
+	t.Run("triggered callback after close", func(t *testing.T) {
+		ft := &fakeTimer{}
+		notified := 0
+		svc := NewService(poolRepo(), DrawConfig{
+			StartTimer: ft.start,
+			OnRevealed: func(ActiveDraw) {
+				notified++
+			},
+		})
+		drawn, err := svc.DrawRandom(context.Background(), "c1")
+		if err != nil {
+			t.Fatalf("DrawRandom: %v", err)
+		}
+		ap, ok := svc.ActiveDraw()
+		if !ok {
+			t.Fatal("expected an active draw")
+		}
+		svc.StartAutoReveal(drawn.ID, ap.Generation)
+		triggered := ft.fn
+
+		svc.Close()
+		triggered()
+		if notified != 0 {
+			t.Fatalf("post-close deadline sent %d notifications, want 0", notified)
+		}
+		if ap, ok := svc.ActiveDraw(); !ok || ap.Revealed {
+			t.Fatalf("post-close deadline changed active draw to %+v, ok=%v", ap, ok)
+		}
+	})
+}
+
 func TestManualRevealCancelsAutoRevealAndNotifiesOnce(t *testing.T) {
 	t.Parallel()
 
@@ -348,9 +441,15 @@ func TestManualRevealCancelsAutoRevealAndNotifiesOnce(t *testing.T) {
 		OnRevealed: func(ActiveDraw) { notified++ },
 	})
 
-	if _, err := svc.DrawRandom(context.Background(), "c1"); err != nil {
+	drawn, err := svc.DrawRandom(context.Background(), "c1")
+	if err != nil {
 		t.Fatalf("DrawRandom: %v", err)
 	}
+	ap, ok := svc.ActiveDraw()
+	if !ok {
+		t.Fatal("expected an active draw")
+	}
+	svc.StartAutoReveal(drawn.ID, ap.Generation)
 
 	if _, flipped := svc.RevealCurrentDraw(); !flipped {
 		t.Fatal("expected the manual reveal to flip the draw")
@@ -377,9 +476,15 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	if _, err := svc.DrawRandom(ctx, "c1"); err != nil {
+	drawn, err := svc.DrawRandom(ctx, "c1")
+	if err != nil {
 		t.Fatalf("DrawRandom: %v", err)
 	}
+	ap, ok := svc.ActiveDraw()
+	if !ok {
+		t.Fatal("expected an active draw")
+	}
+	svc.StartAutoReveal(drawn.ID, ap.Generation)
 	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
 		t.Fatalf("MarkCurrentAsWatched: %v", err)
 	}
@@ -417,6 +522,11 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrawRandom A: %v", err)
 	}
+	activeA, ok := svc.ActiveDraw()
+	if !ok {
+		t.Fatal("expected active draw A")
+	}
+	svc.StartAutoReveal(drawA.ID, activeA.Generation)
 	fireA := ft.fn
 
 	// A is watched (clearing the draw), then a fresh draw B takes the slot.
@@ -432,6 +542,19 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	}
 	if drawB.ID == drawA.ID {
 		t.Fatalf("test setup: expected B (%d) to differ from A (%d)", drawB.ID, drawA.ID)
+	}
+	activeB, ok := svc.ActiveDraw()
+	if !ok {
+		t.Fatal("expected active draw B")
+	}
+	svc.StartAutoReveal(drawA.ID, activeA.Generation)
+	if ft.starts != 1 {
+		t.Fatalf("stale draw A publication rearmed a timer: starts=%d", ft.starts)
+	}
+	svc.StartAutoReveal(drawB.ID, activeB.Generation)
+	svc.StartAutoReveal(drawB.ID, activeB.Generation)
+	if ft.starts != 2 {
+		t.Fatalf("draw B timer starts=%d, want one new timer", ft.starts)
 	}
 
 	// A's deadline was cancelled by the watch, but simulate its already-triggered

@@ -704,10 +704,13 @@ of those used to leave the bar visibly out of step (a skip finished it ~5.6s ear
 tab switch restarted it with only ~7s to go). Pressing OK (or letting it fill) confirms, which
 `POST`s `/movies/current/reveal`; the server flips the draw to `revealed` and broadcasts
 **`movie:revealed`**, so **every** client's reel closes and reveals in lockstep. The
-**auto-reveal is server-owned**: the movie service arms a timer at `revealAt`
-(`DefaultAutoRevealDelay` 16.5s) and, if no client confirms first, reveals the draw itself
-and broadcasts the same `movie:revealed`, so a reel never hangs if the drawer leaves,
-without each client racing its own timer. Marking the winner watched before the reel
+**auto-reveal is server-owned**: after `movie:drawn` enters the broker, the movie
+service arms a timer for the time remaining until `revealAt`
+(`DefaultAutoRevealDelay` 16.5s). A slow candidate or metadata read shortens that
+timer instead of moving the deadline, and `movie:revealed` cannot overtake the draw
+event. If no client confirms first, the service reveals the draw itself and broadcasts
+the same `movie:revealed`, so a reel never hangs if the drawer leaves, without each
+client racing its own timer. Marking the winner watched before the reel
 lands also publishes `movie:revealed` first, so animated clients close immediately
 instead of waiting for their fallback deadline. The close is **flash-free**: the winner backdrop
 (preloaded during the spin) is decoded while the reel still covers the hero, then the reel

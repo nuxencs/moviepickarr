@@ -17,6 +17,7 @@ import (
 	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
+	fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
 )
 
 // Delta 1: every broadcast gets a monotonic seq starting at 1, and Subscribe
@@ -289,6 +290,220 @@ func seedPoolAndDraw(t *testing.T, app *fiber.App, movieRepo *repository.SqliteM
 	resp, err := app.Test(req, -1)
 	if err != nil || resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("draw: err=%v status=%v", err, resp.StatusCode)
+	}
+}
+
+type injectedAutoRevealTimer struct {
+	started chan func()
+	starts  int
+	onStart func()
+}
+
+func (t *injectedAutoRevealTimer) start(_ time.Duration, fn func()) func() {
+	t.starts++
+	if t.onStart != nil {
+		t.onStart()
+	}
+	t.started <- fn
+	return func() {}
+}
+
+type panickingBatchMetadataRepo struct {
+	domain.MovieMetadataRepo
+}
+
+func (r *panickingBatchMetadataRepo) GetMetadataByMovieIDs(
+	context.Context,
+	[]int,
+) (map[int]*domain.MovieMetadata, error) {
+	panic("injected metadata panic")
+}
+
+func TestHandleGetRandomMovie_PublishesBeforeAutoRevealCanFire(t *testing.T) {
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Iris")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, title := range []string{"Drive", "Collateral"} {
+		if _, err := movieRepo.Add(ctx, title, "pool", user.ID); err != nil {
+			t.Fatalf("seed pool: %v", err)
+		}
+	}
+
+	timer := &injectedAutoRevealTimer{started: make(chan func(), 1)}
+	h.movieService.Close()
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		AutoRevealDelay: time.Second,
+		StartTimer:      timer.start,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
+
+	metadataReached := make(chan struct{})
+	resumeMetadata := make(chan struct{})
+	resumed := false
+	resume := func() {
+		if !resumed {
+			close(resumeMetadata)
+			resumed = true
+		}
+	}
+	t.Cleanup(resume)
+	h.movieMetadata = &pausingBatchMetadataRepo{
+		MovieMetadataRepo: h.movieMetadata,
+		reached:           metadataReached,
+		resume:            resumeMetadata,
+	}
+
+	client, _ := h.broker.Subscribe()
+	t.Cleanup(func() { h.broker.Unsubscribe(client) })
+
+	drawDone := startAs(
+		app,
+		jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"first"}`),
+		user.ID,
+		"member",
+	)
+	<-metadataReached
+
+	// The injected timer makes either implementation deterministic. Before the
+	// fix it has already been armed, so fire it while publication is paused. The
+	// fixed path arms only after movie:drawn, so release publication first.
+	var fire func()
+	select {
+	case fire = <-timer.started:
+		fire()
+	default:
+	}
+
+	publicationResumedAt := time.Now().UTC()
+	resume()
+	draw := <-drawDone
+	if draw.err != nil || draw.resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("draw: err=%v status=%v", draw.err, draw.resp.StatusCode)
+	}
+	if fire == nil {
+		fire = <-timer.started
+		fire()
+	}
+
+	var body struct {
+		MovieID    int    `json:"movieID"`
+		ServerNow  string `json:"serverNow"`
+		Candidates []struct {
+			MovieID int `json:"movieID"`
+		} `json:"candidates"`
+	}
+	if err := json.NewDecoder(draw.resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode draw response: %v", err)
+	}
+	serverNow, err := time.Parse(time.RFC3339Nano, body.ServerNow)
+	if err != nil {
+		t.Fatalf("parse serverNow %q: %v", body.ServerNow, err)
+	}
+	if serverNow.Before(publicationResumedAt) {
+		t.Fatalf("serverNow = %v, want at or after candidate I/O resumed at %v", serverNow, publicationResumedAt)
+	}
+	winnerIncluded := false
+	for _, candidate := range body.Candidates {
+		if candidate.MovieID == body.MovieID {
+			winnerIncluded = true
+			break
+		}
+	}
+	if !winnerIncluded {
+		t.Fatalf("draw candidates = %+v, want winner %d", body.Candidates, body.MovieID)
+	}
+
+	var lifecycle []string
+	for len(client) > 0 {
+		switch e := <-client; e.Type {
+		case "movie:drawn", "movie:revealed":
+			lifecycle = append(lifecycle, e.Type)
+		}
+	}
+	want := []string{"movie:drawn", "movie:revealed"}
+	if !slices.Equal(lifecycle, want) {
+		t.Fatalf("lifecycle events = %v, want %v", lifecycle, want)
+	}
+	if ap, ok := h.movieService.ActiveDraw(); !ok || !ap.Revealed {
+		t.Fatalf("active draw after timer = %+v, ok=%v, want revealed", ap, ok)
+	}
+}
+
+func TestHandleGetRandomMovie_PanicPublishesFallbackBeforeAutoReveal(t *testing.T) {
+	ctx := context.Background()
+	h, _, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Jules")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, title := range []string{"Drive", "Collateral"} {
+		if _, err := movieRepo.Add(ctx, title, "pool", user.ID); err != nil {
+			t.Fatalf("seed pool: %v", err)
+		}
+	}
+
+	timerStartSeq := make(chan uint64, 1)
+	timer := &injectedAutoRevealTimer{
+		started: make(chan func(), 1),
+		onStart: func() {
+			timerStartSeq <- h.broker.HeadSeq()
+		},
+	}
+	h.movieService.Close()
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		AutoRevealDelay: time.Second,
+		StartTimer:      timer.start,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
+	h.movieMetadata = &panickingBatchMetadataRepo{MovieMetadataRepo: h.movieMetadata}
+
+	app := fiber.New()
+	app.Use(fiberrecover.New())
+	mountTestV1(app, h)
+
+	client, _ := h.broker.Subscribe()
+	t.Cleanup(func() { h.broker.Unsubscribe(client) })
+
+	resp := doAs(
+		t,
+		app,
+		jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"first"}`),
+		user.ID,
+		"member",
+	)
+	if resp.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("recovered draw panic: got %d, want 500", resp.StatusCode)
+	}
+
+	drawnEvent := <-client
+	if drawnEvent.Type != "movie:drawn" {
+		t.Fatalf("first lifecycle event = %q, want movie:drawn", drawnEvent.Type)
+	}
+	if head := <-timerStartSeq; head != drawnEvent.Seq {
+		t.Fatalf("broker head when timer started = %d, want published draw seq %d", head, drawnEvent.Seq)
+	}
+	drawn, ok := drawnEvent.Data.(drawnPayload)
+	if !ok {
+		t.Fatalf("fallback draw payload type = %T, want drawnPayload", drawnEvent.Data)
+	}
+	if len(drawn.Candidates) != 0 || drawn.ID == 0 || drawn.ServerNow == "" {
+		t.Fatalf("fallback draw payload = %+v, want identified draw without candidates", drawn)
+	}
+
+	fire := <-timer.started
+	if timer.starts != 1 {
+		t.Fatalf("fallback publication armed %d timers, want 1", timer.starts)
+	}
+	fire()
+
+	revealedEvent := <-client
+	if revealedEvent.Type != "movie:revealed" {
+		t.Fatalf("second lifecycle event = %q, want movie:revealed", revealedEvent.Type)
 	}
 }
 

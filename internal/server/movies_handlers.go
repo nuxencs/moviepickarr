@@ -434,22 +434,32 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 			return drawErr
 		}
 
+		activeDraw, ok := h.movieService.ActiveDraw()
+		if !ok || activeDraw.MovieID != selectedMovie.ID {
+			return domain.ErrInvalidState
+		}
 		payload := toFullMovieBare(selectedMovie)
 		// Carry the authoritative draw time so the clicker (whose own SSE event may
 		// drop) and every other client resume the reveal spin from the same instant,
 		// the reveal deadline the server will enforce (clients time the confirm
 		// countdown off it), plus the drawer id so each client knows whether to
 		// show the confirm button.
-		if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == selectedMovie.ID {
-			payload.DrawnAt = formatTime(&ap.DrawnAt)
-			payload.RevealAt = formatTimePrecise(ap.RevealAt)
-			// The server clock as this payload leaves, so a client can anchor the
-			// deadline in its own clock (revealAt − serverNow, added to the moment
-			// it received this) instead of to drawnAt, which is second-truncated
-			// and already in the past by the time the payload lands.
-			payload.ServerNow = formatTimePrecise(time.Now().UTC())
-			payload.DrawClientID = ap.DrawClientID
-		}
+		payload.DrawnAt = formatTime(&activeDraw.DrawnAt)
+		payload.RevealAt = formatTimePrecise(activeDraw.RevealAt)
+		payload.DrawClientID = activeDraw.DrawClientID
+		drawn = drawnPayload{fullMovie: payload}
+
+		published := false
+		defer func() {
+			if !published {
+				// A future early return or panic still announces the persisted
+				// draw before its timer can reveal it. The full reel ceremony
+				// may be unavailable, but the lifecycle keeps progressing.
+				drawn.ServerNow = formatTimePrecise(time.Now().UTC())
+				h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
+			}
+			h.movieService.StartAutoReveal(selectedMovie.ID, activeDraw.Generation)
+		}()
 
 		// Reel candidates = the pre-draw pool (winner + the rest) as lean tiles WITH
 		// posters. That IS the pool view during an unrevealed draw: the service holds
@@ -459,17 +469,21 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		// Best-effort: the draw already succeeded, so a pool-load failure must not fail
 		// the response — it just omits candidates and the client falls back to its
 		// local pool cache (the pre-self-contained behaviour).
-		drawn = drawnPayload{fullMovie: payload}
 		if candidateMovies, poolErr := h.movieService.Pooled(ctx); poolErr != nil {
 			h.log.Warn().Err(poolErr).Msg("failed to load pool for draw candidates (reel falls back to client pool cache)")
 		} else {
 			drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(ctx, candidateMovies))
 		}
 
-		// The auto-reveal is armed inside DrawRandom: if no client confirms by the
-		// payload's revealAt, the movie service reveals the draw itself and the
-		// OnRevealed hook broadcasts once for everyone.
+		// Stamp the server clock after candidate I/O, immediately before
+		// publication, so revealAt - serverNow is the actual remaining window.
+		drawn.ServerNow = formatTimePrecise(time.Now().UTC())
+
+		// Publish before arming the timer. If candidate construction consumed the
+		// whole reveal window, StartAutoReveal schedules an immediate callback,
+		// but movie:drawn has already entered the broker first.
 		h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
+		published = true
 		return nil
 	})
 	if !ran {

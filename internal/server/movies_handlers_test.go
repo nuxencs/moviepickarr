@@ -50,6 +50,13 @@ func mountTestV1(app *fiber.App, h *handler) {
 func setupEditMovieTest(t *testing.T) (*handler, *fiber.App, *repository.SqliteUserRepository, *repository.SqliteMoviesRepository) {
 	t.Helper()
 
+	h, app, userRepo, movieRepo, _ := setupEditMovieTestWithDB(t)
+	return h, app, userRepo, movieRepo
+}
+
+func setupEditMovieTestWithDB(t *testing.T) (*handler, *fiber.App, *repository.SqliteUserRepository, *repository.SqliteMoviesRepository, *db.Pool) {
+	t.Helper()
+
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "moviepickarr-test.db")
 	dbConn, err := db.OpenSQLite(dbPath)
@@ -71,7 +78,7 @@ func setupEditMovieTest(t *testing.T) (*handler, *fiber.App, *repository.SqliteU
 	app := fiber.New()
 	mountTestV1(app, h)
 
-	return h, app, repository.NewSqliteUserRepository(dbConn), repository.NewSqliteMoviesRepository(dbConn)
+	return h, app, repository.NewSqliteUserRepository(dbConn), repository.NewSqliteMoviesRepository(dbConn), dbConn
 }
 
 func TestHandleEditMovie_RejectsWatchedAtForNonWatchedMovie(t *testing.T) {

@@ -92,13 +92,9 @@
   are concrete structs (no service interfaces, nothing consumes them
   polymorphically); the repository ports in `internal/domain` remain the
   substitution seam for tests.
-- `internal/nextup`: owns the whole next-up rotation. `Get` self-seeds a
-  fresh install with the first roster member; `Advance` passes the turn (only
-  while the pool still has movies and more than one member exists) and reports
-  whether it moved, so the handler only broadcasts. The handler calls `Advance`
-  on **watch**, not draw (rotation-on-watch, Model B): next up stays the runner
-  across the whole draw → reveal → watch cycle and passes only once the movie is
-  actually watched.
+- `internal/nextup`: owns next-up reads. `Get` self-seeds a fresh install with
+  the first roster member. Rotation-on-watch lives in the atomic movie-store
+  transition below because the handoff and watched movie must commit together.
 - `internal/auth`: shared auth primitives. `token.go` is the opaque-token
   generator + SHA-256 storage hash; `password.go` is the argon2id wrapper;
   `session.go` is the `SessionManager` deep module over the session store:
@@ -150,8 +146,11 @@
   calls do nothing.
   `RevealCurrentDraw` is the once-per-draw flip fired by the drawer's confirm or
   the timer. An early watch performs the same flip before it clears the active
-  draw. All paths call the `OnRevealed` hook exactly once. The HTTP handler's
-  `movieNightMu` serializes draw, reveal, and watch from next-up
+  draw, but only after `WatchCurrentAndAdvanceNextUp` commits the watched movie
+  and next-up handoff. A failed transaction leaves `ActiveDraw` and its timer
+  intact and publishes no lifecycle event. All successful paths call the
+  `OnRevealed` hook exactly once. The HTTP handler's `movieNightMu` serializes
+  draw, reveal, and watch from next-up
   authorization through synchronous lifecycle event publication. Watch keeps that
   command lock through next-up rotation, so an outgoing holder cannot start the next
   draw with stale authorization. The server serializes `RevealAt`/`ServerNow` into
@@ -191,7 +190,11 @@
 
 ## Infrastructure
 
-- `internal/repository/sqlite.go`: SQLite repository implementations.
+- `internal/repository/sqlite.go`: SQLite repository implementations. Its
+  `WatchCurrentAndAdvanceNextUp` store operation runs the conditional current
+  update, post-watch pool existence check, and optional handoff on one writer
+  transaction. It skips roster and raw next-up reads when no pooled movie
+  remains. See ADR 0002.
 - `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
 - `internal/repository/session.go`: `sessions` repository (create / find-by-token-hash joined to the member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).

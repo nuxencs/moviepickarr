@@ -2,6 +2,10 @@
 
 Status: accepted (2026-07-19)
 
+ADR 0002 later adopted scoped transactions for cross-table writes whose partial
+state breaks a domain invariant. The two recoverable flows named here remain
+non-transactional.
+
 ## Context
 
 Two write paths in the invite/claim flow (#97) touch more than one repository in
@@ -38,6 +42,5 @@ last, and rely on the resulting states being benign:
   owns sessions so the service modules never touch a session.
 - The failure states above are recoverable, not corrupting: no partial write
   leaves a member unable to log in or an invite stuck in a broken state.
-- If the project later wants transactional integrity broadly, adopt a
-  unit-of-work seam project-wide and revisit these two spots then. That is a
-  system-level decision, not a fix for this flow. Reopen this ADR if so.
+- ADR 0002's scoped unit-of-work seam does not reopen these two flows. Revisit
+  them only if their accepted residual states stop being valid.

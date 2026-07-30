@@ -11,8 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"moviepickarr/internal/domain"
 	"moviepickarr/internal/movie"
+	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -65,6 +68,21 @@ func startAs(app *fiber.App, req *http.Request, memberID int, role string) <-cha
 		done <- asyncHTTPResult{resp: resp, err: err}
 	}()
 	return done
+}
+
+type pausingWatchMovieStore struct {
+	*repository.SqliteMoviesRepository
+	reached chan<- struct{}
+	resume  <-chan struct{}
+}
+
+func (s *pausingWatchMovieStore) WatchCurrentAndAdvanceNextUp(
+	ctx context.Context,
+	watchedAt time.Time,
+) (*domain.Movie, *domain.User, bool, error) {
+	close(s.reached)
+	<-s.resume
+	return s.SqliteMoviesRepository.WatchCurrentAndAdvanceNextUp(ctx, watchedAt)
 }
 
 // A member who did not add a movie cannot edit, delete or move it: 403 not_adder,
@@ -253,7 +271,7 @@ func TestRotation_HoldsAcrossCycleAdvancesOnWatch(t *testing.T) {
 	}
 }
 
-func TestRotation_WatchOwnsTurnThroughAdvance(t *testing.T) {
+func TestRotation_WatchOwnsTurnThroughCommit(t *testing.T) {
 	tests := []struct {
 		name       string
 		request    func() *http.Request
@@ -297,25 +315,26 @@ func TestRotation_WatchOwnsTurnThroughAdvance(t *testing.T) {
 				t.Fatalf("seed next up: got %+v, err=%v, want member %d", up, err, first.ID)
 			}
 
-			// Pause watch after its movie update has committed and its service lock
-			// has been released, but before the handler advances next up.
-			watchPersisted := make(chan struct{})
-			resumeWatch := make(chan struct{})
+			// Pause immediately before the atomic store operation delegates and
+			// commits. The command lock must still exclude the outgoing holder.
+			watchStoreReached := make(chan struct{})
+			resumeWatchStore := make(chan struct{})
 			resumed := false
 			resume := func() {
 				if !resumed {
-					close(resumeWatch)
+					close(resumeWatchStore)
 					resumed = true
 				}
 			}
 			t.Cleanup(resume)
 
 			h.movieService.Close()
-			h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
-				OnRevealed: func(movie.ActiveDraw) {
-					close(watchPersisted)
-					<-resumeWatch
-				},
+			h.movieService = movie.NewService(&pausingWatchMovieStore{
+				SqliteMoviesRepository: movieRepo,
+				reached:                watchStoreReached,
+				resume:                 resumeWatchStore,
+			}, movie.DrawConfig{
+				OnRevealed: revealBroadcaster(h.broker),
 			})
 
 			resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"first"}`), first.ID, "member")
@@ -329,25 +348,16 @@ func TestRotation_WatchOwnsTurnThroughAdvance(t *testing.T) {
 				first.ID,
 				"member",
 			)
-			<-watchPersisted
+			<-watchStoreReached
 
-			// TryLock makes the scheduling deterministic. Before the fix, watch
-			// does not own the command lock and the stale request can finish while
-			// rotation is paused. With the fix, release watch first; the stale
-			// request then checks authorization against the rotated turn.
-			watchOwnsTurn := !h.movieNightMu.TryLock()
-			if !watchOwnsTurn {
+			if h.movieNightMu.TryLock() {
 				h.movieNightMu.Unlock()
+				t.Fatal("watch released the command lock before its store commit")
 			}
 
 			commandDone := startAs(app, tt.request(), first.ID, "member")
-			if watchOwnsTurn {
-				resume()
-			}
+			resume()
 			command := <-commandDone
-			if !watchOwnsTurn {
-				resume()
-			}
 			if command.err != nil {
 				t.Fatalf("%s request: %v", tt.name, command.err)
 			}

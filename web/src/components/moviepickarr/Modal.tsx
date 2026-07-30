@@ -22,8 +22,9 @@ interface ModalProps {
    * Where Esc / veil-click / the render-prop `close` go instead of dismissing
    * the surface directly. Passed alongside `open` by a modal that can't close
    * itself, so all four gestures (those three plus browser Back) take one
-   * path. Fires at most once per mount: each request pops a history entry, and
-   * a second would pop the entry behind the modal.
+   * path. Fires at most once per open interval: each request pops a history
+   * entry, and a second would pop the entry behind the modal. Restoring `open`
+   * starts a new interval and gives it one request of its own.
    */
   onRequestClose?: () => void;
   /** Extra class on the `.modal` surface (e.g. `modal--movie` for a narrower width). */
@@ -133,12 +134,13 @@ export function Modal({
   const dismissibleRef = useRef(dismissible);
   dismissibleRef.current = dismissible;
   const requestedRef = useRef(false);
+  const previousOpenRef = useRef(open);
   const surfaceRef = useRef<HTMLDivElement>(null);
 
   // Mounting is parent-controlled, so only the closing phase is used: the
   // exit motion plays, then onClosed tells the parent to unmount. Focus
   // returns to the opener in the unmount cleanup below, not via the machine.
-  const { closing, dismiss, isTopmost } = useDismissible({
+  const { closing, show, dismiss, isTopmost } = useDismissible({
     parentMounted: true,
     onClosed: () => onCloseRef.current(),
   });
@@ -163,6 +165,17 @@ export function Modal({
     if (!isTopmost()) return;
     requestClose();
   }, [isTopmost, requestClose]);
+
+  // Reopening during the exit keeps this exact surface and its captured opener.
+  // Cancel before paint so neither the closing frame nor its old timer can win,
+  // then give the restored open interval one close request of its own.
+  useLayoutEffect(() => {
+    const wasOpen = previousOpenRef.current;
+    previousOpenRef.current = open;
+    if (!open || wasOpen) return;
+    requestedRef.current = false;
+    show();
+  }, [open, show]);
 
   // The parent withdrawing `open` is the other way in, and the only one a
   // browser Back can take: by the time the popstate lands the state is

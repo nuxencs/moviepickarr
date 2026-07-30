@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
@@ -35,7 +35,7 @@ import { Skeleton } from "@/components/moviepickarr/Skeletons";
 import { columnCount, filterStash, landingCell, missLine, nextCell } from "@/components/moviepickarr/stashWall";
 import { toast } from "@/components/ui/toast-api";
 
-import type { Movie, User } from "@/types/Response";
+import type { Movie, MoveTarget, User } from "@/types/Response";
 import type { RefObject } from "react";
 
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
@@ -52,6 +52,35 @@ import "@/components/moviepickarr/members.css";
 const PUSH_WIDTH = "not all and (min-width: 761px)";
 
 const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
+
+type MoveHandlers = {
+  onStarted: (attempt: number) => void;
+  onError: (attempt: number) => void;
+};
+
+type RequestMove = (
+  movieID: number,
+  target: MoveTarget,
+  handlers: MoveHandlers,
+) => void;
+
+type MoveRegistry = {
+  nextAttempt: number;
+  pending: Map<string, { attempt: number; onError: MoveHandlers["onError"] }>;
+};
+
+// A QueryClient outlives keyed panes and route remounts, as do the requests it
+// owns. Key the non-rendering registry the same way so a remount cannot submit
+// a second copy while the first request is still running.
+const moveRegistries = new WeakMap<QueryClient, MoveRegistry>();
+
+function moveRegistry(client: QueryClient): MoveRegistry {
+  const existing = moveRegistries.get(client);
+  if (existing) return existing;
+  const created = { nextAttempt: 0, pending: new Map() };
+  moveRegistries.set(client, created);
+  return created;
+}
 
 /**
  * The Members page: a rail of members beside one board pane.
@@ -106,6 +135,47 @@ export function UsersTab() {
   // and no delete action.
   const { data: me } = useQuery(MeQueryOptions());
   const [searchUser, setSearchUser] = useState<User | null>(null);
+
+  // One non-rendering request registry for the board. Repeating a pending move
+  // only hands its existing attempt to the latest focused control; it does not
+  // send another request. No mutation observer means request-state changes do
+  // not rerender the page. The registry follows the QueryClient so it survives
+  // switching the keyed pane or leaving and returning here.
+  const queryClient = useQueryClient();
+  const moves = moveRegistry(queryClient);
+  const requestMove = useCallback<RequestMove>(
+    (movieID, target, handlers) => {
+      const key = `${target}:${movieID}`;
+      const pending = moves.pending.get(key);
+      if (pending) {
+        moves.pending.set(key, { ...pending, onError: handlers.onError });
+        handlers.onStarted(pending.attempt);
+        return;
+      }
+      const attempt = ++moves.nextAttempt;
+      moves.pending.set(key, { attempt, onError: handlers.onError });
+      handlers.onStarted(attempt);
+      // Build directly in the cache rather than mounting an observer. This
+      // keeps TanStack's offline pause/resume and global mutation callbacks
+      // without subscribing the page to request-state renders.
+      const mutation = queryClient.getMutationCache().build(queryClient, {
+        mutationFn: () => APIClient.board.moveMovie(movieID, target),
+      });
+      void mutation
+        .execute(undefined)
+        .catch(() => {
+          const owner = moves.pending.get(key);
+          if (owner?.attempt === attempt) owner.onError(attempt);
+          toast.error("Failed to move movie");
+        })
+        .finally(() => {
+          if (moves.pending.get(key)?.attempt === attempt) {
+            moves.pending.delete(key);
+          }
+        });
+    },
+    [moves, queryClient],
+  );
 
   // Opening a film's record pushes a history entry, so browser Back closes it
   // (#196). The film handed over is the tile's own lean object and is not
@@ -297,6 +367,7 @@ export function UsersTab() {
                   poolStateKnown={poolStateKnown}
                   onOpen={open}
                   stashLinks={stashLinks}
+                  requestMove={requestMove}
                 />
               ))}
             </nav>
@@ -316,6 +387,7 @@ export function UsersTab() {
               onOpen={open}
               lostFocus={paneLostFocus}
               headingRef={paneHeadingRef}
+              requestMove={requestMove}
             />
           </div>
         ) : (
@@ -358,6 +430,7 @@ function RailRow({
   poolStateKnown,
   onOpen,
   stashLinks,
+  requestMove,
 }: {
   user: User;
   active: boolean;
@@ -369,6 +442,7 @@ function RailRow({
   /** The page's register of stash links by member, so returning from the mobile
    *  push can put focus back on the control it left from (#236). */
   stashLinks: RefObject<Map<number, HTMLAnchorElement>>;
+  requestMove: RequestMove;
 }) {
   const pool = useMemo(
     () => Object.values(user.currentPool).sort((a, b) => a.title.localeCompare(b.title)),
@@ -452,6 +526,7 @@ function RailRow({
               poolStateKnown={poolStateKnown}
               onOpen={onOpen}
               rowLinkRef={linkRef}
+              requestMove={requestMove}
             />
 
             {/* The way on to this member's films, below 761 only (members.css
@@ -545,16 +620,16 @@ function PosterButton({
 }
 
 /**
- * Whether focus is still where the move that is landing left it: on the control
- * that is going, or dropped to the document because it has already gone.
+ * Whether the move's focused region still owns a control that dropped out of
+ * the document.
  *
  * The page's rule is that focus moves only when the thing it is sitting on goes
- * away, and clicking a control is not a promise to stay on it — click promote,
- * then click into the search field, and the roster arriving a moment later must
- * not pull focus out of the field being typed in.
+ * away. Body focus alone is ambiguous: deliberately blurring a control lands
+ * there too. The region retains ownership when a focused node is removed
+ * because removal fires no blur; an ordinary departure clears it.
  */
-function focusStillOn(band: HTMLElement | null): boolean {
-  return document.activeElement === document.body || !!band?.contains(document.activeElement);
+function focusWasDropped(regionOwnsFocus: boolean): boolean {
+  return regionOwnsFocus && document.activeElement === document.body;
 }
 
 /**
@@ -630,6 +705,7 @@ function PoolSlots({
   poolStateKnown,
   onOpen,
   rowLinkRef,
+  requestMove,
 }: {
   pool: Movie[];
   /** Whether this drawer has been open. The slots are always drawn — they are
@@ -643,33 +719,39 @@ function PoolSlots({
   onOpen: (movie: Movie) => void;
   /** The member's own row, where focus goes when the last film leaves the pool. */
   rowLinkRef: RefObject<HTMLAnchorElement | null>;
+  requestMove: RequestMove;
 }) {
   // Demote a pooled movie back to the stash. The move endpoint is directional
-  // (target = destination) and idempotent, so a repeat click is a safe no-op —
-  // which is why an in-flight move does not disable the button. Gated on
-  // isOwnBoard, so it only renders on your own board.
-  const demoteMutation = useMutation({
-    mutationFn: ({ movieID }: { movieID: number; slot: number }) =>
-      APIClient.board.moveMovie(movieID, "stash"),
-    // The band is about to lose the control the click is on, so note where it
-    // was. Which slot, not which element: the one that lands there is a
-    // different node, and this one is on its way out of the DOM.
-    //
-    // On the way out rather than on the way back: the move and the roster are
-    // separate round trips, and the roster arriving over SSE first is ordinary.
-    // Noted on success, a fast SSE would beat the note and focus would sit on
-    // nothing. A failed move drops it again, having moved nothing.
-    onMutate: (moved) => {
-      landing.current = moved;
-    },
-    onError: () => {
-      landing.current = null;
-      toast.error("Failed to move movie");
-    },
-  });
-
+  // (target = destination) and idempotent, but a repeated activation still
+  // costs a full server request. Board-level ownership drops that repeat while
+  // handing this band the existing attempt again, so focus still follows the
+  // latest activation. Distinct movies may move independently. Gated on
+  // isOwnBoard, so this only renders on your own board.
+  const landing = useRef<PoolMove | null>(null);
+  const moveOwnsFocus = useRef(false);
   const bandRef = useRef<HTMLDivElement>(null);
-  const landing = useRef<{ movieID: number; slot: number } | null>(null);
+  const demote = ({ movieID, slot }: Omit<PoolMove, "attempt">) => {
+    requestMove(movieID, "stash", {
+      // The band is about to lose the control the click is on, so note where it
+      // was. Which slot, not which element: the one that lands there is a
+      // different node, and this one is on its way out of the DOM.
+      //
+      // Before the request rather than on the way back: the move and the roster
+      // are separate round trips, and the roster arriving over SSE first is
+      // ordinary. A repeated pending click calls this with its existing attempt
+      // and reclaims the landing without another request.
+      onStarted: (attempt) => {
+        moveOwnsFocus.current = true;
+        landing.current = { movieID, slot, attempt };
+      },
+      onError: (attempt) => {
+        if (landing.current?.attempt === attempt) {
+          landing.current = null;
+          moveOwnsFocus.current = false;
+        }
+      },
+    });
+  };
 
   // A demote that has landed: the roster has come back over SSE without the
   // film in it, so the slot that held it now holds the next one along. Keyed on
@@ -678,9 +760,18 @@ function PoolSlots({
   // is about to unmount and drop focus to the document.
   useEffect(() => {
     const moved = landing.current;
-    if (!moved || pool.some((movie) => movie.movieID === moved.movieID)) return;
+    if (!moved) return;
+    const currentSlot = pool.findIndex((movie) => movie.movieID === moved.movieID);
+    if (currentSlot !== -1) {
+      if (currentSlot !== moved.slot) {
+        landing.current = { ...moved, slot: currentSlot };
+      }
+      return;
+    }
     landing.current = null;
-    if (!focusStillOn(bandRef.current)) return;
+    const ownsFocus = moveOwnsFocus.current;
+    moveOwnsFocus.current = false;
+    if (!focusWasDropped(ownsFocus)) return;
     const to = landingCell(moved.slot, pool.length);
     // An empty slot is not focusable and the pool does not reflow around one,
     // so an emptied pool hands focus back to the row it hangs off.
@@ -696,7 +787,15 @@ function PoolSlots({
   const poolFull = pool.length >= POOL_SIZE;
 
   return (
-    <div className="mem-pool" ref={bandRef}>
+    <div
+      className="mem-pool"
+      ref={bandRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          moveOwnsFocus.current = false;
+        }
+      }}
+    >
       {Array.from({ length: POOL_SIZE }).map((_, i) => {
         const movie = pool[i];
         return movie ? (
@@ -712,7 +811,7 @@ function PoolSlots({
                   poolFull,
                   stateKnown: poolStateKnown,
                 })}
-                onActivate={() => demoteMutation.mutate({ movieID: movie.movieID, slot: i })}
+                onActivate={() => demote({ movieID: movie.movieID, slot: i })}
               />
             )}
           </div>
@@ -763,6 +862,7 @@ function StashPane({
   onOpen,
   lostFocus,
   headingRef,
+  requestMove,
 }: {
   user: User;
   isOwnBoard: boolean;
@@ -779,6 +879,7 @@ function StashPane({
   /** The pane's heading, held by the page: it is where focus goes when a tile
    *  is taken from under it, and where the mobile push lands (#236). */
   headingRef: RefObject<HTMLHeadingElement | null>;
+  requestMove: RequestMove;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState("");
@@ -886,15 +987,55 @@ function StashPane({
   // A promote that has landed. Same shape and the same reason as the pool's
   // (see PoolSlots): keyed on the film being gone from the wall rather than on
   // the request returning, or focus lands on a tile that is about to unmount.
-  const landing = useRef<{ movieID: number; cell: number } | null>(null);
-  const onPromoting = useCallback((movieID: number | null, from: number) => {
-    landing.current = movieID === null ? null : { movieID, cell: from };
-  }, []);
+  //
+  // Pending request ownership lives above this keyed pane. Hiding a tile,
+  // switching members, or leaving the route must not make a second request for
+  // the same move possible while the first still runs.
+  // Whether focus is inside this pane at all, which is what says a tile
+  // unmounting under it was a loss rather than a departure. React's onFocus and
+  // onBlur are focusin and focusout, so they bubble and cover every control.
+  const holdsFocus = useRef(false);
+  // Separate from actual pane focus: a programmatic activation may establish a
+  // landing without putting a DOM node in the pane.
+  const moveOwnsFocus = useRef(false);
+  const landing = useRef<PromotionMove | null>(null);
+  const onPromote = useCallback(
+    (movieID: number, from: number) => {
+      requestMove(movieID, "pool", {
+        onStarted: (attempt) => {
+          moveOwnsFocus.current = true;
+          landing.current = { movieID, cell: from, attempt };
+        },
+        onError: (attempt) => {
+          if (landing.current?.attempt === attempt) {
+            landing.current = null;
+            moveOwnsFocus.current = false;
+          }
+        },
+      });
+    },
+    [requestMove],
+  );
   useEffect(() => {
     const moved = landing.current;
-    if (!moved || filteredStash.some((movie) => movie.movieID === moved.movieID)) return;
+    if (!moved) return;
+    const visibleIndex = filteredStash.findIndex(
+      (movie) => movie.movieID === moved.movieID,
+    );
+    if (visibleIndex !== -1) {
+      const currentCell = visibleIndex + (addTile ? 1 : 0);
+      if (currentCell !== moved.cell) {
+        landing.current = { ...moved, cell: currentCell };
+      }
+      return;
+    }
+    // A filter can hide the pending owner without moving it. Keep the landing
+    // until the roster says the movie itself is gone.
+    if (stash.some((movie) => movie.movieID === moved.movieID)) return;
     landing.current = null;
-    if (!focusStillOn(gridRef.current)) return;
+    const ownsFocus = moveOwnsFocus.current;
+    moveOwnsFocus.current = false;
+    if (!focusWasDropped(ownsFocus)) return;
     const to = landingCell(moved.cell, cells);
     // The poster taking the vacated cell, never that cell's corner action: the
     // third promote fills the pool, so it would strand you on a control that
@@ -906,12 +1047,8 @@ function StashPane({
     focusCell(to);
     // headingRef is a prop now (the page holds it, so the push can land on it),
     // which is why it is listed: it is a ref object and never changes.
-  }, [filteredStash, cells, focusCell, headingRef]);
+  }, [stash, filteredStash, addTile, cells, focusCell, headingRef]);
 
-  // Whether focus is inside this pane at all, which is what says a tile
-  // unmounting under it was a loss rather than a departure. React's onFocus and
-  // onBlur are focusin and focusout, so they bubble and cover every control.
-  const holdsFocus = useRef(false);
   // Removing the focused node fires no blur, so focus goes to the document with
   // nothing to say it left. That is the one case worth recovering, and the
   // pane's heading is where it goes: a click on a rail row moves focus to the
@@ -957,8 +1094,11 @@ function StashPane({
       onFocus={() => {
         holdsFocus.current = true;
       }}
-      onBlur={() => {
-        holdsFocus.current = false;
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          holdsFocus.current = false;
+          moveOwnsFocus.current = false;
+        }
       }}
     >
       {/* The mobile push's back bar, drawn only below 761 (members.css) and so
@@ -1076,7 +1216,7 @@ function StashPane({
                     poolStateKnown={poolStateKnown}
                     isOwnBoard={isOwnBoard}
                     onOpen={onOpen}
-                    onPromoting={onPromoting}
+                    onPromote={onPromote}
                   />
                 );
               })
@@ -1088,11 +1228,22 @@ function StashPane({
   );
 }
 
+type PromotionMove = {
+  movieID: number;
+  cell: number;
+  attempt: number;
+};
+
+type PoolMove = {
+  movieID: number;
+  slot: number;
+  attempt: number;
+};
+
 // Memoized because the stash filter lives in the pane above: without it every
 // keystroke re-renders every surviving tile, and at 60 films that is 60 posters
-// and 60 mutation hooks. The props are the movie object straight out of the
-// query cache plus primitives, plus an onOpen that is stable across renders
-// (useMovieModal's useCallback), so the memo holds while typing.
+// and actions. The props are the movie object straight out of the query cache
+// plus primitives, plus stable callbacks, so the memo holds while typing.
 const StashTile = memo(function StashTile({
   movie,
   cell,
@@ -1103,7 +1254,7 @@ const StashTile = memo(function StashTile({
   poolStateKnown,
   isOwnBoard,
   onOpen,
-  onPromoting,
+  onPromote,
 }: {
   movie: Movie;
   /** This tile's index in the wall, which counts the add tile as a cell. */
@@ -1116,25 +1267,13 @@ const StashTile = memo(function StashTile({
   poolStateKnown: boolean;
   isOwnBoard: boolean;
   onOpen: (movie: Movie) => void;
-  /** A promote leaving this cell, and a null film withdrawing one that failed.
-   *  Stable across renders, so the memo holds while the filter is typed in. */
-  onPromoting: (movieID: number | null, cell: number) => void;
+  /** Stable pane callback into the board-owned request registry. */
+  onPromote: (movieID: number, cell: number) => void;
 }) {
   // Promote to the pool: the one control the tile carries, and only on your own
   // board. Edit and delete are not here — they live in the movie modal, which
-  // the poster itself opens. Idempotent like the demote, so an in-flight move
-  // does not disable it either.
-  const moveMutation = useMutation({
-    mutationFn: () => APIClient.board.moveMovie(movie.movieID, "pool"),
-    // The tile is about to leave the wall, so the pane is told which cell it
-    // was in. It cannot land focus itself: it will not be here to do it. On the
-    // way out, for the reason the demote's onMutate gives.
-    onMutate: () => onPromoting(movie.movieID, cell),
-    onError: () => {
-      onPromoting(null, cell);
-      toast.error("Failed to move movie");
-    },
-  });
+  // the poster itself opens. Request ownership sits above the keyed pane; this
+  // tile can disappear while a filter is being typed.
 
   return (
     <div className="mem-tile">
@@ -1150,7 +1289,7 @@ const StashTile = memo(function StashTile({
             stateKnown: poolStateKnown,
           })}
           tabIndex={roving ? 0 : -1}
-          onActivate={() => moveMutation.mutate()}
+          onActivate={() => onPromote(movie.movieID, cell)}
         />
       )}
     </div>

@@ -60,6 +60,21 @@ describe("the invalidation table", () => {
     }
   });
 
+  it.each(["user:created", "user:deleted"] as const)(
+    "%s refreshes movie attribution after restore or archive",
+    (type) => {
+      const row = SSE_INVALIDATIONS[type];
+      for (const key of [
+        MoviesKeys.listpool(),
+        MoviesKeys.current(),
+        MoviesKeys.listwatched(),
+        MoviesKeys.details(),
+      ]) {
+        expect(has(row, key)).toBe(true);
+      }
+    },
+  );
+
   it("an enrichment burst refreshes every cache embedding enriched fields", () => {
     const row = SSE_INVALIDATIONS["movies:enriched-batch"];
     for (const key of [

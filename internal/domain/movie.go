@@ -51,9 +51,12 @@ type Movie struct {
 	AddedAt     *time.Time
 	AddedByID   int
 	AddedByName string
-	WatchedAt   *time.Time
-	TMDBID      *int    // stable TMDB identity (nullable)
-	IMDbID      *string // stable IMDb identity (nullable)
+	// AddedByArchived distinguishes preserved attribution from a member whose
+	// active board still exists.
+	AddedByArchived bool
+	WatchedAt       *time.Time
+	TMDBID          *int    // stable TMDB identity (nullable)
+	IMDbID          *string // stable IMDb identity (nullable)
 }
 
 // MovieMetadata holds TMDB-derived display data for a movie, stored 1:1 in the

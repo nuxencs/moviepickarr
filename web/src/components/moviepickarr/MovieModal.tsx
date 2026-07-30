@@ -405,17 +405,23 @@ export function MovieModal({
                           the address the rail established. Replace, like the
                           chips above and for the same reason: the entry it
                           leaves is the modal's own, and a push would return to
-                          an entry whose page renders no modal at all. */}
+                          an entry whose page renders no modal at all. Archived
+                          adders keep their credit but have no active board, so
+                          their name stays plain text. */}
                       Added by{" "}
-                      <Link
-                        to="/users"
-                        search={{ member: m.addedByID }}
-                        className="moviemodal__person"
-                        title={`See ${possessive(m.addedByName)} board`}
-                        replace
-                      >
-                        {m.addedByName}
-                      </Link>
+                      {m.addedByArchived ? (
+                        <span className="moviemodal__person">{m.addedByName}</span>
+                      ) : (
+                        <Link
+                          to="/users"
+                          search={{ member: m.addedByID }}
+                          className="moviemodal__person"
+                          title={`See ${possessive(m.addedByName)} board`}
+                          replace
+                        >
+                          {m.addedByName}
+                        </Link>
+                      )}
                       {m.addedAt && ` · ${fullDate(m.addedAt)}`}
                     </span>
                     {m.watchedAt && <span>Watched {fullDate(m.watchedAt)}</span>}

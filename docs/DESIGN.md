@@ -250,6 +250,9 @@ old shadcn primitives.
   the same kind of line: who is responsible for this. The adder's name is a link to
   their board (`/users?member=<userID>`) and wears `.moviemodal__person`, the
   credited-person treatment, since it is the same kind of thing: a name you can follow.
+  An archived adder keeps the same treatment as plain text because their active Members
+  board no longer exists; it never links a dead id that would fall back to the viewer's
+  board.
   It navigates with `replace`, like the meta chips, so following it spends the modal's
   own history entry. Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
@@ -602,7 +605,8 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
   that member's board, the same address the modal's attribution uses (§4) — but a
   **push**, not the modal's replace, since no history entry is being spent here. At
   full white it has no brighter hover to move to, so the hover is an underline where
-  the meta chips below lift from 84% to white.
+  the meta chips below lift from 84% to white. As in the modal, an archived adder is
+  credited as plain text because there is no active board to open.
 - **Bottom group** (tagline → meta → actions) is pushed to the bottom via
   `margin-top: auto` on `.hero__tag`. The action buttons are effectively pinned to the
   bottom of the hero.

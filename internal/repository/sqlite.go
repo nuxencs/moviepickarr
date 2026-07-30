@@ -53,6 +53,7 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 		&addedAt,
 		&movie.AddedByID,
 		&movie.AddedByName,
+		&movie.AddedByArchived,
 		&watchedAt,
 		&tmdbID,
 		&imdbID,
@@ -363,6 +364,7 @@ const movieSelect = `
 		m.added_at,
 		m.added_by_id,
 		u.name,
+		u.archived_at IS NOT NULL,
 		m.watched_at,
 		m.tmdb_id,
 		m.imdb_id

@@ -300,16 +300,21 @@ export function Hero() {
                     attribution (#238). A push, not a replace: the entry it
                     leaves is the Movies page's own, so Back comes back to the
                     draw. The modal replaces because the entry it leaves is the
-                    modal's, and nothing here is holding one. */}
+                    modal's, and nothing here is holding one. An archived adder
+                    keeps the credit but has no active board to link to. */}
                 Current draw · added by{" "}
-                <Link
-                  to="/users"
-                  search={{ member: draw.addedByID }}
-                  className="hero__by"
-                  title={`See ${possessive(draw.addedByName)} board`}
-                >
-                  {draw.addedByName}
-                </Link>
+                {draw.addedByArchived ? (
+                  <span className="hero__by">{draw.addedByName}</span>
+                ) : (
+                  <Link
+                    to="/users"
+                    search={{ member: draw.addedByID }}
+                    className="hero__by"
+                    title={`See ${possessive(draw.addedByName)} board`}
+                  >
+                    {draw.addedByName}
+                  </Link>
+                )}
               </>
             ) : (
               "No movie selected"

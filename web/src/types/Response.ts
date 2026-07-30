@@ -22,6 +22,9 @@ export interface Movie {
     addedAt: string;
     addedByID: number;
     addedByName: string;
+    // Archived adders keep attribution but no longer have a Members board.
+    // Omitted for active adders to keep list payloads unchanged.
+    addedByArchived?: boolean;
     watchedAt?: string;
 
     // The film's client-visible place in the app, carried by the detail payload

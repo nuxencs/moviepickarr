@@ -81,6 +81,9 @@
   modal metadata, and `cast`/`crew`). A handler returning `leanMovieTile` cannot accidentally ship credits or
   prose, which keeps the list payloads small; the mappers (`toLeanTile`/`toFullMovie` and
   their slice forms) are the single projection from `domain.Movie` to the wire.
+  Both shapes preserve the adder's id and name. `addedByArchived: true` appears only
+  when that attribution belongs to an archived member, so clients keep the credit
+  without linking to an active board that no longer exists. Active rows omit the flag.
 
 ## Domain + Use Cases
 

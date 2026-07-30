@@ -226,9 +226,11 @@
 - Constraint errors are matched by driver code, not message text
   (`db.IsUniqueViolation` / `db.IsForeignKeyViolation`) and surface as
   `domain.ErrConflict` → HTTP 409. A stash add inserts the title and stable
-  identity in one statement, so a duplicate `tmdbId` creates no row and needs
-  no compensating delete. The enrichment worker treats a tmdb-id conflict as
-  non-fatal (metadata/credits still persist so the row leaves the backlog).
+  identity in one statement, then reads its response projection through the
+  same writer transaction before commit. A duplicate `tmdbId` creates no row,
+  and a failed response read rolls the insert back. The enrichment worker
+  treats a tmdb-id conflict as non-fatal (metadata/credits still persist so the
+  row leaves the backlog).
 - Migration files: `-- migrate:fk_off` on the first line makes the runner wrap
   the migration in the SQLite table-rebuild procedure (FKs off around the tx +
   `foreign_key_check` before commit). Version numbering has a permanent gap at

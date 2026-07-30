@@ -671,6 +671,69 @@ func TestHandleAddMovie_DuplicateIdentityDoesNotLeaveOrphanWhenCleanupFails(t *t
 	}
 }
 
+// Regression: the add response is read after the INSERT. If that read fails,
+// every write caused by the INSERT must roll back and no event may claim that
+// the movie was added.
+func TestHandleAddMovie_ResponseReadFailureRollsBackInsert(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, _, dbConn := setupEditMovieTestWithDB(t)
+
+	user, err := userRepo.Create(ctx, "Reader")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := dbConn.Write.ExecContext(ctx, `
+		CREATE TABLE movie_add_read_failures (movie_id INTEGER NOT NULL);
+		CREATE TRIGGER fail_movie_add_response_read
+		AFTER INSERT ON movies
+		WHEN NEW.title = 'Unreadable add'
+		BEGIN
+			INSERT INTO movie_add_read_failures (movie_id) VALUES (NEW.id);
+			DELETE FROM movies WHERE id = NEW.id;
+		END
+	`); err != nil {
+		t.Fatalf("install response-read failure: %v", err)
+	}
+
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/movies",
+		strings.NewReader(`{"title":"Unreadable add","tmdbId":438632}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", resp.StatusCode)
+	}
+
+	var movies, markers int
+	if err := dbConn.Read.QueryRowContext(ctx, "SELECT COUNT(*) FROM movies").Scan(&movies); err != nil {
+		t.Fatalf("count movies: %v", err)
+	}
+	if err := dbConn.Read.QueryRowContext(ctx, "SELECT COUNT(*) FROM movie_add_read_failures").Scan(&markers); err != nil {
+		t.Fatalf("count failure markers: %v", err)
+	}
+	if movies != 0 || markers != 0 {
+		t.Fatalf("failed add left %d movies and %d failure markers; want 0 and 0", movies, markers)
+	}
+
+	select {
+	case got := <-client:
+		t.Fatalf("failed add broadcast event %q", got.Type)
+	default:
+	}
+}
+
 func TestHandleDeleteMovie_PoolLock(t *testing.T) {
 	t.Parallel()
 

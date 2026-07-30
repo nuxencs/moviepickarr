@@ -41,11 +41,13 @@ depends on this operation through a consumer-side interface.
 This is the scoped unit-of-work seam requested by #157. It completes the
 watch-and-rotate part of that issue.
 
-The movie-add flow from #157 does not need a transaction or the cross-table
-seam. Its title, stash status, adder, and stable identity now land in one
-`INSERT`. A uniqueness failure therefore leaves no partial row. The concrete
-repository keeps its generic `Add` helper for fixtures, but production code
-depends on the identified stash operation.
+The movie-add flow from #157 does not need the cross-table seam. Its title,
+stash status, adder, and stable identity land in one `INSERT`, so a uniqueness
+failure leaves no partial row. The concrete repository wraps that insert and
+the transaction-bound response read in one writer transaction. A failed read
+therefore rolls back every effect of the insert, and no success response or
+event is emitted before commit. The generic `Add` helper remains for fixtures,
+but production code depends on the identified stash operation.
 
 The break-glass admin path remains separate work.
 
@@ -62,5 +64,7 @@ partial states do not become transactions under this decision.
   a single repository table.
 - Cross-table operations need integration tests at the SQLite boundary. Failure
   injection must prove rollback, not only returned errors.
+- A create operation that returns its inserted record keeps the response read
+  inside the transaction when a failed read must also undo the insert.
 - A future corrupting multi-table write can add another scoped operation under
   this pattern without exposing SQL transactions to handlers or services.

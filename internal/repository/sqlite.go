@@ -495,12 +495,18 @@ func (d *SqliteMoviesRepository) AddToStash(
 	tmdbID *int,
 	imdbID *string,
 ) (*domain.Movie, error) {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `
 		INSERT INTO movies (title, status, added_by_id, tmdb_id, imdb_id)
 		VALUES (?, 'stash', ?, ?, ?)
 	`
 
-	result, err := d.pool.Write.ExecContext(ctx, query, title, userID, tmdbID, imdbID)
+	result, err := tx.ExecContext(ctx, query, title, userID, tmdbID, imdbID)
 	if err != nil {
 		if db.IsUniqueViolation(err) {
 			return nil, fmt.Errorf("%w: another movie already has this identity", domain.ErrConflict)
@@ -513,7 +519,17 @@ func (d *SqliteMoviesRepository) AddToStash(
 		return nil, err
 	}
 
-	return d.FindByID(ctx, int(id))
+	// Keep the response projection inside the transaction. The handler only
+	// broadcasts after this record returns, so a failed read must undo the add.
+	movie, err := scanMovie(tx.QueryRowContext(ctx, movieSelect+" WHERE m.id = ?", int(id)))
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return movie, nil
 }
 
 func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error {

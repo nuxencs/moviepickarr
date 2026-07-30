@@ -230,6 +230,7 @@ function MovieActions({
 
       <DeletionDialog
         isOpen={open && deleteOpen}
+        pending={deleteMutation.isPending}
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => deleteMutation.mutate()}
         title="Delete movie"

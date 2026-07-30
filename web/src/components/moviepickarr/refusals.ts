@@ -117,11 +117,12 @@ export function deleteRefusalOf({
   status: MovieStatus | undefined;
   isLocked: boolean;
   drawInFlight: boolean;
-  /** False while the server-owned round gates are missing or refreshing. */
+  /** False while the movie lifecycle or a required round gate is unavailable. */
   stateKnown?: boolean;
 }): Refusal | null {
-  if (status !== "pool") return null;
+  if (!isDeletable(status)) return null;
   if (!stateKnown) return "unavailable";
+  if (status === "stash") return null;
   if (drawInFlight) return "drawing";
   if (isLocked) return "locked";
   return null;

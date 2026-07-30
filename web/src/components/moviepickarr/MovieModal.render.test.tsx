@@ -424,6 +424,30 @@ describe("MovieModal actions", () => {
     );
   });
 
+  it("fails a cached stash delete closed while its lifecycle detail refreshes", async () => {
+    const { client } = renderModal({
+      meID: ADDER_ID,
+      detail: detailed({ status: "stash" }),
+    });
+    vi.mocked(APIClient.movies.get).mockReturnValueOnce(
+      new Promise<never>(() => {}),
+    );
+
+    act(() => {
+      void client.invalidateQueries({ queryKey: MoviesKeys.detail(MOVIE_ID) });
+    });
+
+    await vi.waitFor(() => {
+      expect(del()?.getAttribute("aria-disabled")).toBe("true");
+      expect(del()?.getAttribute("aria-label")).toBe(
+        "Delete, round state unavailable",
+      );
+    });
+    fireEvent.click(del()!);
+    expect(screen.queryByRole("heading", { name: "Delete movie" })).toBeNull();
+    expect(APIClient.settings.getPoolState).not.toHaveBeenCalled();
+  });
+
   it("offers nothing on somebody else's film", () => {
     renderModal({ meID: ADDER_ID + 1, locked: false, detail: detailed({ status: "stash" }) });
 
@@ -549,6 +573,53 @@ describe("MovieModal actions", () => {
 
     await vi.waitFor(() => expect(APIClient.board.deleteMovie).toHaveBeenCalledWith(MOVIE_ID));
     await vi.waitFor(() => expect(onRequestClose).toHaveBeenCalled());
+  });
+
+  it("pins a pending delete and refuses a duplicate confirmation", async () => {
+    let releaseDelete = () => {};
+    const pendingDelete = new Promise<void>((resolve) => {
+      releaseDelete = () => resolve();
+    });
+    vi.mocked(APIClient.board.deleteMovie).mockReturnValueOnce(pendingDelete);
+    const { onRequestClose } = renderModal({
+      meID: ADDER_ID,
+      detail: detailed({ status: "stash" }),
+    });
+
+    fireEvent.click(del()!);
+    const dialog = confirmDialog();
+    const confirm = within(dialog).getByRole("button", { name: "Delete" });
+    fireEvent.click(confirm);
+
+    await vi.waitFor(() =>
+      expect(
+        within(dialog)
+          .getByRole("button", { name: "Deleting…" })
+          .hasAttribute("disabled"),
+      ).toBe(true),
+    );
+    const pendingConfirm = within(dialog).getByRole("button", { name: "Deleting…" });
+    const cancelDisabled = within(dialog)
+      .getByRole("button", { name: "Cancel" })
+      .hasAttribute("disabled");
+    const closeDisabled = within(dialog)
+      .getByRole("button", { name: "Close" })
+      .hasAttribute("disabled");
+
+    // The same physical button is still mounted during the request. A second
+    // activation must be inert, not a second call hidden behind the first.
+    fireEvent.click(pendingConfirm);
+    const submissions = vi.mocked(APIClient.board.deleteMovie).mock.calls.length;
+
+    await act(async () => {
+      releaseDelete();
+      await pendingDelete;
+    });
+    await vi.waitFor(() => expect(onRequestClose).toHaveBeenCalled());
+
+    expect(submissions).toBe(1);
+    expect(cancelDisabled).toBe(true);
+    expect(closeDisabled).toBe(true);
   });
 
   it("keeps the link field on the edit dialog, so the re-point path survives", () => {

@@ -578,6 +578,105 @@ func (r *pausingDrawRepo) UpdateStatus(ctx context.Context, id int, status strin
 	return nil
 }
 
+// repoCallPause stops a repository mutation after the service has made its
+// draw-state decision but before the persisted change. That exposes the reverse
+// side of the publication race covered by pausingDrawRepo.
+type repoCallPause struct {
+	reached chan struct{}
+	resume  chan struct{}
+}
+
+func newRepoCallPause() repoCallPause {
+	return repoCallPause{
+		reached: make(chan struct{}),
+		resume:  make(chan struct{}),
+	}
+}
+
+func (p *repoCallPause) wait() {
+	close(p.reached)
+	<-p.resume
+}
+
+type pausingDeleteRepo struct {
+	titlePoolRepo
+	pause repoCallPause
+}
+
+func (r *pausingDeleteRepo) Delete(ctx context.Context, id int) error {
+	r.pause.wait()
+	return r.titlePoolRepo.Delete(ctx, id)
+}
+
+type pausingDemoteRepo struct {
+	titlePoolRepo
+	pause repoCallPause
+}
+
+func (r *pausingDemoteRepo) UpdateStatusIf(_ context.Context, id int, to, from string) (int64, error) {
+	r.pause.wait()
+	movie, ok := r.movies[id]
+	if !ok || movie.Status != from {
+		return 0, nil
+	}
+	movie.Status = to
+	return 1, nil
+}
+
+type pausingPromoteRepo struct {
+	titlePoolRepo
+	pause repoCallPause
+}
+
+func (r *pausingPromoteRepo) PromoteToPoolIfRoom(
+	_ context.Context,
+	id int,
+	maxPool int,
+) (int64, error) {
+	r.pause.wait()
+
+	target, ok := r.movies[id]
+	if !ok || target.Status != "stash" {
+		return 0, nil
+	}
+
+	pooled := 0
+	for _, movie := range r.movies {
+		if movie.AddedByID == target.AddedByID && movie.Status == "pool" {
+			pooled++
+		}
+	}
+	if pooled >= maxPool {
+		return 0, nil
+	}
+
+	target.Status = "pool"
+	return 1, nil
+}
+
+type drawCallResult struct {
+	movie *domain.Movie
+	err   error
+}
+
+func startDraw(ctx context.Context, svc *Service) <-chan drawCallResult {
+	done := make(chan drawCallResult, 1)
+	go func() {
+		movie, err := svc.DrawRandom(ctx, "")
+		done <- drawCallResult{movie: movie, err: err}
+	}()
+	return done
+}
+
+func earlyDraw(done <-chan drawCallResult) (drawCallResult, bool) {
+	select {
+	case result := <-done:
+		return result, true
+	case <-time.After(50 * time.Millisecond):
+		return drawCallResult{}, false
+	}
+}
+
 func titles(movies []*domain.Movie) []string {
 	out := make([]string, 0, len(movies))
 	for _, m := range movies {
@@ -642,6 +741,157 @@ func TestDrawPublicationHidesWinnerAtomically(t *testing.T) {
 	}
 	if inProgress := <-gate; !inProgress {
 		t.Fatal("draw gate opened before publication")
+	}
+}
+
+func TestDeleteSerializesBeforeDrawPublication(t *testing.T) {
+	repo := &pausingDeleteRepo{
+		titlePoolRepo: *titleRepo(),
+		pause:         newRepoCallPause(),
+	}
+	t.Cleanup(func() { close(repo.pause.resume) })
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	deleteDone := make(chan error, 1)
+	go func() {
+		deleteDone <- svc.Delete(ctx, 1, false)
+	}()
+	<-repo.pause.reached
+
+	drawDone := startDraw(ctx, svc)
+	draw, escaped := earlyDraw(drawDone)
+
+	repo.pause.resume <- struct{}{}
+	if err := <-deleteDone; err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if !escaped {
+		draw = <-drawDone
+	}
+
+	if escaped {
+		t.Error("draw completed while a pre-draw delete was waiting to persist")
+	}
+	if draw.err != nil {
+		t.Fatalf("DrawRandom: %v", draw.err)
+	}
+	if draw.movie.ID != 2 {
+		t.Fatalf("drawn movie = %d, want 2 after movie 1 was deleted", draw.movie.ID)
+	}
+	if _, ok := repo.movies[1]; ok {
+		t.Fatal("deleted movie 1 still exists")
+	}
+	if got := repo.movies[draw.movie.ID].Status; got != "current" {
+		t.Fatalf("drawn movie status = %q, want current", got)
+	}
+}
+
+func TestMoveToStashSerializesBeforeDrawPublication(t *testing.T) {
+	repo := &pausingDemoteRepo{
+		titlePoolRepo: *titleRepo(),
+		pause:         newRepoCallPause(),
+	}
+	t.Cleanup(func() { close(repo.pause.resume) })
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	type moveResult struct {
+		changed bool
+		err     error
+	}
+	moveDone := make(chan moveResult, 1)
+	go func() {
+		changed, err := svc.MoveToStash(ctx, 2)
+		moveDone <- moveResult{changed: changed, err: err}
+	}()
+	<-repo.pause.reached
+
+	drawDone := startDraw(ctx, svc)
+	draw, escaped := earlyDraw(drawDone)
+
+	repo.pause.resume <- struct{}{}
+	move := <-moveDone
+	if !escaped {
+		draw = <-drawDone
+	}
+
+	if escaped {
+		t.Error("draw completed while a pre-draw demotion was waiting to persist")
+	}
+	if move.err != nil {
+		t.Fatalf("MoveToStash: %v", move.err)
+	}
+	if !move.changed {
+		t.Fatal("MoveToStash reported no transition")
+	}
+	if draw.err != nil {
+		t.Fatalf("DrawRandom: %v", draw.err)
+	}
+	if draw.movie.ID != 1 {
+		t.Fatalf("drawn movie = %d, want 1", draw.movie.ID)
+	}
+	if got := repo.movies[2].Status; got != "stash" {
+		t.Fatalf("demoted movie status = %q, want stash", got)
+	}
+}
+
+func TestMoveToPoolKeepsHeldWinnerInCapAcrossDrawPublication(t *testing.T) {
+	repo := &pausingPromoteRepo{
+		titlePoolRepo: titlePoolRepo{testMovieRepo{movies: map[int]*domain.Movie{
+			1: {ID: 1, Title: "Alpha", Status: "pool", AddedByID: 10},
+			2: {ID: 2, Title: "Bravo", Status: "pool", AddedByID: 10},
+			3: {ID: 3, Title: "Charlie", Status: "pool", AddedByID: 10},
+			4: {ID: 4, Title: "Delta", Status: "stash", AddedByID: 10},
+		}}},
+		pause: newRepoCallPause(),
+	}
+	t.Cleanup(func() { close(repo.pause.resume) })
+	svc := NewService(repo, DrawConfig{})
+	ctx := context.Background()
+
+	type moveResult struct {
+		changed bool
+		err     error
+	}
+	moveDone := make(chan moveResult, 1)
+	go func() {
+		changed, err := svc.MoveToPool(ctx, 4)
+		moveDone <- moveResult{changed: changed, err: err}
+	}()
+	<-repo.pause.reached
+
+	drawDone := startDraw(ctx, svc)
+	draw, escaped := earlyDraw(drawDone)
+
+	repo.pause.resume <- struct{}{}
+	move := <-moveDone
+	if !escaped {
+		draw = <-drawDone
+	}
+
+	if escaped {
+		t.Error("draw completed while a pre-draw promotion was evaluating the pool cap")
+	}
+	if move.changed {
+		t.Error("MoveToPool transitioned a fourth movie into a full pool")
+	}
+	if !errors.Is(move.err, domain.ErrPoolLimitReached) {
+		t.Errorf("MoveToPool error = %v, want ErrPoolLimitReached", move.err)
+	}
+	if draw.err != nil {
+		t.Fatalf("DrawRandom: %v", draw.err)
+	}
+
+	pooled, err := svc.PooledByUserID(ctx, 10)
+	if err != nil {
+		t.Fatalf("PooledByUserID: %v", err)
+	}
+	if got := len(pooled); got != maxPoolSize {
+		t.Fatalf("effective pool size = %d, want %d", got, maxPoolSize)
+	}
+	if got := repo.movies[4].Status; got != "stash" {
+		t.Fatalf("promotion target status = %q, want stash", got)
 	}
 }
 

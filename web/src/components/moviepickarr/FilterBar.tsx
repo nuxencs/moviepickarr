@@ -255,7 +255,7 @@ function FilterChipMenu<T extends string | number>({
             }
           }}
         >
-          {chipLabel}
+          <span className="filterchip__label">{chipLabel}</span>
           <ChevronDownIcon />
         </button>
         {active && (

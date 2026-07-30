@@ -752,6 +752,10 @@ function PoolSlots({
   const moveOwnsFocus = useRef(false);
   const bandRef = useRef<HTMLDivElement>(null);
   const demote = ({ movieID, slot }: Omit<PoolMove, "attempt">) => {
+    // Body focus alone cannot say a focused node was removed: a programmatic
+    // activation can start there too. Only this source slot may own its landing.
+    const sourceOwnsFocus =
+      bandRef.current?.children.item(slot)?.contains(document.activeElement) ?? false;
     requestMove(movieID, "stash", {
       // The band is about to lose the control the click is on, so note where it
       // was. Which slot, not which element: the one that lands there is a
@@ -762,7 +766,7 @@ function PoolSlots({
       // ordinary. A repeated pending click calls this with its existing attempt
       // and reclaims the landing without another request.
       onStarted: (attempt) => {
-        moveOwnsFocus.current = true;
+        moveOwnsFocus.current = sourceOwnsFocus;
         landing.current = { movieID, slot, attempt };
       },
       onError: (attempt) => {
@@ -1025,15 +1029,19 @@ function StashPane({
   // unmounting under it was a loss rather than a departure. React's onFocus and
   // onBlur are focusin and focusout, so they bubble and cover every control.
   const holdsFocus = useRef(false);
-  // Separate from actual pane focus: a programmatic activation may establish a
-  // landing without putting a DOM node in the pane.
+  // Separate from pane focus: only the source movie's cell may own its landing.
   const moveOwnsFocus = useRef(false);
   const landing = useRef<PromotionMove | null>(null);
   const onPromote = useCallback(
     (movieID: number, from: number) => {
+      const active = document.activeElement;
+      const sourceOwnsFocus =
+        active instanceof HTMLElement &&
+        gridRef.current?.contains(active) === true &&
+        wallCellOf(active) === from;
       requestMove(movieID, "pool", {
         onStarted: (attempt) => {
-          moveOwnsFocus.current = true;
+          moveOwnsFocus.current = sourceOwnsFocus;
           landing.current = { movieID, cell: from, attempt };
         },
         onError: (attempt) => {

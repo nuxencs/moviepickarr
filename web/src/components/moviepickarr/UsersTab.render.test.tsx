@@ -33,6 +33,8 @@
    six-column arithmetic is pinned in the pure test.
    ============================================================ */
 
+import { readFileSync } from "node:fs";
+
 import { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -45,6 +47,8 @@ import { UsersTab } from "@/components/moviepickarr/UsersTab";
 import type { MeResponse, Movie, User } from "@/types/Response";
 
 import { renderWithProviders } from "@/test/providers";
+
+const membersCSS = readFileSync("src/components/moviepickarr/members.css", "utf8");
 
 vi.mock("@/api/APIClient", () => ({
   APIClient: {
@@ -261,7 +265,7 @@ describe("the Members loading skeleton", () => {
   });
 
   it("spends the flight on the screen a deep link is arriving at", async () => {
-    // Below 760 the pushed screen is the pane and the rail is off-canvas, and
+    // Below 761 the pushed screen is the pane and the rail is off-canvas, and
     // which one is drawn is CSS off this flag — which is the URL while the
     // roster is still in flight, not once it lands.
     await renderTab({ href: "/users?member=2&stash=true" });
@@ -1085,7 +1089,7 @@ describe("moving around the wall with the keyboard", () => {
   });
 });
 
-/* The mobile push (#236). Below 760px the two columns are two screens: the rail,
+/* The mobile push (#236). Below 761px the two columns are two screens: the rail,
    where selecting a member opens their pool in place, and the pushed board over
    the top of it. The address has two halves to match — `member` says whose pool
    the rail has open, `stash` says you have gone on to their films — because one
@@ -1099,6 +1103,8 @@ describe("moving around the wall with the keyboard", () => {
    out. The four columns at 375, the single scroller and the head's removal are
    sizes, and they belong to the browser pass. */
 describe("the mobile push", () => {
+  const pushQuery = "not all and (min-width: 761px)";
+  const levelFourPushQuery = "not (min-width: 761px)";
   const roster = [member(1, 1, 3, "Ada"), member(2, 2, 2, "Bo")];
   const heading = () => screen.getByRole("heading", { level: 3 });
   const pushedFlag = () => document.querySelector(".mem")?.getAttribute("data-pushed");
@@ -1111,12 +1117,28 @@ describe("the mobile push", () => {
   // "no" (see setupDom). A phone is that one query saying yes; everything else
   // still says no, so nothing else in the tree changes with it.
   const realMatchMedia = window.matchMedia;
-  const onAPhone = () => {
+  const matchesAtWidth = (
+    query: string,
+    width: number,
+    supportsLevelFourBoolean: boolean,
+  ) => {
+    if (query === pushQuery) return width < 761;
+    if (query === levelFourPushQuery) return supportsLevelFourBoolean && width < 761;
+    if (query === "(max-width: 760px)") return width <= 760;
+    return realMatchMedia(query).matches;
+  };
+  const atWidth = (width: number, supportsLevelFourBoolean = true) => {
     window.matchMedia = ((query: string) => ({
       ...realMatchMedia(query),
-      matches: query.includes("max-width: 760px"),
+      matches: matchesAtWidth(query, width, supportsLevelFourBoolean),
     })) as unknown as typeof window.matchMedia;
   };
+  const onAPhone = () => atWidth(375);
+  // Browser zoom and non-integer device pixel ratios can produce 760.5 CSS
+  // pixels. That width is on CSS's pushed side of the desktop partition, but
+  // it is not at or below the old integer max-width query. Level 4 boolean
+  // syntax is disabled here because Vite 7's browser baseline predates it.
+  const atFractionalPushWidth = () => atWidth(760.5, false);
   afterEach(() => {
     window.matchMedia = realMatchMedia;
   });
@@ -1204,6 +1226,10 @@ describe("the mobile push", () => {
     expect(id.querySelector(".sec-count")?.textContent).toBe("2");
   });
 
+  it("uses the baseline-compatible exact complement in CSS", () => {
+    expect(membersCSS).toContain(`@media ${pushQuery}`);
+  });
+
   it("moves focus to the pane heading on the push", async () => {
     onAPhone();
     const { router } = await renderTab({ users: roster, meID: 1 });
@@ -1214,6 +1240,19 @@ describe("the mobile push", () => {
     // one guaranteed moment a screen-reader user meets the self-mark.
     await waitFor(() => expect(document.activeElement).toBe(heading()));
     expect(heading().textContent).toBe("Bo's stash");
+  });
+
+  it("keeps the focus handoff aligned with CSS at fractional widths", async () => {
+    atFractionalPushWidth();
+    const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+    const left = toStash();
+    left.focus();
+
+    await router.navigate({ to: "/users", search: { member: 2, stash: true } });
+    await waitFor(() => expect(document.activeElement).toBe(heading()));
+
+    router.history.back();
+    await waitFor(() => expect(document.activeElement).toBe(left));
   });
 
   it("treats a pop between two boards as an entry", async () => {

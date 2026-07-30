@@ -30,8 +30,8 @@
 
 /* ---- two scrollers, not one page -------------------------------------- */
 
-/* The roster and the stash are separate things to move through, so above 760
-   they scroll separately and the page itself does not scroll: reaching the
+/* The roster and the stash are separate things to move through, so at 761 and
+   above they scroll separately and the page itself does not scroll: reaching the
    bottom of a 40-film stash used to drag the roster off screen with it. */
 @media (min-width: 761px) {
   /* The shell's 110px bottom padding clears the phone tab bar and the rubber
@@ -134,7 +134,7 @@
      clean in half. It still depends on the viewport alone, so it does not move
      between one member and the next.
 
-     Below 760 the wall stops being a scroller and the page carries it (#236),
+     Below 761 the wall stops being a scroller and the page carries it (#236),
      so the reserve belongs to the two-column shell alone. */
   .mem-wallbox {
     /* The room under the head, plus one gap: rows are counted by their pitch
@@ -596,7 +596,7 @@
   .mem-wallbox { --mem-headh: 77px; }
 }
 
-/* ---- the push, below 760 ----------------------------------------------- */
+/* ---- the push, below 761 ----------------------------------------------- */
 
 /* Two columns become two screens (#236). The rail is the whole screen, where
    selecting a member opens their pool in place exactly as it does beside the
@@ -612,12 +612,13 @@
    The negation of the two-column block rather than `max-width: 760px`, so the
    two of them partition the axis exactly. A fractional viewport width, which
    browser zoom and a non-integer device pixel ratio both produce routinely,
-   falls between 760 and 761 and matches neither query — and no decimal is
-   enough, since whatever the number there is a width just above it. This page
+   falls between 760 and 761 and matches neither query. No decimal is enough,
+   since whatever the number there is a width just above it. This page
    cannot afford that gap: the back bar and the drawer's stash link are drawn
    here and hidden there, so falling through both puts two unstyled controls on
-   a layout that is neither screen. */
-@media not (min-width: 761px) {
+   a layout that is neither screen. `not all and` is the Level 3 spelling, which
+   keeps this rule valid across Vite 7's browser baseline. */
+@media not all and (min-width: 761px) {
   .mem[data-pushed="true"] .mem-rail,
   .mem[data-pushed="false"] .mem-pane {
     display: none;
@@ -679,9 +680,9 @@
   }
 
   /* The wall stops being a scroller and the page carries it: one flick, one
-     scroller. The fixed height above 760 answers a collapse between a 14-film
-     member and a 0-film one that cannot happen here — the push hides the rail
-     and the pool with it, so there is nothing above the wall to move and no
+     scroller. At 761 and above, the fixed height answers a collapse between a
+     14-film member and a 0-film one that cannot happen here. The push hides the
+     rail and the pool with it, so there is nothing above the wall to move and no
      second member's wall to match. What it did instead was put a ~498px inner
      scroller into ~363px of room, clipped by the tab bar and eating the flick
      meant for the page. (The height and the fade are both inside the min-width
@@ -748,7 +749,7 @@
   /* ---- the skeleton, on the phone ---- */
 
   /* The way on to the wall is the whole point of the drawer here, so the
-     skeleton reserves it — hidden with the real link above 760 rather than
+     skeleton reserves it, hidden with the real link at 761 and above rather than
      base-hidden, so the two are switched by the same pair of queries. Matched
      to .mem-tostash's own touch minimum. */
   .mem-skel__tostash {

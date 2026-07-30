@@ -894,6 +894,10 @@ What each does:
   movie modal's rail becomes a row with its credit columns stacked (§4). It replaced the
   old 560 stack point when the modal went from 560px to 880px wide.
 - **760** — the stat strip drops 3 columns → 2.
+  The Members rail and stash pane also become separate screens at this boundary.
+  CSS and the focus handoff both use `not all and (min-width: 761px)` so fractional
+  CSS widths from browser zoom or device pixel ratios stay on the same side. The
+  Level 3 spelling also covers the production build's full browser baseline.
 - **900** — navigation moves to a fixed **bottom tab bar** (below); the stat strip drops
   6 columns → 3, and the stats two-column sections (weekday | hourly, genres | decades)
   collapse to one.

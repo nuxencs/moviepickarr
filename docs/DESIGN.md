@@ -903,11 +903,13 @@ use tokens so they follow the theme.
 ## 13. Responsive & touch
 
 Desktop-first, with a dedicated phone/touch pass below and a large-screen scale-up above.
-Breakpoints are content-driven but drawn from one tidy scale — **640 / 700 / 760 /
+Breakpoints are content-driven but drawn from one tidy scale: **370 / 640 / 700 / 760 /
 900** down, **1728 / 2240 / 2560 / 3200 / 3840** up — documented inline in `index.css`
 (the "Responsive — phone & touch adaptations" and "Large-screen scale ramp" blocks).
 What each does:
 
+- **370:** the movie modal keeps its external links and owner actions paired, but moves
+  that footer below the 84px poster once the three columns stop fitting without a clip.
 - **640** — the *phone* breakpoint. Section headers (`.sec-head`) stack to a title row + full-width controls;
   user boards go single-column; the stats window control spans the row and the
   added-by-member bars shrink their name column (`188px → 112px`) so the track keeps

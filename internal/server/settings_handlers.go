@@ -23,15 +23,22 @@ func (h *handler) handleSetPoolLock(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
-	if err := h.settingsService.SetPoolLock(ctx, *body.PoolLocked); err != nil {
+	var payload settingsResponse
+	err := h.runPoolStateCommand(func() error {
+		if err := h.settingsService.SetPoolLock(ctx, *body.PoolLocked); err != nil {
+			return err
+		}
+
+		payload = settingsResponse{
+			PoolLocked:     *body.PoolLocked,
+			DrawInProgress: h.movieService.DrawInProgress(),
+		}
+		h.broker.Broadcast(event{Type: "settings:pool-lock-changed", Data: payload})
+		return nil
+	})
+	if err != nil {
 		return writeError(c, err)
 	}
-
-	payload := settingsResponse{
-		PoolLocked:     *body.PoolLocked,
-		DrawInProgress: h.movieService.DrawInProgress(),
-	}
-	h.broker.Broadcast(event{Type: "settings:pool-lock-changed", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(payload)
 }

@@ -183,11 +183,14 @@
   adder a fourth slot. The **pool lock** is the other refusal on the same rows:
   with it set, `Delete` answers `ErrPoolLocked` for a pooled movie, the way the
   move handler already does for promote and demote, so a locked pool can't be
-  shrunk out from under the draw it was locked in for. The caller reads the lock
-  and passes it in (`settingsService.GetPoolLock`); the service orders the two
-  refusals so an unrevealed draw still answers first. Stashes stay deletable:
-  adds aren't lock-checked either, and the lock is the pool's, not a member's
-  list's.
+  shrunk out from under the draw it was locked in for. A handler-level
+  `poolStateMu` orders lock writes with the membership check, mutation, and
+  synchronous event publication. Once a lock response succeeds, no move or
+  delete admitted under the old value can land afterward; concurrent lock
+  events also follow their durable write order. The caller passes the captured
+  lock into `Delete`, where the service orders the two refusals so an unrevealed
+  draw still answers first. Stashes stay deletable: adds aren't lock-checked
+  either, and the lock is the pool's, not a member's list's.
 
 ## Logging
 

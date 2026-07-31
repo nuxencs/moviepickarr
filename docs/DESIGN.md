@@ -94,6 +94,9 @@ old shadcn primitives.
   focus-within border. Invalid inputs set `aria-invalid` and `data-invalid`.
   `.fieldgroup` keeps the field and its specific `.field-error` together, with
   `aria-describedby` linking the input to the message. There is no bare input style.
+  A watched film's date-time field is required. When its minute-level display value
+  is unchanged, the edit request omits `watchedAt` instead of rounding the stored
+  timestamp through `datetime-local`.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
 - **Section head:** `.sec-head` holds a `.sec-title` (the `h2` plus its data) on the left
   and the section's controls on the right. The data slot is mono `--ink-3` text: a count

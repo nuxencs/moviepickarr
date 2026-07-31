@@ -66,8 +66,14 @@ export function EditMovieDialog({
   const [title, setTitle] = useState(initialTitle);
   const [link, setLink] = useState(initialLink);
   const [linkTouched, setLinkTouched] = useState(false);
-  const [watchedAtLocal, setWatchedAtLocal] = useState(toLocalDateTimeInputValue(initialWatchedAt));
+  const initialWatchedAtLocal = useMemo(
+    () => toLocalDateTimeInputValue(initialWatchedAt),
+    [initialWatchedAt],
+  );
+  const [watchedAtLocal, setWatchedAtLocal] = useState(initialWatchedAtLocal);
+  const [watchedAtTouched, setWatchedAtTouched] = useState(false);
   const linkErrorID = useId();
+  const watchedAtErrorID = useId();
 
   useEffect(() => {
     if (!isOpen) {
@@ -77,8 +83,9 @@ export function EditMovieDialog({
     setTitle(initialTitle);
     setLink(initialLink);
     setLinkTouched(false);
-    setWatchedAtLocal(toLocalDateTimeInputValue(initialWatchedAt));
-  }, [initialLink, initialTitle, initialWatchedAt, isOpen]);
+    setWatchedAtLocal(initialWatchedAtLocal);
+    setWatchedAtTouched(false);
+  }, [initialLink, initialTitle, initialWatchedAtLocal, isOpen]);
 
   const watchedAtISO = useMemo(() => toISODateTime(watchedAtLocal), [watchedAtLocal]);
   const titleValue = title.trim();
@@ -88,7 +95,17 @@ export function EditMovieDialog({
   if (linkTouched && !isValidLink) {
     linkError = linkValue ? "Use an IMDb or TMDB movie URL." : "Movie link is required.";
   }
-  const isInvalidWatchedAt = allowWatchedAtEdit && watchedAtLocal.trim().length > 0 && !watchedAtISO;
+  let watchedAtError: string | undefined;
+  if (allowWatchedAtEdit && watchedAtTouched && !watchedAtISO) {
+    watchedAtError = watchedAtLocal.trim()
+      ? "Enter a valid watched date and time."
+      : "Watched date and time is required.";
+  }
+  const isInvalidWatchedAt = allowWatchedAtEdit && !watchedAtISO;
+  const submittedWatchedAt =
+    allowWatchedAtEdit && watchedAtLocal !== initialWatchedAtLocal
+      ? watchedAtISO
+      : undefined;
   const isSubmitDisabled = isSaving || !titleValue || !isValidLink || isInvalidWatchedAt;
 
   if (!isOpen) {
@@ -157,17 +174,29 @@ export function EditMovieDialog({
               )}
             </div>
             {allowWatchedAtEdit && (
-              <label className="field">
-                <CalendarClockIcon />
-                <input
-                  type="datetime-local"
-                  name="watched-at"
-                  aria-label="Watched date and time"
-                  value={watchedAtLocal}
-                  onChange={(e) => setWatchedAtLocal(e.target.value)}
-                  disabled={isSaving}
-                />
-              </label>
+              <div className="fieldgroup">
+                <label className="field" data-invalid={watchedAtError ? true : undefined}>
+                  <CalendarClockIcon />
+                  <input
+                    type="datetime-local"
+                    name="watched-at"
+                    aria-label="Watched date and time"
+                    aria-required="true"
+                    aria-invalid={watchedAtError ? true : undefined}
+                    aria-describedby={watchedAtError ? watchedAtErrorID : undefined}
+                    value={watchedAtLocal}
+                    onChange={(e) => setWatchedAtLocal(e.target.value)}
+                    onBlur={() => setWatchedAtTouched(true)}
+                    required
+                    disabled={isSaving}
+                  />
+                </label>
+                {watchedAtError && (
+                  <p id={watchedAtErrorID} className="field-error" role="alert">
+                    {watchedAtError}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
@@ -179,7 +208,7 @@ export function EditMovieDialog({
               type="button"
               className="btn btn--accent"
               disabled={isSubmitDisabled}
-              onClick={() => onSubmit({ title: titleValue, link: linkValue, watchedAt: watchedAtISO })}
+              onClick={() => onSubmit({ title: titleValue, link: linkValue, watchedAt: submittedWatchedAt })}
             >
               {isSaving && <Loader2Icon className="animate-spin mg-spin" />}
               {isSaving ? "Saving…" : "Save changes"}

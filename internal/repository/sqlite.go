@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -38,6 +39,27 @@ func canonicalIMDbIDPtr(value *string) *string {
 		return nil
 	}
 	return &normalized
+}
+
+var canonicalIMDbIDRegex = regexp.MustCompile(`^tt\d{7,8}$`)
+
+func canonicalMovieIdentityTarget(target domain.MovieIdentityTarget) (domain.MovieIdentityTarget, error) {
+	if (target.TMDBID == nil) == (target.IMDbID == nil) {
+		return domain.MovieIdentityTarget{}, domain.ErrInvalidInput
+	}
+
+	imdbID := canonicalIMDbIDPtr(target.IMDbID)
+	if target.TMDBID != nil {
+		if *target.TMDBID <= 0 {
+			return domain.MovieIdentityTarget{}, domain.ErrInvalidInput
+		}
+		tmdbID := *target.TMDBID
+		return domain.MovieIdentityTarget{TMDBID: &tmdbID}, nil
+	}
+	if imdbID == nil || !canonicalIMDbIDRegex.MatchString(*imdbID) {
+		return domain.MovieIdentityTarget{}, domain.ErrInvalidInput
+	}
+	return domain.MovieIdentityTarget{IMDbID: imdbID}, nil
 }
 
 func scanUser(scanner rowScanner) (*domain.User, error) {
@@ -591,10 +613,14 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 func (d *SqliteMoviesRepository) EditMovie(
 	ctx context.Context,
 	movieID, actorID int,
-	title, imdbID string,
+	title string,
+	target domain.MovieIdentityTarget,
 	watchedAt *time.Time,
 ) (*domain.Movie, bool, error) {
-	imdbID = canonicalIMDbID(imdbID)
+	target, err := canonicalMovieIdentityTarget(target)
+	if err != nil {
+		return nil, false, err
+	}
 
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
@@ -621,7 +647,11 @@ func (d *SqliteMoviesRepository) EditMovie(
 		storedIMDb = *current.IMDbID
 	}
 	currentIMDb := canonicalIMDbID(storedIMDb)
-	identityChanged := imdbID != currentIMDb
+	matchingTMDB := target.TMDBID != nil && current.TMDBID != nil &&
+		*target.TMDBID == *current.TMDBID
+	matchingIMDb := target.IMDbID != nil && currentIMDb != "" &&
+		*target.IMDbID == currentIMDb
+	identityChanged := !matchingTMDB && !matchingIMDb
 	identityNeedsNormalization := current.IMDbID != nil &&
 		(storedIMDb != currentIMDb || currentIMDb == "")
 
@@ -632,18 +662,14 @@ func (d *SqliteMoviesRepository) EditMovie(
 		args = append(args, db.ToUnix(watchedAt.UTC()))
 	}
 	if identityChanged {
-		query += ", tmdb_id = NULL, imdb_id = ?"
-		if imdbID == "" {
-			args = append(args, nil)
-		} else {
-			args = append(args, imdbID)
-		}
+		query += ", tmdb_id = ?, imdb_id = ?"
+		args = append(args, target.TMDBID, target.IMDbID)
 	} else if identityNeedsNormalization {
 		query += ", imdb_id = ?"
-		if imdbID == "" {
+		if currentIMDb == "" {
 			args = append(args, nil)
 		} else {
-			args = append(args, imdbID)
+			args = append(args, currentIMDb)
 		}
 	}
 	query += " WHERE id = ?"

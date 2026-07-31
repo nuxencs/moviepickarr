@@ -51,9 +51,12 @@ but production code depends on the identified stash operation.
 
 Authored movie edits use another scoped operation. `EditMovie` reads the movie
 on a writer transaction, then applies ownership and watched-state checks to
-that record. The title, optional watched time, changed external identity, and
-removal of metadata and credit rows for the prior identity commit together. Its
-response read also uses the transaction. A failed identity conflict, derived-row
+that record. The requested link is parsed into a one-provider identity selector.
+A selector matching either stored provider preserves both stored ids and the
+derived rows. A different selector replaces the identity. The title, optional
+watched time, identity replacement, and removal of metadata and credit rows for
+the prior identity commit together. Its response read also uses the transaction.
+A failed identity conflict, derived-row
 cleanup, or response read therefore leaves the movie and its dependent data
 unchanged. Shared `people` rows remain because other movies can reference them.
 Stats cache invalidation, the `movie:updated` event, and enrichment enqueue all

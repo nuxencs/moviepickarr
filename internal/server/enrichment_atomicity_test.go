@@ -101,7 +101,7 @@ func candidateIncludes(candidates []domain.EnrichmentCandidate, movieID int) boo
 func TestEnrichOne_IdentityEditDuringTMDBRequestRejectsOldResult(t *testing.T) {
 	ctx, repos := setupEnrichmentTestRepos(t)
 	const oldIMDb = "tt0000101"
-	const newIMDb = "tt0000102"
+	newIMDb := "tt0000102"
 	userID, movieID := seedEnrichmentMovie(t, ctx, repos, "Identity race", oldIMDb)
 
 	if err := repos.meta.UpsertMetadata(ctx, domain.MovieMetadata{
@@ -155,7 +155,14 @@ func TestEnrichOne_IdentityEditDuringTMDBRequestRejectsOldResult(t *testing.T) {
 	}()
 
 	waitForSignal(t, detailsStarted, "old identity TMDB request")
-	_, changed, err := repos.movies.EditMovie(ctx, movieID, userID, "Identity edited", newIMDb, nil)
+	_, changed, err := repos.movies.EditMovie(
+		ctx,
+		movieID,
+		userID,
+		"Identity edited",
+		domain.MovieIdentityTarget{IMDbID: &newIMDb},
+		nil,
+	)
 	if err != nil {
 		close(releaseDetails)
 		t.Fatalf("edit movie identity: %v", err)

@@ -105,12 +105,16 @@ func TestAuthz_AdderOnlyMutations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add movie: %v", err)
 	}
+	imdbID := "tt0113277"
+	if err := movieRepo.SetExternalIDs(ctx, movie.ID, nil, &imdbID); err != nil {
+		t.Fatalf("set movie identity: %v", err)
+	}
 
 	cases := []struct {
 		name string
 		req  *http.Request
 	}{
-		{"edit", jsonReq(http.MethodPut, fmt.Sprintf("/api/v1/movies/%d", movie.ID), `{"title":"X","link":"https://example.com/x"}`)},
+		{"edit", jsonReq(http.MethodPut, fmt.Sprintf("/api/v1/movies/%d", movie.ID), `{"title":"X","link":"https://www.imdb.com/title/tt0113277/"}`)},
 		{"delete", jsonReq(http.MethodDelete, fmt.Sprintf("/api/v1/movies/%d", movie.ID), ``)},
 		{"move", jsonReq(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", movie.ID), `{"target":"pool"}`)},
 	}

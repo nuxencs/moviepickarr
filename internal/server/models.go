@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -140,8 +141,11 @@ func formatTimePrecise(value time.Time) string {
 // preferring IMDb, then TMDB. Returns "" if the movie has no identity (every
 // row carries an id post-enrichment, so this is effectively unreachable).
 func movieLink(movie *domain.Movie) string {
-	if movie.IMDbID != nil && *movie.IMDbID != "" {
-		return "https://www.imdb.com/title/" + *movie.IMDbID + "/"
+	if movie.IMDbID != nil {
+		imdbID := strings.ToLower(strings.TrimSpace(*movie.IMDbID))
+		if canonicalIMDbIDRegex.MatchString(imdbID) {
+			return "https://www.imdb.com/title/" + imdbID + "/"
+		}
 	}
 	if movie.TMDBID != nil {
 		return fmt.Sprintf("https://www.themoviedb.org/movie/%d", *movie.TMDBID)

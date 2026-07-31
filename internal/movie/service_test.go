@@ -32,7 +32,8 @@ func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, erro
 func (r *testMovieRepo) EditMovie(
 	_ context.Context,
 	id, actorID int,
-	title, imdbID string,
+	title string,
+	target domain.MovieIdentityTarget,
 	watchedAt *time.Time,
 ) (*domain.Movie, bool, error) {
 	movie, ok := r.movies[id]
@@ -50,7 +51,9 @@ func (r *testMovieRepo) EditMovie(
 	if movie.IMDbID != nil {
 		currentIMDb = *movie.IMDbID
 	}
-	identityChanged := imdbID != currentIMDb
+	matchingTMDB := target.TMDBID != nil && movie.TMDBID != nil && *target.TMDBID == *movie.TMDBID
+	matchingIMDb := target.IMDbID != nil && currentIMDb != "" && *target.IMDbID == currentIMDb
+	identityChanged := !matchingTMDB && !matchingIMDb
 
 	movie.Title = title
 	r.updateTitleHit++
@@ -60,10 +63,16 @@ func (r *testMovieRepo) EditMovie(
 		r.updateWatchedAtHit++
 	}
 	if identityChanged {
-		movie.TMDBID = nil
-		movie.IMDbID = nil
-		if imdbID != "" {
-			id := imdbID
+		if target.TMDBID == nil {
+			movie.TMDBID = nil
+		} else {
+			id := *target.TMDBID
+			movie.TMDBID = &id
+		}
+		if target.IMDbID == nil {
+			movie.IMDbID = nil
+		} else {
+			id := *target.IMDbID
 			movie.IMDbID = &id
 		}
 	}
@@ -597,7 +606,15 @@ func TestEditRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	svc := NewService(repo, DrawConfig{})
 	watchedAt := time.Date(2026, 2, 8, 10, 30, 0, 0, time.UTC)
 
-	_, _, err := svc.Edit(context.Background(), 42, 0, "After", "", &watchedAt)
+	imdbID := "tt0000042"
+	_, _, err := svc.Edit(
+		context.Background(),
+		42,
+		0,
+		"After",
+		domain.MovieIdentityTarget{IMDbID: &imdbID},
+		&watchedAt,
+	)
 	if !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
@@ -625,7 +642,15 @@ func TestEditWatchedMovieAllowsWatchedAt(t *testing.T) {
 	svc := NewService(repo, DrawConfig{})
 	watchedAt := time.Date(2026, 2, 8, 18, 45, 0, 0, time.UTC)
 
-	updated, _, err := svc.Edit(context.Background(), 7, 0, "After", "", &watchedAt)
+	imdbID := "tt0000007"
+	updated, _, err := svc.Edit(
+		context.Background(),
+		7,
+		0,
+		"After",
+		domain.MovieIdentityTarget{IMDbID: &imdbID},
+		&watchedAt,
+	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

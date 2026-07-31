@@ -82,16 +82,21 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 	title := sanitizeInput(body.Title)
 
 	// Identity-first: a search add carries the TMDB id; a manual add carries an
-	// IMDb link we extract the id from. No link is stored — it's derived.
+	// IMDb or TMDB movie link. No link is stored; it is derived from the id.
 	var tmdbID *int
 	var imdbID *string
 	if body.TMDBID != nil && *body.TMDBID > 0 {
 		tmdbID = body.TMDBID
-	} else if id := extractIMDbID(sanitizeLink(body.Link)); id != "" {
-		imdbID = &id
+	} else if sanitizeInput(body.Link) != "" {
+		target, err := parseMovieLink(body.Link)
+		if err != nil {
+			return writeError(c, err)
+		}
+		tmdbID = target.TMDBID
+		imdbID = target.IMDbID
 	}
 	if title == "" || (tmdbID == nil && imdbID == nil) {
-		return writeError(c, fmt.Errorf("%w: title and a tmdbId or imdb link are required", domain.ErrInvalidInput))
+		return writeError(c, fmt.Errorf("%w: title and a tmdbId or movie link are required", domain.ErrInvalidInput))
 	}
 
 	ctx := c.UserContext()
@@ -156,9 +161,13 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 	}
 
 	title := sanitizeInput(body.Title)
-	link := sanitizeLink(body.Link)
+	link := sanitizeInput(body.Link)
 	if title == "" || link == "" {
 		return writeError(c, fmt.Errorf("%w: title and link are required", domain.ErrInvalidInput))
+	}
+	target, err := parseMovieLink(link)
+	if err != nil {
+		return writeError(c, err)
 	}
 
 	var watchedAt *time.Time
@@ -177,14 +186,13 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 		watchedAt = &parsedUTC
 	}
 
-	newIMDb := extractIMDbID(link)
 	ctx := c.UserContext()
 	updatedMovie, identityChanged, err := h.movieService.Edit(
 		ctx,
 		movieID,
 		actorID,
 		title,
-		newIMDb,
+		target,
 		watchedAt,
 	)
 	if err != nil {

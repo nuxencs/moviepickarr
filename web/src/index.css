@@ -400,6 +400,12 @@
   .field svg { width: 16px; height: 16px; color: var(--ink-3); flex: none; }
   .field input { background: none; border: none; outline: none; color: var(--ink); font-size: 14px; width: 100%; }
   .field input::placeholder { color: var(--ink-3); }
+  .field[data-invalid="true"], .field[data-invalid="true"]:focus-within { border-color: color-mix(in oklab, var(--danger) 55%, var(--line)); }
+  .fieldgroup { display: grid; gap: 6px; }
+  .field-error {
+    margin: 0 2px; color: color-mix(in oklab, var(--danger) 58%, var(--ink));
+    font-size: 12px; line-height: 1.4; animation: mg-fadeIn var(--dur-fast) var(--ease);
+  }
 
   /* ---- Segmented control ---- */
   .seg { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; }

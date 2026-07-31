@@ -98,8 +98,12 @@ func TestHandleEditMovie_RejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create movie: %v", err)
 	}
+	imdbID := "tt0133093"
+	if err := movieRepo.SetExternalIDs(ctx, movie.ID, nil, &imdbID); err != nil {
+		t.Fatalf("set movie identity: %v", err)
+	}
 
-	body := `{"title":"After","link":"https://example.com/after","watchedAt":"2026-02-08T18:30:00Z"}`
+	body := `{"title":"After","link":"https://www.imdb.com/title/tt0133093/","watchedAt":"2026-02-08T18:30:00Z"}`
 	req := httptest.NewRequest(
 		http.MethodPut,
 		fmt.Sprintf("/api/v1/movies/%d", movie.ID),
@@ -139,13 +143,17 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create movie: %v", err)
 	}
+	imdbID := "tt0133093"
+	if err := movieRepo.SetExternalIDs(ctx, movie.ID, nil, &imdbID); err != nil {
+		t.Fatalf("set movie identity: %v", err)
+	}
 
 	initialWatchedAt := time.Date(2026, 2, 7, 13, 0, 0, 0, time.UTC)
 	if err := movieRepo.MarkAsWatched(ctx, movie.ID, initialWatchedAt); err != nil {
 		t.Fatalf("mark watched: %v", err)
 	}
 
-	body := `{"title":"After","link":"https://example.com/after","watchedAt":"2026-02-08T16:45:00Z"}`
+	body := `{"title":"After","link":"https://www.imdb.com/title/tt0133093/","watchedAt":"2026-02-08T16:45:00Z"}`
 	req := httptest.NewRequest(
 		http.MethodPut,
 		fmt.Sprintf("/api/v1/movies/%d", movie.ID),

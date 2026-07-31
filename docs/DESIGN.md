@@ -292,7 +292,8 @@ old shadcn primitives.
   links and the actions pair off beside the poster inside `.moviemodal__railfoot` (a
   `display: contents` wrapper in the rail's column layout): tops flush so the first
   action sits on the first link, a vertical rule between them in place of the stacked
-  one above, and the poster shrinks (to 84px at the floor) rather than the row breaking.
+  one above, and the poster shrinks toward 84px. At 370px and below, that paired footer
+  moves under the 84px poster because the three columns no longer fit without clipping.
 - **Modal:** the bespoke `Modal` component (§5). Every caller supplies an accessible
   name that matches its visible heading. Closing returns focus to the opener; if that
   control disappeared while the dialog was open, focus moves to the first surviving

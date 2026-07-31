@@ -33,7 +33,7 @@ Regression tests were written first where the behavior fit automated testing.
 | Medium | A delayed pool-lock event could overwrite newer draw lifecycle state in the client cache. | [#273](https://github.com/nuxencs/moviepickarr/pull/273) |
 | High | Promote, demote, and delete checked draw state before mutation, leaving a window where a concurrent draw could change the winner set or pool capacity. | [#274](https://github.com/nuxencs/moviepickarr/pull/274) |
 | High | Moving an unrevealed held winner to the projected pool returned an invalid-state error that distinguished it from ordinary pooled movies. | [#279](https://github.com/nuxencs/moviepickarr/pull/279) |
-| High | Watch released turn ownership before rotation and publication, so the outgoing member could draw or reveal again and lifecycle events could invert. | [#280](https://github.com/nuxencs/moviepickarr/pull/280) |
+| High | Watch persisted before turn rotation and publication, so the outgoing member could draw or reveal again and lifecycle events could invert. | [#280](https://github.com/nuxencs/moviepickarr/pull/280) |
 | Medium | Auto-reveal could publish before `movie:drawn`, causing clients to ignore the reveal and retain a stale reel. | [#281](https://github.com/nuxencs/moviepickarr/pull/281) |
 | High | Watch committed before turn rotation. A rotation failure returned success, left a stuck holder, and could not be repaired by retry. This is one of the flows in issue #157. | [#282](https://github.com/nuxencs/moviepickarr/pull/282) |
 | High | Reel candidates were rebuilt after leaving the service lock, so the winner and the animated reel could represent different pool snapshots. | [#290](https://github.com/nuxencs/moviepickarr/pull/290) |
@@ -89,15 +89,16 @@ The detailed production, render, static, and targeted layout profile is in
 
 The live Members profile at #278 remained a Lighthouse 99. Its 17 TMDB poster
 resources fell from 396,012 bytes to 116,232 bytes. Estimated image-delivery
-waste fell from 367,168 bytes to 16,809 bytes. Runtime profiling found no
-range-wide render churn.
+waste fell from 367,168 bytes to 16,809 bytes. No suspicious render churn
+appeared in the exercised interactions.
 
 Later persistence fixes generally reduce database work. Movie creation removes
-one write, changed-identity edits fall from about seven statements and four
-commits to four statements and one commit, enrichment falls from three commits
-to one, and draw repository calls fall from seven to four. The narrow command
-serialization in #280, #282, and #291 trades possible contention for ordered
-state transitions; those paths have not been load-tested.
+one write. Changed-identity edits fall from about seven statements and four
+commits to five statements and one commit after the required derived-data
+cleanup. Enrichment falls from three commits to one, and draw repository calls
+fall from seven to four. The narrow command serialization in #280, #282, and
+#291 trades possible contention for ordered state transitions; those paths have
+not been load-tested.
 
 From #278 to #295, the same CI build shows app JavaScript growing by 0.84 kB
 gzip and main CSS by 0.13 kB gzip. No chunk exceeds 200 kB gzip and the stack

@@ -70,22 +70,14 @@ None.
 
 ## Narrow-modal measurements
 
-Targeted Chromium measurements used the enriched fixture. Values are
-`clientWidth/scrollWidth` in CSS pixels.
+Targeted Chromium measurements used the enriched fixture. Before #295, the
+inner scroller and body overflowed by 27 px at a 320 px viewport and 7 px at a
+340 px viewport. The rail itself overflowed by 47 px and 27 px, respectively.
+The capped modal did not widen; its inner scroller owned the overflow and
+clipped the rail.
 
-| Viewport | Box | Before #295 | After #295 |
-|---|---|---:|---:|
-| 320 | Modal | 278/278 | 278/278 |
-| 320 | Scroller | 278/305 | 278/278 |
-| 320 | Body | 278/305 | 278/278 |
-| 320 | Rail | 238/285 | 238/238 |
-| 340 | Modal | 298/298 | 298/298 |
-| 340 | Scroller | 298/305 | 298/298 |
-| 340 | Body | 298/305 | 298/298 |
-| 340 | Rail | 258/285 | 258/258 |
-
-The capped modal itself did not widen before the fix. Its inner scroller owned
-the overflow and clipped the rail. At 370 px the footer uses the stacked layout;
+After #295, every measured modal, scroller, body, and rail had equal client and
+scroll widths at both viewports. At 370 px the footer uses the stacked layout;
 at 371 px the original row fits. The implementation adds no viewport read,
 JavaScript branch, or render work.
 

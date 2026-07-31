@@ -58,7 +58,7 @@ export function ChangePasswordDialog({
   };
 
   return (
-    <Modal onClose={onClose} className="modal--form" dismissible={!pending}>
+    <Modal label="Change password" onClose={onClose} className="modal--form" dismissible={!pending}>
       {(close) => (
         <form className="acc-sheet" onSubmit={submit}>
           <div className="acc-dialoghead">
@@ -167,7 +167,7 @@ export function SetPasswordDialog({
   };
 
   return (
-    <Modal onClose={onClose} className="modal--form" dismissible={!pending}>
+    <Modal label="Set a password" onClose={onClose} className="modal--form" dismissible={!pending}>
       {(close) => (
         <form className="acc-sheet" onSubmit={submit}>
           <div className="acc-dialoghead">
@@ -257,7 +257,7 @@ export function LogoutEverywhereDialog({
   onClose: () => void;
 }) {
   return (
-    <Modal onClose={onClose} className="modal--form" dismissible={!pending}>
+    <Modal label="Log out everywhere?" onClose={onClose} className="modal--form" dismissible={!pending}>
       {(close) => (
         <div className="acc-sheet acc-confirm">
           <span className="acc-confirm__icon" data-tone="warn">
@@ -300,7 +300,7 @@ export function UnlinkGuardDialog({
   onClose: () => void;
 }) {
   return (
-    <Modal onClose={onClose} className="modal--form">
+    <Modal label={`Can't unlink ${PROVIDER}`} onClose={onClose} className="modal--form">
       {(close) => (
         <div className="acc-sheet acc-confirm">
           <span className="acc-confirm__icon" data-tone="error">

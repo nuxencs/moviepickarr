@@ -67,7 +67,7 @@ export function SearchModal({ userName, onClose }: SearchModalProps) {
   };
 
   return (
-    <Modal onClose={onClose}>
+    <Modal label="Search & add movies" onClose={onClose}>
       {(close) => (
         <>
           <div className="modal__head">

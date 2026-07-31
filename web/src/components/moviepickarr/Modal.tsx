@@ -11,6 +11,8 @@ import { useDismissible } from "@/hooks/useDismissible";
 
 interface ModalProps {
   onClose: () => void;
+  /** Accessible name matching the dialog's visible heading. */
+  label: string;
   /**
    * The parent's intent. Flipping it to false starts the exit motion, with
    * `onClose` following once the motion ends. Only a modal whose open-ness
@@ -53,11 +55,30 @@ const FOCUSABLE =
 interface ModalLayer {
   surface: HTMLDivElement;
   opener: HTMLElement | null;
+  openerAncestors: HTMLElement[];
 }
 
 /** Modal surfaces on screen, oldest first. Menus share dismissal ownership but
  * do not hide the dialog that owns them, so this stack stays modal-only. */
 const modalLayers: ModalLayer[] = [];
+
+function focusTarget(target: HTMLElement | null | undefined): boolean {
+  if (!target?.isConnected) return false;
+  target.focus();
+  return document.activeElement === target;
+}
+
+function focusFromOpenerRegion(layer: ModalLayer): boolean {
+  for (const ancestor of layer.openerAncestors) {
+    if (!ancestor.isConnected || ancestor.hasAttribute("inert")) continue;
+    const candidates = ancestor.querySelectorAll<HTMLElement>(FOCUSABLE);
+    for (const candidate of candidates) {
+      if (candidate.tabIndex < 0 || candidate.closest('[inert],[aria-hidden="true"]')) continue;
+      if (focusTarget(candidate)) return true;
+    }
+  }
+  return false;
+}
 
 function syncModalLayers() {
   const top = modalLayers.length - 1;
@@ -120,6 +141,7 @@ function lockBodyScroll() {
  */
 export function Modal({
   onClose,
+  label,
   open = true,
   onRequestClose,
   className,
@@ -188,6 +210,14 @@ export function Modal({
     const surface = surfaceRef.current;
     if (!surface) return;
     const opener = document.activeElement as HTMLElement | null;
+    const openerAncestors: HTMLElement[] = [];
+    for (
+      let ancestor = opener?.parentElement;
+      ancestor && ancestor !== document.body;
+      ancestor = ancestor.parentElement
+    ) {
+      openerAncestors.push(ancestor);
+    }
 
     // Move focus into the dialog: prefer the first form field (so a form dialog
     // lands on its input, not the close X); otherwise the surface itself.
@@ -195,7 +225,7 @@ export function Modal({
 
     // Capture and leave the opener before hiding anything below this surface.
     // On the way out, reverse that order so focus never targets an inert node.
-    const layer: ModalLayer = { surface, opener };
+    const layer: ModalLayer = { surface, opener, openerAncestors };
     modalLayers.push(layer);
     syncModalLayers();
 
@@ -209,15 +239,19 @@ export function Modal({
       // that would otherwise try to focus a control in the detached surface.
       for (let i = at + 1; i < modalLayers.length; i++) {
         const above = modalLayers[i];
-        if (above.opener && surface.contains(above.opener)) above.opener = opener;
+        if (above.opener && surface.contains(above.opener)) {
+          above.opener = opener;
+          above.openerAncestors = openerAncestors;
+        }
       }
 
       modalLayers.splice(at, 1);
       syncModalLayers();
       if (wasTopmost) {
-        layer.opener?.focus?.();
         const fallback = modalLayers[modalLayers.length - 1]?.surface;
-        if (fallback && !fallback.contains(document.activeElement)) fallback.focus();
+        if (!focusTarget(layer.opener) && !focusTarget(fallback)) {
+          focusFromOpenerRegion(layer);
+        }
       }
     };
   }, []);
@@ -269,6 +303,7 @@ export function Modal({
       <div
         ref={surfaceRef}
         role="dialog"
+        aria-label={label}
         aria-modal="true"
         tabIndex={-1}
         className={`modal${capped ? " modal--capped" : ""}${className ? ` ${className}` : ""}${closing ? " modal--closing" : ""}`}

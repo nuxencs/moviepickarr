@@ -290,7 +290,10 @@ old shadcn primitives.
   `display: contents` wrapper in the rail's column layout): tops flush so the first
   action sits on the first link, a vertical rule between them in place of the stacked
   one above, and the poster shrinks (to 84px at the floor) rather than the row breaking.
-- **Modal:** the bespoke `Modal` component (§5).
+- **Modal:** the bespoke `Modal` component (§5). Every caller supplies an accessible
+  name that matches its visible heading. Closing returns focus to the opener; if that
+  control disappeared while the dialog was open, focus moves to the first surviving
+  control in the opener's nearest live region instead of falling back to the page body.
 
 ### Decision: no shadcn primitives
 The redesign began with shadcn `Button`/`Input`/`AlertDialog` still powering the

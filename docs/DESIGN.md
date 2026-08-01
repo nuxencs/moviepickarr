@@ -133,7 +133,9 @@ old shadcn primitives.
   search for long people lists and a scrollable option list). An active chip is
   gold-tinted (`--accent-soft` fill, `--accent-line` border) — gold = state, not
   decoration. Chip triggers grow toward the touch minimum under `pointer: coarse`
-  (§13). One shared internal base (`FilterChipMenu`) powers three wrappers:
+  (§13). In the phone's two-column Stats grid, only `.filterchip__label` can
+  ellipsize; the chevron and clear X stay fixed and visible. One shared internal base
+  (`FilterChipMenu`) powers three wrappers:
   single-select `FilterSelect` (pick closes; re-pick clears); multi-select
   `FilterMultiSelect` (Actors/Crew people lists, sorted A→Z by name — picks toggle and
   the menu stays open, selected rows get a fixed-slot `CheckIcon` (`.filtermenu__check`)

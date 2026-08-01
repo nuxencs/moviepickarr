@@ -214,7 +214,7 @@
   counts are active-only. See ADR 0002.
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
-### SQLite connections & timestamps (migration `007`)
+### SQLite connections, timestamps, and movie identity
 
 - `db.OpenSQLite` returns a `db.Pool` with **two handles over one WAL file**: a
   single-connection `Write` (serializes all mutations) and a small `Read` pool
@@ -235,6 +235,15 @@
   The rebuilds preserve the AUTOINCREMENT high-water mark so deleted ids are
   never reused. Deploy check: `go run scripts/verify_migration_007.go
   <db-copy>` validates the migration against a copy of a production DB.
+- Migration `010` adds a partial `NOCASE` UNIQUE index on `movies.imdb_id`.
+  Before creating it, the migration trims and lowercases ids, converts blanks
+  to NULL, then resolves duplicates by keeping the id on the lowest movie id.
+  Every other movie row and its metadata, credits, adder, status, and timestamps
+  stay in place. The removed identifier is recorded in
+  `movie_imdb_conflicts` with its canonical movie id. Runtime link extraction
+  and the Bolt importer use the same lowercase form. The importer also gives
+  users and map-backed movie collections stable ordering, and audits later
+  duplicate identities without retrying a failed insert.
 - Constraint errors are matched by driver code, not message text
   (`db.IsUniqueViolation` / `db.IsForeignKeyViolation`) and surface as
   `domain.ErrConflict` → HTTP 409. A stash add inserts the title and stable
@@ -248,8 +257,8 @@
   Same-identity edits use three SQL statements. Identity changes use five,
   adding two primary-key-indexed deletes and one statement over the prior
   marker-based flow. The guarded enrichment write treats a resolved-identity
-  conflict as non-fatal (metadata/credits still persist so the legacy duplicate
-  row leaves the backlog).
+  conflict as non-fatal (metadata/credits still persist without changing the
+  stored ids, so the row leaves the backlog).
 - Migration files: `-- migrate:fk_off` on the first line makes the runner wrap
   the migration in the SQLite table-rebuild procedure (FKs off around the tx +
   `foreign_key_check` before commit). Version numbering has a permanent gap at
@@ -304,12 +313,15 @@ always the session member, never a path id: member-scoped routes carry no
 ## Movie identity & enrichment (TMDB)
 
 A movie's stable identity is its `tmdb_id` / `imdb_id` (columns on `movies`,
-added in migration `004`). There is **no stored link** — migration `005`
-backfilled `imdb_id` from legacy links and dropped the `movies.link` column. The
-link is **derived** on read (`models.go::movieLink`: IMDb URL → TMDB URL → `""`),
-and the API still exposes a `link` field. `movie_metadata` (1:1, FK cascade)
-holds only enriched **display** fields (overview, poster/backdrop, runtime,
-genres-as-JSON-names, rating, tagline, `enriched_at`).
+added in migration `004`). Present TMDB and IMDb ids are each unique across the
+library. IMDb ids are stored trimmed and lowercase, with case-insensitive
+uniqueness. There is **no stored link**:
+migration `005` backfilled `imdb_id` from legacy links and dropped the
+`movies.link` column. The link is **derived** on read (`models.go::movieLink`:
+IMDb URL → TMDB URL → `""`), and the API still exposes a `link` field.
+`movie_metadata` (1:1, FK cascade) holds only enriched **display** fields
+(overview, poster/backdrop, runtime, genres-as-JSON-names, rating, tagline,
+`enriched_at`).
 
 Movie responses **fold in this display metadata**: every movie-returning GET
 (pool / watched / current / member pool / stash / `GET /members`) batch-loads
@@ -380,7 +392,9 @@ identity and a credit failure cannot leave new metadata beside old credits.
 A single background worker (`enrichRunner`) drives it: a startup backfill of
 un-enriched rows, fire-and-forget enqueue when a movie is added or its link is
 edited, and a periodic "drain" that re-enriches rows older than the TTL. TMDB
-requests are paced by a min-interval rate limiter and retried (429 `Retry-After`,
+backlog scans skip rows with neither external id because no remote lookup can
+resolve them. Assigning either id makes the row eligible on the next scan.
+TMDB requests are paced by a min-interval rate limiter and retried (429 `Retry-After`,
 exponential backoff + jitter on 5xx/network). Successful upserts are coalesced
 into a single `movies:enriched-batch` SSE event per burst (debounced, with a hard
 ceiling) rather than one event per movie — a backfill of many rows used to trigger

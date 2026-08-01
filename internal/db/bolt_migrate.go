@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -16,7 +17,7 @@ import (
 
 // boltIMDbIDRegex extracts the IMDb id from a legacy Bolt link. Duplicated here
 // (rather than importing the server package) to respect the db→server layering.
-var boltIMDbIDRegex = regexp.MustCompile(`tt\d{7,8}`)
+var boltIMDbIDRegex = regexp.MustCompile(`(?i)tt\d{7,8}`)
 
 type boltUser struct {
 	ID          string               `json:"userID"`
@@ -107,12 +108,13 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 			case a.CreatedAt > b.CreatedAt:
 				return 1
 			default:
-				return 0
+				return strings.Compare(a.ID, b.ID)
 			}
 		})
 
 		userIDMap := make(map[string]int, len(users))
 		movieIDMap := make(map[string]int)
+		imdbIDOwners := make(map[string]int)
 		defaultUserID := 0
 
 		for _, user := range users {
@@ -142,10 +144,10 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 
 		for _, user := range users {
 			newUserID := userIDMap[user.ID]
-			if err := insertBoltMovies(ctx, sqliteDB, movieIDMap, userIDMap, defaultUserID, newUserID, user.CurrentPool, "pool"); err != nil {
+			if err := insertBoltMovies(ctx, sqliteDB, movieIDMap, imdbIDOwners, userIDMap, defaultUserID, newUserID, user.CurrentPool, "pool"); err != nil {
 				return err
 			}
-			if err := insertBoltMovies(ctx, sqliteDB, movieIDMap, userIDMap, defaultUserID, newUserID, user.Stash, "stash"); err != nil {
+			if err := insertBoltMovies(ctx, sqliteDB, movieIDMap, imdbIDOwners, userIDMap, defaultUserID, newUserID, user.Stash, "stash"); err != nil {
 				return err
 			}
 		}
@@ -156,7 +158,7 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 				if err := json.Unmarshal(v, &movie); err != nil {
 					return err
 				}
-				return upsertBoltMovie(ctx, sqliteDB, movieIDMap, userIDMap, defaultUserID, movie, "watched")
+				return upsertBoltMovie(ctx, sqliteDB, movieIDMap, imdbIDOwners, userIDMap, defaultUserID, movie, "watched")
 			}); err != nil {
 				return err
 			}
@@ -169,7 +171,7 @@ func MigrateBoltToSQLite(ctx context.Context, boltPath, sqlitePath string) (bool
 				if err := json.Unmarshal(data, &movie); err != nil {
 					return err
 				}
-				if err := upsertBoltMovie(ctx, sqliteDB, movieIDMap, userIDMap, defaultUserID, movie, "current"); err != nil {
+				if err := upsertBoltMovie(ctx, sqliteDB, movieIDMap, imdbIDOwners, userIDMap, defaultUserID, movie, "current"); err != nil {
 					return err
 				}
 			}
@@ -255,14 +257,21 @@ func insertBoltMovies(
 	ctx context.Context,
 	db *sql.DB,
 	movieIDMap map[string]int,
+	imdbIDOwners map[string]int,
 	userIDMap map[string]int,
 	defaultUserID int,
 	fallbackUserID int,
 	movies map[string]boltMovie,
 	status string,
 ) error {
-	for _, movie := range movies {
-		if err := upsertBoltMovie(ctx, db, movieIDMap, userIDMap, defaultUserID, movie, status); err != nil {
+	keys := make([]string, 0, len(movies))
+	for key := range movies {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+
+	for _, key := range keys {
+		if err := upsertBoltMovie(ctx, db, movieIDMap, imdbIDOwners, userIDMap, defaultUserID, movies[key], status); err != nil {
 			return err
 		}
 	}
@@ -273,6 +282,7 @@ func upsertBoltMovie(
 	ctx context.Context,
 	db *sql.DB,
 	movieIDMap map[string]int,
+	imdbIDOwners map[string]int,
 	userIDMap map[string]int,
 	defaultUserID int,
 	movie boltMovie,
@@ -297,8 +307,16 @@ func upsertBoltMovie(
 	// The link column was dropped (migration 005); identity lives in imdb_id,
 	// derived from the legacy Bolt link. Enrichment fills the rest later.
 	var imdbID *string
+	extractedIMDbID := ""
+	canonicalMovieID := 0
 	if id := boltIMDbIDRegex.FindString(movie.Link); id != "" {
-		imdbID = &id
+		id = strings.ToLower(id)
+		extractedIMDbID = id
+		if ownerID := imdbIDOwners[id]; ownerID != 0 {
+			canonicalMovieID = ownerID
+		} else {
+			imdbID = &id
+		}
 	}
 
 	result, err := db.ExecContext(
@@ -320,7 +338,19 @@ func upsertBoltMovie(
 		return err
 	}
 
-	movieIDMap[movie.ID] = int(id)
+	newMovieID := int(id)
+	movieIDMap[movie.ID] = newMovieID
+	if imdbID != nil {
+		imdbIDOwners[*imdbID] = newMovieID
+	}
+	if canonicalMovieID != 0 {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO movie_imdb_conflicts (movie_id, imdb_id, canonical_movie_id)
+			VALUES (?, ?, ?)
+		`, newMovieID, extractedIMDbID, canonicalMovieID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

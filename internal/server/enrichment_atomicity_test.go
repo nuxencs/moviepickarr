@@ -431,6 +431,80 @@ func TestEnrichOne_DuplicateResolvedTMDBStillStoresMetadataAndCredits(t *testing
 	}
 }
 
+func TestEnrichOne_DuplicateResolvedIMDbStillStoresMetadataAndCredits(t *testing.T) {
+	ctx, repos := setupEnrichmentTestRepos(t)
+
+	user, err := repos.users.Create(ctx, "IMDb collision owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	owner, err := repos.movies.Add(ctx, "Identity owner", string(domain.MovieStatusStash), user.ID)
+	if err != nil {
+		t.Fatalf("add identity owner: %v", err)
+	}
+	ownerIMDb := "TT0000451"
+	if err := repos.movies.SetExternalIDs(ctx, owner.ID, nil, &ownerIMDb); err != nil {
+		t.Fatalf("set owned identity: %v", err)
+	}
+
+	target, err := repos.movies.Add(ctx, "Collision target", string(domain.MovieStatusStash), user.ID)
+	if err != nil {
+		t.Fatalf("add target: %v", err)
+	}
+	targetTMDB := 551
+	if err := repos.movies.SetExternalIDs(ctx, target.ID, &targetTMDB, nil); err != nil {
+		t.Fatalf("set target identity: %v", err)
+	}
+
+	tmdb := &fakeTMDB{
+		detailsFn: func(context.Context, int) (tmdbMovieDetails, error) {
+			return tmdbMovieDetails{
+				ID:       targetTMDB,
+				IMDbID:   "  TT0000451  ",
+				Overview: "IMDb conflict metadata",
+				Credits: tmdbCredits{Cast: []tmdbCastMember{
+					{ID: 552, Name: "IMDb Conflict Person", Character: "Lead", Order: 0},
+				}},
+			}, nil
+		},
+	}
+	svc := newEnrichmentService(repos.movies, repos.meta, tmdb, 15)
+
+	if _, err := svc.EnrichOne(ctx, target.ID); err != nil {
+		t.Fatalf("enrich duplicate IMDb identity: %v", err)
+	}
+
+	gotTarget, err := repos.movies.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if gotTarget.TMDBID == nil || *gotTarget.TMDBID != targetTMDB || gotTarget.IMDbID != nil {
+		t.Fatalf("target identity after IMDb conflict = %v/%v, want %d/nil",
+			gotTarget.TMDBID, gotTarget.IMDbID, targetTMDB)
+	}
+	md, err := repos.meta.GetMetadata(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("read target metadata: %v", err)
+	}
+	if md.Overview != "IMDb conflict metadata" {
+		t.Fatalf("target metadata after IMDb conflict = %q", md.Overview)
+	}
+	gotCredits, err := repos.credits.GetCreditsByMovieIDs(ctx, []int{target.ID})
+	if err != nil {
+		t.Fatalf("read target credits: %v", err)
+	}
+	if rows := gotCredits[target.ID]; len(rows) != 1 || rows[0].Person.Name != "IMDb Conflict Person" {
+		t.Fatalf("target credits after IMDb conflict = %+v", rows)
+	}
+	candidates, err := repos.meta.NeedsEnrichment(ctx, time.Time{}, 100)
+	if err != nil {
+		t.Fatalf("needs enrichment: %v", err)
+	}
+	if candidateIncludes(candidates, target.ID) {
+		t.Fatal("IMDb-conflicting target stayed in enrichment backlog")
+	}
+}
+
 func TestEnrichOne_MissingMovieDuringPersistIsNotFound(t *testing.T) {
 	ctx, repos := setupEnrichmentTestRepos(t)
 	const imdbID = "tt0000501"

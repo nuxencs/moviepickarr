@@ -214,7 +214,8 @@ func (d *SqliteMovieMetadataRepository) NeedsEnrichment(ctx context.Context, sta
 		SELECT m.id
 		FROM movies m
 		LEFT JOIN movie_metadata md ON md.movie_id = m.id
-		WHERE md.movie_id IS NULL OR md.enriched_at < ? OR md.credits_refreshed_at IS NULL
+		WHERE (m.tmdb_id IS NOT NULL OR m.imdb_id IS NOT NULL)
+		  AND (md.movie_id IS NULL OR md.enriched_at < ? OR md.credits_refreshed_at IS NULL)
 		ORDER BY m.id
 		LIMIT ?
 	`

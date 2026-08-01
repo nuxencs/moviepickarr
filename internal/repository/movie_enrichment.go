@@ -17,6 +17,7 @@ func (d *SqliteMoviesRepository) ApplyEnrichment(
 	ctx context.Context,
 	write domain.MovieEnrichmentWrite,
 ) (bool, error) {
+	write.Resolved.IMDbID = canonicalIMDbIDPtr(write.Resolved.IMDbID)
 	write.Metadata.MovieID = write.MovieID
 	genresJSON, err := marshalMetadataGenres(write.Metadata)
 	if err != nil {

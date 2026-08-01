@@ -42,7 +42,11 @@ type handler struct {
 	// movieNightMu keeps next-up authorization attached to the lifecycle command
 	// and synchronous event publication it admitted. In particular, watch owns
 	// the turn through its rotation and movie:watched broadcast.
-	movieNightMu  sync.Mutex
+	movieNightMu sync.Mutex
+	// poolStateMu orders pool-lock changes with every admitted pool membership
+	// mutation and its synchronous event. A successful lock response therefore
+	// cannot be followed by a move or delete that observed the prior lock value.
+	poolStateMu   sync.Mutex
 	movieMetadata domain.MovieMetadataRepo
 	movieCredits  domain.MovieCreditsRepo
 	tmdb          *tmdbClient
@@ -67,6 +71,12 @@ type handler struct {
 	filterOptionsMu     sync.RWMutex
 	filterOptionsCache  *filterOptionsResponse
 	filterOptionsExpiry time.Time
+}
+
+func (h *handler) runPoolStateCommand(command func() error) error {
+	h.poolStateMu.Lock()
+	defer h.poolStateMu.Unlock()
+	return command()
 }
 
 func (h *handler) Close() {

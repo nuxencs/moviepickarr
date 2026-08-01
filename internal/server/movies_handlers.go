@@ -229,24 +229,29 @@ func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
 		return writeNotAdder(c)
 	}
 
-	poolLocked, err := h.settingsService.GetPoolLock(ctx)
-	if err != nil {
-		return writeError(c, err)
-	}
-
 	// The state rules (deletable statuses, the freeze while a draw is unrevealed,
 	// and which of the two refusals the lock yields to) live in the service,
 	// which owns the active draw. Refusing the lock here instead would answer
 	// differently for the held winner than for the tile beside it, which is
 	// exactly the tell the freeze exists to remove.
-	if err := h.movieService.Delete(ctx, movieID, poolLocked); err != nil {
+	err = h.runPoolStateCommand(func() error {
+		poolLocked, err := h.settingsService.GetPoolLock(ctx)
+		if err != nil {
+			return err
+		}
+		if err := h.movieService.Delete(ctx, movieID, poolLocked); err != nil {
+			return err
+		}
+
+		h.broker.Broadcast(event{
+			Type: "movie:deleted",
+			Data: fiber.Map{"userID": actorID, "movieID": movieID},
+		})
+		return nil
+	})
+	if err != nil {
 		return writeError(c, err)
 	}
-
-	h.broker.Broadcast(event{
-		Type: "movie:deleted",
-		Data: fiber.Map{"userID": actorID, "movieID": movieID},
-	})
 
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -304,14 +309,6 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeNotAdder(c)
 	}
 
-	poolLocked, err := h.settingsService.GetPoolLock(ctx)
-	if err != nil {
-		return writeError(c, err)
-	}
-	if poolLocked {
-		return writeError(c, domain.ErrPoolLocked)
-	}
-
 	userRecord, err := h.userService.Get(ctx, actorID)
 	if err != nil {
 		return writeError(c, err)
@@ -322,30 +319,45 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 	// pool has room), so a duplicate click is an idempotent no-op and concurrent
 	// promotions can't overshoot the cap. `changed` reports whether a real move
 	// happened, so a no-op duplicate doesn't broadcast.
-	var changed bool
-	switch body.Target {
-	case "pool":
-		changed, err = h.movieService.MoveToPool(ctx, movieID)
-	case "stash":
-		changed, err = h.movieService.MoveToStash(ctx, movieID)
-	}
-	if err != nil {
-		return writeError(c, err)
-	}
+	var updatedUser userResponse
+	err = h.runPoolStateCommand(func() error {
+		poolLocked, err := h.settingsService.GetPoolLock(ctx)
+		if err != nil {
+			return err
+		}
+		if poolLocked {
+			return domain.ErrPoolLocked
+		}
 
-	updatedPool, err := h.movieService.PooledByUserID(ctx, actorID)
-	if err != nil {
-		return writeError(c, err)
-	}
-	updatedStash, err := h.movieService.StashedByUserID(ctx, actorID)
-	if err != nil {
-		return writeError(c, err)
-	}
+		var changed bool
+		switch body.Target {
+		case "pool":
+			changed, err = h.movieService.MoveToPool(ctx, movieID)
+		case "stash":
+			changed, err = h.movieService.MoveToStash(ctx, movieID)
+		}
+		if err != nil {
+			return err
+		}
 
-	combined := append(append([]*domain.Movie{}, updatedPool...), updatedStash...)
-	updatedUser := toAPIUserMeta(userRecord, updatedPool, updatedStash, h.metaFor(ctx, combined))
-	if changed {
-		h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
+		updatedPool, err := h.movieService.PooledByUserID(ctx, actorID)
+		if err != nil {
+			return err
+		}
+		updatedStash, err := h.movieService.StashedByUserID(ctx, actorID)
+		if err != nil {
+			return err
+		}
+
+		combined := append(append([]*domain.Movie{}, updatedPool...), updatedStash...)
+		updatedUser = toAPIUserMeta(userRecord, updatedPool, updatedStash, h.metaFor(ctx, combined))
+		if changed {
+			h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
+		}
+		return nil
+	})
+	if err != nil {
+		return writeError(c, err)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(updatedUser)

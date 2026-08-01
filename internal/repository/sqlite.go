@@ -576,9 +576,9 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 }
 
 // EditMovie commits one authored edit as a unit. The initial movie read owns
-// authorization, status validation, and identity comparison; the final read
-// owns the response. Both run on tx so neither can observe another writer's
-// partial command.
+// authorization, status validation, and identity comparison; changed identity
+// cleanup removes derived rows; the final read owns the response. All run on tx
+// so neither callers nor other writers can observe a partial command.
 func (d *SqliteMoviesRepository) EditMovie(
 	ctx context.Context,
 	movieID, actorID int,
@@ -644,8 +644,17 @@ func (d *SqliteMoviesRepository) EditMovie(
 	}
 
 	if identityChanged {
+		// Credits and metadata describe the prior film, so do not serve them while
+		// the replacement identity awaits enrichment. Delete only the movie joins;
+		// people are shared across movies and stay in place.
 		if _, err := tx.ExecContext(ctx,
-			"UPDATE movie_metadata SET credits_refreshed_at = NULL WHERE movie_id = ?",
+			"DELETE FROM movie_credits WHERE movie_id = ?",
+			movieID,
+		); err != nil {
+			return nil, false, err
+		}
+		if _, err := tx.ExecContext(ctx,
+			"DELETE FROM movie_metadata WHERE movie_id = ?",
 			movieID,
 		); err != nil {
 			return nil, false, err

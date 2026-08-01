@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"moviepickarr/internal/db"
+	"moviepickarr/internal/domain"
 	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
@@ -176,6 +178,131 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	}
 }
 
+func TestHandleEditMovie_IdentityChangeRemovesDerivedDataAndStaysQueued(t *testing.T) {
+	t.Setenv("TMDB_API_KEY", "")
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+	metaRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
+	creditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
+	if h.enrichRunner != nil {
+		t.Fatal("test requires enrichment to be disabled")
+	}
+
+	user, err := userRepo.Create(ctx, "Cleanup owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	target, err := movieRepo.Add(ctx, "Before", "pool", user.ID)
+	if err != nil {
+		t.Fatalf("create target movie: %v", err)
+	}
+	originalTMDB := 199
+	originalIMDb := "tt0000098"
+	if err := movieRepo.SetExternalIDs(ctx, target.ID, &originalTMDB, &originalIMDb); err != nil {
+		t.Fatalf("set target identity: %v", err)
+	}
+	watchedAt := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
+	if err := movieRepo.MarkAsWatched(ctx, target.ID, watchedAt); err != nil {
+		t.Fatalf("mark target watched: %v", err)
+	}
+	if err := metaRepo.UpsertMetadata(ctx, domain.MovieMetadata{
+		MovieID:  target.ID,
+		Overview: "old metadata",
+		Genres:   []string{"Old"},
+	}); err != nil {
+		t.Fatalf("seed metadata: %v", err)
+	}
+	const personID = 98
+	if err := creditsRepo.ReplaceCredits(ctx, target.ID, []domain.MovieCredit{
+		{
+			MovieID:   target.ID,
+			Person:    domain.Person{ID: personID, Name: "Shared Person"},
+			Kind:      domain.CreditKindCast,
+			Character: "Old",
+		},
+	}); err != nil {
+		t.Fatalf("seed credits: %v", err)
+	}
+
+	cacheNow := time.Now().UTC()
+	h.setCachedStats("warm", statsResponse{SelectedWindow: "all-time"}, cacheNow)
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/movies/%d", target.ID),
+		strings.NewReader(
+			`{"title":"After","link":"https://www.imdb.com/title/tt0000099/"}`,
+		),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	updated, err := movieRepo.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("fetch updated target: %v", err)
+	}
+	if updated.Title != "After" ||
+		updated.TMDBID != nil ||
+		updated.IMDbID == nil ||
+		*updated.IMDbID != "tt0000099" {
+		t.Fatalf("movie after identity edit = %+v", updated)
+	}
+	if _, err := metaRepo.GetMetadata(ctx, target.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("metadata after identity edit = %v, want ErrNotFound", err)
+	}
+	gotCredits, err := creditsRepo.GetCreditsByMovieIDs(ctx, []int{target.ID})
+	if err != nil {
+		t.Fatalf("read credits after identity edit: %v", err)
+	}
+	if len(gotCredits[target.ID]) != 0 {
+		t.Fatalf("credits after identity edit = %+v, want none", gotCredits[target.ID])
+	}
+	var people int
+	if err := dbConn.Read.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM people WHERE id = ?",
+		personID,
+	).Scan(&people); err != nil {
+		t.Fatalf("count shared people: %v", err)
+	}
+	if people != 1 {
+		t.Fatalf("shared people rows after identity edit = %d, want 1", people)
+	}
+	candidates, err := metaRepo.NeedsEnrichment(ctx, time.Time{}, 100)
+	if err != nil {
+		t.Fatalf("needs enrichment: %v", err)
+	}
+	if !candidateIncludes(candidates, target.ID) {
+		t.Fatal("identity edit disappeared from enrichment backlog with enrichment disabled")
+	}
+	if _, ok := h.getCachedStats("warm", cacheNow); ok {
+		t.Fatal("successful watched edit left the stats cache warm")
+	}
+	select {
+	case got := <-client:
+		if got.Type != "movie:updated" {
+			t.Fatalf("edit broadcast event %q, want movie:updated", got.Type)
+		}
+	default:
+		t.Fatal("successful identity edit did not broadcast movie:updated")
+	}
+	select {
+	case got := <-client:
+		t.Fatalf("successful identity edit broadcast extra event %q", got.Type)
+	default:
+	}
+}
+
 func TestHandleEditMovie_DuplicateIMDbRollsBackWholeEdit(t *testing.T) {
 	t.Parallel()
 
@@ -281,11 +408,12 @@ func TestHandleEditMovie_DuplicateIMDbRollsBackWholeEdit(t *testing.T) {
 	}
 }
 
-func TestHandleEditMovie_StaleMarkerFailureRollsBackWholeEdit(t *testing.T) {
+func TestHandleEditMovie_SecondDerivedCleanupFailureRollsBackWholeEdit(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	h, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+	creditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
 
 	user, err := userRepo.Create(ctx, "Marker owner")
 	if err != nil {
@@ -311,15 +439,33 @@ func TestHandleEditMovie_StaleMarkerFailureRollsBackWholeEdit(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seed metadata marker: %v", err)
 	}
+	const personID = 103
+	if err := creditsRepo.ReplaceCredits(ctx, target.ID, []domain.MovieCredit{
+		{
+			MovieID:   target.ID,
+			Person:    domain.Person{ID: personID, Name: "Rollback Person"},
+			Kind:      domain.CreditKindCast,
+			Character: "Before",
+		},
+	}); err != nil {
+		t.Fatalf("seed credits: %v", err)
+	}
+	if _, err := dbConn.Write.ExecContext(ctx,
+		"UPDATE movie_metadata SET credits_refreshed_at = ? WHERE movie_id = ?",
+		originalMarker,
+		target.ID,
+	); err != nil {
+		t.Fatalf("restore metadata marker: %v", err)
+	}
 	if _, err := dbConn.Write.ExecContext(ctx, fmt.Sprintf(`
-		CREATE TRIGGER fail_movie_edit_stale_marker
-		BEFORE UPDATE OF credits_refreshed_at ON movie_metadata
+		CREATE TRIGGER fail_movie_edit_metadata_cleanup
+		BEFORE DELETE ON movie_metadata
 		WHEN OLD.movie_id = %d
 		BEGIN
-			SELECT RAISE(ABORT, 'forced stale marker failure');
+			SELECT RAISE(ABORT, 'forced metadata cleanup failure');
 		END
 	`, target.ID)); err != nil {
-		t.Fatalf("install stale-marker failure: %v", err)
+		t.Fatalf("install metadata cleanup failure: %v", err)
 	}
 
 	cacheNow := time.Now().UTC()
@@ -347,17 +493,17 @@ func TestHandleEditMovie_StaleMarkerFailureRollsBackWholeEdit(t *testing.T) {
 
 	unchanged, err := movieRepo.FindByID(ctx, target.ID)
 	if err != nil {
-		t.Fatalf("fetch target after marker failure: %v", err)
+		t.Fatalf("fetch target after cleanup failure: %v", err)
 	}
 	if unchanged.Title != "Before" {
-		t.Fatalf("title after marker failure = %q, want Before", unchanged.Title)
+		t.Fatalf("title after cleanup failure = %q, want Before", unchanged.Title)
 	}
 	if unchanged.WatchedAt == nil || !unchanged.WatchedAt.Equal(originalWatchedAt) {
-		t.Fatalf("watchedAt after marker failure = %v, want %v", unchanged.WatchedAt, originalWatchedAt)
+		t.Fatalf("watchedAt after cleanup failure = %v, want %v", unchanged.WatchedAt, originalWatchedAt)
 	}
 	if unchanged.TMDBID == nil || *unchanged.TMDBID != originalTMDB ||
 		unchanged.IMDbID == nil || *unchanged.IMDbID != originalIMDb {
-		t.Fatalf("identity after marker failure = %v/%v, want %d/%s",
+		t.Fatalf("identity after cleanup failure = %v/%v, want %d/%s",
 			unchanged.TMDBID, unchanged.IMDbID, originalTMDB, originalIMDb)
 	}
 
@@ -369,6 +515,23 @@ func TestHandleEditMovie_StaleMarkerFailureRollsBackWholeEdit(t *testing.T) {
 	}
 	if marker != originalMarker {
 		t.Fatalf("metadata marker after failure = %d, want %d", marker, originalMarker)
+	}
+	gotCredits, err := creditsRepo.GetCreditsByMovieIDs(ctx, []int{target.ID})
+	if err != nil {
+		t.Fatalf("read credits after cleanup failure: %v", err)
+	}
+	if rows := gotCredits[target.ID]; len(rows) != 1 || rows[0].Person.ID != personID {
+		t.Fatalf("credits after cleanup failure = %+v, want original row", rows)
+	}
+	var people int
+	if err := dbConn.Read.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM people WHERE id = ?",
+		personID,
+	).Scan(&people); err != nil {
+		t.Fatalf("count people after cleanup failure: %v", err)
+	}
+	if people != 1 {
+		t.Fatalf("people after cleanup failure = %d, want 1", people)
 	}
 	if _, ok := h.getCachedStats("warm", cacheNow); !ok {
 		t.Fatal("failed edit invalidated the stats cache")
@@ -468,7 +631,9 @@ func TestHandleEditMovie_WatchedTitleInvalidatesStats(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	h, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+	metaRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
+	creditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
 
 	user, err := userRepo.Create(ctx, "Stats owner")
 	if err != nil {
@@ -485,6 +650,23 @@ func TestHandleEditMovie_WatchedTitleInvalidatesStats(t *testing.T) {
 	originalWatchedAt := time.Date(2026, 2, 7, 15, 0, 0, 0, time.UTC)
 	if err := movieRepo.MarkAsWatched(ctx, target.ID, originalWatchedAt); err != nil {
 		t.Fatalf("mark target watched: %v", err)
+	}
+	if err := metaRepo.UpsertMetadata(ctx, domain.MovieMetadata{
+		MovieID:  target.ID,
+		Overview: "same identity metadata",
+		Genres:   []string{"Drama"},
+	}); err != nil {
+		t.Fatalf("seed metadata: %v", err)
+	}
+	if err := creditsRepo.ReplaceCredits(ctx, target.ID, []domain.MovieCredit{
+		{
+			MovieID:   target.ID,
+			Person:    domain.Person{ID: 106, Name: "Same Identity Person"},
+			Kind:      domain.CreditKindCast,
+			Character: "Lead",
+		},
+	}); err != nil {
+		t.Fatalf("seed credits: %v", err)
 	}
 
 	cacheNow := time.Now().UTC()
@@ -522,6 +704,20 @@ func TestHandleEditMovie_WatchedTitleInvalidatesStats(t *testing.T) {
 	}
 	if updated.WatchedAt == nil || !updated.WatchedAt.Equal(originalWatchedAt) {
 		t.Fatalf("watchedAt after title edit = %v, want %v", updated.WatchedAt, originalWatchedAt)
+	}
+	md, err := metaRepo.GetMetadata(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("read same-identity metadata: %v", err)
+	}
+	if md.Overview != "same identity metadata" {
+		t.Fatalf("same-identity metadata = %q, want preserved", md.Overview)
+	}
+	gotCredits, err := creditsRepo.GetCreditsByMovieIDs(ctx, []int{target.ID})
+	if err != nil {
+		t.Fatalf("read same-identity credits: %v", err)
+	}
+	if rows := gotCredits[target.ID]; len(rows) != 1 || rows[0].Person.Name != "Same Identity Person" {
+		t.Fatalf("same-identity credits = %+v, want preserved", rows)
 	}
 
 	select {

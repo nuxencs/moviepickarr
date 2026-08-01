@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -179,30 +178,24 @@ func TestEnrichOne_IdentityEditDuringTMDBRequestRejectsOldResult(t *testing.T) {
 		t.Fatalf("identity after stale enrichment = %v/%v, want nil/%s", movie.TMDBID, movie.IMDbID, newIMDb)
 	}
 
-	md, err := repos.meta.GetMetadata(ctx, movieID)
-	if err != nil {
-		t.Fatalf("read metadata: %v", err)
-	}
-	if md.Overview != "metadata before the edit" {
-		t.Fatalf("metadata after stale enrichment = %q", md.Overview)
+	if _, err := repos.meta.GetMetadata(ctx, movieID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("metadata after identity edit = %v, want ErrNotFound", err)
 	}
 	gotCredits, err := repos.credits.GetCreditsByMovieIDs(ctx, []int{movieID})
 	if err != nil {
 		t.Fatalf("read credits: %v", err)
 	}
-	if rows := gotCredits[movieID]; len(rows) != 1 || rows[0].Person.Name != "Before Person" {
-		t.Fatalf("credits after stale enrichment = %+v", rows)
+	if rows := gotCredits[movieID]; len(rows) != 0 {
+		t.Fatalf("credits after identity edit = %+v, want none", rows)
 	}
-
-	var refreshed sql.NullInt64
+	var people int
 	if err := repos.db.Read.QueryRowContext(ctx,
-		"SELECT credits_refreshed_at FROM movie_metadata WHERE movie_id = ?",
-		movieID,
-	).Scan(&refreshed); err != nil {
-		t.Fatalf("read credits marker: %v", err)
+		"SELECT COUNT(*) FROM people WHERE id = 101",
+	).Scan(&people); err != nil {
+		t.Fatalf("count shared people: %v", err)
 	}
-	if refreshed.Valid {
-		t.Fatalf("stale enrichment stamped credits marker %d", refreshed.Int64)
+	if people != 1 {
+		t.Fatalf("shared people rows after identity edit = %d, want 1", people)
 	}
 	candidates, err := repos.meta.NeedsEnrichment(ctx, time.Time{}, 100)
 	if err != nil {

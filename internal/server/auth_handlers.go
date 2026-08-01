@@ -37,7 +37,7 @@ func (h *handler) writeAuthError(c *fiber.Ctx, err error) error {
 // writeInternal logs an infrastructure fault and returns the opaque 500 every
 // auth handler shares, so the log-and-mask pair lives in one place.
 func (h *handler) writeInternal(c *fiber.Ctx, err error, msg string) error {
-	h.log.Error().Err(err).Msg(msg)
+	h.reqLog(c).Error().Err(err).Msg(msg)
 	return writeProblem(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 }
 
@@ -118,7 +118,9 @@ func (h *handler) handleLogin(c *fiber.Ctx) error {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			return writeInvalidCredentials(c)
 		}
-		return h.writeInternal(c, err, "login failed")
+		// Not a wrong password (that returned above). The credential check
+		// itself faulted. The old "login failed" read like a rejection.
+		return h.writeInternal(c, err, "verifying local login failed")
 	}
 
 	if err := h.issueSession(c, memberID); err != nil {
@@ -173,7 +175,9 @@ func (h *handler) handleMe(c *fiber.Ctx) error {
 	// page then just reads "no other devices" until the next /me succeeds).
 	others, err := h.sessions.CountOtherSessions(c.UserContext(), memberID, c.Cookies(sessionCookieName))
 	if err != nil {
-		h.log.Error().Err(err).Msg("counting other sessions failed")
+		// Best-effort by design (see above), so it degrades rather than fails:
+		// warn, not error.
+		h.reqLog(c).Warn().Err(err).Msg("counting other sessions failed, reporting zero")
 		others = 0
 	}
 

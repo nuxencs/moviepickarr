@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -135,6 +137,25 @@ type blockingRerunEnricher struct {
 	secondStarted chan struct{}
 	releaseSecond chan struct{}
 	firstErr      error
+}
+
+type timeoutThenSuccessEnricher struct {
+	calls atomic.Int32
+}
+
+func (e *timeoutThenSuccessEnricher) EnrichOne(_ context.Context, movieID int) (enrichResult, error) {
+	if e.calls.Add(1) == 1 {
+		return enrichResult{}, fmt.Errorf("tmdb request: %w", context.DeadlineExceeded)
+	}
+	return enrichResult{TMDBID: movieID}, nil
+}
+
+func (*timeoutThenSuccessEnricher) NeedsEnrichment(
+	context.Context,
+	time.Time,
+	int,
+) ([]domain.EnrichmentCandidate, error) {
+	return []domain.EnrichmentCandidate{{MovieID: 1}, {MovieID: 2}}, nil
 }
 
 func (e *blockingRerunEnricher) EnrichOne(ctx context.Context, movieID int) (enrichResult, error) {
@@ -376,5 +397,24 @@ func TestEnrichRunner_MissingMovieIsBenignSkip(t *testing.T) {
 	}
 	if got := stats.Load(); got != 0 {
 		t.Fatalf("missing movie invalidated stats %d times", got)
+	}
+}
+
+func TestEnrichRunner_DrainContinuesAfterRequestTimeout(t *testing.T) {
+	var logs bytes.Buffer
+	enricher := &timeoutThenSuccessEnricher{}
+	r := newEnrichRunner(enricher, nil, defaultEnrichConfig(), zerolog.New(&logs))
+
+	r.drain(context.Background())
+
+	if got := enricher.calls.Load(); got != 2 {
+		t.Fatalf("enrichment calls = %d, want timeout followed by next candidate", got)
+	}
+	logged := logs.String()
+	if !strings.Contains(logged, `"message":"movie enrichment failed"`) {
+		t.Fatalf("request timeout was not logged as an enrichment failure: %s", logged)
+	}
+	if strings.Contains(logged, "drain interrupted by shutdown") {
+		t.Fatalf("request timeout was logged as shutdown: %s", logged)
 	}
 }

@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"moviepickarr/internal/auth"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -59,6 +62,10 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 	// this token to reach here (401 before the stream ever opens); the per-heartbeat
 	// recheck is what drops a session revoked AFTER the handshake.
 	sessionToken := c.Cookies(sessionCookieName)
+	// The body-stream writer outlives Fiber's request context, so capture the
+	// complete request scope now. The copied logger owns its fields and remains
+	// safe after c is released.
+	sseLog := h.reqLog(c).With().Str("subsystem", "sse").Logger()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		eventChannel, headSeq := h.broker.Subscribe()
@@ -69,9 +76,25 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 		}
 		defer h.broker.Unsubscribe(eventChannel)
 
-		// One sse sub-logger for the whole stream so every write/flush site is
-		// tagged identically (and a future site can't forget the tag).
-		sseLog := h.log.With().Str("subsystem", "sse").Logger()
+		// emit formats one frame straight into the stream and flushes it. Every
+		// frame goes through here: the write and flush failures used to be six
+		// call sites sharing two message strings, so a broken pipe told you
+		// nothing about which frame was in flight. Now there is one of each,
+		// plus a frame field.
+		//
+		// It takes the format and args rather than a built string so the frame
+		// still goes to the writer in one Fprintf, as it did before.
+		emit := func(frame, format string, args ...any) error {
+			if _, err := fmt.Fprintf(w, format, args...); err != nil {
+				sseLog.Debug().Err(err).Str("frame", frame).Msg("client write failed, closing stream")
+				return err
+			}
+			if err := w.Flush(); err != nil {
+				sseLog.Debug().Err(err).Str("frame", frame).Msg("client flush failed, closing stream")
+				return err
+			}
+			return nil
+		}
 
 		// retry: hints the reconnect delay EventSource uses in the window before
 		// the client's own backoff takes over. The handshake carries epoch (restart
@@ -84,15 +107,10 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			ServerNow: formatTime(&connectedNow),
 		})
 		if err != nil {
-			sseLog.Error().Err(err).Msg("sse connected frame marshal failed")
+			sseLog.Error().Err(err).Str("frame", "connected").Msg("frame marshal failed")
 			return
 		}
-		if _, err := fmt.Fprintf(w, "retry: 3000\nevent: connected\ndata: %s\n\n", connectedData); err != nil {
-			sseLog.Debug().Err(err).Msg("sse client write failed (likely disconnect)")
-			return
-		}
-		if err := w.Flush(); err != nil {
-			sseLog.Debug().Err(err).Msg("sse client flush failed (likely disconnect)")
+		if err := emit("connected", "retry: 3000\nevent: connected\ndata: %s\n\n", connectedData); err != nil {
 			return
 		}
 
@@ -105,20 +123,18 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 		writeEvent := func(e event) error {
 			eventData, err := json.Marshal(e)
 			if err != nil {
-				sseLog.Error().Err(err).Msg("sse event marshal failed")
+				// Which event type is unmarshalable is the entire diagnostic
+				// here; without it this line names a closure, not a bug.
+				sseLog.Error().Err(err).
+					Str("frame", "message").
+					Str("event", e.Type).
+					Uint64("seq", e.Seq).
+					Msg("frame marshal failed")
 				return nil
 			}
 			// id: persists the seq in the browser; the client also reads it from
 			// the JSON body for gap detection.
-			if _, err := fmt.Fprintf(w, "id: %d\nevent: message\ndata: %s\n\n", e.Seq, eventData); err != nil {
-				sseLog.Debug().Err(err).Msg("sse client write failed (likely disconnect)")
-				return err
-			}
-			if err := w.Flush(); err != nil {
-				sseLog.Debug().Err(err).Msg("sse client flush failed (likely disconnect)")
-				return err
-			}
-			return nil
+			return emit("message", "id: %d\nevent: message\ndata: %s\n\n", e.Seq, eventData)
 		}
 
 		for {
@@ -140,7 +156,11 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 				// idle window, or a long-held stream would keep an idle session alive.
 				// Best-effort context: the request's is gone once the writer runs.
 				if err := h.sessions.Revalidate(context.Background(), sessionToken); err != nil {
-					sseLog.Debug().Msg("sse session no longer valid, closing stream")
+					if errors.Is(err, auth.ErrSessionInvalid) {
+						sseLog.Debug().Err(err).Msg("session revoked or expired mid-stream, closing stream")
+					} else {
+						sseLog.Error().Err(err).Msg("session revalidation failed, closing stream")
+					}
 					return
 				}
 
@@ -167,15 +187,10 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 					ServerNow: formatTime(&heartbeatNow),
 				})
 				if err != nil {
-					sseLog.Error().Err(err).Msg("sse heartbeat frame marshal failed")
+					sseLog.Error().Err(err).Str("frame", "heartbeat").Msg("frame marshal failed")
 					return
 				}
-				if _, err := fmt.Fprintf(w, "event: heartbeat\ndata: %s\n\n", heartbeatData); err != nil {
-					sseLog.Debug().Err(err).Msg("sse heartbeat write failed (likely disconnect)")
-					return
-				}
-				if err := w.Flush(); err != nil {
-					sseLog.Debug().Err(err).Msg("sse heartbeat flush failed (likely disconnect)")
+				if err := emit("heartbeat", "event: heartbeat\ndata: %s\n\n", heartbeatData); err != nil {
 					return
 				}
 			}

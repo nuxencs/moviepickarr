@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,10 +16,11 @@ import (
 	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/rs/zerolog"
 )
 
-// setupSSEApp builds a handler over a temp DB with the real csrfGuard →
+// setupSSEApp builds a handler over a temp DB with the real csrfGuard then
 // requireSession chain in front of /events, plus a fast heartbeat so the
 // per-heartbeat session revalidation is observable within a test.
 func setupSSEApp(t *testing.T) (*handler, *fiber.App, *db.Pool) {
@@ -43,6 +46,7 @@ func setupSSEApp(t *testing.T) (*handler, *fiber.App, *db.Pool) {
 	})
 
 	app := fiber.New()
+	app.Use(requestid.New())
 	v1 := app.Group("/api/v1")
 	v1.Use(csrfGuard)
 	v1.Use(h.requireSession)
@@ -78,6 +82,8 @@ func TestSSE_RevokedMidStreamDropsOnHeartbeat(t *testing.T) {
 
 	ctx := context.Background()
 	h, app, dbConn := setupSSEApp(t)
+	var logs bytes.Buffer
+	h.log = zerolog.New(&logs).Level(zerolog.DebugLevel)
 
 	member, err := repository.NewSqliteUserRepository(dbConn).Create(ctx, "Alice")
 	if err != nil {
@@ -97,6 +103,7 @@ func TestSSE_RevokedMidStreamDropsOnHeartbeat(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
 	req.Header.Set("Cookie", sessionCookieName+"="+rawToken)
+	req.Header.Set(fiber.HeaderXRequestID, "revoked-stream")
 
 	// A generous timeout: if revalidation never dropped the stream, the writer
 	// would loop until this fires and app.Test would return an error instead.
@@ -113,5 +120,65 @@ func TestSSE_RevokedMidStreamDropsOnHeartbeat(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "event: connected") {
 		t.Fatalf("stream never sent its handshake frame; body=%q", string(body))
+	}
+	logged := logs.String()
+	for _, want := range []string{
+		`"level":"debug"`,
+		`"subsystem":"sse"`,
+		`"member_id":` + strconv.Itoa(member.ID),
+		`"request_id":"revoked-stream"`,
+		`"method":"GET"`,
+		`"route":"/api/v1/events"`,
+		`"message":"session revoked or expired mid-stream, closing stream"`,
+	} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("SSE close log missing %q: %s", want, logged)
+		}
+	}
+}
+
+func TestSSE_RevalidationDatabaseFailureLogsError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, dbConn := setupSSEApp(t)
+	var logs bytes.Buffer
+	h.log = zerolog.New(&logs).Level(zerolog.DebugLevel)
+
+	member, err := repository.NewSqliteUserRepository(dbConn).Create(ctx, "Alice")
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	rawToken, _, err := h.sessions.Mint(ctx, member.ID, nil, nil)
+	if err != nil {
+		t.Fatalf("mint session: %v", err)
+	}
+
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		_ = dbConn.Close()
+	}()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	req.Header.Set("Cookie", sessionCookieName+"="+rawToken)
+	req.Header.Set(fiber.HeaderXRequestID, "failed-stream")
+	resp, err := app.Test(req, 5000)
+	if err != nil {
+		t.Fatalf("stream did not close after database failure (app.Test: %v)", err)
+	}
+	defer resp.Body.Close()
+
+	logged := logs.String()
+	for _, want := range []string{
+		`"level":"error"`,
+		`"request_id":"failed-stream"`,
+		`"message":"session revalidation failed, closing stream"`,
+	} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("SSE failure log missing %q: %s", want, logged)
+		}
+	}
+	if strings.Contains(logged, "session revoked or expired") {
+		t.Errorf("database failure logged as session expiry: %s", logged)
 	}
 }

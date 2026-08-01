@@ -110,11 +110,13 @@ func (h *handler) startSessionSweeper(ctx context.Context) {
 func (h *handler) sweepSessions(ctx context.Context) {
 	removed, err := h.sessions.Sweep(ctx)
 	if err != nil {
-		h.log.Error().Err(err).Msg("session sweep failed")
+		// The sweep is a periodic background tick: a failure costs nothing but
+		// some stale rows, and the next tick retries. Recoverable, so warn.
+		h.log.Warn().Err(err).Msg("expired-session sweep failed, retrying next tick")
 		return
 	}
 	if removed > 0 {
-		h.log.Debug().Int64("removed", removed).Msg("swept expired sessions")
+		h.log.Debug().Int64("count", removed).Msg("swept expired sessions")
 	}
 }
 
@@ -127,7 +129,10 @@ func (h *handler) requireSession(c *fiber.Ctx) error {
 			clearSessionCookie(c)
 			return writeProblem(c, fiber.StatusUnauthorized, "unauthorized", "authentication required")
 		}
-		h.log.Error().Err(err).Msg("session lookup failed")
+		// requireSession has not attached an actor yet, so this line carries the
+		// request only. That is the point: it is the one 500 whose cause is
+		// invisible from the access log alone.
+		h.reqLogBeforeRoute(c).Error().Err(err).Msg("session lookup failed")
 		return writeProblem(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 	}
 

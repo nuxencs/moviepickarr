@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -46,6 +47,20 @@ type Config struct {
 	Date    string
 }
 
+// shutdownTimeout bounds how long Fiber gets to drain in-flight requests. Named
+// so the log line that fires when it expires can report the budget it blew.
+const shutdownTimeout = 10 * time.Second
+
+func logHTTPShutdownError(log zerolog.Logger, err error) {
+	event := log.Error().Err(err)
+	if errors.Is(err, context.DeadlineExceeded) {
+		event.Dur("timeout", shutdownTimeout).
+			Msg("http server did not drain before the shutdown timeout")
+		return
+	}
+	event.Msg("shutting down the http server failed")
+}
+
 // dbMaxBackups resolves DB_BACKUP_MAX: how many pre-migration snapshots to
 // keep next to the DB file. 0 disables backups; invalid values fall back to
 // the default with a warning rather than failing startup.
@@ -57,8 +72,8 @@ func dbMaxBackups(log zerolog.Logger) int {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 0 {
-		log.Warn().Str("DB_BACKUP_MAX", raw).Int("default", defaultMaxBackups).
-			Msg("invalid DB_BACKUP_MAX, using default")
+		log.Warn().Str("key", "DB_BACKUP_MAX").Str("value", raw).Int("default", defaultMaxBackups).
+			Msg("env value is not a non-negative integer, using default")
 		return defaultMaxBackups
 	}
 	return n
@@ -172,6 +187,10 @@ func Run(ctx context.Context, cfg Config) error {
 		},
 		Messages: []string{"http server error", "http client error", "http request"},
 		Levels:   []zerolog.Level{zerolog.ErrorLevel, zerolog.WarnLevel, zerolog.InfoLevel},
+		// Emit request_id/bytes_sent rather than fiberzerolog's default
+		// requestId/bytesSent, so an access line and the app lines from the same
+		// request join on one key. See docs/LOGGING.md.
+		FieldsSnakeCase: true,
 		// The SSE stream is long-lived: its "latency" would span the whole
 		// session and it logs one line per open — noise, so skip it.
 		SkipURIs: []string{"/api/v1/events"},
@@ -236,11 +255,11 @@ func Run(ctx context.Context, cfg Config) error {
 			// so a late Subscribe can't re-stall.
 			h.Close()
 
-			ctxTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctxTimeout, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer cancel()
 
 			if err := app.ShutdownWithContext(ctxTimeout); err != nil {
-				rootLog.Error().Err(err).Msg("server shutdown error")
+				logHTTPShutdownError(rootLog, err)
 			}
 			// Stop the worker after Fiber has drained (no handler can enqueue)
 			// but before the DB closes (in-flight enrichment still reads it).
@@ -251,7 +270,7 @@ func Run(ctx context.Context, cfg Config) error {
 			h.posterWall.Stop()
 			h.Close()
 			if err := pool.Close(); err != nil {
-				rootLog.Error().Err(err).Msg("db close error")
+				rootLog.Error().Err(err).Msg("closing the database on shutdown failed")
 			}
 		})
 	}
@@ -354,7 +373,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 func wireOIDC(h *handler, cfg auth.OIDCConfig, identities domain.OIDCIdentityRepo, local domain.LocalAccountRepo, log zerolog.Logger) {
 	txCodec, err := auth.NewOIDCTxCodec(os.Getenv("MPA_OIDC_TX_SECRET"))
 	if err != nil {
-		log.Error().Err(err).Msg("oidc tx codec init failed; SSO disabled")
+		log.Error().Err(err).Msg("oidc tx codec init failed, SSO stays disabled")
 		return
 	}
 
@@ -364,7 +383,7 @@ func wireOIDC(h *handler, cfg auth.OIDCConfig, identities domain.OIDCIdentityRep
 	defer cancel()
 	rp, err := auth.NewRelyingParty(ctx, cfg)
 	if err != nil {
-		log.Error().Err(err).Str("issuer", cfg.Issuer).Msg("oidc discovery failed; SSO disabled")
+		log.Error().Err(err).Str("issuer", cfg.Issuer).Msg("oidc discovery failed, SSO stays disabled")
 		return
 	}
 

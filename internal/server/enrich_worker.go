@@ -94,7 +94,8 @@ func envInt(key string) (int, bool) {
 	}
 	v, err := strconv.Atoi(raw)
 	if err != nil {
-		zlog.Warn().Str("key", key).Str("value", raw).Msg("enrich: invalid env value, using default")
+		zlog.Warn().Str("component", "enrich").Str("key", key).Str("value", raw).
+			Msg("env value is not an integer, using default")
 		return 0, false
 	}
 	return v, true
@@ -115,7 +116,8 @@ func envDuration(key string) (time.Duration, bool) {
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil || d < 0 {
-		zlog.Warn().Str("key", key).Str("value", raw).Msg("enrich: invalid env value, using default")
+		zlog.Warn().Str("component", "enrich").Str("key", key).Str("value", raw).
+			Msg("env value is not a non-negative duration, using default")
 		return 0, false
 	}
 	return d, true
@@ -229,7 +231,7 @@ func (r *enrichRunner) Start(ctx context.Context) {
 		Str("cast", cast).
 		Str("ttl", r.cfg.TTL.String()).
 		Str("refresh", refresh).
-		Msg("enrich worker started")
+		Msg("worker started")
 
 	r.wg.Add(1)
 	go r.consume(stopCtx)
@@ -265,7 +267,7 @@ func (r *enrichRunner) Enqueue(movieID int) {
 	case r.queue <- movieID:
 	default:
 		r.clearInflight(movieID)
-		r.log.Warn().Int("movieID", movieID).Msg("enrich queue full, dropped movie (will retry on next scan)")
+		r.log.Warn().Int("movie_id", movieID).Msg("queue full, dropped newly added movie; the next scan re-selects it")
 	}
 }
 
@@ -395,7 +397,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 	candidates, err := r.enricher.NeedsEnrichment(ctx, staleBefore, r.cfg.BatchLimit)
 	if err != nil {
 		if ctx.Err() == nil {
-			r.log.Error().Err(err).Msg("enrich needs-enrichment query failed")
+			r.log.Error().Err(err).Msg("needs-enrichment query failed")
 		}
 		return
 	}
@@ -403,7 +405,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 		return
 	}
 
-	r.log.Info().Int("count", len(candidates)).Msg("enrich draining")
+	r.log.Info().Int("count", len(candidates)).Msg("drain started")
 	var enriched, skipped, failed int
 	for _, c := range candidates {
 		// Skip a candidate already claimed by the auto-on-add queue — consume
@@ -427,7 +429,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 				Int("enriched", enriched).
 				Int("skipped", skipped).
 				Int("failed", failed).
-				Msg("enrich drain interrupted")
+				Msg("drain interrupted by shutdown")
 			return
 		}
 	}
@@ -436,7 +438,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 		Int("enriched", enriched).
 		Int("skipped", skipped).
 		Int("failed", failed).
-		Msg("enrich drain complete")
+		Msg("drain complete")
 }
 
 type enrichOutcome int
@@ -463,8 +465,8 @@ func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 			default:
 				r.clearInflight(movieID)
 				r.log.Warn().
-					Int("movieID", movieID).
-					Msg("enrich queue full, dropped dirty movie (will retry on next scan)")
+					Int("movie_id", movieID).
+					Msg("queue full, dropped re-dirtied movie; the next scan re-selects it")
 			}
 			return outcomeSkipped
 		case attemptComplete:
@@ -482,7 +484,7 @@ func (r *enrichRunner) processAttempt(
 	switch {
 	case err == nil:
 		return res, outcomeEnriched, nil
-	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+	case ctx.Err() != nil:
 		return enrichResult{}, outcomeCanceled, err
 	case errors.Is(err, ErrEnrichNoIMDbID) ||
 		errors.Is(err, ErrEnrichNotFound) ||
@@ -503,16 +505,16 @@ func (r *enrichRunner) publishAttempt(
 	switch outcome {
 	case outcomeEnriched:
 		r.log.Debug().
-			Int("movieID", movieID).
-			Int("tmdbID", res.TMDBID).
+			Int("movie_id", movieID).
+			Int("tmdb_id", res.TMDBID).
 			Int("genres", res.Genres).
 			Int("credits", res.Credits).
-			Msg("enrich movie enriched")
+			Msg("movie enriched")
 		r.recordEnriched(movieID)
 	case outcomeSkipped:
-		r.log.Debug().Int("movieID", movieID).Err(err).Msg("enrich skip movie")
+		r.log.Debug().Int("movie_id", movieID).Err(err).Msg("movie enrichment skipped")
 	case outcomeFailed:
-		r.log.Warn().Int("movieID", movieID).Err(err).Msg("enrich movie failed")
+		r.log.Warn().Int("movie_id", movieID).Err(err).Msg("movie enrichment failed")
 	}
 }
 
@@ -574,6 +576,6 @@ func (r *enrichRunner) broadcastEnrichedBatch(n int) {
 	if r.broker == nil {
 		return
 	}
-	r.log.Debug().Int("count", n).Str("event", "movies:enriched-batch").Msg("enrich flushed batch")
+	r.log.Debug().Int("count", n).Str("event", "movies:enriched-batch").Msg("flushed enriched batch")
 	r.broker.Broadcast(event{Type: "movies:enriched-batch"})
 }

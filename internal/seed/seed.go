@@ -42,6 +42,26 @@ func (c AdminConfig) complete() bool {
 	return c.Name != "" && c.Username != "" && c.Password != ""
 }
 
+// missingVars names the unset members of the trio, for the partial-config
+// warning. It returns env var names because that is what the operator has to go
+// and fix.
+func (c AdminConfig) missingVars() []string {
+	var missing []string
+	for _, v := range []struct {
+		name  string
+		value string
+	}{
+		{"MPA_ADMIN_NAME", c.Name},
+		{"MPA_ADMIN_USERNAME", c.Username},
+		{"MPA_ADMIN_PASSWORD", c.Password},
+	} {
+		if v.value == "" {
+			missing = append(missing, v.name)
+		}
+	}
+	return missing
+}
+
 // validate checks the fields a configured trio must satisfy before the seed
 // touches the database. Only the password bound is enforced here; presence is
 // already guaranteed by complete(). A violation fails boot loudly, which is the
@@ -53,12 +73,20 @@ func (c AdminConfig) validate() error {
 	return nil
 }
 
+// seedLogger tags this package's lines with component=seed. Every message here
+// used to open with a literal "break-glass admin seed: " prefix, which said the
+// same thing in a place you cannot filter on and cannot grep past.
+func seedLogger(log zerolog.Logger) zerolog.Logger {
+	return log.With().Str("component", "seed").Logger()
+}
+
 // AdminConfigFromEnv reads the MPA_ADMIN_* trio, trimming surrounding
 // whitespace so a stray space in a compose file doesn't silently change the
 // seeded name or credentials. ok is true only when all three are set; a partial
 // set is logged as a warning and reported as not-configured, so boot skips the
 // seed (and, if no admin exists, falls through to the zero-admins warning).
 func AdminConfigFromEnv(log zerolog.Logger) (AdminConfig, bool) {
+	log = seedLogger(log)
 	cfg := AdminConfig{
 		Name:     strings.TrimSpace(os.Getenv("MPA_ADMIN_NAME")),
 		Username: strings.TrimSpace(os.Getenv("MPA_ADMIN_USERNAME")),
@@ -71,11 +99,11 @@ func AdminConfigFromEnv(log zerolog.Logger) (AdminConfig, bool) {
 	// Some but not all set: call it out so a typo'd var name isn't mistaken for
 	// a deliberate "no seed" deployment.
 	if cfg.Name != "" || cfg.Username != "" || cfg.Password != "" {
+		// Which ones are missing is the whole point of the line, so name them
+		// directly instead of making the operator diff three booleans.
 		log.Warn().
-			Bool("MPA_ADMIN_NAME", cfg.Name != "").
-			Bool("MPA_ADMIN_USERNAME", cfg.Username != "").
-			Bool("MPA_ADMIN_PASSWORD", cfg.Password != "").
-			Msg("break-glass admin seed partially configured; all three of MPA_ADMIN_NAME/USERNAME/PASSWORD are required, skipping seed")
+			Strs("missing", cfg.missingVars()).
+			Msg("break-glass admin seed partially configured, skipping; MPA_ADMIN_NAME, MPA_ADMIN_USERNAME and MPA_ADMIN_PASSWORD are all required")
 	}
 	return cfg, false
 }
@@ -92,6 +120,7 @@ func AdminConfigFromEnv(log zerolog.Logger) (AdminConfig, bool) {
 // ensured admin, and an already-present local login is never overwritten, so
 // re-running boot with the same env changes nothing.
 func BreakGlassAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, configured bool, log zerolog.Logger) error {
+	log = seedLogger(log)
 	if !configured {
 		warnIfNoAdmins(ctx, repo, log)
 		return nil
@@ -112,11 +141,11 @@ func BreakGlassAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminCo
 func warnIfNoAdmins(ctx context.Context, repo domain.AdminSeedRepo, log zerolog.Logger) {
 	admins, err := repo.CountAdmins(ctx)
 	if err != nil {
-		log.Warn().Err(err).Msg("break-glass admin seed: could not count admins")
+		log.Warn().Err(err).Msg("counting admin members failed")
 		return
 	}
 	if admins == 0 {
-		log.Warn().Msg("no admin members exist and no break-glass seed took effect; set MPA_ADMIN_NAME/USERNAME/PASSWORD so an admin can be created on boot")
+		log.Warn().Msg("no admin members exist and no break-glass seed took effect; set MPA_ADMIN_NAME, MPA_ADMIN_USERNAME and MPA_ADMIN_PASSWORD so an admin is created on boot")
 	}
 }
 
@@ -149,36 +178,36 @@ func seedAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, 
 		// zero-admins guard so a skipped seed on a fresh DB gets the same loud
 		// signal the no-seed path would give.
 		log.Warn().
-			Str("MPA_ADMIN_NAME", cfg.Name).
+			Str("configured_name", cfg.Name).
 			Strs("matches", result.AmbiguousNames).
-			Msg("break-glass admin seed: multiple members match the name case-insensitively, skipping to avoid adopting the wrong one")
+			Msg("break-glass seed skipped: MPA_ADMIN_NAME matches several members case-insensitively, refusing to guess which one to adopt")
 		warnIfNoAdmins(ctx, repo, log)
 		return nil
 	}
 
 	if result.Created {
 		log.Info().
-			Int("user_id", result.UserID).
+			Int("member_id", result.UserID).
 			Str("name", result.Name).
 			Str("username", cfg.Username).
-			Msg("break-glass admin seeded: created admin member with local login")
+			Msg("break-glass seed created an admin member with a local login")
 		return nil
 	}
 	if result.Promoted {
-		log.Info().Int("user_id", result.UserID).Str("name", result.Name).
-			Msg("break-glass admin seed: promoted existing member to admin")
+		log.Info().Int("member_id", result.UserID).Str("name", result.Name).
+			Msg("break-glass seed promoted an existing member to admin")
 	}
 	if result.LoginPreserved {
-		log.Info().Int("user_id", result.UserID).Str("name", result.Name).
-			Msg("break-glass admin seed: member already has a local login, leaving the existing password untouched")
+		log.Info().Int("member_id", result.UserID).Str("name", result.Name).
+			Msg("break-glass seed left an existing local login untouched")
 		return nil
 	}
 	if result.LoginCreated {
 		log.Info().
-			Int("user_id", result.UserID).
+			Int("member_id", result.UserID).
 			Str("name", result.Name).
 			Str("username", cfg.Username).
-			Msg("break-glass admin seed: attached local login to existing admin member")
+			Msg("break-glass seed attached a local login to an existing admin member")
 		return nil
 	}
 	return fmt.Errorf("%w: seed store returned no committed outcome", domain.ErrInvalidState)

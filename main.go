@@ -26,7 +26,9 @@ func main() {
 	// Fatal logs then calls os.Exit(1), so it must stay at this outermost frame —
 	// never deep in a handler or worker, where it would skip graceful shutdown.
 	if err := run(); err != nil {
-		log.Fatal().Err(err).Msg("server exited")
+		// "server exited" read like a clean stop; this only fires when run()
+		// returned an error, which is the one exit worth waking someone for.
+		log.Fatal().Err(err).Msg("server exited with an error")
 	}
 }
 

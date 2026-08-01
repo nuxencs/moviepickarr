@@ -91,46 +91,48 @@ function SkeletonPips() {
 export function MembersSkeleton() {
   return (
     <div className="mem__shell mem-skel" aria-hidden="true">
-      <div className="mem-rail">
-        {range(RAIL_ROWS).map((_, i) => (
-          // No `data-active` on any row, so no accent line. The open drawer is
-          // already the mark, a gold line would be the only saturated thing on
-          // a grey page, and on a deep link it would be marking the wrong row.
-          <div className="mem-row" key={i}>
-            <div className="mem-row__link">
-              <Skeleton w={30} h={30} radius="sm" />
-              <span className="mem-row__text">
-                <Skeleton w={NAME_WIDTHS[i % NAME_WIDTHS.length]} h={11} />
-                <Skeleton w={58} h={9} style={{ marginTop: 5 }} />
-              </span>
-              <SkeletonPips />
-            </div>
+      <div className="mem-rail-screen">
+        <div className="mem-rail">
+          {range(RAIL_ROWS).map((_, i) => (
+            // No `data-active` on any row, so no accent line. The open drawer is
+            // already the mark, a gold line would be the only saturated thing on
+            // a grey page, and on a deep link it would be marking the wrong row.
+            <div className="mem-row" key={i}>
+              <div className="mem-row__link">
+                <Skeleton w={30} h={30} radius="sm" />
+                <span className="mem-row__text">
+                  <Skeleton w={NAME_WIDTHS[i % NAME_WIDTHS.length]} h={11} />
+                  <Skeleton w={58} h={9} style={{ marginTop: 5 }} />
+                </span>
+                <SkeletonPips />
+              </div>
 
-            {/* Row 0 is open, always, whatever the URL names — there is no
-                better guess and the rail's height does not depend on it. Every
-                drawer stays mounted and shut at 0fr on the real rail, so the
-                rail is always N rows plus exactly one drawer's worth: when the
-                data lands the open one relocates, it does not grow the
-                column. */}
-            {i === 0 && (
-              <div className="mem-drop" data-open="true">
-                <div className="mem-drop__inner">
-                  <div className="mem-drop__body">
-                    <div className="mem-pool">
-                      {range(POOL_SIZE).map((_, slot) => (
-                        <SkeletonPoster key={slot} />
-                      ))}
+              {/* Row 0 is open, always, whatever the URL names. There is no
+                  better guess and the rail's height does not depend on it.
+                  Every drawer stays mounted and shut at 0fr on the real rail,
+                  so the rail is always N rows plus exactly one drawer's worth:
+                  when the data lands the open one relocates, it does not grow
+                  the column. */}
+              {i === 0 && (
+                <div className="mem-drop" data-open="true">
+                  <div className="mem-drop__inner">
+                    <div className="mem-drop__body">
+                      <div className="mem-pool">
+                        {range(POOL_SIZE).map((_, slot) => (
+                          <SkeletonPoster key={slot} />
+                        ))}
+                      </div>
+                      {/* Off-screen above 760, where the pane is already beside
+                          the rail; on the phone rail it is the only way forward,
+                          so it is reserved. */}
+                      <Skeleton className="mem-skel__tostash" />
                     </div>
-                    {/* Off-screen above 760, where the pane is already beside
-                        the rail; on the phone rail it is the only way forward,
-                        so it is reserved. */}
-                    <Skeleton className="mem-skel__tostash" />
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="mem-pane">

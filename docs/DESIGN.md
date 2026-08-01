@@ -939,6 +939,25 @@ What each does:
   CSS and the focus handoff both use `not all and (min-width: 761px)` so fractional
   CSS widths from browser zoom or device pixel ratios stay on the same side. The
   Level 3 spelling also covers the production build's full browser baseline.
+  The swap between the two screens slides: the stash in from the right, the rail
+  back in from the left, entrance on `--dur-slow`/`--ease` and exit one step
+  faster on `--dur-base`/`--ease-exit` (§6). It rides a registered custom
+  property (`--mem-in`, 1 on the screen you are on and 0 on the one you are not)
+  declared *above* the width query, with the transform and the opacity derived
+  from it and never transitioned themselves. That is what keeps a resize past
+  760 from playing a navigation: neither property the swap is made of is in a
+  transition-property. `display: none` still holds the resting state, held back
+  to the end of the exit with `allow-discrete` so the screen being left has a
+  frame to leave in, and `@starting-style` supplies the frame it arrives from.
+  The Members head and rail share a `.mem-rail-screen` wrapper below 761, so the
+  head exits with the rail and the shell keeps one fixed top edge throughout the
+  swap. At wider widths that wrapper is `display: contents`; the head still spans
+  both columns and the rail and pane keep their original grid tracks.
+  (`display` is the one property the width query and the transition list share,
+  so a resize does start its discrete transition; the screen it holds is already
+  at opacity 0, so it shows nothing.) Focus and the accessibility tree are not
+  on that timer: the outgoing screen goes `inert` on the frame of the
+  navigation, which is the second thing `UsersTab` reads the media query for.
 - **900** — navigation moves to a fixed **bottom tab bar** (below); the stat strip drops
   6 columns → 3, and the stats two-column sections (weekday | hourly, genres | decades)
   collapse to one.

@@ -618,10 +618,134 @@
    here and hidden there, so falling through both puts two unstyled controls on
    a layout that is neither screen. `not all and` is the Level 3 spelling, which
    keeps this rule valid across Vite 7's browser baseline. */
-@media not all and (min-width: 761px) {
+
+/* The swap between the two screens is one number, and it is declared out here,
+   above the width query, deliberately (#266). --mem-in is 1 on the screen you
+   are on and 0 on the screen you are not; the transform and the opacity that
+   move it are both read off it inside the query and neither is ever
+   transitioned itself. So the only thing carrying a duration depends on the
+   address alone: crossing 761 changes what the number is used for and never
+   the number, and a resize animates nothing. Put these declarations inside the
+   query instead and every resize past 760 would play a push.
+
+   Registered so it interpolates — an unregistered custom property is a token
+   and would jump from 1 to 0. Where @property is missing it jumps, and a jump
+   is the hard cut this replaces.
+
+   `display` rides along with allow-discrete because display: none has no exit
+   frame: going to none it holds the old value until the end, and coming back
+   from none it flips on the first, which is exactly the asymmetry a screen
+   leaving and a screen arriving want. Resting on none rather than on a hidden
+   box is what keeps a stash wall nobody is looking at from laying out and
+   fetching sixty posters behind the rail. Focus and the accessibility tree are
+   not on this timer: the screen being left goes `inert` on the frame of the
+   navigation (see UsersTab).
+
+   The exit runs one step faster than the entrance and takes --ease-exit, per
+   DESIGN.md §6. */
+@property --mem-in {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+.mem-rail,
+.mem-pane {
+  --mem-in: 1;
+  transition:
+    --mem-in var(--dur-slow) var(--ease),
+    display var(--dur-slow) allow-discrete;
+}
+.mem[data-pushed="true"] .mem-rail,
+.mem[data-pushed="false"] .mem-pane {
+  --mem-in: 0;
+  transition:
+    --mem-in var(--dur-base) var(--ease-exit),
+    display var(--dur-base) allow-discrete;
+}
+/* The skeleton is built out of these same containers (#239), so it would play
+   the swap too — and a cold load would then slide twice, once as filler and
+   once as the page. It is aria-hidden filler and arrives with the page's own
+   entrance. Specific enough to outrank both rules above, since one of them is
+   an attribute deep. */
+.mem[data-pushed] .mem-skel .mem-rail,
+.mem[data-pushed] .mem-skel .mem-pane {
+  transition: none;
+}
+
+/* A hard cut both ways: the number snaps and the box goes on the same frame. */
+@media (prefers-reduced-motion: reduce) {
+  .mem-rail,
+  .mem-pane,
   .mem[data-pushed="true"] .mem-rail,
   .mem[data-pushed="false"] .mem-pane {
+    transition: none;
+  }
+}
+
+@media not all and (min-width: 761px) {
+  /* Nothing in this block carries a duration, which is the whole point: the two
+     properties the swap is made of are not in any transition-property, so
+     crossing 761 cannot animate either of them. The motion is the number above
+     interpolating and these values following it frame by frame.
+
+     `display` is the exception, and a deliberate one: it is set here and
+     transitioned above, so a resize past 760 does start its discrete
+     transition. It has nothing to show — the screen it holds is already at
+     opacity 0 by then, since that value is not on a timer — so what it costs is
+     a box that outstays the resize by --dur-base and nothing visible at all. */
+  .mem-rail,
+  .mem-pane {
+    /* Far enough to read as one screen pushing the other and no further: the
+       screens cross-fade as well as slide, so a full-width travel spends most
+       of itself invisible. */
+    --mem-slide: 18%;
+    opacity: var(--mem-in);
+  }
+  /* Away to the left and back in from the left; away to the right and back in
+     from the right. One expression each, so a direction's way out and its way
+     back are the same path travelled opposite ways — which is the thing the
+     hard cut had no way of saying. */
+  .mem-rail {
+    transform: translateX(calc((var(--mem-in) - 1) * var(--mem-slide)));
+  }
+  .mem-pane {
+    transform: translateX(calc((1 - var(--mem-in)) * var(--mem-slide)));
+  }
+
+  .mem[data-pushed="true"] .mem-rail,
+  .mem[data-pushed="false"] .mem-pane {
+    /* Out of the flow on the frame it is left, so the screen arriving is still
+       the only thing sizing the page — the shell is one column here, so both
+       screens start at its top edge either way. The box itself goes at the end
+       of the transition (see above); until then it is drawn and unreachable. */
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
     display: none;
+    pointer-events: none;
+  }
+
+  /* The starting frame for a screen arriving from none. A newly rendered
+     element takes it too, so a cold load onto either screen plays the entrance
+     once — which is the same motion arriving by tap, at the moment there is
+     nothing to compare it against. */
+  @starting-style {
+    .mem[data-pushed="false"] .mem-rail,
+    .mem[data-pushed="true"] .mem-pane {
+      --mem-in: 0;
+    }
+  }
+
+  /* The screen arriving slides in from off its own edge, so the shell has to
+     clip or the page grows a horizontal scroll for the length of the swap.
+     `clip` rather than `hidden`, which would make it a scroll container. The
+     margin is the focus ring's reach — a 2px outline at 2px offset (index.css),
+     so 4px, rounded up to leave the ring a pixel either side — which a bare clip
+     would shave off the rail rows' left and right edges. */
+  .mem__shell {
+    position: relative;
+    overflow-x: clip;
+    overflow-clip-margin: 6px;
   }
 
   /* The pane's left inset is the gutter between it and the rail, and there is

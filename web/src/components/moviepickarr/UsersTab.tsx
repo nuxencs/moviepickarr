@@ -16,6 +16,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import { APIClient } from "@/api/APIClient";
@@ -63,6 +64,26 @@ const STASH_POSTER_SIZES =
   "(min-width: 761px) 96px, calc((100vw - 94px) / 4)";
 
 const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
+
+const watchPushWidth = (onChange: () => void) => {
+  const query = window.matchMedia(PUSH_WIDTH);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+};
+
+/**
+ * Whether the layout is the two screens rather than the two columns.
+ *
+ * Subscribed rather than read once, because it decides an attribute and not a
+ * style: the screen you are not on is `inert` (#266). Which screen is *drawn*
+ * is still CSS alone, and this is still the media query rather than a measured
+ * width — the swap now has an exit to play, so the outgoing screen keeps its
+ * box for the length of it, and `inert` is what display: none was doing for
+ * focus and for the accessibility tree in the meantime.
+ */
+function usePushWidth(): boolean {
+  return useSyncExternalStore(watchPushWidth, isPushWidth);
+}
 
 type MoveHandlers = {
   onStarted: (attempt: number) => void;
@@ -229,6 +250,13 @@ export function UsersTab() {
   // `/users` (the page hangs off the pathless app layout) — same split the
   // Stats tab documents.
   const { member, stash } = useSearch({ from: "/_app/users" });
+  // Below 761 exactly one of the two is the screen you are on, and the other is
+  // out of reach for as long as it is leaving; above it they are one screen and
+  // neither is. The mirrored pair is spelled out rather than written twice at
+  // the two call sites, so the two halves cannot drift apart.
+  const twoScreens = usePushWidth();
+  const railOffScreen = twoScreens && !!stash;
+  const paneOffScreen = twoScreens && !stash;
   const ordered = useMemo(() => orderMembers(users, me?.id), [users, me?.id]);
   const selected = selectedMember(ordered, member, me?.id);
 
@@ -377,6 +405,7 @@ export function UsersTab() {
               aria-label="Members"
               ref={railRef}
               data-overflow={railOverflows}
+              inert={railOffScreen}
             >
               {ordered.map((user) => (
                 <RailRow
@@ -409,6 +438,7 @@ export function UsersTab() {
               onOpen={open}
               lostFocus={paneLostFocus}
               headingRef={paneHeadingRef}
+              offScreen={paneOffScreen}
               requestMove={requestMove}
             />
           </div>
@@ -911,6 +941,7 @@ function StashPane({
   onOpen,
   lostFocus,
   headingRef,
+  offScreen,
   requestMove,
 }: {
   user: User;
@@ -928,6 +959,10 @@ function StashPane({
   /** The pane's heading, held by the page: it is where focus goes when a tile
    *  is taken from under it, and where the mobile push lands (#236). */
   headingRef: RefObject<HTMLHeadingElement | null>;
+  /** Whether this is the screen you are not on, below 761. The pane keeps its
+   *  box while it slides away, so this is what takes it out of the tab order
+   *  and out of the accessibility tree for the length of the swap (#266). */
+  offScreen: boolean;
   requestMove: RequestMove;
 }) {
   const router = useRouter();
@@ -1153,6 +1188,7 @@ function StashPane({
     <section
       className="mem-pane"
       aria-labelledby={headingID}
+      inert={offScreen}
       onFocus={() => {
         holdsFocus.current = true;
       }}

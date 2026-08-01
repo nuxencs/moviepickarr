@@ -1628,6 +1628,12 @@ describe("the mobile push", () => {
     window.matchMedia = ((query: string) => ({
       ...realMatchMedia(query),
       matches: matchesAtWidth(query, width, supportsLevelFourBoolean),
+      // The page subscribes to this query as well as reading it (the inert
+      // screen, #266), and a spread MediaQueryList loses the prototype's
+      // listener methods. Nothing here changes width mid-test, so they are
+      // no-ops rather than a working event target.
+      addEventListener: () => {},
+      removeEventListener: () => {},
     })) as unknown as typeof window.matchMedia;
   };
   const onAPhone = () => atWidth(375);
@@ -1842,5 +1848,81 @@ describe("the mobile push", () => {
     // away from anybody: focus starts where a loaded page starts.
     expect(heading().textContent).toBe("Bo's stash");
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("keeps the screen you are not on out of reach while it is still drawn", async () => {
+    onAPhone();
+    const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
+    const rail = () => document.querySelector(".mem-rail") as HTMLElement;
+    const pane = () => document.querySelector(".mem-pane") as HTMLElement;
+
+    // The swap has an exit to play (#266), so the screen being left keeps its
+    // box for the length of it. `inert` is what display: none was doing for
+    // focus and for the accessibility tree, and it lands on the frame of the
+    // navigation rather than at the end of the transition — so the screen on
+    // its way out is never a second copy of a control you can reach.
+    expect(pane().hasAttribute("inert")).toBe(true);
+    expect(rail().hasAttribute("inert")).toBe(false);
+
+    fireEvent.click(toStash());
+    await waitFor(() => expect(pushedFlag()).toBe("true"));
+    expect(rail().hasAttribute("inert")).toBe(true);
+    expect(pane().hasAttribute("inert")).toBe(false);
+
+    router.history.back();
+    await waitFor(() => expect(pushedFlag()).toBe("false"));
+    expect(rail().hasAttribute("inert")).toBe(false);
+    expect(pane().hasAttribute("inert")).toBe(true);
+  });
+
+  it("leaves both screens reachable above 761, where they are one screen", async () => {
+    await renderTab({ users: roster, meID: 1, href: "/users?member=2&stash=true" });
+
+    // `stash` does nothing up here: the pane is already beside the rail, so
+    // neither screen has replaced the other and neither goes inert.
+    expect(document.querySelector(".mem-rail")?.hasAttribute("inert")).toBe(false);
+    expect(document.querySelector(".mem-pane")?.hasAttribute("inert")).toBe(false);
+  });
+
+  /* The swap's motion (#266). How it looks belongs to the browser pass; what is
+     pinned here is the pair of decisions that say when it may fire at all. */
+  describe("the swap's motion", () => {
+    const block = membersCSS.slice(membersCSS.indexOf("/* ---- the push, below 761"));
+    const at = block.indexOf(`@media ${pushQuery}`);
+    const aboveQuery = block.slice(0, at);
+    const insideQuery = block.slice(at, block.indexOf("/* ---- the loading skeleton"));
+
+    it("animates one number, declared above the width query", () => {
+      // Registered, so it interpolates rather than jumping, and declared out
+      // where the width query cannot reach it: everything with a duration on it
+      // is then a function of the URL alone, and crossing 761 changes what the
+      // number is used for and never the number itself.
+      expect(aboveQuery).toContain("@property --mem-in");
+      expect(aboveQuery).toMatch(/--mem-in:\s*0;/);
+      expect(aboveQuery).toContain("transition:");
+      // Nothing inside the query has a duration on it, which is what makes a
+      // resize impossible to animate: a property the media query does change
+      // is never in a transition-property.
+      expect(insideQuery).not.toMatch(/^\s*transition(-property)?:/m);
+    });
+
+    it("reads the transform and the opacity off that number", () => {
+      expect(insideQuery).toContain("opacity: var(--mem-in)");
+      expect(insideQuery).toMatch(/\.mem-rail \{\s*transform: translateX\(calc\(/);
+      expect(insideQuery).toMatch(/\.mem-pane \{\s*transform: translateX\(calc\(/);
+    });
+
+    it("holds display: none back to the end of the exit", () => {
+      // The screen being left has no exit frame otherwise. It comes out of the
+      // flow on the frame it is left, so the screen arriving is still the only
+      // thing sizing the page, and the box goes at the end.
+      expect(aboveQuery).toContain("allow-discrete");
+      expect(insideQuery).toMatch(/position: absolute;\s*inset-inline: 0;/);
+      expect(insideQuery).toContain("display: none");
+    });
+
+    it("is a hard cut under reduced motion", () => {
+      expect(aboveQuery).toContain("@media (prefers-reduced-motion: reduce)");
+    });
   });
 });

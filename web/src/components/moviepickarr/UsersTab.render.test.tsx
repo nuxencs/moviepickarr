@@ -1178,8 +1178,10 @@ describe("moving around the wall with the keyboard", () => {
 
   it("falls back to the previous cell when the promoted film was the last one", async () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
+    const promote = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act")[3];
 
-    fireEvent.click(wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act")[3]);
+    promote.focus();
+    fireEvent.click(promote);
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10, 103], stash: [100, 101, 102] }), bo]);
 
     await waitFor(() => expect(named(document.activeElement)).toBe("Film 102"));
@@ -1191,7 +1193,9 @@ describe("moving around the wall with the keyboard", () => {
     // Under a filter, so the wall really does empty: your own unfiltered wall
     // always keeps the add tile.
     typeFilter("Film 103");
-    fireEvent.click(wall().querySelector(".mem-tile .mem-act") as HTMLElement);
+    const promote = wall().querySelector(".mem-tile .mem-act") as HTMLElement;
+    promote.focus();
+    fireEvent.click(promote);
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10, 103], stash: [100, 101, 102] }), bo]);
 
     await waitFor(() => expect(document.activeElement).toBe(heading()));
@@ -1252,11 +1256,11 @@ describe("moving around the wall with the keyboard", () => {
     expect(document.activeElement).toBe(document.body);
     fireEvent.click(wall().querySelector(".mem-tile .mem-act") as HTMLElement);
     client.setQueryData(UsersKeys.list(), [
-      ada({ pool: [10], stash: [100, 101, 102, 103, 104] }),
+      ada({ pool: [10, 100], stash: [101, 102, 103] }),
       bo,
     ]);
 
-    await waitFor(() => expect(wall().querySelectorAll(".mem-tile")).toHaveLength(5));
+    await waitFor(() => expect(wall().querySelectorAll(".mem-tile")).toHaveLength(3));
     expect(document.activeElement).toBe(document.body);
   });
 
@@ -1338,8 +1342,10 @@ describe("moving around the wall with the keyboard", () => {
 
   it("hands focus to the next filled slot after a demote", async () => {
     const { client } = await renderTab({ users: [ada({ pool: [10, 11], stash: [100] }), bo], meID: 1 });
+    const demote = openPool().querySelector(".pslot--filled .mem-act") as HTMLElement;
 
-    fireEvent.click(openPool().querySelector(".pslot--filled .mem-act") as HTMLElement);
+    demote.focus();
+    fireEvent.click(demote);
     client.setQueryData(UsersKeys.list(), [ada({ pool: [11], stash: [10, 100] }), bo]);
 
     // The slot does not reflow around an empty one and an empty slot is not
@@ -1389,6 +1395,28 @@ describe("moving around the wall with the keyboard", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("does not treat an unfocused demote activation as lost pool focus", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const { client } = await renderTab({
+      users: [ada({ pool: [10, 11], stash: [100] }), bo],
+      meID: 1,
+    });
+
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(openPool().querySelector(".pslot--filled .mem-act") as HTMLElement);
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [11], stash: [10, 100] }),
+      bo,
+    ]);
+
+    await waitFor(() =>
+      expect(openPool().querySelectorAll(".pslot--filled")).toHaveLength(1),
+    );
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("rebases a pending demote after a promoted movie sorts ahead of it", async () => {
     vi.mocked(APIClient.board.moveMovie).mockImplementation(
       () => new Promise<never>(() => {}),
@@ -1399,9 +1427,9 @@ describe("moving around the wall with the keyboard", () => {
     });
     const demote = openPool().querySelector<HTMLElement>(".pslot--filled .mem-act")!;
 
+    demote.focus();
     fireEvent.click(demote);
     fireEvent.click(wall().querySelector(".mem-tile .mem-act") as HTMLElement);
-    demote.focus();
     await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(2));
 
     client.setQueryData(UsersKeys.list(), [
@@ -1480,8 +1508,10 @@ describe("moving around the wall with the keyboard", () => {
 
   it("hands focus to the member's own row when the demote empties the pool", async () => {
     const { client } = await renderTab({ users: [ada({ pool: [10], stash: [] }), bo], meID: 1 });
+    const demote = openPool().querySelector(".pslot--filled .mem-act") as HTMLElement;
 
-    fireEvent.click(openPool().querySelector(".pslot--filled .mem-act") as HTMLElement);
+    demote.focus();
+    fireEvent.click(demote);
     client.setQueryData(UsersKeys.list(), [ada({ pool: [], stash: [10] }), bo]);
 
     await waitFor(() => expect(document.activeElement).toBe(railRows()[0]));

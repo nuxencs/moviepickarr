@@ -82,12 +82,16 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			Int("member_id", memberID).
 			Logger()
 
-		// emit writes one fully formatted frame and flushes it. Every frame goes
-		// through here: the write and flush failures used to be six call sites
-		// sharing two message strings, so a broken pipe told you nothing about
-		// which frame was in flight. Now there is one of each, plus a frame field.
-		emit := func(frame, payload string) error {
-			if _, err := w.WriteString(payload); err != nil {
+		// emit formats one frame straight into the stream and flushes it. Every
+		// frame goes through here: the write and flush failures used to be six
+		// call sites sharing two message strings, so a broken pipe told you
+		// nothing about which frame was in flight. Now there is one of each,
+		// plus a frame field.
+		//
+		// It takes the format and args rather than a built string so the frame
+		// still goes to the writer in one Fprintf, as it did before.
+		emit := func(frame, format string, args ...any) error {
+			if _, err := fmt.Fprintf(w, format, args...); err != nil {
 				sseLog.Debug().Err(err).Str("frame", frame).Msg("client write failed, closing stream")
 				return err
 			}
@@ -112,7 +116,7 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			sseLog.Error().Err(err).Str("frame", "connected").Msg("frame marshal failed")
 			return
 		}
-		if emit("connected", fmt.Sprintf("retry: 3000\nevent: connected\ndata: %s\n\n", connectedData)) != nil {
+		if err := emit("connected", "retry: 3000\nevent: connected\ndata: %s\n\n", connectedData); err != nil {
 			return
 		}
 
@@ -136,7 +140,7 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			}
 			// id: persists the seq in the browser; the client also reads it from
 			// the JSON body for gap detection.
-			return emit("message", fmt.Sprintf("id: %d\nevent: message\ndata: %s\n\n", e.Seq, eventData))
+			return emit("message", "id: %d\nevent: message\ndata: %s\n\n", e.Seq, eventData)
 		}
 
 		for {
@@ -188,7 +192,7 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 					sseLog.Error().Err(err).Str("frame", "heartbeat").Msg("frame marshal failed")
 					return
 				}
-				if emit("heartbeat", fmt.Sprintf("event: heartbeat\ndata: %s\n\n", heartbeatData)) != nil {
+				if err := emit("heartbeat", "event: heartbeat\ndata: %s\n\n", heartbeatData); err != nil {
 					return
 				}
 			}

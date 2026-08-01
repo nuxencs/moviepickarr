@@ -49,10 +49,14 @@ func TestReqLogCarriesRequestScope(t *testing.T) {
 	if got := line["method"]; got != fiber.MethodGet {
 		t.Errorf("method = %v, want %s", got, fiber.MethodGet)
 	}
-	// The route template, not the concrete path: a per-request path would make
-	// every movie its own log stream and defeat grouping.
-	if got := line["path"]; got != "/req/:movieID?" {
-		t.Errorf("path = %v, want the route template", got)
+	// The route template under "route", not "path": a per-request path would
+	// make every movie its own log stream, and "path" belongs to the access-log
+	// middleware, which puts the concrete URL there.
+	if got := line["route"]; got != "/req/:movieID?" {
+		t.Errorf("route = %v, want the route template", got)
+	}
+	if _, ok := line["path"]; ok {
+		t.Errorf("reqLog claimed the access log's path key: %v", line)
 	}
 	if got, _ := line["request_id"].(string); got == "" {
 		t.Errorf("request_id missing from %v", line)

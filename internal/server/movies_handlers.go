@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -15,7 +14,7 @@ import (
 // metaFor batch-loads enriched metadata for the given movies. A lookup failure
 // is non-fatal — it logs and returns an empty map so responses still render
 // (without enriched fields) rather than failing the whole request.
-func (h *handler) metaFor(ctx context.Context, movies []*domain.Movie) metaByID {
+func (h *handler) metaFor(c *fiber.Ctx, movies []*domain.Movie) metaByID {
 	if h.movieMetadata == nil || len(movies) == 0 {
 		return metaByID{}
 	}
@@ -23,9 +22,9 @@ func (h *handler) metaFor(ctx context.Context, movies []*domain.Movie) metaByID 
 	for i := range movies {
 		ids[i] = movies[i].ID
 	}
-	meta, err := h.movieMetadata.GetMetadataByMovieIDs(ctx, ids)
+	meta, err := h.movieMetadata.GetMetadataByMovieIDs(c.UserContext(), ids)
 	if err != nil {
-		h.log.Warn().Err(err).Int("count", len(ids)).
+		h.reqLog(c).Warn().Err(err).Int("count", len(ids)).
 			Msg("loading movie metadata failed, responding without it")
 		return metaByID{}
 	}
@@ -36,7 +35,7 @@ func (h *handler) metaFor(ctx context.Context, movies []*domain.Movie) metaByID 
 // as metaFor: a lookup failure is non-fatal — it logs and returns an empty map
 // so responses still render (without cast/crew) rather than failing the whole
 // request.
-func (h *handler) creditsFor(ctx context.Context, movies []*domain.Movie) creditsByID {
+func (h *handler) creditsFor(c *fiber.Ctx, movies []*domain.Movie) creditsByID {
 	if h.movieCredits == nil || len(movies) == 0 {
 		return creditsByID{}
 	}
@@ -44,21 +43,21 @@ func (h *handler) creditsFor(ctx context.Context, movies []*domain.Movie) credit
 	for i := range movies {
 		ids[i] = movies[i].ID
 	}
-	credits, err := h.movieCredits.GetCreditsByMovieIDs(ctx, ids)
+	credits, err := h.movieCredits.GetCreditsByMovieIDs(c.UserContext(), ids)
 	if err != nil {
-		h.log.Warn().Err(err).Int("count", len(ids)).
+		h.reqLog(c).Warn().Err(err).Int("count", len(ids)).
 			Msg("loading movie credits failed, responding without them")
 		return creditsByID{}
 	}
 	return credits
 }
 
-func (h *handler) getPooledMovies(ctx context.Context) ([]fullMovie, error) {
-	movies, err := h.movieService.Pooled(ctx)
+func (h *handler) getPooledMovies(c *fiber.Ctx) ([]fullMovie, error) {
+	movies, err := h.movieService.Pooled(c.UserContext())
 	if err != nil {
 		return nil, err
 	}
-	return toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
+	return toFullMovies(movies, h.metaFor(c, movies), h.creditsFor(c, movies)), nil
 }
 
 // writeNotAdder is the uniform 403 for a member trying to change a movie they
@@ -143,7 +142,7 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 
 	// A Members board path: tile-level data only, so ship lean tiles and skip
 	// the credits batch-load (the modal lazy-loads its full record instead).
-	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(c, movies)))
 }
 
 func (h *handler) handleEditMovie(c *fiber.Ctx) error {
@@ -284,7 +283,7 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 
 	// A Members board path: tile-level data only, so ship lean tiles and skip
 	// the credits batch-load (the modal lazy-loads its full record instead).
-	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(c, movies)))
 }
 
 func (h *handler) handleMove(c *fiber.Ctx) error {
@@ -362,7 +361,7 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {
-	movies, err := h.getPooledMovies(c.UserContext())
+	movies, err := h.getPooledMovies(c)
 	if err != nil {
 		return writeError(c, err)
 	}
@@ -427,7 +426,7 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		// current. Metadata stays outside the draw mutex; only the candidate ids
 		// and movie fields need the draw publication boundary.
 		candidateMovies := drawResult.Candidates
-		drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(ctx, candidateMovies))
+		drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(c, candidateMovies))
 
 		// Stamp the server clock after candidate I/O, immediately before
 		// publication, so revealAt - serverNow is the actual remaining window.
@@ -460,8 +459,8 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	meta := h.metaFor(ctx, []*domain.Movie{movieRecord})
-	credits := h.creditsFor(ctx, []*domain.Movie{movieRecord})
+	meta := h.metaFor(c, []*domain.Movie{movieRecord})
+	credits := h.creditsFor(c, []*domain.Movie{movieRecord})
 	resp := toFullMovie(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
 	// When this movie is the active draw, hand the client the timing it needs to
 	// resume the reveal spin after a reload: when it was drawn, plus the server
@@ -552,7 +551,7 @@ func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
 	// made up the bulk of the bytes. The detail modal lazy-loads the full record
 	// from GET /movies/:id; Stats reads its actor/crew filter options from
 	// GET /movies/filter-options. Credits are no longer loaded here at all.
-	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(ctx, movies)))
+	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(c, movies)))
 }
 
 // handleGetMovie returns the full enriched record for one movie — backdrop,
@@ -571,7 +570,7 @@ func (h *handler) handleGetMovie(c *fiber.Ctx) error {
 	}
 
 	one := []*domain.Movie{movieRecord}
-	meta := h.metaFor(ctx, one)
-	credits := h.creditsFor(ctx, one)
+	meta := h.metaFor(c, one)
+	credits := h.creditsFor(c, one)
 	return c.Status(fiber.StatusOK).JSON(toFullMovie(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID]))
 }

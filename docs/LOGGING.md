@@ -66,10 +66,10 @@ fiberzerolog emits `requestId` and `bytesSent`.
 ## Request-scoped logging
 
 Handlers log through `h.reqLog(c)`, not `h.log`. It derives a per-request
-sub-logger carrying `request_id`, `method`, `path`, and — when `requireSession`
-has attached one — `member_id`. That correlates an app log line with the access
-line for the same request, and means a handler never has to re-add "who and
-what" by hand.
+sub-logger carrying `request_id`, `method`, `route`, plus `member_id` once
+`requireSession` has attached one. That correlates an app log line with the
+access line for the same request, and means a handler never has to re-add "who
+and what" by hand.
 
 ```go
 h.reqLog(c).Error().Err(err).Int("movie_id", id).Msg("advancing next up failed")
@@ -112,13 +112,23 @@ Use the canonical key when one exists rather than inventing a synonym:
 | --- | --- | --- |
 | `request_id` | string | Fiber's `X-Request-ID`; joins app lines to the access line |
 | `member_id` | int | The acting member (session owner), never a path parameter |
-| `session_id` | int64 | Session row id |
 | `movie_id` | int | Local movie row id |
 | `tmdb_id` | int | TMDB movie id |
-| `issuer` / `subject` | string | OIDC identity coordinates |
-| `component` / `subsystem` | string | Set on the sub-logger, not per call |
-| `count` | int | How many of the thing the message names |
+| `invite_id` | int64 | Invite row id |
+| `issuer`, `subject` | string | OIDC identity coordinates |
+| `intent` | string | Which OIDC flow (login, link, claim) |
+| `component`, `subsystem` | string | Set on the sub-logger, not per call |
+| `count` | int, int64 | How many of the thing the message names |
 | `event` | string | SSE event type |
+| `frame` | string | Which SSE frame was in flight |
+| `key`, `value` | string | An env var and the value that failed to parse |
+| `file` | string | A filesystem path |
+
+Two keys are owned by the HTTP layer and must not be reused for anything else.
+`path` is the concrete request URL, written by the access-log middleware.
+`route` is the route template (`/api/v1/movies/:movieID`), written by `reqLog`.
+They are deliberately separate: the template groups, the URL identifies, and
+collapsing them into one key breaks whichever query you were relying on.
 
 Never log a secret or a credential-derived value: no passwords, no session
 cookie tokens, no token hashes, no invite tokens, no API keys. `session_id` and
@@ -133,10 +143,14 @@ assume it. Emails appear only where the log is about identity resolution
   `"advancing next up failed"`, not `"failed to advance next up"` and not
   `"error"`. Past-tense verbs for things that completed
   (`"poster wall warmed"`).
-- A message must be **unique within its package**. Duplicated wording across the
-  SSE and enrich paths is what makes grep useless. If two call sites genuinely
-  do the same thing, distinguish them with a field, not by reusing the string.
-- Don't prefix the message with the component (`"enrich: ..."`) — the
+- A message plus its fields must identify the call site uniquely within its
+  package. Duplicated wording across the SSE and enrich paths is what makes grep
+  useless. Reusing a string is allowed in exactly one case: several call sites
+  doing the same thing to different subjects, where a field names the subject.
+  The SSE stream does this, with one `"frame marshal failed"` shared by the
+  connected, message, and heartbeat frames and a `frame` field saying which. If
+  you cannot name the difference in a field, the messages must differ.
+- Don't prefix the message with the component (`"enrich: ..."`). The
   `component` field already carries that, and the prefix defeats grepping by
   message.
 

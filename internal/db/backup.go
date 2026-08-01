@@ -27,12 +27,12 @@ type BackupConfig struct {
 
 const backupSuffix = ".backup"
 
-// backupLog tags this file's two lines with component=db. Backups run during
-// boot, before any component sub-logger exists, so they go through the zerolog
-// global — but they still need to be filterable alongside everything else.
-func backupLog() *zerolog.Logger {
-	log := zlog.With().Str("component", "db").Logger()
-	return &log
+// backupLog tags this file's lines with component=db. Backups run during boot,
+// before any component sub-logger exists, so they derive from the zerolog global
+// rather than an injected logger. Derived at the top of a function, never inside
+// a loop: the return is a fresh Logger each call, not a shared one.
+func backupLog() zerolog.Logger {
+	return zlog.With().Str("component", "db").Logger()
 }
 
 // backupTimeFormat sorts lexicographically, so retention can order backups by
@@ -54,7 +54,8 @@ func backupBeforeMigrations(ctx context.Context, db *sql.DB, cfg BackupConfig, l
 	if err != nil {
 		return err
 	}
-	backupLog().Info().Str("path", target).Int("schema_version", lastApplied).
+	log := backupLog()
+	log.Info().Str("file", target).Int("schema_version", lastApplied).
 		Msg("database backed up before migrations")
 
 	return cleanupBackups(cfg.Path, cfg.MaxBackups)
@@ -120,11 +121,12 @@ func cleanupBackups(path string, maxBackups int) error {
 	// a plain ascending name sort is oldest-first.
 	slices.Sort(backups)
 
+	log := backupLog()
 	for _, name := range backups[:max(len(backups)-maxBackups, 0)] {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
 			return fmt.Errorf("db backup cleanup: %w", err)
 		}
-		backupLog().Info().Str("path", filepath.Join(dir, name)).
+		log.Info().Str("file", filepath.Join(dir, name)).
 			Int("keep", maxBackups).
 			Msg("pruned old database backup")
 	}

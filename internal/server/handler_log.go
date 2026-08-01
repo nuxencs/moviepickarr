@@ -11,8 +11,11 @@ import (
 // line and its access line join on one key, plus the route and — once
 // requireSession has run — the acting member.
 //
-// The route template is logged rather than c.Path(): "/api/v1/movies/:movieID"
-// groups, "/api/v1/movies/8213" does not.
+// The key is "route", not "path", and it holds the route template rather than
+// c.Path(). Two reasons, and they pull the same way: "/api/v1/movies/:movieID"
+// groups where "/api/v1/movies/8213" does not, and the access-log middleware
+// already owns "path" for the concrete URL. Reusing "path" for a different
+// value would break the very correlation this helper exists to provide.
 //
 // Handlers use this; background work (sweeps, warm-up, startup) uses h.log
 // directly since there is no request to scope to.
@@ -22,7 +25,7 @@ import (
 func (h *handler) reqLog(c *fiber.Ctx) *zerolog.Logger {
 	ctx := h.log.With().
 		Str("method", c.Method()).
-		Str("path", c.Route().Path)
+		Str("route", c.Route().Path)
 
 	// Empty when this route is mounted ahead of the requestid middleware.
 	// Omit rather than emit "" — a blank key reads like a correlation id that

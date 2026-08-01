@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
@@ -38,7 +37,7 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 	// Boards render tile-level data only, so build lean tiles and skip the
 	// credits batch-load (GetCreditsByMovieIDs over every board movie) — a
 	// read-path saving on its own, on top of the smaller wire payload.
-	meta := h.metaFor(ctx, visible)
+	meta := h.metaFor(c, visible)
 	poolByUser := make(map[int]map[string]leanMovieTile)
 	stashByUser := make(map[int]map[string]leanMovieTile)
 
@@ -204,7 +203,7 @@ func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
 
 	// The member is active again, so rebuild their roster row (name + any pool/
 	// stash movies that were hidden while archived) and put them back on the board.
-	payload, err := h.userRosterRow(ctx, memberID)
+	payload, err := h.userRosterRow(c, memberID)
 	if err != nil {
 		return h.writeInternal(c, err, "loading restored member roster row failed")
 	}
@@ -224,7 +223,8 @@ func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
 // userRosterRow builds one member's roster row: identity plus their pool and
 // stash tiles, the same lean shape handleGetUsers ships per member. Used by the
 // restore path to rehydrate a member whose movies were hidden while archived.
-func (h *handler) userRosterRow(ctx context.Context, memberID int) (userResponse, error) {
+func (h *handler) userRosterRow(c *fiber.Ctx, memberID int) (userResponse, error) {
+	ctx := c.UserContext()
 	u, err := h.userService.Get(ctx, memberID)
 	if err != nil {
 		return userResponse{}, err
@@ -242,7 +242,7 @@ func (h *handler) userRosterRow(ctx context.Context, memberID int) (userResponse
 	own := make([]*domain.Movie, 0, len(pooled)+len(stashed))
 	own = append(own, pooled...)
 	own = append(own, stashed...)
-	meta := h.metaFor(ctx, own)
+	meta := h.metaFor(c, own)
 
 	pool := make(map[string]leanMovieTile, len(pooled))
 	for i := range pooled {

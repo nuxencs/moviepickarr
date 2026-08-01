@@ -46,13 +46,13 @@ type Config struct {
 	Date    string
 }
 
-// dbMaxBackups resolves DB_BACKUP_MAX: how many pre-migration snapshots to
-// keep next to the DB file. 0 disables backups; invalid values fall back to
-// the default with a warning rather than failing startup.
 // shutdownTimeout bounds how long Fiber gets to drain in-flight requests. Named
 // so the log line that fires when it expires can report the budget it blew.
 const shutdownTimeout = 10 * time.Second
 
+// dbMaxBackups resolves DB_BACKUP_MAX: how many pre-migration snapshots to
+// keep next to the DB file. 0 disables backups; invalid values fall back to
+// the default with a warning rather than failing startup.
 func dbMaxBackups(log zerolog.Logger) int {
 	const defaultMaxBackups = 3
 	raw := os.Getenv("DB_BACKUP_MAX")

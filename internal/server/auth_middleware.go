@@ -110,7 +110,9 @@ func (h *handler) startSessionSweeper(ctx context.Context) {
 func (h *handler) sweepSessions(ctx context.Context) {
 	removed, err := h.sessions.Sweep(ctx)
 	if err != nil {
-		h.log.Error().Err(err).Msg("session sweep failed")
+		// The sweep is a periodic background tick: a failure costs nothing but
+		// some stale rows, and the next tick retries. Recoverable, so warn.
+		h.log.Warn().Err(err).Msg("expired-session sweep failed, retrying next tick")
 		return
 	}
 	if removed > 0 {

@@ -147,8 +147,14 @@ func (s *Service) cancelAutoRevealLocked() {
 	s.autoRevealArmed = false
 }
 
-func (s *Service) AddToStash(ctx context.Context, title string, userID int) (*domain.Movie, error) {
-	return s.movieRepo.Add(ctx, title, "stash", userID)
+func (s *Service) AddToStash(
+	ctx context.Context,
+	title string,
+	userID int,
+	tmdbID *int,
+	imdbID *string,
+) (*domain.Movie, error) {
+	return s.movieRepo.AddToStash(ctx, title, userID, tmdbID, imdbID)
 }
 
 // MoveToPool promotes a stashed movie into its owner's pool. It is idempotent

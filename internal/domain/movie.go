@@ -13,7 +13,7 @@ type MovieRepo interface {
 	FindByUserIDAndStatus(ctx context.Context, userID int, status string) ([]*Movie, error)
 	CountByStatus(ctx context.Context, status string) (int, error)
 	CountByUserIDAndStatus(ctx context.Context, userID int, status string) (int, error)
-	Add(ctx context.Context, title, status string, userID int) (*Movie, error)
+	AddToStash(ctx context.Context, title string, userID int, tmdbID *int, imdbID *string) (*Movie, error)
 	SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error
 	UpdateTitle(ctx context.Context, id int, title string) error
 	UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error

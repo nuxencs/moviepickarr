@@ -98,25 +98,15 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 
 	// Adds always land in the stash. Reaching the pool is a separate, explicit
 	// promotion (the move endpoint), so "Add to your stash" does exactly that.
-	movieRecord, err := h.movieService.AddToStash(ctx, title, actorID)
+	// Identity lands in the same INSERT, so a duplicate fails before any row
+	// exists instead of relying on a second write and best-effort cleanup.
+	movieRecord, err := h.movieService.AddToStash(ctx, title, actorID, tmdbID, imdbID)
 	if err != nil {
-		return writeError(c, err)
-	}
-
-	if err := h.movieService.SetExternalIDs(ctx, movieRecord.ID, tmdbID, imdbID); err != nil {
-		// The movies_tmdb_id_unique index rejects a second row for the same
-		// film. The stash row was already inserted above, so remove it before
-		// reporting — otherwise every duplicate add leaves an orphan behind.
-		// Not lock-checked: the row is a stash add this request just made, and
-		// the lock never stood between the add and its rollback.
-		_ = h.movieService.Delete(ctx, movieRecord.ID, false)
 		if errors.Is(err, domain.ErrConflict) {
 			return writeError(c, fmt.Errorf("%w: movie is already in the library", domain.ErrConflict))
 		}
 		return writeError(c, err)
 	}
-	movieRecord.TMDBID = tmdbID
-	movieRecord.IMDbID = imdbID
 
 	payload := toFullMovieBare(movieRecord)
 	h.broker.Broadcast(event{Type: "movie:added", Data: payload})

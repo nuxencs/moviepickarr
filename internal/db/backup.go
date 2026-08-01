@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 )
 
@@ -25,6 +26,14 @@ type BackupConfig struct {
 }
 
 const backupSuffix = ".backup"
+
+// backupLog tags this file's two lines with component=db. Backups run during
+// boot, before any component sub-logger exists, so they go through the zerolog
+// global — but they still need to be filterable alongside everything else.
+func backupLog() *zerolog.Logger {
+	log := zlog.With().Str("component", "db").Logger()
+	return &log
+}
 
 // backupTimeFormat sorts lexicographically, so retention can order backups by
 // filename alone.
@@ -45,7 +54,7 @@ func backupBeforeMigrations(ctx context.Context, db *sql.DB, cfg BackupConfig, l
 	if err != nil {
 		return err
 	}
-	zlog.Info().Str("backup", target).Int("schema_version", lastApplied).
+	backupLog().Info().Str("path", target).Int("schema_version", lastApplied).
 		Msg("database backed up before migrations")
 
 	return cleanupBackups(cfg.Path, cfg.MaxBackups)
@@ -115,7 +124,9 @@ func cleanupBackups(path string, maxBackups int) error {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
 			return fmt.Errorf("db backup cleanup: %w", err)
 		}
-		zlog.Info().Str("backup", filepath.Join(dir, name)).Msg("pruned old database backup")
+		backupLog().Info().Str("path", filepath.Join(dir, name)).
+			Int("keep", maxBackups).
+			Msg("pruned old database backup")
 	}
 	return nil
 }

@@ -55,6 +55,69 @@ describe("applyImmediateLifecycleState", () => {
     overview: "In space.",
   } as Movie;
 
+  it("keeps a drawn gate when a later lock event carries a stale pre-draw snapshot", () => {
+    const client = new QueryClient();
+    client.setQueryData(SettingsKeys.poolLock(), {
+      poolLocked: false,
+      drawInProgress: false,
+    });
+
+    applyImmediateLifecycleState(client, {
+      seq: 1,
+      type: "movie:drawn",
+      data: movie,
+    });
+    applyImmediateLifecycleState(client, {
+      seq: 2,
+      type: "settings:pool-lock-changed",
+      data: { poolLocked: true, drawInProgress: false },
+    });
+
+    expect(client.getQueryData(SettingsKeys.poolLock())).toEqual({
+      poolLocked: true,
+      drawInProgress: true,
+    });
+  });
+
+  it("keeps a revealed gate when a later lock event carries a stale pre-reveal snapshot", () => {
+    const client = new QueryClient();
+    client.setQueryData(SettingsKeys.poolLock(), {
+      poolLocked: false,
+      drawInProgress: true,
+    });
+
+    applyImmediateLifecycleState(client, {
+      seq: 1,
+      type: "movie:revealed",
+      data: { movieID: 42, drawnAt: "2026-07-29T20:00:00Z" },
+    });
+    applyImmediateLifecycleState(client, {
+      seq: 2,
+      type: "settings:pool-lock-changed",
+      data: { poolLocked: true, drawInProgress: true },
+    });
+
+    expect(client.getQueryData(SettingsKeys.poolLock())).toEqual({
+      poolLocked: true,
+      drawInProgress: false,
+    });
+  });
+
+  it("seeds both gates when a lock event is the first cached pool state", () => {
+    const client = new QueryClient();
+
+    applyImmediateLifecycleState(client, {
+      seq: 1,
+      type: "settings:pool-lock-changed",
+      data: { poolLocked: true, drawInProgress: true },
+    });
+
+    expect(client.getQueryData(SettingsKeys.poolLock())).toEqual({
+      poolLocked: true,
+      drawInProgress: true,
+    });
+  });
+
   it("coordinates reveal state before queued refetches can race", () => {
     const client = new QueryClient();
     client.setQueryData(SettingsKeys.poolLock(), {

@@ -61,7 +61,7 @@ describe("the invalidation table", () => {
   });
 
   it.each(["user:created", "user:deleted"] as const)(
-    "%s refreshes movie attribution after restore or archive",
+    "%s refreshes movie attribution and next-up after a roster change",
     (type) => {
       const row = SSE_INVALIDATIONS[type];
       for (const key of [
@@ -69,6 +69,7 @@ describe("the invalidation table", () => {
         MoviesKeys.current(),
         MoviesKeys.listwatched(),
         MoviesKeys.details(),
+        SettingsKeys.nextUp(),
       ]) {
         expect(has(row, key)).toBe(true);
       }

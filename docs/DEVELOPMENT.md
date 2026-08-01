@@ -10,11 +10,9 @@ make lint         # lint Go + frontend
 make precommit    # format + fix + lint before committing
 ```
 
-`make test` runs the Go suite (`go test -race`) and the frontend vitest suites.
-Both run in CI when a push or pull request changes CI-relevant files
-(`.github/workflows/ci.yml`). Ignored-only pull requests still create successful
-`Web` and `Go` checks, but skip the suites and build jobs. To run just the web
-tests, use `bun run test` from `web/`.
+`make test` runs the Go suite (`go test -race`) and the frontend vitest suites. Both
+also run in CI on every push and pull request (`.github/workflows/ci.yml`). To
+run just the web tests, use `bun run test` from `web/`.
 
 The web tests are split into two vitest projects (`web/vitest.config.ts`):
 

@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
-import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { APIClient, ApiError } from "@/api/APIClient";
 import { setCachedDrawInProgress } from "@/api/poolStateCache";
@@ -28,21 +35,20 @@ import type { Movie } from "@/types/Response";
 const ri = (i: number) => ({ "--i": i }) as CSSProperties;
 
 /**
- * Two-layer backdrop crossfade. Each new `revealId` adds a layer (its image was
- * already preloaded + decoded by the Hero before the id bumped, so it paints in
- * one frame), fades it in over the outgoing layer with a slow settle-scale, then
- * prunes the old one. Reduced-motion collapses the fade to an instant swap.
+ * Two-layer backdrop crossfade. Each painted-art revision adds a decoded layer,
+ * fades it in over the outgoing layer with a slow settle-scale, then prunes the
+ * old one. Reduced-motion collapses the fade to an instant swap.
  */
-function Backdrop({ bg, revealId }: { bg: string; revealId: number }) {
-  const [layers, setLayers] = useState<{ id: number; bg: string }[]>(() => [{ id: revealId, bg }]);
-  const prev = useRef(revealId);
+function Backdrop({ bg, revision }: { bg: string; revision: number }) {
+  const [layers, setLayers] = useState<{ id: number; bg: string }[]>(() => [{ id: revision, bg }]);
+  const prev = useRef(revision);
 
-  useEffect(() => {
-    if (revealId === prev.current) return;
-    prev.current = revealId;
+  useLayoutEffect(() => {
+    if (revision === prev.current) return;
+    prev.current = revision;
     // Keep at most the outgoing layer plus the incoming one.
-    setLayers((ls) => [...ls.slice(-1), { id: revealId, bg }]);
-  }, [revealId, bg]);
+    setLayers((ls) => [...ls.slice(-1), { id: revision, bg }]);
+  }, [revision, bg]);
 
   const settle = (id: number) =>
     setLayers((ls) => (ls.length > 1 && ls[ls.length - 1].id === id ? ls.slice(-1) : ls));
@@ -66,6 +72,30 @@ function Backdrop({ bg, revealId }: { bg: string; revealId: number }) {
 // behind them owns dedup and reveal-once, so duplicate sends are silent.
 const reportScrollDone = () => drawStore.send({ type: "SCROLL_DONE" });
 const confirmDraw = () => drawStore.send({ type: "CONFIRM", source: "local" });
+
+const drawIdentity = (movie: Movie | null): string =>
+  movie ? `${movie.movieID}:${movie.drawnAt ?? ""}` : "none";
+
+function artworkDescriptor(movie: Movie | null) {
+  const identity = drawIdentity(movie);
+  const url = backdropUrl(movie?.backdropPath);
+  const fallback = backdropBg(hueOf(movie?.title ?? "moviepickarr"));
+  const source = url ? `${identity}:${url}` : `${identity}:fallback:${movie?.title ?? "moviepickarr"}`;
+  return { identity, source, url, fallback };
+}
+
+interface HeroArtwork {
+  revision: number;
+  identity: string;
+  source: string;
+  bg: string;
+}
+
+interface ArtworkTarget {
+  source: string;
+  settled: boolean;
+  pending?: Promise<void>;
+}
 
 /**
  * Full-bleed cinematic banner for the current draw (Movies tab only).
@@ -158,6 +188,15 @@ export function Hero() {
 
   const [shown, setShown] = useState<Movie | null>(null);
   const [revealId, setRevealId] = useState(0);
+  const [artwork, setArtwork] = useState<HeroArtwork>(() => ({
+    revision: 0,
+    identity: "none",
+    source: "initial",
+    bg: backdropBg(hueOf("moviepickarr")),
+  }));
+  // Keeps one decode alive across Strict Mode's effect replay. Object identity
+  // also prevents an older promise from painting after the source changes.
+  const artworkTarget = useRef<ArtworkTarget | null>(null);
   // The last draw committed to the hero, so an unrelated refetch re-running
   // the commit effect can't replay the reveal (see the sameDraw guard below).
   const committed = useRef<Movie | null | undefined>(undefined);
@@ -172,17 +211,28 @@ export function Hero() {
   const [seenCommitSeq, setSeenCommitSeq] = useState(drawState.commitSeq);
   if (drawState.commitSeq !== seenCommitSeq) {
     setSeenCommitSeq(drawState.commitSeq);
+    const next = current ?? null;
+    const nextArtwork = artworkDescriptor(next);
     committed.current = current;
-    setShown(current ?? null);
+    setShown(next);
     setRevealId((n) => n + 1);
+    // commitSeq synchronizes the reel and content, but its lean candidate does
+    // not prove that this full current-draw backdrop was decoded. Hand off to a
+    // fallback now and let the artwork effect verify the remote source.
+    artworkTarget.current = nextArtwork.url
+      ? null
+      : { source: nextArtwork.source, settled: true };
+    setArtwork((previous) => ({
+      revision: previous.revision + 1,
+      identity: nextArtwork.identity,
+      source: nextArtwork.url ? `${nextArtwork.identity}:fallback` : nextArtwork.source,
+      bg: nextArtwork.fallback,
+    }));
   }
 
-  // The draw we actually display lags `current`: when the draw changes we preload
-  // + decode its backdrop first, then commit the new draw AND bump `revealId`
-  // together — so the backdrop crossfade and the staggered content reveal land in
-  // the same frame, never flash blank, and the loading placeholder never gets its
-  // own reveal cycle (revealId stays 0 until ready). While the reel spins the
-  // commit is held back, so the reveal hands off the instant it lands.
+  // Commit known content without waiting on the network. Artwork has its own
+  // decoded handoff below, so a slow or failed image cannot leave the title and
+  // actions blank. While the reel spins, it still owns the transition.
   useEffect(() => {
     if (isLoading) return;
     if (spinning) return; // the reel owns the transition; commit waits for the land
@@ -226,33 +276,127 @@ export function Hero() {
       return;
     }
 
-    let cancelled = false;
-    const commit = () => {
-      if (cancelled) return;
-      // Claim the draw only when the reveal actually lands — NOT synchronously
-      // before the async backdrop decode. onLand invalidates the pool, so this
-      // effect re-runs (pooled dep) and its cleanup cancels the in-flight decode;
-      // if `committed` had already claimed the draw, the guard above would skip
-      // the re-commit and the hero would stay stuck on the previous frame.
-      committed.current = current;
-      setShown(next);
-      setRevealId((n) => n + 1);
-    };
-    const url = next?.backdropPath ? backdropUrl(next.backdropPath) : null;
-    if (url) {
-      const img = new Image();
-      img.src = url;
-      img.decode().then(commit, commit);
-    } else {
-      commit();
-    }
-    return () => {
-      cancelled = true;
-    };
+    committed.current = current;
+    setShown(next);
+    setRevealId((n) => n + 1);
     // The sameDraw guard above stops this from replaying the reveal on no-op
     // refetches (serverNow churn, enrichment, resync), so it re-animates only when
     // the draw actually changes; the pool/seen deps just re-run the resume check.
   }, [isLoading, current, spinning, pooled, drawState.seen]);
+
+  const desiredArtwork = artworkDescriptor(shown);
+
+  // Swap a changed draw to its own procedural art before the browser paints.
+  // Same-draw path changes intentionally keep the current decoded layer.
+  useLayoutEffect(() => {
+    if (isLoading || spinning) return;
+    setArtwork((previous) => {
+      const keepCurrent =
+        previous.identity === desiredArtwork.identity &&
+        (desiredArtwork.url !== null || previous.source === desiredArtwork.source);
+      return keepCurrent
+        ? previous
+        : {
+            revision: previous.revision + 1,
+            identity: desiredArtwork.identity,
+            source: desiredArtwork.url
+              ? `${desiredArtwork.identity}:fallback`
+              : desiredArtwork.source,
+            bg: desiredArtwork.fallback,
+          };
+    });
+  }, [
+    isLoading,
+    spinning,
+    desiredArtwork.identity,
+    desiredArtwork.source,
+    desiredArtwork.url,
+    desiredArtwork.fallback,
+  ]);
+
+  // A remote source does not depend on fallback colour. Keeping this null for
+  // remote art lets metadata-only title changes leave an in-flight decode alone.
+  const desiredArtworkFallback = desiredArtwork.url ? null : desiredArtwork.fallback;
+
+  // Decode controls only the painted art. A new draw gets its own procedural
+  // fallback immediately so old artwork is not shown under new content. A path
+  // update for the same draw keeps the current layer until its replacement is
+  // paintable. The source key is stable across metadata-only refetches.
+  useEffect(() => {
+    if (isLoading || spinning) return;
+
+    if (!desiredArtwork.url) {
+      if (desiredArtworkFallback === null) return;
+      if (
+        artworkTarget.current?.source === desiredArtwork.source &&
+        artworkTarget.current.settled
+      ) {
+        return;
+      }
+      artworkTarget.current = { source: desiredArtwork.source, settled: true };
+      setArtwork((previous) =>
+        previous.source === desiredArtwork.source
+          ? previous
+          : {
+              revision: previous.revision + 1,
+              identity: desiredArtwork.identity,
+              source: desiredArtwork.source,
+              bg: desiredArtworkFallback,
+            },
+      );
+      return;
+    }
+
+    let target = artworkTarget.current;
+    if (target?.source === desiredArtwork.source && target.settled) return;
+
+    if (target?.source !== desiredArtwork.source || !target.pending) {
+      const image = new Image();
+      image.src = desiredArtwork.url;
+      target = {
+        source: desiredArtwork.source,
+        settled: false,
+        pending: image.decode(),
+      };
+      artworkTarget.current = target;
+    }
+
+    let cancelled = false;
+    const commit = () => {
+      if (cancelled || artworkTarget.current !== target) return;
+      target.settled = true;
+      target.pending = undefined;
+      setArtwork((previous) =>
+        previous.source === desiredArtwork.source
+          ? previous
+          : {
+              revision: previous.revision + 1,
+              identity: desiredArtwork.identity,
+              source: desiredArtwork.source,
+              bg: `url(${desiredArtwork.url})`,
+            },
+      );
+    };
+    const reject = () => {
+      if (cancelled || artworkTarget.current !== target) return;
+      target.settled = true;
+      target.pending = undefined;
+    };
+    const pending = target.pending;
+    if (!pending) return;
+    pending.then(commit, reject);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isLoading,
+    spinning,
+    desiredArtwork.identity,
+    desiredArtwork.source,
+    desiredArtwork.url,
+    desiredArtworkFallback,
+  ]);
 
   // Release the marking busy-state once the watched draw has left the hero (shown
   // cleared by the commit effect above), so the action button goes Marking… → Draw
@@ -269,17 +413,16 @@ export function Hero() {
   }, [drawing, shown]);
 
   const draw = shown;
-  // False until the first draw (or confirmed-empty) has committed after its
-  // backdrop decoded. While loading we render a quiet banner shell — no
+  // False until the first draw (or confirmed-empty) has committed. While
+  // loading we render a quiet banner shell — no
   // placeholder copy ("Draw next movie") flashing before the real draw.
   const ready = revealId > 0;
   const hue = hueOf(draw?.title ?? "moviepickarr");
-  const bg = draw?.backdropPath ? `url(${backdropUrl(draw.backdropPath)})` : backdropBg(hue);
   const canDraw = !draw && (pooled?.length ?? 0) > 0;
 
   return (
     <section className="hero" data-ready={revealId > 0 ? "" : undefined}>
-      <Backdrop bg={bg} revealId={revealId} />
+      <Backdrop bg={artwork.bg} revision={artwork.revision} />
       <div className="hero__inner">
         <div className="hero__poster" key={`p-${revealId}`} style={ri(0)}>
           <Poster

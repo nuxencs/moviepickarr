@@ -49,7 +49,7 @@ import "@/components/moviepickarr/members.css";
  * focus somewhere and a member switch beside the rail must not move it at all.
  * Keep in step with the media queries in members.css.
  */
-const PUSH_WIDTH = "(max-width: 760px)";
+const PUSH_WIDTH = "not all and (min-width: 761px)";
 
 const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
 
@@ -66,7 +66,7 @@ const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
  * membersSearch), not component state, so a board can be linked to and Back
  * returns to the member you were looking at before.
  *
- * Below 760px that address grows a second half and becomes the mobile push
+ * Below 761px that address grows a second half and becomes the mobile push
  * (#236). The two columns are two screens there: the rail is the whole screen,
  * where selecting a member opens their pool in place exactly as it does beside
  * the pane, and `stash` in the URL pushes that member's films over the top of
@@ -230,7 +230,7 @@ export function UsersTab() {
 
   return (
     <>
-      {/* Pushed is the URL, not a flag: below 760 the head goes with the rail
+      {/* Pushed is the URL, not a flag: below 761 the head goes with the rail
           (see members.css). The whole head, `Members / 6 people` included, not
           just the status line — the pushed screen's title is the possessive
           heading, and two titles do not fit at 375px. */}
@@ -266,7 +266,7 @@ export function UsersTab() {
           <p className="empty text-destructive">Failed to load members.</p>
         ) : usersPending ? (
           // The page's own shape, in the page's own containers (#239). Which
-          // screen it is on below 760 is the data-pushed above, which is the
+          // screen it is on below 761 is the data-pushed above, which is the
           // URL in every state — so a cold deep link onto a member's stash
           // spends the flight on the screen it is arriving at.
           <MembersSkeleton />
@@ -454,7 +454,7 @@ function RailRow({
               rowLinkRef={linkRef}
             />
 
-            {/* The way on to this member's films, below 760 only (members.css
+            {/* The way on to this member's films, below 761 only (members.css
                 draws it there and nowhere else). It is the second half of the
                 address, so it is a link and not a button: the pushed screen
                 can be shared, Back leaves it, and the row above stays the
@@ -961,7 +961,7 @@ function StashPane({
         holdsFocus.current = false;
       }}
     >
-      {/* The mobile push's back bar, drawn only below 760 (members.css) and so
+      {/* The mobile push's back bar, drawn only below 761 (members.css) and so
           always in the DOM: which screen this is is a media query, and a render
           condition on it would have to survive a resize.
 
@@ -1009,7 +1009,7 @@ function StashPane({
               <span className="mem-stash__who">{who}</span> stash
             </h3>
             {/* The count, on the pushed screen only (members.css hides it above
-                760). Beside the rail the row carries it in every state, and a
+                761). Beside the rail the row carries it in every state, and a
                 second copy in the pane put "who has the deepest stash" across
                 two type scales 600px apart; pushed, the rail is another screen
                 and the heading is where the number has to be. */}

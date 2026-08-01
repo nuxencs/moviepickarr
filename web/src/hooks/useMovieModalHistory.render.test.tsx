@@ -55,7 +55,7 @@ function Subject({
         </button>
       ))}
       {selected && (
-        <Modal open={isOpen} onRequestClose={close} onClose={onClosed} capped>
+        <Modal label={selected.title} open={isOpen} onRequestClose={close} onClose={onClosed} capped>
           {(closeGesture) => (
             <>
               <h2>{selected.title}</h2>
@@ -112,7 +112,7 @@ describe.each([
 
     fireEvent.click(poster("Possession"));
 
-    expect(screen.getByRole("dialog")).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "Possession" })).not.toBeNull();
     expect(router.history.location.href).toBe(before);
   });
 

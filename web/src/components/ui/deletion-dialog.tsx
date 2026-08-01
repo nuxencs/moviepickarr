@@ -35,7 +35,7 @@ export const DeletionDialog: React.FC<ConfirmDialogProps> = ({
     }
 
     return (
-        <Modal onClose={onClose} className="modal--form" dismissible={!pending}>
+        <Modal label={title} onClose={onClose} className="modal--form" dismissible={!pending}>
             {(close) => (
                 <>
                     <div className="modal__head">

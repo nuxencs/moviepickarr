@@ -96,7 +96,7 @@ export function EditMovieDialog({
   }
 
   return (
-    <Modal onClose={onClose} className="modal--form" dismissible={!isSaving}>
+    <Modal label="Edit movie" onClose={onClose} className="modal--form" dismissible={!isSaving}>
       {(close) => (
         <>
           <div className="modal__head">

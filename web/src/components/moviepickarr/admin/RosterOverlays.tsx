@@ -99,7 +99,7 @@ export function InviteReveal({
   };
 
   return (
-    <Modal onClose={onClose} className="modal--form">
+    <Modal label={`Invite ready for ${name}`} onClose={onClose} className="modal--form">
       {(close) => (
         <div className="adm-sheet adm-invite">
           <div className="adm-invite__head">
@@ -162,7 +162,7 @@ export function RemoveConfirm({
 }) {
   const isDelete = removeOutcome(member) === "delete";
   return (
-    <Modal onClose={onClose} className="modal--form" dismissible={!pending}>
+    <Modal label={`Remove ${member.name}?`} onClose={onClose} className="modal--form" dismissible={!pending}>
       {(close) => (
         <div className="adm-sheet adm-confirm">
           <span className="adm-confirm__icon" data-tone={isDelete ? "error" : "warn"}>
@@ -206,7 +206,7 @@ export function RemoveConfirm({
 // Refused client-side before the round trip; the server 409 is the backstop.
 export function UnlinkGuard({ onClose }: { onClose: () => void }) {
   return (
-    <Modal onClose={onClose} className="modal--form">
+    <Modal label="Can't unlink SSO" onClose={onClose} className="modal--form">
       {(close) => (
         <div className="adm-sheet adm-confirm">
           <span className="adm-confirm__icon" data-tone="error">
@@ -243,12 +243,13 @@ export function SetLoginDialog({
   onClose: () => void;
 }) {
   const isReset = member.hasLocalLogin;
+  const title = isReset ? `Reset ${possessive(member.name)} password` : `Set a password for ${member.name}`;
   const [username, setUsername] = useState(member.username ?? "");
   const [password, setPassword] = useState("");
   const canSubmit = username.trim().length > 0 && password.length > 0 && !pending;
 
   return (
-    <Modal onClose={onClose} className="modal--form" dismissible={!pending}>
+    <Modal label={title} onClose={onClose} className="modal--form" dismissible={!pending}>
       {(close) => (
         <form
           className="adm-sheet"
@@ -257,9 +258,7 @@ export function SetLoginDialog({
             if (canSubmit) onSubmit(username.trim(), password);
           }}
         >
-          <h3 className="adm-modal__title">
-            {isReset ? `Reset ${possessive(member.name)} password` : `Set a password for ${member.name}`}
-          </h3>
+          <h3 className="adm-modal__title">{title}</h3>
           <p className="adm-modal__sub">
             {isReset
               ? "This replaces their current password and signs them out of every other device."

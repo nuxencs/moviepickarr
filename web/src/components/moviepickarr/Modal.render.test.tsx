@@ -28,6 +28,7 @@ const AFTER_EXIT = 1000;
 function modalBody(close: () => void) {
   return (
     <div className="modal__scroll">
+      <h2>Test modal</h2>
       <button type="button" onClick={close}>
         Close
       </button>
@@ -45,7 +46,7 @@ function renderModal(
 ) {
   const onClose = vi.fn();
   const view = render(
-    <Modal onClose={onClose} className="modal--movie" {...props}>
+    <Modal label="Test modal" onClose={onClose} className="modal--movie" {...props}>
       {modalBody}
     </Modal>,
   );
@@ -65,6 +66,12 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("Modal", () => {
+  it("exposes its visible title as the dialog name", () => {
+    renderModal();
+
+    expect(screen.getByRole("dialog", { name: "Test modal" })).not.toBeNull();
+  });
+
   it("marks the surface capped only when asked, so the capped CSS can select it", () => {
     const { dialog } = renderModal({ capped: true });
     expect(dialog.classList.contains("modal--capped")).toBe(true);
@@ -148,6 +155,52 @@ describe("Modal", () => {
     });
   });
 
+  it("restores focus inside the surviving opener region when the opener is removed", () => {
+    function DetachedOpener() {
+      const [open, setOpen] = useState(false);
+      const [showOpener, setShowOpener] = useState(true);
+
+      return (
+        <section>
+          {showOpener && (
+            <button type="button" onClick={() => setOpen(true)}>
+              Open movie
+            </button>
+          )}
+          <button type="button" tabIndex={-1}>
+            Non-tabbable movie action
+          </button>
+          <button type="button">Next movie</button>
+          {open && (
+            <Modal label="Movie details" onClose={() => setOpen(false)}>
+              {(close) => (
+                <>
+                  <h2>Movie details</h2>
+                  <button type="button" onClick={() => setShowOpener(false)}>
+                    Remove opening movie
+                  </button>
+                  <button type="button" onClick={close}>
+                    Close
+                  </button>
+                </>
+              )}
+            </Modal>
+          )}
+        </section>
+      );
+    }
+
+    render(<DetachedOpener />);
+    const opener = screen.getByRole("button", { name: "Open movie" });
+    opener.focus();
+    fireEvent.click(opener);
+    fireEvent.click(screen.getByRole("button", { name: "Remove opening movie" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    runExit();
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next movie" }));
+  });
+
   /* A history-backed modal (the movie modal, see #196) can't dismiss itself:
      the close it wants is a `back()`, and the exit motion has to run off the
      resulting state change rather than ahead of it. So the shell takes the
@@ -158,13 +211,13 @@ describe("Modal", () => {
     it("plays the exit when the parent withdraws open", () => {
       const onClose = vi.fn();
       const view = render(
-        <Modal onClose={onClose} open>
+        <Modal label="Test modal" onClose={onClose} open>
           {modalBody}
         </Modal>,
       );
 
       view.rerender(
-        <Modal onClose={onClose} open={false}>
+        <Modal label="Test modal" onClose={onClose} open={false}>
           {modalBody}
         </Modal>,
       );
@@ -180,7 +233,7 @@ describe("Modal", () => {
       const onClose = vi.fn();
       const onRequestClose = vi.fn();
       const view = render(
-        <Modal onClose={onClose} onRequestClose={onRequestClose} open>
+        <Modal label="Test modal" onClose={onClose} onRequestClose={onRequestClose} open>
           {modalBody}
         </Modal>,
       );
@@ -193,14 +246,14 @@ describe("Modal", () => {
       fireEvent.keyDown(document, { key: "Escape" });
       expect(onRequestClose).toHaveBeenCalledTimes(1);
       view.rerender(
-        <Modal onClose={onClose} onRequestClose={onRequestClose} open={false}>
+        <Modal label="Test modal" onClose={onClose} onRequestClose={onRequestClose} open={false}>
           {modalBody}
         </Modal>,
       );
       expect(dialog.classList.contains("modal--closing")).toBe(true);
 
       view.rerender(
-        <Modal onClose={onClose} onRequestClose={onRequestClose} open>
+        <Modal label="Test modal" onClose={onClose} onRequestClose={onRequestClose} open>
           {modalBody}
         </Modal>,
       );
@@ -278,6 +331,7 @@ describe("Modal", () => {
         if (!outer) return null;
         return (
           <Modal
+            label="Outer modal"
             onClose={() => {
               setOuter(false);
               onOuterClose();
@@ -295,6 +349,7 @@ describe("Modal", () => {
                 </button>
                 {inner && (
                   <Modal
+                    label="Inner modal"
                     onClose={() => {
                       setInner(false);
                       onInnerClose();
@@ -442,7 +497,7 @@ describe("Modal", () => {
     it("gives Escape to a menu opened inside the dialog, not the dialog", () => {
       const onClose = vi.fn();
       render(
-        <Modal onClose={onClose}>
+        <Modal label="Test modal" onClose={onClose}>
           {() => <Menu label="More actions" actions={[{ label: "Edit", onSelect: () => {} }]} />}
         </Modal>,
       );

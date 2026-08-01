@@ -311,6 +311,7 @@ export function MovieModal({
     // blurred page with it, and the close X — pinned to the surface, outside
     // `.modal__scroll` — stays put while the hero scrolls under it.
     <Modal
+      label={m.title}
       onClose={onClose}
       open={open}
       onRequestClose={onRequestClose}

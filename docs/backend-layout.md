@@ -140,12 +140,18 @@
   runs off no clock, the tx codec and linker share the injectable one.
 - `internal/movie`: owns the whole draw/reveal lifecycle, including the
   server-authoritative auto-reveal. `DrawRandom` picks a pooled movie, records an
-  in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`), and arms a
-  timer at `RevealAt = DrawnAt + AutoRevealDelay` (`DefaultAutoRevealDelay` 16.5s,
-  overridable via `DrawConfig`). `RevealCurrentDraw` is the once-per-draw flip fired by
-  the drawer's confirm or the timer. An early watch performs the same flip before it
-  clears the active draw. All paths call the `OnRevealed` hook exactly once. The HTTP
-  handler's `movieNightMu` serializes draw, reveal, and watch from next-up
+  in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`). The HTTP
+  handler publishes `movie:drawn`, then `StartAutoReveal` arms a timer for the time
+  remaining until `RevealAt = DrawnAt + AutoRevealDelay`
+  (`DefaultAutoRevealDelay` 16.5s, overridable via `DrawConfig`). A slow payload
+  build therefore shortens the scheduled delay instead of moving the advertised
+  deadline or letting `movie:revealed` overtake `movie:drawn`. The finalizer is
+  bound to the movie and draw generation; stale, duplicate, and post-shutdown
+  calls do nothing.
+  `RevealCurrentDraw` is the once-per-draw flip fired by the drawer's confirm or
+  the timer. An early watch performs the same flip before it clears the active
+  draw. All paths call the `OnRevealed` hook exactly once. The HTTP handler's
+  `movieNightMu` serializes draw, reveal, and watch from next-up
   authorization through synchronous lifecycle event publication. Watch keeps that
   command lock through next-up rotation, so an outgoing holder cannot start the next
   draw with stale authorization. The server serializes `RevealAt`/`ServerNow` into

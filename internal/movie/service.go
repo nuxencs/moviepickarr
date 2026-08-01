@@ -126,7 +126,14 @@ func (s *Service) AddToStash(ctx context.Context, title string, userID int) (*do
 // MoveToPool promotes a stashed movie into its owner's pool. It is idempotent
 // (already-pooled is a no-op) and reports whether a real transition happened.
 func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
-	limit, err := s.poolLimit(ctx, id)
+	// The held-draw snapshot and the promotion must sit on one side of draw
+	// publication. Otherwise a draw can remove one DB pool row after this method
+	// derives maxPoolSize, letting the held winner plus the promoted rows exceed
+	// the member's cap.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	limit, err := s.poolLimitLocked(ctx, id)
 	if err != nil {
 		return false, err
 	}
@@ -157,12 +164,13 @@ func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
 	}
 }
 
-// poolLimit is the per-user pool cap as it applies to promoting movie id. A
-// held draw (see withHeldDraw) still occupies a tile in its adder's pool, so it
-// has to keep costing them a slot: counting only the rows with status "pool"
+// poolLimitLocked is the per-user pool cap as it applies to promoting movie id.
+// A held draw (see withHeldDraw) still occupies a tile in its adder's pool, so
+// it has to keep costing them a slot: counting only the rows with status "pool"
 // would hand that member a free fourth movie for the length of every draw.
-func (s *Service) poolLimit(ctx context.Context, id int) (int, error) {
-	held, ok := s.heldDraw()
+// Callers hold s.mu through the resulting promotion.
+func (s *Service) poolLimitLocked(ctx context.Context, id int) (int, error) {
+	held, ok := s.heldDrawLocked()
 	if !ok {
 		return maxPoolSize, nil
 	}
@@ -197,7 +205,13 @@ func (s *Service) poolLimit(ctx context.Context, id int) (int, error) {
 // which movie was drawn, before the reel lands. One answer for every tile keeps
 // the draw secret, and the pool the reel is spinning over stays put.
 func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
-	if held, ok := s.heldDraw(); ok {
+	// Serialize the draw-state decision through the status transition. A draw
+	// that wins this lock freezes every pool tile; a demotion that wins changes
+	// the candidate set before the draw selects from it.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if held, ok := s.heldDrawLocked(); ok {
 		movie, err := s.movieRepo.FindByID(ctx, id)
 		if err != nil {
 			return false, err
@@ -235,6 +249,12 @@ func (s *Service) SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbI
 // caller (the move handler reads it the same way): the ordering of the two
 // refusals belongs here, next to the draw the service owns.
 func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
+	// Keep the lifecycle read and delete on one side of draw publication. In
+	// particular, a stale "pool" read must never authorize deleting a winner
+	// after DrawRandom has persisted it as current.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return err
@@ -243,7 +263,7 @@ func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
 	// Same reasoning as MoveToStash: while a draw is unrevealed, every pool tile
 	// answers alike (the held winner included, which is why this runs before the
 	// status check below — it is "current", not "pool"). Stashes stay deletable.
-	if held, ok := s.heldDraw(); ok && (movie.Status == "pool" || movie.ID == held.MovieID) {
+	if held, ok := s.heldDrawLocked(); ok && (movie.Status == "pool" || movie.ID == held.MovieID) {
 		return domain.ErrDrawInProgress
 	}
 
@@ -335,6 +355,11 @@ func (s *Service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 func (s *Service) heldDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.heldDrawLocked()
+}
+
+// heldDrawLocked is heldDraw for callers that already own s.mu.
+func (s *Service) heldDrawLocked() (ActiveDraw, bool) {
 	if s.activeDraw == nil || s.activeDraw.Revealed {
 		return ActiveDraw{}, false
 	}

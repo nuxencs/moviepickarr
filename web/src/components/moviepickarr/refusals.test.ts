@@ -121,6 +121,12 @@ describe("deleteRefusalOf", () => {
     ).toBe("unavailable");
   });
 
+  it("refuses a cached stash delete while its record state is unavailable", () => {
+    expect(
+      deleteRefusalOf({ status: "stash", ...open, stateKnown: false }),
+    ).toBe("unavailable");
+  });
+
   it("says drawing ahead of locked, as a move does", () => {
     expect(deleteRefusalOf({ status: "pool", isLocked: true, drawInFlight: true })).toBe("drawing");
   });

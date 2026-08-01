@@ -274,10 +274,12 @@ old shadcn primitives.
   listing. Delete waits for the shared pool-state query rather than defaulting to open.
   That query carries both the pool lock and the server-owned unrevealed-draw gate, and
   only runs for a pooled film. Stash, current and watched records do not need the gate
-  and do not fetch it. While either the detail lifecycle or pool state is missing,
-  refreshing, or failed, pooled Delete remains in place but inert as
-  `Delete, round state unavailable`. A remote `404` closes the record immediately
-  and is not retried.
+  and do not fetch it. While the detail lifecycle is missing, refreshing, or failed,
+  any cached stash or pool Delete remains in place but inert as
+  `Delete, round state unavailable`: a cached stash status is not permission to act
+  while the fresh record is unknown. A settled stash still skips the pool-state
+  request. Missing or refreshing pool state applies the same refusal to a pooled
+  film. A remote `404` closes the record immediately and is not retried.
   A refused delete (a pooled film while the round is locked or a draw is out) stays in
   place and goes inert with `aria-disabled`, the reason on both the accessible name and
   the tooltip (`Delete, round closed`) — the same treatment, and the same words, as a
@@ -378,7 +380,10 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
 
 Destructive confirms (`DeletionDialog`) use the same `Modal`: dismissing (Esc / veil /
 Cancel) is the safe choice, so outside-click dismiss is intentional; only the explicit
-`.btn--danger` confirms.
+`.btn--danger` confirms. Once deletion starts, the dialog stays mounted and cannot be
+dismissed. Close, Cancel, and the danger button are disabled, and the danger button
+reads `Deleting…`. A failure restores the controls for a deliberate retry; success
+closes the movie record.
 
 ---
 

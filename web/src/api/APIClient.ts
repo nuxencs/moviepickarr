@@ -318,7 +318,7 @@ export const APIClient = {
                 },
             }),
         moveMovie: (movieID: number, target: MoveTarget) =>
-            appClient.Post<Movie>(`api/v1/movies/${movieID}/move`, {
+            appClient.Post<void>(`api/v1/movies/${movieID}/move`, {
                 body: { target },
             }),
         // Board reads stay keyed by member id (a public per-member read, not a

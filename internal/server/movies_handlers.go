@@ -317,17 +317,13 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeNotAdder(c)
 	}
 
-	userRecord, err := h.userService.Get(ctx, actorID)
-	if err != nil {
-		return writeError(c, err)
-	}
-
 	// The transition is enforced atomically in the service: it moves the movie
 	// only if it sits at the source (and, for a promotion, only if the owner's
 	// pool has room), so a duplicate click is an idempotent no-op and concurrent
 	// promotions can't overshoot the cap. `changed` reports whether a real move
-	// happened, so a no-op duplicate doesn't broadcast.
-	var updatedUser userResponse
+	// happened, so a no-op duplicate doesn't broadcast. Clients consume the event
+	// as an invalidation and refetch the affected queries, which keeps fallible
+	// projection reads out of the commit-to-publish path and pool-state lock.
 	err = h.runPoolStateCommand(func() error {
 		poolLocked, err := h.settingsService.GetPoolLock(ctx)
 		if err != nil {
@@ -348,19 +344,11 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 			return err
 		}
 
-		updatedPool, err := h.movieService.PooledByUserID(ctx, actorID)
-		if err != nil {
-			return err
-		}
-		updatedStash, err := h.movieService.StashedByUserID(ctx, actorID)
-		if err != nil {
-			return err
-		}
-
-		combined := append(append([]*domain.Movie{}, updatedPool...), updatedStash...)
-		updatedUser = toAPIUserMeta(userRecord, updatedPool, updatedStash, h.metaFor(ctx, combined))
 		if changed {
-			h.broker.Broadcast(event{Type: "movie:moved", Data: updatedUser})
+			h.broker.Broadcast(event{Type: "movie:moved", Data: fiber.Map{
+				"userID":  actorID,
+				"movieID": movieID,
+			}})
 		}
 		return nil
 	})
@@ -368,7 +356,7 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(updatedUser)
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {

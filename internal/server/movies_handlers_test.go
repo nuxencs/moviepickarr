@@ -16,6 +16,7 @@ import (
 
 	"moviepickarr/internal/db"
 	"moviepickarr/internal/domain"
+	"moviepickarr/internal/movie"
 	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
@@ -853,6 +854,33 @@ func postMove(t *testing.T, app *fiber.App, userID, movieID int, target string) 
 	return resp
 }
 
+type failMoveProjectionStore struct {
+	*repository.SqliteMoviesRepository
+	failReads bool
+}
+
+func (s *failMoveProjectionStore) PromoteToPoolIfRoom(
+	ctx context.Context,
+	id, maxPool int,
+) (int64, error) {
+	changed, err := s.SqliteMoviesRepository.PromoteToPoolIfRoom(ctx, id, maxPool)
+	if err == nil && changed == 1 {
+		s.failReads = true
+	}
+	return changed, err
+}
+
+func (s *failMoveProjectionStore) FindByUserIDAndStatus(
+	ctx context.Context,
+	userID int,
+	status string,
+) ([]*domain.Movie, error) {
+	if s.failReads {
+		return nil, errors.New("forced post-commit projection failure")
+	}
+	return s.SqliteMoviesRepository.FindByUserIDAndStatus(ctx, userID, status)
+}
+
 func movieStatus(t *testing.T, ctx context.Context, movieRepo *repository.SqliteMoviesRepository, id int) string {
 	t.Helper()
 
@@ -882,23 +910,23 @@ func TestHandleMove_DirectionalIsIdempotent(t *testing.T) {
 		t.Fatalf("create movie: %v", err)
 	}
 
-	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("first promote: expected 200, got %d", resp.StatusCode)
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("first promote: expected 204, got %d", resp.StatusCode)
 	}
 	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "pool" {
 		t.Fatalf("after first promote: expected pool, got %q", got)
 	}
 
 	// The regression: a second promote to the same target must NOT revert it.
-	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("duplicate promote: expected 200, got %d", resp.StatusCode)
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("duplicate promote: expected 204, got %d", resp.StatusCode)
 	}
 	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "pool" {
 		t.Fatalf("after duplicate promote: expected pool (no revert), got %q", got)
 	}
 
-	if resp := postMove(t, app, user.ID, movie.ID, "stash"); resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("demote: expected 200, got %d", resp.StatusCode)
+	if resp := postMove(t, app, user.ID, movie.ID, "stash"); resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("demote: expected 204, got %d", resp.StatusCode)
 	}
 	if got := movieStatus(t, ctx, movieRepo, movie.ID); got != "stash" {
 		t.Fatalf("after demote: expected stash, got %q", got)
@@ -1057,19 +1085,53 @@ func TestHandleMove_NoOpDuplicateSuppressesBroadcast(t *testing.T) {
 	defer h.broker.Unsubscribe(client)
 
 	// First promote is a real transition → exactly one movie:moved.
-	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("promote: expected 200, got %d", resp.StatusCode)
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("promote: expected 204, got %d", resp.StatusCode)
 	}
 	if got := countMovedEvents(client, 100*time.Millisecond); got != 1 {
 		t.Fatalf("real move: expected 1 movie:moved broadcast, got %d", got)
 	}
 
 	// Duplicate promote finds the movie already pooled → no-op, no broadcast.
-	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("duplicate promote: expected 200, got %d", resp.StatusCode)
+	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("duplicate promote: expected 204, got %d", resp.StatusCode)
 	}
 	if got := countMovedEvents(client, 100*time.Millisecond); got != 0 {
 		t.Fatalf("no-op duplicate: expected 0 broadcasts (suppression), got %d", got)
+	}
+}
+
+func TestHandleMove_PublishesCommittedMoveWithoutResponseProjection(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	h.movieService.Close()
+	h.movieService = movie.NewService(&failMoveProjectionStore{
+		SqliteMoviesRepository: movieRepo,
+	}, movie.DrawConfig{})
+
+	user, err := userRepo.Create(ctx, "Projection failure owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	movieRecord, err := movieRepo.Add(ctx, "Committed move", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create movie: %v", err)
+	}
+
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	resp := postMove(t, app, user.ID, movieRecord.ID, "pool")
+	if resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("move: expected 204, got %d", resp.StatusCode)
+	}
+	if got := movieStatus(t, ctx, movieRepo, movieRecord.ID); got != "pool" {
+		t.Fatalf("committed move status = %q, want pool", got)
+	}
+	if got := countMovedEvents(client, 100*time.Millisecond); got != 1 {
+		t.Fatalf("committed move: expected 1 movie:moved broadcast, got %d", got)
 	}
 }
 
@@ -1137,12 +1199,12 @@ func TestHandleMove_ConcurrentDistinctPromotes_RespectPoolCap(t *testing.T) {
 			t.Fatalf("contender %d: app.Test: %v", i, r.err)
 		}
 		switch r.status {
-		case fiber.StatusOK:
+		case fiber.StatusNoContent:
 			promoted++
 		case fiber.StatusConflict:
 			rejected++
 		default:
-			t.Fatalf("contender %d: expected 200 or 409, got %d", i, r.status)
+			t.Fatalf("contender %d: expected 204 or 409, got %d", i, r.status)
 		}
 	}
 	if promoted != 1 {

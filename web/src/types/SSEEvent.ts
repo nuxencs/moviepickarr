@@ -56,7 +56,7 @@ export interface MovieDeletedEvent extends SSEEvent<{ userID: number; movieID: n
   type: "movie:deleted";
 }
 
-export interface MovieMovedEvent extends SSEEvent<User> {
+export interface MovieMovedEvent extends SSEEvent<{ userID: number; movieID: number }> {
   type: "movie:moved";
 }
 

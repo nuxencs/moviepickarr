@@ -35,7 +35,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { QueryClient } from "@tanstack/react-query";
+import { onlineManager, QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -43,6 +43,7 @@ import { APIClient } from "@/api/APIClient";
 import { AuthKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 
 import { UsersTab } from "@/components/moviepickarr/UsersTab";
+import { toast } from "@/components/ui/toast-api";
 
 import type { MeResponse, Movie, User } from "@/types/Response";
 
@@ -61,6 +62,22 @@ vi.mock("@/api/APIClient", () => ({
     movies: { get: vi.fn(() => new Promise<never>(() => {})) },
   },
 }));
+
+afterEach(() => {
+  onlineManager.setOnline(true);
+  vi.mocked(APIClient.board.moveMovie).mockReset();
+  vi.restoreAllMocks();
+});
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
 
 function movie(movieID: number): Movie {
   return {
@@ -808,6 +825,105 @@ describe("a refused action", () => {
   });
 });
 
+describe("a pending move", () => {
+  it("sends one request per movie while repeated activation stays focusable", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    await renderTab({ users: [member(1, 1, 2, "Ada")], meID: 1 });
+
+    const promote = document.querySelector(".mem-tile .mem-act") as HTMLElement;
+    fireEvent.click(promote);
+    fireEvent.click(promote);
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalled());
+
+    expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(1);
+    expect(APIClient.board.moveMovie).toHaveBeenLastCalledWith(100, "pool");
+    promote.focus();
+    expect(document.activeElement).toBe(promote);
+
+    const demote = document.querySelector(".pslot--filled .mem-act") as HTMLElement;
+    fireEvent.click(demote);
+    fireEvent.click(demote);
+    await waitFor(() =>
+      expect(APIClient.board.moveMovie).toHaveBeenCalledWith(10, "stash"),
+    );
+
+    expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(2);
+    demote.focus();
+    expect(document.activeElement).toBe(demote);
+  });
+
+  it("keeps a hidden and restored stash movie inside the same pending request", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    await renderTab({ users: [member(1, 1, 2, "Ada")], meID: 1 });
+
+    fireEvent.click(document.querySelector(".mem-tile .mem-act") as HTMLElement);
+    const field = screen.getByRole("textbox", { name: "Search Ada's stash" });
+    fireEvent.change(field, { target: { value: "Film 101" } });
+    expect(screen.queryByRole("button", { name: "Film 100" })).toBeNull();
+
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.click(document.querySelector(".mem-tile .mem-act") as HTMLElement);
+
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalled());
+    expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(1);
+    expect(APIClient.board.moveMovie).toHaveBeenCalledWith(100, "pool");
+  });
+
+  it("keeps a movie pending while its keyed stash pane is switched away and back", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const { router } = await renderTab({
+      users: [member(1, 1, 2, "Ada"), member(2, 0, 1, "Bo")],
+      meID: 1,
+    });
+
+    fireEvent.click(document.querySelector(".mem-tile .mem-act") as HTMLElement);
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(1));
+    await router.navigate({ to: "/users", search: { member: 2 } });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Bo's stash"),
+    );
+    await router.navigate({ to: "/users", search: { member: 1 } });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Your stash"),
+    );
+
+    fireEvent.click(document.querySelector(".mem-tile .mem-act") as HTMLElement);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(1);
+    expect(APIClient.board.moveMovie).toHaveBeenCalledWith(100, "pool");
+  });
+
+  it("keeps an offline move pending and sends it once after reconnecting", async () => {
+    onlineManager.setOnline(false);
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    await renderTab({ users: [member(1, 1, 2, "Ada")], meID: 1 });
+    const promote = document.querySelector(".mem-tile .mem-act") as HTMLElement;
+
+    fireEvent.click(promote);
+    fireEvent.click(promote);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(APIClient.board.moveMovie).not.toHaveBeenCalled();
+
+    onlineManager.setOnline(true);
+
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(1));
+    expect(APIClient.board.moveMovie).toHaveBeenCalledWith(100, "pool");
+  });
+});
+
 /* The keyboard and the focus behaviour of the wall (#235). One rule over the
    whole page: focus moves only when the thing it is sitting on goes away. */
 describe("moving around the wall with the keyboard", () => {
@@ -1032,6 +1148,131 @@ describe("moving around the wall with the keyboard", () => {
     expect(document.activeElement).toBe(field);
   });
 
+  it("does not steal focus from another stash movie while a promote lands", async () => {
+    const { client } = await renderTab({ users: roster, meID: 1 });
+
+    fireEvent.click(wall().querySelector(".mem-tile .mem-act") as HTMLElement);
+    const destination = within(wall()).getByRole("button", { name: "Film 103" });
+    destination.focus();
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 100], stash: [101, 102, 103] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(wall().querySelectorAll(".mem-tile").length).toBe(3));
+    expect(document.activeElement).toBe(destination);
+  });
+
+  it("does not reclaim focus after a pending promote was deliberately blurred", async () => {
+    const { client } = await renderTab({ users: roster, meID: 1 });
+    const promote = wall().querySelector(".mem-tile .mem-act") as HTMLElement;
+
+    promote.focus();
+    fireEvent.click(promote);
+    promote.blur();
+    expect(document.activeElement).toBe(document.body);
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 100], stash: [101, 102, 103] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(wall().querySelectorAll(".mem-tile")).toHaveLength(3));
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does not treat an unfocused promote activation as a lost pane focus", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const { client } = await renderTab({ users: roster, meID: 1 });
+
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(wall().querySelector(".mem-tile .mem-act") as HTMLElement);
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10], stash: [100, 101, 102, 103, 104] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(wall().querySelectorAll(".mem-tile")).toHaveLength(5));
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("keeps a newer promote landing when an older request fails", async () => {
+    const first = deferred<Movie>();
+    const second = deferred<Movie>();
+    const move = vi.mocked(APIClient.board.moveMovie);
+    move.mockImplementation((movieID) =>
+      movieID === 100 ? first.promise : second.promise,
+    );
+    const errorToast = vi.spyOn(toast, "error").mockImplementation(() => 0);
+    const { client } = await renderTab({ users: roster, meID: 1 });
+    const promotes = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act");
+
+    fireEvent.click(promotes[0]);
+    promotes[1].focus();
+    fireEvent.click(promotes[1]);
+    await waitFor(() => expect(move).toHaveBeenCalledTimes(2));
+
+    first.reject(new Error("first move failed"));
+    await waitFor(() => expect(errorToast).toHaveBeenCalledTimes(1));
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 101], stash: [100, 102, 103] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(named(document.activeElement)).toBe("Film 102"));
+  });
+
+  it("rebases a newer promote landing after an older movie leaves first", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const { client } = await renderTab({ users: roster, meID: 1 });
+    const promotes = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act");
+
+    fireEvent.click(promotes[0]);
+    promotes[1].focus();
+    fireEvent.click(promotes[1]);
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(2));
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 100], stash: [101, 102, 103] }),
+      bo,
+    ]);
+    await waitFor(() =>
+      expect(within(wall()).queryByRole("button", { name: "Film 100" })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(promotes[1]);
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 100, 101], stash: [102, 103] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(named(document.activeElement)).toBe("Film 102"));
+  });
+
+  it("returns focus ownership to a repeated pending promote without another request", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const { client } = await renderTab({ users: roster, meID: 1 });
+    const promotes = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act");
+
+    fireEvent.click(promotes[0]);
+    fireEvent.click(promotes[1]);
+    promotes[0].focus();
+    fireEvent.click(promotes[0]);
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(2));
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 100], stash: [101, 102, 103] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(named(document.activeElement)).toBe("Film 101"));
+  });
+
   it("hands focus to the next filled slot after a demote", async () => {
     const { client } = await renderTab({ users: [ada({ pool: [10, 11], stash: [100] }), bo], meID: 1 });
 
@@ -1040,6 +1281,137 @@ describe("moving around the wall with the keyboard", () => {
 
     // The slot does not reflow around an empty one and an empty slot is not
     // focusable, so focus goes to the film that is now in that slot.
+    await waitFor(() => expect(named(document.activeElement)).toBe("Film 11"));
+  });
+
+  it("does not steal focus from another pool movie while a demote lands", async () => {
+    const { client } = await renderTab({
+      users: [ada({ pool: [10, 11, 12], stash: [100] }), bo],
+      meID: 1,
+    });
+
+    fireEvent.click(openPool().querySelector(".pslot--filled .mem-act") as HTMLElement);
+    const destination = within(openPool()).getByRole("button", { name: "Film 12" });
+    destination.focus();
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [11, 12], stash: [10, 100] }),
+      bo,
+    ]);
+
+    await waitFor(() =>
+      expect(openPool().querySelectorAll(".pslot--filled")).toHaveLength(2),
+    );
+    expect(document.activeElement).toBe(destination);
+  });
+
+  it("does not reclaim focus after a pending demote was deliberately blurred", async () => {
+    const { client } = await renderTab({
+      users: [ada({ pool: [10, 11], stash: [100] }), bo],
+      meID: 1,
+    });
+    const demote = openPool().querySelector(".pslot--filled .mem-act") as HTMLElement;
+
+    demote.focus();
+    fireEvent.click(demote);
+    demote.blur();
+    expect(document.activeElement).toBe(document.body);
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [11], stash: [10, 100] }),
+      bo,
+    ]);
+
+    await waitFor(() =>
+      expect(openPool().querySelectorAll(".pslot--filled")).toHaveLength(1),
+    );
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("rebases a pending demote after a promoted movie sorts ahead of it", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const { client } = await renderTab({
+      users: [ada({ pool: [11, 12], stash: [10, 100] }), bo],
+      meID: 1,
+    });
+    const demote = openPool().querySelector<HTMLElement>(".pslot--filled .mem-act")!;
+
+    fireEvent.click(demote);
+    fireEvent.click(wall().querySelector(".mem-tile .mem-act") as HTMLElement);
+    demote.focus();
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(2));
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 11, 12], stash: [100] }),
+      bo,
+    ]);
+    await waitFor(() =>
+      expect(within(openPool()).getByRole("button", { name: "Film 10" })).toBeTruthy(),
+    );
+    expect(document.activeElement).toBe(demote);
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 12], stash: [11, 100] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(named(document.activeElement)).toBe("Film 12"));
+  });
+
+  it("keeps a newer demote landing when an older request fails", async () => {
+    const first = deferred<Movie>();
+    const second = deferred<Movie>();
+    const move = vi.mocked(APIClient.board.moveMovie);
+    move.mockImplementation((movieID) =>
+      movieID === 10 ? first.promise : second.promise,
+    );
+    const errorToast = vi.spyOn(toast, "error").mockImplementation(() => 0);
+    const { client } = await renderTab({
+      users: [ada({ pool: [10, 11, 12], stash: [100] }), bo],
+      meID: 1,
+    });
+    const demotes = openPool().querySelectorAll<HTMLElement>(
+      ".pslot--filled .mem-act",
+    );
+
+    fireEvent.click(demotes[0]);
+    demotes[1].focus();
+    fireEvent.click(demotes[1]);
+    await waitFor(() => expect(move).toHaveBeenCalledTimes(2));
+
+    first.reject(new Error("first move failed"));
+    await waitFor(() => expect(errorToast).toHaveBeenCalledTimes(1));
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10, 12], stash: [11, 100] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(named(document.activeElement)).toBe("Film 12"));
+  });
+
+  it("returns focus ownership to a repeated pending demote without another request", async () => {
+    vi.mocked(APIClient.board.moveMovie).mockImplementation(
+      () => new Promise<never>(() => {}),
+    );
+    const { client } = await renderTab({
+      users: [ada({ pool: [10, 11, 12], stash: [100] }), bo],
+      meID: 1,
+    });
+    const demotes = openPool().querySelectorAll<HTMLElement>(
+      ".pslot--filled .mem-act",
+    );
+
+    fireEvent.click(demotes[0]);
+    fireEvent.click(demotes[1]);
+    demotes[0].focus();
+    fireEvent.click(demotes[0]);
+    await waitFor(() => expect(APIClient.board.moveMovie).toHaveBeenCalledTimes(2));
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [11, 12], stash: [10, 100] }),
+      bo,
+    ]);
+
     await waitFor(() => expect(named(document.activeElement)).toBe("Film 11"));
   });
 

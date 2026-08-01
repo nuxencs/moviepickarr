@@ -532,8 +532,14 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   focused node fires no blur, so the recovery keys on focus having reached the document
   body with the region still believing it holds focus — a click that moved focus somewhere
   real is a departure and is left alone. Where the move is a mutation, note the vacated
-  index in `onMutate` and land focus when the item is actually gone from the list, not
-  when the request returns: the two are separate round trips and SSE routinely wins.
+  index as the mutation starts and land focus when the item is actually gone from the
+  list, not when the request returns: the two are separate round trips and SSE routinely
+  wins.
+  A board-level per-move registry drops repeated activation while its request is pending,
+  leaving the control focusable without adding render state or losing ownership across a
+  filter, member switch, or route remount. The repeated activation reclaims focus
+  ownership. A failed request clears the landing only when that exact attempt still owns
+  it, so an older failure cannot erase a newer handoff.
 - **A live region announces the part worth interrupting for, not the whole line.** Where
   a status line mixes facts that change at different rates, split it: the visible span
   carries every clause and stays silent, and a second `.vis-hidden` `role="status"`

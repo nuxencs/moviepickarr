@@ -39,7 +39,13 @@ function movie(overrides: Partial<Movie> = {}): Movie {
 
 /** What both tabs do: open pushes an entry, every dismiss pops it, and the
  *  surface outlives the entry just long enough to play its exit. */
-function Subject({ films = [movie()] }: { films?: Movie[] } = {}) {
+function Subject({
+  films = [movie()],
+  deleteResult,
+}: {
+  films?: Movie[];
+  deleteResult?: Promise<void>;
+} = {}) {
   const { selected, isOpen, open, close, onClosed } = useMovieModal();
   return (
     <>
@@ -53,6 +59,11 @@ function Subject({ films = [movie()] }: { films?: Movie[] } = {}) {
           {(closeGesture) => (
             <>
               <h2>{selected.title}</h2>
+              {deleteResult && (
+                <button type="button" onClick={() => void deleteResult.then(close)}>
+                  Delete movie
+                </button>
+              )}
               <button type="button" onClick={closeGesture}>
                 Close
               </button>
@@ -64,8 +75,15 @@ function Subject({ films = [movie()] }: { films?: Movie[] } = {}) {
   );
 }
 
-function mount(path: typeof MOVIES | typeof STATS, films?: Movie[]) {
-  return renderWithProviders(<Subject films={films} />, { path, seed: () => {} });
+function mount(
+  path: typeof MOVIES | typeof STATS,
+  films?: Movie[],
+  deleteResult?: Promise<void>,
+) {
+  return renderWithProviders(<Subject films={films} deleteResult={deleteResult} />, {
+    path,
+    seed: () => {},
+  });
 }
 
 /** Long enough to outrun exitDelayMs(), whatever the motion tokens say. */
@@ -146,6 +164,33 @@ describe("the history stack", () => {
     // Each open consumed the entry it pushed, so one more Back leaves the
     // page instead of replaying three closed modals.
     expect(router.history.canGoBack()).toBe(false);
+  });
+
+  it("does not let a finished delete pop a newer modal entry", async () => {
+    let finishDelete!: () => void;
+    const deleteResult = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    const films = [movie(), movie({ movieID: 7, title: "Stalker" })];
+    const { router } = await mount(MOVIES, films, deleteResult);
+
+    fireEvent.click(poster("Possession"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete movie" }));
+
+    // Spend Possession's entry before its request completes, then open another
+    // record. The old completion owns neither the new modal nor its entry.
+    act(() => router.history.back());
+    await runExit();
+    fireEvent.click(poster("Stalker"));
+    const stalkerEntry = router.history.location.state.movieModal;
+
+    await act(async () => {
+      finishDelete();
+      await deleteResult;
+    });
+
+    expect(screen.getByRole("heading", { name: "Stalker" })).not.toBeNull();
+    expect(router.history.location.state.movieModal).toBe(stalkerEntry);
   });
 });
 

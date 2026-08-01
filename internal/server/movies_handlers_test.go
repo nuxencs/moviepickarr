@@ -176,6 +176,376 @@ func TestHandleEditMovie_UpdatesWatchedMovieWithWatchedAt(t *testing.T) {
 	}
 }
 
+func TestHandleEditMovie_DuplicateIMDbRollsBackWholeEdit(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+
+	user, err := userRepo.Create(ctx, "IMDb owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	duplicate, err := movieRepo.Add(ctx, "Duplicate", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create duplicate movie: %v", err)
+	}
+	target, err := movieRepo.Add(ctx, "Before", "pool", user.ID)
+	if err != nil {
+		t.Fatalf("create target movie: %v", err)
+	}
+
+	duplicateIMDb := "tt0000001"
+	if err := movieRepo.SetExternalIDs(ctx, duplicate.ID, nil, &duplicateIMDb); err != nil {
+		t.Fatalf("set duplicate identity: %v", err)
+	}
+	originalTMDB := 200
+	originalIMDb := "tt0000002"
+	if err := movieRepo.SetExternalIDs(ctx, target.ID, &originalTMDB, &originalIMDb); err != nil {
+		t.Fatalf("set target identity: %v", err)
+	}
+	originalWatchedAt := time.Date(2026, 2, 7, 13, 0, 0, 0, time.UTC)
+	if err := movieRepo.MarkAsWatched(ctx, target.ID, originalWatchedAt); err != nil {
+		t.Fatalf("mark target watched: %v", err)
+	}
+	const originalMarker = int64(1_700_000_000)
+	if _, err := dbConn.Write.ExecContext(ctx,
+		`INSERT INTO movie_metadata (movie_id, credits_refreshed_at) VALUES (?, ?)`,
+		target.ID, originalMarker,
+	); err != nil {
+		t.Fatalf("seed metadata marker: %v", err)
+	}
+	if _, err := dbConn.Write.ExecContext(ctx,
+		`CREATE UNIQUE INDEX test_movies_imdb_id_unique ON movies (imdb_id) WHERE imdb_id IS NOT NULL`,
+	); err != nil {
+		t.Fatalf("install IMDb uniqueness: %v", err)
+	}
+
+	cacheNow := time.Now().UTC()
+	h.setCachedStats("warm", statsResponse{SelectedWindow: "all-time"}, cacheNow)
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	body := fmt.Sprintf(
+		`{"title":"After","link":"https://www.imdb.com/title/%s/","watchedAt":"2026-02-08T16:45:00Z"}`,
+		duplicateIMDb,
+	)
+	req := httptest.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/movies/%d", target.ID),
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusConflict {
+		t.Fatalf("expected status 409, got %d", resp.StatusCode)
+	}
+
+	unchanged, err := movieRepo.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("fetch target after conflict: %v", err)
+	}
+	if unchanged.Title != "Before" {
+		t.Fatalf("title after conflict = %q, want Before", unchanged.Title)
+	}
+	if unchanged.WatchedAt == nil || !unchanged.WatchedAt.Equal(originalWatchedAt) {
+		t.Fatalf("watchedAt after conflict = %v, want %v", unchanged.WatchedAt, originalWatchedAt)
+	}
+	if unchanged.TMDBID == nil || *unchanged.TMDBID != originalTMDB ||
+		unchanged.IMDbID == nil || *unchanged.IMDbID != originalIMDb {
+		t.Fatalf("identity after conflict = %v/%v, want %d/%s",
+			unchanged.TMDBID, unchanged.IMDbID, originalTMDB, originalIMDb)
+	}
+
+	var marker int64
+	if err := dbConn.Read.QueryRowContext(ctx,
+		`SELECT credits_refreshed_at FROM movie_metadata WHERE movie_id = ?`, target.ID,
+	).Scan(&marker); err != nil {
+		t.Fatalf("read metadata marker: %v", err)
+	}
+	if marker != originalMarker {
+		t.Fatalf("metadata marker after conflict = %d, want %d", marker, originalMarker)
+	}
+	if _, ok := h.getCachedStats("warm", cacheNow); !ok {
+		t.Fatal("failed edit invalidated the stats cache")
+	}
+	select {
+	case got := <-client:
+		t.Fatalf("failed edit broadcast event %q", got.Type)
+	default:
+	}
+}
+
+func TestHandleEditMovie_StaleMarkerFailureRollsBackWholeEdit(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+
+	user, err := userRepo.Create(ctx, "Marker owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	target, err := movieRepo.Add(ctx, "Before", "pool", user.ID)
+	if err != nil {
+		t.Fatalf("create target movie: %v", err)
+	}
+	originalTMDB := 201
+	originalIMDb := "tt0000003"
+	if err := movieRepo.SetExternalIDs(ctx, target.ID, &originalTMDB, &originalIMDb); err != nil {
+		t.Fatalf("set target identity: %v", err)
+	}
+	originalWatchedAt := time.Date(2026, 2, 7, 14, 0, 0, 0, time.UTC)
+	if err := movieRepo.MarkAsWatched(ctx, target.ID, originalWatchedAt); err != nil {
+		t.Fatalf("mark target watched: %v", err)
+	}
+	const originalMarker = int64(1_700_000_001)
+	if _, err := dbConn.Write.ExecContext(ctx,
+		`INSERT INTO movie_metadata (movie_id, credits_refreshed_at) VALUES (?, ?)`,
+		target.ID, originalMarker,
+	); err != nil {
+		t.Fatalf("seed metadata marker: %v", err)
+	}
+	if _, err := dbConn.Write.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TRIGGER fail_movie_edit_stale_marker
+		BEFORE UPDATE OF credits_refreshed_at ON movie_metadata
+		WHEN OLD.movie_id = %d
+		BEGIN
+			SELECT RAISE(ABORT, 'forced stale marker failure');
+		END
+	`, target.ID)); err != nil {
+		t.Fatalf("install stale-marker failure: %v", err)
+	}
+
+	cacheNow := time.Now().UTC()
+	h.setCachedStats("warm", statsResponse{SelectedWindow: "all-time"}, cacheNow)
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/movies/%d", target.ID),
+		strings.NewReader(
+			`{"title":"After","link":"https://www.imdb.com/title/tt0000004/","watchedAt":"2026-02-08T17:45:00Z"}`,
+		),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", resp.StatusCode)
+	}
+
+	unchanged, err := movieRepo.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("fetch target after marker failure: %v", err)
+	}
+	if unchanged.Title != "Before" {
+		t.Fatalf("title after marker failure = %q, want Before", unchanged.Title)
+	}
+	if unchanged.WatchedAt == nil || !unchanged.WatchedAt.Equal(originalWatchedAt) {
+		t.Fatalf("watchedAt after marker failure = %v, want %v", unchanged.WatchedAt, originalWatchedAt)
+	}
+	if unchanged.TMDBID == nil || *unchanged.TMDBID != originalTMDB ||
+		unchanged.IMDbID == nil || *unchanged.IMDbID != originalIMDb {
+		t.Fatalf("identity after marker failure = %v/%v, want %d/%s",
+			unchanged.TMDBID, unchanged.IMDbID, originalTMDB, originalIMDb)
+	}
+
+	var marker int64
+	if err := dbConn.Read.QueryRowContext(ctx,
+		`SELECT credits_refreshed_at FROM movie_metadata WHERE movie_id = ?`, target.ID,
+	).Scan(&marker); err != nil {
+		t.Fatalf("read metadata marker: %v", err)
+	}
+	if marker != originalMarker {
+		t.Fatalf("metadata marker after failure = %d, want %d", marker, originalMarker)
+	}
+	if _, ok := h.getCachedStats("warm", cacheNow); !ok {
+		t.Fatal("failed edit invalidated the stats cache")
+	}
+	select {
+	case got := <-client:
+		t.Fatalf("failed edit broadcast event %q", got.Type)
+	default:
+	}
+}
+
+func TestHandleEditMovie_ResponseReadFailureRollsBack(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+
+	user, err := userRepo.Create(ctx, "Read owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	target, err := movieRepo.Add(ctx, "Before", "stash", user.ID)
+	if err != nil {
+		t.Fatalf("create target movie: %v", err)
+	}
+	imdbID := "tt0000005"
+	if err := movieRepo.SetExternalIDs(ctx, target.ID, nil, &imdbID); err != nil {
+		t.Fatalf("set target identity: %v", err)
+	}
+	if _, err := dbConn.Write.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TABLE movie_edit_read_failures (movie_id INTEGER NOT NULL);
+		CREATE TRIGGER fail_movie_edit_response_read
+		AFTER UPDATE OF title ON movies
+		WHEN NEW.id = %d AND NEW.title = 'Unreadable edit'
+		BEGIN
+			INSERT INTO movie_edit_read_failures (movie_id) VALUES (NEW.id);
+			DELETE FROM movies WHERE id = NEW.id;
+		END
+	`, target.ID)); err != nil {
+		t.Fatalf("install response-read failure: %v", err)
+	}
+
+	cacheNow := time.Now().UTC()
+	h.setCachedStats("warm", statsResponse{SelectedWindow: "all-time"}, cacheNow)
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/movies/%d", target.ID),
+		strings.NewReader(
+			`{"title":"Unreadable edit","link":"https://www.imdb.com/title/tt0000005/"}`,
+		),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", resp.StatusCode)
+	}
+
+	unchanged, err := movieRepo.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("fetch target after response-read failure: %v", err)
+	}
+	if unchanged.Title != "Before" {
+		t.Fatalf("title after response-read failure = %q, want Before", unchanged.Title)
+	}
+	if unchanged.IMDbID == nil || *unchanged.IMDbID != imdbID {
+		t.Fatalf("IMDb id after response-read failure = %v, want %s", unchanged.IMDbID, imdbID)
+	}
+
+	var markers int
+	if err := dbConn.Read.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM movie_edit_read_failures`,
+	).Scan(&markers); err != nil {
+		t.Fatalf("count response-read markers: %v", err)
+	}
+	if markers != 0 {
+		t.Fatalf("response-read failure left %d markers, want 0", markers)
+	}
+	if _, ok := h.getCachedStats("warm", cacheNow); !ok {
+		t.Fatal("failed edit invalidated the stats cache")
+	}
+	select {
+	case got := <-client:
+		t.Fatalf("failed edit broadcast event %q", got.Type)
+	default:
+	}
+}
+
+func TestHandleEditMovie_WatchedTitleInvalidatesStats(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	user, err := userRepo.Create(ctx, "Stats owner")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	target, err := movieRepo.Add(ctx, "Before", "pool", user.ID)
+	if err != nil {
+		t.Fatalf("create target movie: %v", err)
+	}
+	imdbID := "tt0000006"
+	if err := movieRepo.SetExternalIDs(ctx, target.ID, nil, &imdbID); err != nil {
+		t.Fatalf("set target identity: %v", err)
+	}
+	originalWatchedAt := time.Date(2026, 2, 7, 15, 0, 0, 0, time.UTC)
+	if err := movieRepo.MarkAsWatched(ctx, target.ID, originalWatchedAt); err != nil {
+		t.Fatalf("mark target watched: %v", err)
+	}
+
+	cacheNow := time.Now().UTC()
+	h.setCachedStats("warm", statsResponse{SelectedWindow: "all-time"}, cacheNow)
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/movies/%d", target.ID),
+		strings.NewReader(
+			`{"title":"After","link":"https://www.imdb.com/title/tt0000006/"}`,
+		),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if _, ok := h.getCachedStats("warm", cacheNow); ok {
+		t.Fatal("watched title edit left the stats cache warm")
+	}
+
+	updated, err := movieRepo.FindByID(ctx, target.ID)
+	if err != nil {
+		t.Fatalf("fetch updated target: %v", err)
+	}
+	if updated.Title != "After" {
+		t.Fatalf("title after edit = %q, want After", updated.Title)
+	}
+	if updated.WatchedAt == nil || !updated.WatchedAt.Equal(originalWatchedAt) {
+		t.Fatalf("watchedAt after title edit = %v, want %v", updated.WatchedAt, originalWatchedAt)
+	}
+
+	select {
+	case got := <-client:
+		if got.Type != "movie:updated" {
+			t.Fatalf("edit broadcast event %q, want movie:updated", got.Type)
+		}
+		payload, ok := got.Data.(fullMovie)
+		if !ok {
+			t.Fatalf("movie:updated payload type = %T, want fullMovie", got.Data)
+		}
+		if payload.Title != "After" {
+			t.Fatalf("movie:updated title = %q, want After", payload.Title)
+		}
+	default:
+		t.Fatal("successful edit did not broadcast movie:updated")
+	}
+	select {
+	case got := <-client:
+		t.Fatalf("successful edit broadcast extra event %q", got.Type)
+	default:
+	}
+}
+
 // postMove moves a movie as the given actor (userID). The actor is passed as the
 // session member header, since the endpoint no longer carries a user path id.
 func postMove(t *testing.T, app *fiber.App, userID, movieID int, target string) *http.Response {

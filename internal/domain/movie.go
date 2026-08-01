@@ -15,8 +15,6 @@ type MovieRepo interface {
 	CountByUserIDAndStatus(ctx context.Context, userID int, status string) (int, error)
 	AddToStash(ctx context.Context, title string, userID int, tmdbID *int, imdbID *string) (*Movie, error)
 	SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error
-	UpdateTitle(ctx context.Context, id int, title string) error
-	UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error
 	UpdateStatus(ctx context.Context, id int, status string) error
 	// UpdateStatusIf conditionally transitions a movie: it sets status=to only
 	// WHERE the row currently has status=from, returning the number of rows

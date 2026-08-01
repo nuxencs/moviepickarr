@@ -72,13 +72,6 @@ func (r *fakeMovieRepo) AddToStash(context.Context, string, int, *int, *string) 
 	panic("unexpected call")
 }
 
-func (r *fakeMovieRepo) UpdateTitle(context.Context, int, string) error {
-	panic("unexpected call")
-}
-
-func (r *fakeMovieRepo) UpdateWatchedAt(context.Context, int, time.Time) error {
-	panic("unexpected call")
-}
 func (r *fakeMovieRepo) UpdateStatus(context.Context, int, string) error { panic("unexpected call") }
 func (r *fakeMovieRepo) UpdateStatusIf(context.Context, int, string, string) (int64, error) {
 	panic("unexpected call")

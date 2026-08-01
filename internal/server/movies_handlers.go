@@ -177,56 +177,37 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 		watchedAt = &parsedUTC
 	}
 
-	ctx := c.UserContext()
-	movieRecord, err := h.movieService.Get(ctx, movieID)
-	if err != nil {
-		return writeError(c, err)
-	}
-	if movieRecord.AddedByID != actorID {
-		return writeNotAdder(c)
-	}
-
-	updatedMovie, err := h.movieService.Update(ctx, movieID, title, watchedAt)
-	if err != nil {
-		return writeError(c, err)
-	}
-
-	if watchedAt != nil {
-		h.invalidateStatsCache()
-	}
-
-	// If the link's IMDb identity changed, reset the ids (forcing a fresh
-	// reverse lookup) and re-enrich. Comparing extracted ids — not raw link
-	// strings — avoids re-enriching when an unchanged derived link is resubmitted.
 	newIMDb := extractIMDbID(link)
-	curIMDb := ""
-	if movieRecord.IMDbID != nil {
-		curIMDb = *movieRecord.IMDbID
+	ctx := c.UserContext()
+	updatedMovie, identityChanged, err := h.movieService.Edit(
+		ctx,
+		movieID,
+		actorID,
+		title,
+		newIMDb,
+		watchedAt,
+	)
+	if err != nil {
+		if errors.Is(err, domain.ErrForbidden) {
+			return writeNotAdder(c)
+		}
+		return writeError(c, err)
 	}
-	if newIMDb != curIMDb {
-		var imdbPtr *string
-		if newIMDb != "" {
-			imdbPtr = &newIMDb
-		}
-		if err := h.movieService.SetExternalIDs(ctx, movieID, nil, imdbPtr); err != nil {
-			return writeError(c, err)
-		}
-		// The enqueue below is in-memory; clearing the credits marker makes the
-		// periodic drain a reliable backstop if it is lost (queue full or
-		// restart) — otherwise the movie would keep serving and tallying the
-		// previous film's metadata and credits until the refresh TTL.
-		if err := h.movieMetadata.MarkEnrichmentStale(ctx, movieID); err != nil {
-			return writeError(c, err)
-		}
-		updatedMovie.TMDBID = nil
-		updatedMovie.IMDbID = imdbPtr
-		if h.enrichRunner != nil {
-			h.enrichRunner.Enqueue(movieID)
-		}
+
+	// Watched stats include the movie title as well as watched_at, so every
+	// successful edit of a watched row invalidates them.
+	if updatedMovie.Status == string(domain.MovieStatusWatched) {
+		h.invalidateStatsCache()
 	}
 
 	payload := toFullMovieBare(updatedMovie)
 	h.broker.Broadcast(event{Type: "movie:updated", Data: payload})
+
+	// Publish the committed edit before background work can publish its
+	// movies:enriched-batch follow-up.
+	if identityChanged && h.enrichRunner != nil {
+		h.enrichRunner.Enqueue(movieID)
+	}
 
 	return c.Status(fiber.StatusOK).JSON(payload)
 }

@@ -238,9 +238,12 @@
   `domain.ErrConflict` → HTTP 409. A stash add inserts the title and stable
   identity in one statement, then reads its response projection through the
   same writer transaction before commit. A duplicate `tmdbId` creates no row,
-  and a failed response read rolls the insert back. The enrichment worker
-  treats a tmdb-id conflict as non-fatal (metadata/credits still persist so the
-  row leaves the backlog).
+  and a failed response read rolls the insert back. An authored edit similarly
+  reads authorization and status, updates its title, optional watched time and
+  identity, marks its metadata stale, and reads its response on one writer
+  transaction. A uniqueness failure returns 409 without committing the other
+  edit fields. The enrichment worker treats an identity conflict as non-fatal
+  (metadata/credits still persist so the row leaves the backlog).
 - Migration files: `-- migrate:fk_off` on the first line makes the runner wrap
   the migration in the SQLite table-rebuild procedure (FKs off around the tx +
   `foreign_key_check` before commit). Version numbering has a permanent gap at
@@ -348,8 +351,11 @@ ingested). `cast` is in billing order; `crew` carries whitelisted jobs only.
 SSE payloads stay credits-free, like metadata.
 
 Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone). A
-manual/edit add still accepts a `link` in the request body, but only to extract
-the IMDb id from it — nothing is stored as a link.
+manual add or edit still accepts a `link` in the request body, but only to
+extract the IMDb id from it. Nothing is stored as a link. On edit, an unchanged
+IMDb id preserves the stored identity. A changed id clears the prior TMDB id,
+stores the requested IMDb id, and makes the metadata a backfill candidate in
+the same transaction.
 
 Enrichment (`EnrichOne`): if the movie already has a `tmdb_id` (search add /
 prior enrichment) it goes straight to `GET /3/movie/{tmdb_id}`; otherwise it
@@ -420,3 +426,5 @@ watched/edited/user-deleted **and** once per enrichment burst
 (`enrichRunner.onEnriched` → `invalidateStatsCache`, fired on each batch flush so
 the TTL stays useful during a backfill), since stats now depend on
 metadata/credits; the frontend hears the matching `movies:enriched-batch` SSE.
+Every successful edit of a watched movie invalidates after commit, including a
+title-only edit where `watchedAt` was omitted.

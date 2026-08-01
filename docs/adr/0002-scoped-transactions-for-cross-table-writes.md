@@ -49,6 +49,15 @@ therefore rolls back every effect of the insert, and no success response or
 event is emitted before commit. The generic `Add` helper remains for fixtures,
 but production code depends on the identified stash operation.
 
+Authored movie edits use another scoped operation. `EditMovie` reads the movie
+on a writer transaction, then applies ownership and watched-state checks to
+that record. The title, optional watched time, changed external identity, and
+metadata stale marker commit together. Its response read also uses the
+transaction. A failed identity conflict, stale-marker write, or response read
+therefore leaves the movie and its dependent metadata state unchanged. Stats
+cache invalidation, the `movie:updated` event, and enrichment enqueue all run
+after commit.
+
 The break-glass admin seed uses the same scoped seam. `SeedAdmin` first runs an
 authoritative name, archive-state, role, and local-login read on a writer
 transaction. When a new login needs a password hash, that call returns a
@@ -75,6 +84,9 @@ partial states do not become transactions under this decision.
   injection must prove rollback, not only returned errors.
 - A create operation that returns its inserted record keeps the response read
   inside the transaction when a failed read must also undo the insert.
+- A failed movie edit does not expose a new title, watched time, or identity
+  without its metadata stale marker and client invalidation. A successful
+  watched edit clears the stats cache before clients hear `movie:updated`.
 - A failed break-glass login insert rolls back both a fresh admin row and an
   adopted member's role promotion. Constraint errors still fail boot, but
   leave the roster and credentials unchanged for the next retry.

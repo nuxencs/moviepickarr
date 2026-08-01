@@ -556,9 +556,10 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 
 	result, err := d.pool.Write.ExecContext(ctx, query, tmdbID, imdbID, id)
 	if err != nil {
-		// movies_tmdb_id_unique: another row already carries this TMDB id.
+		// Stable identities are unique whenever present. Keep this message
+		// neutral because either the TMDB or IMDb index can reject the write.
 		if db.IsUniqueViolation(err) {
-			return fmt.Errorf("%w: another movie already has this tmdb id", domain.ErrConflict)
+			return fmt.Errorf("%w: another movie already has this identity", domain.ErrConflict)
 		}
 		return err
 	}
@@ -574,42 +575,95 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 	return nil
 }
 
-func (d *SqliteMoviesRepository) UpdateTitle(ctx context.Context, id int, title string) error {
-	query := "UPDATE movies SET title = ? WHERE id = ?"
-
-	result, err := d.pool.Write.ExecContext(ctx, query, title, id)
+// EditMovie commits one authored edit as a unit. The initial movie read owns
+// authorization, status validation, and identity comparison; the final read
+// owns the response. Both run on tx so neither can observe another writer's
+// partial command.
+func (d *SqliteMoviesRepository) EditMovie(
+	ctx context.Context,
+	movieID, actorID int,
+	title, imdbID string,
+	watchedAt *time.Time,
+) (*domain.Movie, bool, error) {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	current, err := scanMovie(tx.QueryRowContext(ctx, movieSelect+" WHERE m.id = ?", movieID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, movieID)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if current.AddedByID != actorID {
+		return nil, false, domain.ErrForbidden
+	}
+	if watchedAt != nil && current.Status != string(domain.MovieStatusWatched) {
+		return nil, false, domain.ErrInvalidInput
 	}
 
+	currentIMDb := ""
+	if current.IMDbID != nil {
+		currentIMDb = *current.IMDbID
+	}
+	identityChanged := imdbID != currentIMDb
+
+	query := "UPDATE movies SET title = ?"
+	args := []any{title}
+	if watchedAt != nil {
+		query += ", watched_at = ?"
+		args = append(args, db.ToUnix(watchedAt.UTC()))
+	}
+	if identityChanged {
+		query += ", tmdb_id = NULL, imdb_id = ?"
+		if imdbID == "" {
+			args = append(args, nil)
+		} else {
+			args = append(args, imdbID)
+		}
+	}
+	query += " WHERE id = ?"
+	args = append(args, movieID)
+
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		if db.IsUniqueViolation(err) {
+			return nil, false, fmt.Errorf("%w: another movie already has this identity", domain.ErrConflict)
+		}
+		return nil, false, err
+	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return nil, false, err
 	}
 	if affected == 0 {
-		return sql.ErrNoRows
+		return nil, false, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, movieID)
 	}
 
-	return nil
-}
+	if identityChanged {
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE movie_metadata SET credits_refreshed_at = NULL WHERE movie_id = ?",
+			movieID,
+		); err != nil {
+			return nil, false, err
+		}
+	}
 
-func (d *SqliteMoviesRepository) UpdateWatchedAt(ctx context.Context, id int, watchedAt time.Time) error {
-	query := "UPDATE movies SET watched_at = ? WHERE id = ?"
-
-	result, err := d.pool.Write.ExecContext(ctx, query, db.ToUnix(watchedAt), id)
+	updated, err := scanMovie(tx.QueryRowContext(ctx, movieSelect+" WHERE m.id = ?", movieID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, movieID)
+	}
 	if err != nil {
-		return err
+		return nil, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, false, err
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
+	return updated, identityChanged, nil
 }
 
 func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, status string) error {

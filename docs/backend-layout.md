@@ -38,7 +38,7 @@
 - `internal/server/errors.go`: centralized domain-to-HTTP error mapping.
 - `internal/server/tmdb.go`: TMDB API client adapter (search, reverse lookup + details with rate-limit/retry, and `DiscoverPopularPosters` on `/discover/movie` for the poster wall).
 - `internal/server/poster_wall.go`: the public poster-wall cache + endpoint. An in-memory `[]string` of up to 20 poster paths (popularity order, null posters dropped), warmed once in a background goroutine on boot and refreshed every 7 days, keeping the last good list on a failed warm. Nil when no `TMDB_API_KEY` (mirrors the `enrichRunner` guard); `GET /auth/poster-wall` then serves `[]`. The route sits ahead of `requireSession` beside `/auth/config`, carries no secrets, and rides the `csrfGuard` safe-method exemption.
-- `internal/server/enrichment.go`: TMDB enrichment use case (`EnrichOne`: link → IMDb id → reverse lookup → details → upsert).
+- `internal/server/enrichment.go`: TMDB enrichment use case (`EnrichOne`: stored TMDB id → details, or stored IMDb id → reverse lookup → details, then guarded upsert).
 - `internal/server/enrich_worker.go`: background enrichment worker (queue, rate limiter, backfill/refresh drain, config).
 - `internal/server/events.go`: SSE broker.
 - `internal/server/auth_middleware.go`: the request-time auth chain. `csrfGuard`
@@ -382,13 +382,15 @@ ingested). `cast` is in billing order; `crew` carries whitelisted jobs only.
 SSE payloads stay credits-free, like metadata.
 
 Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone). A
-manual add or edit still accepts a `link` in the request body, but only to
-extract the IMDb id from it. Nothing is stored as a link. On edit, an unchanged
-IMDb id preserves the stored identity. A changed id clears the prior TMDB id,
-stores the requested IMDb id, and deletes the prior film's metadata and credit
-joins in the same transaction. The missing metadata row keeps the movie in the
-backfill set even when the live enrichment worker is disabled. Shared people
-remain available to other movies.
+manual add or edit accepts `link` only when it is an exact HTTPS IMDb title or
+TMDB movie URL. The handler parses it into a one-provider identity target;
+nothing is stored as a link. Other links return 400 before any repository
+write. On edit, a target matching either stored provider preserves both stored
+ids, metadata, and credit joins. A different target replaces the external
+identity with the selected provider and deletes the prior film's metadata and
+credit joins in the same transaction. The missing metadata row keeps the movie
+in the backfill set even when the live enrichment worker is disabled. Shared
+people remain available to other movies.
 
 Enrichment (`EnrichOne`): if the movie already has a `tmdb_id` (search add /
 prior enrichment) it goes straight to `GET /3/movie/{tmdb_id}`; otherwise it

@@ -238,6 +238,8 @@ func TestMovieLinkDerivation(t *testing.T) {
 	t.Parallel()
 
 	imdb := "tt0133093"
+	legacyIMDb := "  TT7654000  "
+	invalidIMDb := "not-an-imdb-id"
 	tmdb := 603
 	empty := ""
 
@@ -247,6 +249,8 @@ func TestMovieLinkDerivation(t *testing.T) {
 		want  string
 	}{
 		{"imdb preferred over tmdb", domain.Movie{IMDbID: &imdb, TMDBID: &tmdb}, "https://www.imdb.com/title/tt0133093/"},
+		{"legacy imdb is canonicalized", domain.Movie{IMDbID: &legacyIMDb}, "https://www.imdb.com/title/tt7654000/"},
+		{"invalid imdb falls through to tmdb", domain.Movie{IMDbID: &invalidIMDb, TMDBID: &tmdb}, "https://www.themoviedb.org/movie/603"},
 		{"tmdb when no imdb", domain.Movie{TMDBID: &tmdb}, "https://www.themoviedb.org/movie/603"},
 		{"empty imdb falls through to tmdb", domain.Movie{IMDbID: &empty, TMDBID: &tmdb}, "https://www.themoviedb.org/movie/603"},
 		{"no identity yields empty", domain.Movie{}, ""},

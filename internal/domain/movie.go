@@ -85,6 +85,15 @@ type MovieIdentity struct {
 	IMDbID *string
 }
 
+// MovieIdentityTarget is the one provider identity requested by an authored
+// edit. Exactly one field must be set. Unlike MovieIdentity, which snapshots
+// every known id for enrichment staleness, this is a selector: matching its
+// provider preserves all stored ids; a different target replaces them.
+type MovieIdentityTarget struct {
+	TMDBID *int
+	IMDbID *string
+}
+
 // MovieEnrichmentWrite carries one complete enrichment commit. Expected is the
 // identity observed before remote TMDB work; Resolved and the derived rows may
 // be stored only while that identity still matches.

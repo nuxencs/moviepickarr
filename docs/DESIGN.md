@@ -90,8 +90,10 @@ old shadcn primitives.
   Hover brightens (`filter: brightness(1.06)`, no lift); `:active` presses
   (`translateY(1px) scale(0.99)`). Verb+object labels. Buttons deliberately do **not**
   lift on hover — the press on `:active` is the only positional feedback.
-- **Inputs:** `.field` — a 42px filled wrapper with a leading icon and gold
-  focus-within border. All text inputs use this; there is no bare/hollow input style.
+- Inputs use `.field`, a 42px filled wrapper with a leading icon and gold
+  focus-within border. Invalid inputs set `aria-invalid` and `data-invalid`.
+  `.fieldgroup` keeps the field and its specific `.field-error` together, with
+  `aria-describedby` linking the input to the message. There is no bare input style.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
 - **Section head:** `.sec-head` holds a `.sec-title` (the `h2` plus its data) on the left
   and the section's controls on the right. The data slot is mono `--ink-3` text: a count

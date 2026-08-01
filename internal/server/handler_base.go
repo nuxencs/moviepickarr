@@ -108,18 +108,6 @@ func sanitizeInput(input string) string {
 	return strings.TrimSpace(input)
 }
 
-func sanitizeLink(link string) string {
-	link = strings.TrimSpace(link)
-
-	if strings.Contains(strings.ToLower(link), "imdb.com") {
-		if imdbID := extractIMDbID(link); imdbID != "" {
-			return "https://www.imdb.com/title/" + imdbID + "/"
-		}
-	}
-
-	return link
-}
-
 func parseInt(raw string) (int, bool) {
 	if raw == "" {
 		return 0, false

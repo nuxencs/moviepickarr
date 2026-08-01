@@ -1,7 +1,8 @@
 import { CalendarClockIcon, FilmIcon, LinkIcon, Loader2Icon, XIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import { Modal } from "@/components/moviepickarr/Modal";
+import { isMovieLink } from "@/components/moviepickarr/movieLink";
 
 interface EditMovieDialogSubmit {
   title: string;
@@ -64,7 +65,9 @@ export function EditMovieDialog({
 }: EditMovieDialogProps) {
   const [title, setTitle] = useState(initialTitle);
   const [link, setLink] = useState(initialLink);
+  const [linkTouched, setLinkTouched] = useState(false);
   const [watchedAtLocal, setWatchedAtLocal] = useState(toLocalDateTimeInputValue(initialWatchedAt));
+  const linkErrorID = useId();
 
   useEffect(() => {
     if (!isOpen) {
@@ -73,14 +76,20 @@ export function EditMovieDialog({
 
     setTitle(initialTitle);
     setLink(initialLink);
+    setLinkTouched(false);
     setWatchedAtLocal(toLocalDateTimeInputValue(initialWatchedAt));
   }, [initialLink, initialTitle, initialWatchedAt, isOpen]);
 
   const watchedAtISO = useMemo(() => toISODateTime(watchedAtLocal), [watchedAtLocal]);
   const titleValue = title.trim();
   const linkValue = link.trim();
+  const isValidLink = isMovieLink(linkValue);
+  let linkError: string | undefined;
+  if (linkTouched && !isValidLink) {
+    linkError = linkValue ? "Use an IMDb or TMDB movie URL." : "Movie link is required.";
+  }
   const isInvalidWatchedAt = allowWatchedAtEdit && watchedAtLocal.trim().length > 0 && !watchedAtISO;
-  const isSubmitDisabled = isSaving || !titleValue || !linkValue || isInvalidWatchedAt;
+  const isSubmitDisabled = isSaving || !titleValue || !isValidLink || isInvalidWatchedAt;
 
   if (!isOpen) {
     return null;
@@ -119,18 +128,34 @@ export function EditMovieDialog({
                 disabled={isSaving}
               />
             </label>
-            <label className="field">
-              <LinkIcon />
-              <input
-                type="url"
-                name="movie-link"
-                aria-label="Movie link"
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                placeholder="Movie link"
-                disabled={isSaving}
-              />
-            </label>
+            <div className="fieldgroup">
+              <label className="field" data-invalid={linkError ? true : undefined}>
+                <LinkIcon />
+                <input
+                  type="url"
+                  name="movie-link"
+                  aria-label="Movie link"
+                  aria-required="true"
+                  aria-invalid={linkError ? true : undefined}
+                  aria-describedby={linkError ? linkErrorID : undefined}
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  onBlur={() => setLinkTouched(true)}
+                  placeholder="Movie link"
+                  inputMode="url"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  required
+                  disabled={isSaving}
+                />
+              </label>
+              {linkError && (
+                <p id={linkErrorID} className="field-error" role="alert">
+                  {linkError}
+                </p>
+              )}
+            </div>
             {allowWatchedAtEdit && (
               <label className="field">
                 <CalendarClockIcon />

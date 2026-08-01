@@ -38,7 +38,8 @@ type editMovieStore interface {
 	EditMovie(
 		ctx context.Context,
 		movieID, actorID int,
-		title, imdbID string,
+		title string,
+		target domain.MovieIdentityTarget,
 		watchedAt *time.Time,
 	) (movie *domain.Movie, identityChanged bool, err error)
 }
@@ -355,10 +356,11 @@ func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
 func (s *Service) Edit(
 	ctx context.Context,
 	movieID, actorID int,
-	title, imdbID string,
+	title string,
+	target domain.MovieIdentityTarget,
 	watchedAt *time.Time,
 ) (*domain.Movie, bool, error) {
-	return s.movieRepo.EditMovie(ctx, movieID, actorID, title, imdbID, watchedAt)
+	return s.movieRepo.EditMovie(ctx, movieID, actorID, title, target, watchedAt)
 }
 
 func (s *Service) Get(ctx context.Context, id int) (*domain.Movie, error) {

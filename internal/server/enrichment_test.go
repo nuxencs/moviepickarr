@@ -74,9 +74,6 @@ func TestIMDbExtractionNormalizesCase(t *testing.T) {
 	if got := extractIMDbID(link); got != "tt0133093" {
 		t.Fatalf("extract IMDb id = %q, want tt0133093", got)
 	}
-	if got := sanitizeLink(link); got != "https://www.imdb.com/title/tt0133093/" {
-		t.Fatalf("sanitize IMDb link = %q, want canonical link", got)
-	}
 }
 
 // --- tests -----------------------------------------------------------------

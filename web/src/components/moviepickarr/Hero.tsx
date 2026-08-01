@@ -4,12 +4,13 @@ import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
 import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { APIClient, ApiError } from "@/api/APIClient";
+import { setCachedDrawInProgress } from "@/api/poolStateCache";
 import {
   MoviesGetCurrentQueryOptions,
   MoviesGetPoolQueryOptions,
   SettingsGetNextUpQueryOptions,
 } from "@/api/queries";
-import { MoviesKeys, SettingsKeys } from "@/api/query_keys";
+import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
 import { drawAwaitingReveal } from "@/components/moviepickarr/drawMachine";
@@ -116,6 +117,7 @@ export function Hero() {
     // revealed (see the `drawing` effect below).
     onMutate: () => setDrawing(true),
     onSuccess: (movie) => {
+      setCachedDrawInProgress(queryClient, true);
       // No toast here — the reel itself is the draw feedback; a "Movie drawn"
       // toast popping while the reel is still spinning just competes with it.
       // Fallback if the clicker's own SSE event drops: feed the machine from
@@ -139,11 +141,14 @@ export function Hero() {
     onMutate: () => setMarking(true),
     onSuccess: () => {
       toast.success("Marked as watched");
+      setCachedDrawInProgress(queryClient, false);
       // Clear the current draw ourselves instead of waiting on the SSE
       // movie:watched round-trip — keeps the hero transition snappy and self-
       // sufficient if the stream lags. (The SSE event still re-invalidates; the
       // duplicate refetch is a harmless no-op once current is already null.)
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+      void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
     },
     onError: (err) => {
       setMarking(false);

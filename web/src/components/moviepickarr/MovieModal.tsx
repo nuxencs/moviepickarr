@@ -1,14 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ExternalLinkIcon, PencilIcon, Trash2Icon, XIcon } from "lucide-react";
-import { Fragment, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
-import { MeQueryOptions, MovieDetailQueryOptions, SettingsGetPoolLockQueryOptions } from "@/api/queries";
+import { MeQueryOptions, MovieDetailQueryOptions, SettingsGetPoolStateQueryOptions } from "@/api/queries";
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
-import { drawStore } from "@/components/moviepickarr/drawStore";
 import { backdropBg, backdropUrl, externalLinks, fullDate, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/moviepickarr/lib";
 import { Modal } from "@/components/moviepickarr/Modal";
 import { isSelf } from "@/components/moviepickarr/ownership";
@@ -131,23 +130,37 @@ function MovieActions({
   /** Delete lands on the film's record, so its success takes the record away:
    *  same path as every other dismissal, so the history entry is popped once. */
   onDeleted,
+  recordStateKnown,
 }: {
   movie: Movie;
   open: boolean;
   onDeleted: () => void;
+  /** False while the lifecycle-bearing detail is refreshing or failed. */
+  recordStateKnown: boolean;
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const { data: isLocked, isPending: lockPending } = useQuery(SettingsGetPoolLockQueryOptions());
-  // The pool is frozen server-side while a draw is unrevealed — the winner is
-  // still shown as a pool tile — so the refusal is restated here rather than
-  // letting a confirmed delete come back 409. Same store the boards read.
-  const drawInFlight = useSyncExternalStore(
-    drawStore.subscribe,
-    () => drawStore.getState().phase !== "idle",
-  );
-  const refusal = deleteRefusalOf({ status: movie.status, isLocked: !!isLocked, drawInFlight });
+  // Only pooled films need either pool gate. Stash deletes ignore both, while
+  // current and watched films never offer Delete. This also avoids a settings
+  // read when the modal opens on an unrelated lifecycle state.
+  const needsPoolState = movie.status === "pool";
+  const {
+    data: poolState,
+    isError: poolStateError,
+    isFetching: poolStateFetching,
+  } = useQuery(SettingsGetPoolStateQueryOptions(needsPoolState));
+  const poolStateKnown =
+    !needsPoolState ||
+    (poolState !== undefined && !poolStateError && !poolStateFetching);
+  const isLocked = !!poolState?.poolLocked;
+  const drawInFlight = !!poolState?.drawInProgress;
+  const refusal = deleteRefusalOf({
+    status: movie.status,
+    isLocked: !!isLocked,
+    drawInFlight,
+    stateKnown: recordStateKnown && poolStateKnown,
+  });
   const label = deleteLabel(refusal);
 
   const editMutation = useMutation({
@@ -180,13 +193,10 @@ function MovieActions({
         Edit
       </button>
 
-      {/* The lock is a second query and a deep-linked record can land before it.
-          Until it answers, an unlocked default would offer a live delete on a
-          pooled film in a closed round, and the refusal would arrive as a toast
-          after the destructive confirm — which is the one report the round's own
-          rules are not supposed to need. Waiting is the same wait the block is
-          already making for the status, and it is over in a frame. */}
-      {isDeletable(movie.status) && !lockPending && (
+      {/* Keep the control in place while either lifecycle read is unknown.
+          Its authored refusal prevents a stale open default from reaching the
+          destructive confirmation. */}
+      {isDeletable(movie.status) && (
         <button
           type="button"
           className="moviemodal__act moviemodal__act--danger"
@@ -250,7 +260,18 @@ export function MovieModal({
   // full record on open. `movie` (the tile's lean object) renders instantly while
   // the detail loads, then the enriched fields fill in. SSE enrichment events
   // invalidate this query, so an open modal updates live too.
-  const { data: detail, isPending } = useQuery(MovieDetailQueryOptions(movie.movieID));
+  const {
+    data: detail,
+    error: detailError,
+    isError: detailIsError,
+    isFetching: detailIsFetching,
+    isPending,
+  } = useQuery(MovieDetailQueryOptions(movie.movieID));
+  const detailNotFound =
+    (detailError as { status?: unknown } | null)?.status === 404;
+  useEffect(() => {
+    if (open && detailNotFound) onRequestClose();
+  }, [detailNotFound, onRequestClose, open]);
   const m = detail ?? movie;
   // Heavy fields (overview/credits/cast) live only in the detail payload; while
   // it loads, the lean tile object lacks them — show skeletons in their place so
@@ -258,6 +279,7 @@ export function MovieModal({
   // that's genuinely empty (query settled, not pending) renders nothing rather
   // than a perma-skeleton; a full list object (pool) shows its data immediately.
   const detailLoading = isPending;
+  const recordStateKnown = !detailIsFetching && !detailIsError;
 
   const { data: me } = useQuery(MeQueryOptions());
   // Both actions are adder-only server-side, so the block belongs to the adder
@@ -332,7 +354,14 @@ export function MovieModal({
                     </div>
                   )}
 
-                  {canAct && <MovieActions movie={m} open={open} onDeleted={onRequestClose} />}
+                  {canAct && (
+                    <MovieActions
+                      movie={m}
+                      open={open}
+                      onDeleted={onRequestClose}
+                      recordStateKnown={recordStateKnown}
+                    />
+                  )}
                 </div>
               </div>
 

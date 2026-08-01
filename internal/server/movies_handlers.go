@@ -535,7 +535,8 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 		h.log.Error().Err(err).Msg("failed to advance next up")
 	}
 
-	// MarkCurrentAsWatched cleared the draw and its pending auto-reveal.
+	// MarkCurrentAsWatched revealed an unrevealed reel, then cleared the draw
+	// and its pending auto-reveal.
 	h.invalidateStatsCache()
 
 	payload := toFullMovieBare(watched)
@@ -569,7 +570,7 @@ func (h *handler) handleGetMovie(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
-	movieRecord, err := h.movieService.Get(ctx, movieID)
+	movieRecord, err := h.movieService.GetForDisplay(ctx, movieID)
 	if err != nil {
 		return writeError(c, err)
 	}

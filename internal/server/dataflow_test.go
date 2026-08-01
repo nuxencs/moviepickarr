@@ -317,6 +317,40 @@ func TestHandleRevealCurrentMovie_CancelsServerAutoReveal(t *testing.T) {
 	}
 }
 
+// Watching before the reel lands is a terminal reveal too. Other clients may
+// still be animating, so they need the reveal frame before the watched frame.
+func TestHandleWatchCurrentMovie_RevealsUnrevealedDraw(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		AutoRevealDelay: time.Hour,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
+
+	user, err := userRepo.Create(ctx, "Mara")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	seedPoolAndDraw(t, app, movieRepo, user.ID, "Moon", "Sunshine")
+	watchReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil)
+	if resp, err := app.Test(watchReq, -1); err != nil || resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("watch: err=%v status=%v", err, resp.StatusCode)
+	}
+
+	if got := countEvents(client, "movie:revealed", 100*time.Millisecond); got != 1 {
+		t.Fatalf("expected exactly 1 movie:revealed before watched, got %d", got)
+	}
+	if _, ok := h.movieService.ActiveDraw(); ok {
+		t.Fatal("watch left an active draw behind")
+	}
+}
+
 // The draw must not leak through the pool reads. DrawRandom flips the winner to
 // "current" straight away, so before this hold every pool read dropped the tile
 // mid-spin: reload the page during the reel (or open the board on a second
@@ -386,11 +420,57 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 		return ids
 	}
 
+	detailStatus := func(movieID int) domain.MovieStatus {
+		t.Helper()
+		resp, err := app.Test(
+			httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/movies/%d", movieID), nil),
+			-1,
+		)
+		if err != nil || resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("get movie detail: err=%v status=%v", err, resp.StatusCode)
+		}
+		var movie struct {
+			Status domain.MovieStatus `json:"status"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&movie); err != nil {
+			t.Fatalf("decode movie detail: %v", err)
+		}
+		return movie.Status
+	}
+
+	poolState := func() struct {
+		PoolLocked     bool `json:"poolLocked"`
+		DrawInProgress bool `json:"drawInProgress"`
+	} {
+		t.Helper()
+		resp, err := app.Test(
+			httptest.NewRequest(http.MethodGet, "/api/v1/settings/pool-lock", nil),
+			-1,
+		)
+		if err != nil || resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("get pool state: err=%v status=%v", err, resp.StatusCode)
+		}
+		var state struct {
+			PoolLocked     bool `json:"poolLocked"`
+			DrawInProgress bool `json:"drawInProgress"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+			t.Fatalf("decode pool state: %v", err)
+		}
+		return state
+	}
+
 	if got := poolIDs(); !slices.Contains(got, current.ID) || len(got) != 3 {
 		t.Fatalf("pool during the draw = %v, want all 3 seeded movies incl. the winner %d", got, current.ID)
 	}
 	if got := boardPoolIDs(); !slices.Contains(got, current.ID) || len(got) != 3 {
 		t.Fatalf("board pools during the draw = %v, want all 3 incl. the winner %d", got, current.ID)
+	}
+	if got := detailStatus(current.ID); got != domain.MovieStatusPool {
+		t.Fatalf("winner detail status during the draw = %q, want pool", got)
+	}
+	if got := poolState(); !got.DrawInProgress {
+		t.Fatal("pool state did not report the held draw")
 	}
 
 	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
@@ -403,6 +483,12 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 	}
 	if got := boardPoolIDs(); slices.Contains(got, current.ID) || len(got) != 2 {
 		t.Fatalf("board pools after the reveal = %v, want the 2 remaining without %d", got, current.ID)
+	}
+	if got := detailStatus(current.ID); got != domain.MovieStatusCurrent {
+		t.Fatalf("winner detail status after the reveal = %q, want current", got)
+	}
+	if got := poolState(); got.DrawInProgress {
+		t.Fatal("pool state still reports a draw after reveal")
 	}
 }
 

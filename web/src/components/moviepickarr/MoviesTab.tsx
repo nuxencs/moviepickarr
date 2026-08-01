@@ -8,7 +8,7 @@ import {
   MeQueryOptions,
   MoviesGetPoolQueryOptions,
   MoviesGetWatchedQueryOptions,
-  SettingsGetPoolLockQueryOptions,
+  SettingsGetPoolStateQueryOptions,
 } from "@/api/queries";
 
 import { EditMovieDialog } from "@/components/EditMovieDialog";
@@ -40,7 +40,8 @@ type WatchedView = "grid" | "list";
 export function MoviesTab() {
   const { data: pooled, isPending: poolPending, isError: poolError } = useQuery(MoviesGetPoolQueryOptions());
   const { data: watched, isPending: watchedPending, isError: watchedError } = useQuery(MoviesGetWatchedQueryOptions());
-  const { data: isLocked } = useQuery(SettingsGetPoolLockQueryOptions());
+  const { data: poolState } = useQuery(SettingsGetPoolStateQueryOptions());
+  const isLocked = !!poolState?.poolLocked;
   const { data: me } = useQuery(MeQueryOptions());
   // Locking the pool is admin-only server-side; disable (don't hide) the toggle
   // for everyone else, matching the turn gate's treatment on the draw controls.

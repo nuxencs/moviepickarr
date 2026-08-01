@@ -19,21 +19,43 @@ describe("the invalidation table", () => {
   });
 
   it("movie:drawn holds the pool for the draw machine to release", () => {
-    expect(has(SSE_INVALIDATIONS["movie:drawn"], MoviesKeys.listpool())).toBe(false);
-    expect(has(SSE_INVALIDATIONS["movie:drawn"], MoviesKeys.current())).toBe(true);
-    expect(has(SSE_INVALIDATIONS["movie:drawn"], SettingsKeys.nextUp())).toBe(true);
+    const row = SSE_INVALIDATIONS["movie:drawn"];
+    expect(has(row, MoviesKeys.listpool())).toBe(false);
+    expect(has(row, MoviesKeys.current())).toBe(true);
+    expect(has(row, SettingsKeys.nextUp())).toBe(true);
+    expect(has(row, SettingsKeys.poolLock())).toBe(true);
   });
 
   it("a reveal releases the pool the server held for the reel", () => {
     // The server hands the drawn movie back in every pool read until the reveal,
     // so the refresh has to happen when the reveal lands — including on clients
     // that never ran a reel and have no land of their own to hook.
-    expect(has(SSE_INVALIDATIONS["movie:revealed"], MoviesKeys.listpool())).toBe(true);
+    const row = SSE_INVALIDATIONS["movie:revealed"];
+    for (const key of [MoviesKeys.listpool(), UsersKeys.list(), SettingsKeys.poolLock()]) {
+      expect(has(row, key)).toBe(true);
+    }
   });
 
-  it("a watched movie stales stats and the watched-derived filter options", () => {
+  it.each([
+    "movie:deleted",
+    "movie:moved",
+    "movie:revealed",
+    "movie:watched",
+  ] as const)("%s refreshes cached details after its lifecycle change", (type) => {
+    expect(has(SSE_INVALIDATIONS[type], MoviesKeys.details())).toBe(true);
+  });
+
+  it("watching a held winner releases every pool projection", () => {
     const row = SSE_INVALIDATIONS["movie:watched"];
-    for (const key of [MoviesKeys.current(), MoviesKeys.listwatched(), MoviesKeys.filterOptions(), StatsKeys.all]) {
+    for (const key of [
+      UsersKeys.list(),
+      MoviesKeys.listpool(),
+      MoviesKeys.current(),
+      MoviesKeys.listwatched(),
+      MoviesKeys.filterOptions(),
+      SettingsKeys.poolLock(),
+      StatsKeys.all,
+    ]) {
       expect(has(row, key)).toBe(true);
     }
   });

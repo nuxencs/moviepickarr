@@ -12,10 +12,10 @@
    Typed as Record<SSEEventType, …>, so adding an event type without deciding
    its invalidations is a compile error. Draw events additionally drive the
    draw machine (see useSSE); their rows here carry only the cache side. The
-   pool key is the one special case: its refresh is HELD while a reel is in
-   flight (the post-draw pool no longer holds the winner, and refetching it
-   mid-spin would spoil the reveal), the draw machine releases it on land,
-   which is why "movie:drawn" does not list the pool here.
+   pool key is the one special case: the server already keeps the winner in
+   every pool read until reveal, so a draw does not stale the visible list.
+   The draw machine still owns its land-time refresh for clients already
+   animating, which is why "movie:drawn" does not list the pool here.
    ============================================================ */
 
 import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
@@ -32,8 +32,8 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
   "user:deleted": [UsersKeys.list(), UsersKeys.roster(), MoviesKeys.filterOptions(), StatsKeys.all],
 
   "movie:added": [UsersKeys.list(), MoviesKeys.listpool()],
-  "movie:deleted": [UsersKeys.list(), MoviesKeys.listpool()],
-  "movie:moved": [UsersKeys.list(), MoviesKeys.listpool()],
+  "movie:deleted": [UsersKeys.list(), MoviesKeys.listpool(), MoviesKeys.details()],
+  "movie:moved": [UsersKeys.list(), MoviesKeys.listpool(), MoviesKeys.details()],
 
   "movie:updated": [
     UsersKeys.list(),
@@ -60,21 +60,38 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
   ],
 
   // The pool is deliberately absent: the draw machine holds its refresh until
-  // the reel lands (see the header comment).
-  "movie:drawn": [UsersKeys.list(), MoviesKeys.current(), SettingsKeys.nextUp()],
+  // the reel lands (see the header comment). Pool state is separate from that
+  // animation: reduced-motion and one-candidate clients still need the
+  // server-owned mutation gate immediately.
+  "movie:drawn": [
+    UsersKeys.list(),
+    MoviesKeys.current(),
+    SettingsKeys.poolLock(),
+    SettingsKeys.nextUp(),
+  ],
 
   // The reveal is when the server stops holding the winner in the pool (it
   // hands the drawn movie back in every pool read until then, so a missing tile
   // can't spoil the reel). Clients that never ran a reel — reduced motion, a
   // lone candidate — have no land to refresh on, and a local confirm can race
   // its own POST, so the broadcast is the one moment every client can trust.
-  "movie:revealed": [MoviesKeys.listpool()],
+  "movie:revealed": [
+    UsersKeys.list(),
+    MoviesKeys.listpool(),
+    MoviesKeys.details(),
+    SettingsKeys.poolLock(),
+  ],
 
-  // A newly-watched movie enters the watched-derived filter options.
+  // Watching is terminal even if this client missed the preceding reveal
+  // frame, so this row also releases every pool projection and mutation gate.
   "movie:watched": [
+    UsersKeys.list(),
+    MoviesKeys.listpool(),
     MoviesKeys.current(),
     MoviesKeys.listwatched(),
+    MoviesKeys.details(),
     MoviesKeys.filterOptions(),
+    SettingsKeys.poolLock(),
     StatsKeys.all,
   ],
 

@@ -24,11 +24,12 @@ export interface Movie {
     addedByName: string;
     watchedAt?: string;
 
-    // The film's real place in the app, carried by the detail payload only
-    // (GET /movies/:id, current, pool). A lean list tile has no status, so it
+    // The film's client-visible place in the app, carried by the detail payload
+    // only (GET /movies/:id, current, pool). The server keeps a held winner
+    // projected as pooled until reveal. A lean list tile has no status, so it
     // is absent on the tile object the modal renders while its detail request
-    // is in flight: read it the way cast and overview are read, as a field
-    // that arrives with the detail.
+    // is in flight: read it the way cast and overview are read, as a field that
+    // arrives with the detail.
     status?: MovieStatus;
 
     // Draw-reveal coordination — present only on the current-movie endpoint and
@@ -82,6 +83,9 @@ export interface User {
 
 export interface Settings {
     poolLocked: boolean;
+    // Server-owned pool freeze during an unrevealed draw. Independent of
+    // whether this client is animating a reel.
+    drawInProgress: boolean;
 }
 
 // One row of the admin roster (GET /members/roster). Login state is

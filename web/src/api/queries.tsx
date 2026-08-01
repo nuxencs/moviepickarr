@@ -97,6 +97,10 @@ export const MovieDetailQueryOptions = (movieID: number) =>
   queryOptions({
     queryKey: MoviesKeys.detail(movieID),
     queryFn: ({ signal }) => APIClient.movies.get(movieID, signal),
+    // A removed record cannot reappear by retrying the same id. Other failures
+    // retain the client default of three retries.
+    retry: (failureCount, error) =>
+      (error as { status?: unknown } | null)?.status !== 404 && failureCount < 3,
   })
 
 /** Stats filter choices (genres/actors/crew/years/adders), derived server-side
@@ -109,10 +113,11 @@ export const FilterOptionsQueryOptions = () =>
     staleTime: 300_000,
   })
 
-export const SettingsGetPoolLockQueryOptions = () =>
+export const SettingsGetPoolStateQueryOptions = (enabled = true) =>
   queryOptions({
     queryKey: SettingsKeys.poolLock(),
-    queryFn: () => APIClient.settings.getLock(),
+    queryFn: () => APIClient.settings.getPoolState(),
+    enabled,
   })
 
 export const SettingsGetNextUpQueryOptions = () =>

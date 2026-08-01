@@ -75,7 +75,8 @@
   username+password for a member with no local login, `409` if one exists).
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
-  `fullMovie` (detail payload: embeds `leanMovieTile` plus the film's `status`, the
+  `fullMovie` (detail payload: embeds `leanMovieTile` plus the film's client-visible
+  `status`, the
   draw/reveal coordination fields `drawnAt`/`revealAt`/`serverNow`/`drawClientId`/`revealed`,
   modal metadata, and `cast`/`crew`). A handler returning `leanMovieTile` cannot accidentally ship credits or
   prose, which keeps the list payloads small; the mappers (`toLeanTile`/`toFullMovie` and
@@ -139,13 +140,17 @@
   in-memory `ActiveDraw` (`DrawnAt`/`RevealAt`/`DrawClientID`/`Revealed`), and arms a
   timer at `RevealAt = DrawnAt + AutoRevealDelay` (`DefaultAutoRevealDelay` 16.5s,
   overridable via `DrawConfig`). `RevealCurrentDraw` is the once-per-draw flip fired by
-  either the drawer's confirm or the timer; both paths call the `OnRevealed` hook exactly
-  once. The server serializes `RevealAt`/`ServerNow` into every draw payload so clients
+  the drawer's confirm or the timer. An early watch performs the same flip before it
+  clears the active draw. All paths call the `OnRevealed` hook exactly once. The server
+  serializes `RevealAt`/`ServerNow` into every draw payload so clients
   time their confirm countdown off `revealAt − serverNow` (skew-immune) and broadcasts
-  `movie:drawn` / `movie:revealed`. It also owns the pool *view*: `Pooled` and
-  `PooledByUserID` are not the rows with status `pool`, they run through
-  `withHeldDraw`, which hands a drawn-but-unrevealed movie back in the listing (the
-  row is already `current`, only the copy reads as pooled). Without it a pool read
+  `movie:drawn` / `movie:revealed`. It also owns the pool *view*: `Pooled`,
+  `PooledByUserID` and the detail read `GetForDisplay` do not expose the held
+  winner's persisted `current` status. The list reads use `withHeldDraw`; the
+  detail read shares its held display projection. The row is already `current`,
+  only the display copy reads as pooled. `DrawRandom` holds the draw mutex across
+  the repository transition and in-memory publication, so display and gate reads
+  cannot pass through the half-published state. Without it a pool read
   during the reel — a reload mid-spin, or a client opening the board — would drop
   the tile and give the winner away before the reveal. Two consequences ride
   along: while a draw is unrevealed the pool is **frozen** (demote and delete
@@ -254,6 +259,10 @@ always the session member, never a path id: member-scoped routes carry no
 - SSE (`GET /events`): authed at the handshake (401 before the stream opens) and
   revalidated on every heartbeat, so a session revoked mid-stream is dropped on
   the next tick.
+- Pool state (`GET /settings/pool-lock`) returns `{poolLocked, drawInProgress}`.
+  The second field is the server-owned unrevealed-draw gate, not a client reel
+  phase. Members and pooled movie actions use the one response for both pool
+  mutation refusals.
 
 ## Movie identity & enrichment (TMDB)
 

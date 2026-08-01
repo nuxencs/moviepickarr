@@ -15,14 +15,12 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 
 import { APIClient } from "@/api/APIClient";
-import { MeQueryOptions, SettingsGetPoolLockQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
+import { MeQueryOptions, SettingsGetPoolStateQueryOptions, UsersGetAllQueryOptions } from "@/api/queries";
 
 import { Avatar } from "@/components/moviepickarr/Bits";
-import { drawStore } from "@/components/moviepickarr/drawStore";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { orderMembers, selectedMember } from "@/components/moviepickarr/membersSearch";
 import { MembersSkeleton } from "@/components/moviepickarr/MembersSkeleton";
@@ -119,14 +117,14 @@ export function UsersTab() {
   // The page status line: one answer to "are we ready" for the whole group, so
   // nobody has to count pips across six boards. The words and the composition
   // live in poolLock.ts; this only gathers the three inputs.
-  const { data: isLocked, isPending: lockPending } = useQuery(SettingsGetPoolLockQueryOptions());
-  const drawPhase = useSyncExternalStore(drawStore.subscribe, () => drawStore.getState().phase);
+  const {
+    data: poolState,
+    isError: poolStateError,
+    isFetching: poolStateFetching,
+  } = useQuery(SettingsGetPoolStateQueryOptions());
   const occupancy = useMemo<RosterOccupancy>(() => {
     if (usersError) return { state: "error" };
-    // The lock is a second query, so a full roster can land before it. Stay
-    // pending until both are in: reading a locked round as `ready to lock` for
-    // a frame would announce a thing to go do that isn't there to be done.
-    if (usersPending || lockPending || !users) return { state: "pending" };
+    if (usersPending || !users) return { state: "pending" };
     return {
       state: "ready",
       // Raw slot occupancy across everybody. It never moves for a draw: the
@@ -135,8 +133,16 @@ export function UsersTab() {
       filled: users.reduce((n, user) => n + Object.keys(user.currentPool).length, 0),
       slots: users.length * POOL_SIZE,
     };
-  }, [users, usersPending, usersError, lockPending]);
-  const status = membersStatus(occupancy, !!isLocked, drawPhase);
+  }, [users, usersPending, usersError]);
+  const poolStateKnown =
+    poolState !== undefined && !poolStateError && !poolStateFetching;
+  const isLocked = !!poolState?.poolLocked;
+  const drawInFlight = !!poolState?.drawInProgress;
+  const status = poolStateError
+    ? { text: "Round state failed to load", announce: "Round state failed to load" }
+    : poolState === undefined
+      ? { text: null, announce: "" }
+      : membersStatus(occupancy, isLocked, drawInFlight);
 
   // useSearch keys off the route id, which is `/_app/users` while the URL stays
   // `/users` (the page hangs off the pathless app layout) — same split the
@@ -144,15 +150,6 @@ export function UsersTab() {
   const { member, stash } = useSearch({ from: "/_app/users" });
   const ordered = useMemo(() => orderMembers(users, me?.id), [users, me?.id]);
   const selected = selectedMember(ordered, member, me?.id);
-
-  // The pool is frozen server-side while a draw is unrevealed: the drawn movie
-  // is still shown as a pool tile, so demoting any of them has to be refused
-  // (letting one tile through would say which movie was drawn). Match that here
-  // instead of letting the click come back as a failed move.
-  const drawInFlight = useSyncExternalStore(
-    drawStore.subscribe,
-    () => drawStore.getState().phase !== "idle",
-  );
 
   // The rail's scrollbar is out of the layout (its width is three posters
   // exactly), so a fade at the bottom edge is the only sign there are more
@@ -297,6 +294,7 @@ export function UsersTab() {
                   isOwnBoard={isSelf(me?.id, user.userID)}
                   isLocked={!!isLocked}
                   drawInFlight={drawInFlight}
+                  poolStateKnown={poolStateKnown}
                   onOpen={open}
                   stashLinks={stashLinks}
                 />
@@ -313,6 +311,7 @@ export function UsersTab() {
               isOwnBoard={isSelf(me?.id, selected.userID)}
               isLocked={!!isLocked}
               drawInFlight={drawInFlight}
+              poolStateKnown={poolStateKnown}
               onOpenSearch={() => setSearchUser(selected)}
               onOpen={open}
               lostFocus={paneLostFocus}
@@ -356,6 +355,7 @@ function RailRow({
   isOwnBoard,
   isLocked,
   drawInFlight,
+  poolStateKnown,
   onOpen,
   stashLinks,
 }: {
@@ -364,6 +364,7 @@ function RailRow({
   isOwnBoard: boolean;
   isLocked: boolean;
   drawInFlight: boolean;
+  poolStateKnown: boolean;
   onOpen: (movie: Movie) => void;
   /** The page's register of stash links by member, so returning from the mobile
    *  push can put focus back on the control it left from (#236). */
@@ -448,6 +449,7 @@ function RailRow({
               isOwnBoard={isOwnBoard}
               isLocked={isLocked}
               drawInFlight={drawInFlight}
+              poolStateKnown={poolStateKnown}
               onOpen={onOpen}
               rowLinkRef={linkRef}
             />
@@ -625,6 +627,7 @@ function PoolSlots({
   isOwnBoard,
   isLocked,
   drawInFlight,
+  poolStateKnown,
   onOpen,
   rowLinkRef,
 }: {
@@ -636,6 +639,7 @@ function PoolSlots({
   isOwnBoard: boolean;
   isLocked: boolean;
   drawInFlight: boolean;
+  poolStateKnown: boolean;
   onOpen: (movie: Movie) => void;
   /** The member's own row, where focus goes when the last film leaves the pool. */
   rowLinkRef: RefObject<HTMLAnchorElement | null>;
@@ -701,7 +705,13 @@ function PoolSlots({
             {isOwnBoard && (
               <TileAction
                 kind="demote"
-                refusal={refusalOf({ kind: "demote", isLocked, drawInFlight, poolFull })}
+                refusal={refusalOf({
+                  kind: "demote",
+                  isLocked,
+                  drawInFlight,
+                  poolFull,
+                  stateKnown: poolStateKnown,
+                })}
                 onActivate={() => demoteMutation.mutate({ movieID: movie.movieID, slot: i })}
               />
             )}
@@ -748,6 +758,7 @@ function StashPane({
   isOwnBoard,
   isLocked,
   drawInFlight,
+  poolStateKnown,
   onOpenSearch,
   onOpen,
   lostFocus,
@@ -756,6 +767,7 @@ function StashPane({
   user: User;
   isOwnBoard: boolean;
   isLocked: boolean;
+  poolStateKnown: boolean;
   /** Passed down whole rather than pre-judged: a draw does not refuse a promote,
    *  and refusalOf is the one place that decides so. */
   drawInFlight: boolean;
@@ -1061,6 +1073,7 @@ function StashPane({
                     poolFull={poolFull}
                     locked={isLocked}
                     drawInFlight={drawInFlight}
+                    poolStateKnown={poolStateKnown}
                     isOwnBoard={isOwnBoard}
                     onOpen={onOpen}
                     onPromoting={onPromoting}
@@ -1087,6 +1100,7 @@ const StashTile = memo(function StashTile({
   poolFull,
   locked,
   drawInFlight,
+  poolStateKnown,
   isOwnBoard,
   onOpen,
   onPromoting,
@@ -1099,6 +1113,7 @@ const StashTile = memo(function StashTile({
   poolFull: boolean;
   locked: boolean;
   drawInFlight: boolean;
+  poolStateKnown: boolean;
   isOwnBoard: boolean;
   onOpen: (movie: Movie) => void;
   /** A promote leaving this cell, and a null film withdrawing one that failed.
@@ -1127,7 +1142,13 @@ const StashTile = memo(function StashTile({
       {isOwnBoard && (
         <TileAction
           kind="promote"
-          refusal={refusalOf({ kind: "promote", isLocked: locked, drawInFlight, poolFull })}
+          refusal={refusalOf({
+            kind: "promote",
+            isLocked: locked,
+            drawInFlight,
+            poolFull,
+            stateKnown: poolStateKnown,
+          })}
           tabIndex={roving ? 0 : -1}
           onActivate={() => moveMutation.mutate()}
         />

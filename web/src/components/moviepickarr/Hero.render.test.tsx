@@ -15,11 +15,13 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { APIClient } from "@/api/APIClient";
 import { AuthKeys, MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
 import { Hero } from "@/components/moviepickarr/Hero";
 
 import type { MeResponse, Movie } from "@/types/Response";
+import type { QueryClient } from "@tanstack/react-query";
 
 import { renderWithProviders } from "@/test/providers";
 
@@ -56,15 +58,22 @@ function session(id: number): MeResponse {
 
 /** The banner on the Movies page with a draw already up. */
 async function renderHero() {
-  return renderWithProviders(<Hero />, {
+  let queryClient: QueryClient | undefined;
+  const view = await renderWithProviders(<Hero />, {
     path: "/",
     seed: (client) => {
+      queryClient = client;
       client.setQueryData(MoviesKeys.current(), drawn);
       client.setQueryData(MoviesKeys.listpool(), []);
       client.setQueryData(SettingsKeys.nextUp(), { id: 1, name: "Member 1" });
+      client.setQueryData(SettingsKeys.poolLock(), {
+        poolLocked: false,
+        drawInProgress: true,
+      });
       client.setQueryData(AuthKeys.me(), session(1));
     },
   });
+  return { ...view, queryClient: queryClient! };
 }
 
 /** The adder's name, once the draw has been revealed into the banner. */
@@ -89,5 +98,23 @@ describe("the hero's attribution", () => {
     // the link has to spend, so leaving the banner is an ordinary navigation.
     router.history.back();
     await waitFor(() => expect(router.state.location.href).toBe("/"));
+  });
+
+  it("releases the cached draw gate when its own watched event is lost", async () => {
+    vi.mocked(APIClient.movies.markWatched).mockResolvedValueOnce({
+      ...drawn,
+      status: "watched",
+    });
+    const { queryClient } = await renderHero();
+
+    await adder();
+    fireEvent.click(screen.getByRole("button", { name: "Mark as watched" }));
+
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<{ drawInProgress: boolean }>(SettingsKeys.poolLock())
+          ?.drawInProgress,
+      ).toBe(false),
+    );
   });
 });

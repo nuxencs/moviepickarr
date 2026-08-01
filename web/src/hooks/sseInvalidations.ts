@@ -36,6 +36,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.listwatched(),
     MoviesKeys.details(),
     MoviesKeys.filterOptions(),
+    SettingsKeys.nextUp(),
     StatsKeys.all,
   ],
   "user:deleted": [
@@ -46,6 +47,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.listwatched(),
     MoviesKeys.details(),
     MoviesKeys.filterOptions(),
+    SettingsKeys.nextUp(),
     StatsKeys.all,
   ],
 

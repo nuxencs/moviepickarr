@@ -172,6 +172,10 @@ func Run(ctx context.Context, cfg Config) error {
 		},
 		Messages: []string{"http server error", "http client error", "http request"},
 		Levels:   []zerolog.Level{zerolog.ErrorLevel, zerolog.WarnLevel, zerolog.InfoLevel},
+		// Emit request_id/bytes_sent rather than fiberzerolog's default
+		// requestId/bytesSent, so an access line and the app lines from the same
+		// request join on one key. See docs/LOGGING.md.
+		FieldsSnakeCase: true,
 		// The SSE stream is long-lived: its "latency" would span the whole
 		// session and it logs one line per open — noise, so skip it.
 		SkipURIs: []string{"/api/v1/events"},

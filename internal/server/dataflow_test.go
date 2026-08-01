@@ -1196,10 +1196,10 @@ func TestPoolIsFrozenAndStillCountsWhileADrawIsUnrevealed(t *testing.T) {
 	}
 
 	// The reveal thaws the pool: the winner has left it, so there's room again.
-	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", stashed.ID), `{"target":"pool"}`); status != fiber.StatusOK {
-		t.Fatalf("promote after the reveal = %d/%q, want 200", status, title)
+	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", stashed.ID), `{"target":"pool"}`); status != fiber.StatusNoContent {
+		t.Fatalf("promote after the reveal = %d/%q, want 204", status, title)
 	}
-	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", bystander.ID), `{"target":"stash"}`); status != fiber.StatusOK {
-		t.Fatalf("demote after the reveal = %d/%q, want 200", status, title)
+	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", bystander.ID), `{"target":"stash"}`); status != fiber.StatusNoContent {
+		t.Fatalf("demote after the reveal = %d/%q, want 204", status, title)
 	}
 }

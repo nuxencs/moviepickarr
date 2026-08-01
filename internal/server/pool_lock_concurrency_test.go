@@ -101,17 +101,20 @@ func TestPoolLockWaitsForAdmittedMove(t *testing.T) {
 
 	close(pausingRepo.resume)
 
-	for name, done := range map[string]<-chan asyncHTTPResult{
-		"move": moveDone,
-		"lock": lockDone,
+	for name, request := range map[string]struct {
+		done       <-chan asyncHTTPResult
+		wantStatus int
+	}{
+		"move": {done: moveDone, wantStatus: fiber.StatusNoContent},
+		"lock": {done: lockDone, wantStatus: fiber.StatusOK},
 	} {
 		select {
-		case result := <-done:
+		case result := <-request.done:
 			if result.err != nil {
 				t.Fatalf("%s request: %v", name, result.err)
 			}
-			if result.resp.StatusCode != fiber.StatusOK {
-				t.Fatalf("%s status = %d, want 200", name, result.resp.StatusCode)
+			if result.resp.StatusCode != request.wantStatus {
+				t.Fatalf("%s status = %d, want %d", name, result.resp.StatusCode, request.wantStatus)
 			}
 		case <-time.After(500 * time.Millisecond):
 			t.Fatalf("%s request did not finish", name)

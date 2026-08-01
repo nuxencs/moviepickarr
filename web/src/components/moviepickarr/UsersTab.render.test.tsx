@@ -1296,8 +1296,8 @@ describe("moving around the wall with the keyboard", () => {
   });
 
   it("keeps a newer promote landing when an older request fails", async () => {
-    const first = deferred<Movie>();
-    const second = deferred<Movie>();
+    const first = deferred<void>();
+    const second = deferred<void>();
     const move = vi.mocked(APIClient.board.moveMovie);
     move.mockImplementation((movieID) =>
       movieID === 100 ? first.promise : second.promise,
@@ -1481,8 +1481,8 @@ describe("moving around the wall with the keyboard", () => {
   });
 
   it("keeps a newer demote landing when an older request fails", async () => {
-    const first = deferred<Movie>();
-    const second = deferred<Movie>();
+    const first = deferred<void>();
+    const second = deferred<void>();
     const move = vi.mocked(APIClient.board.moveMovie);
     move.mockImplementation((movieID) =>
       movieID === 10 ? first.promise : second.promise,

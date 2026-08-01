@@ -484,16 +484,6 @@ func (d *SqliteMoviesRepository) CountByUserIDAndStatus(ctx context.Context, use
 	return count, nil
 }
 
-func (d *SqliteMoviesRepository) GetRandomPooled(ctx context.Context) (*domain.Movie, error) {
-	row := d.pool.Read.QueryRowContext(ctx, movieSelect+" WHERE m.status = 'pool' ORDER BY RANDOM() LIMIT 1")
-	movie, err := scanMovie(row)
-	if err != nil {
-		return nil, err
-	}
-
-	return movie, nil
-}
-
 func (d *SqliteMoviesRepository) GetCurrent(ctx context.Context) (*domain.Movie, error) {
 	row := d.pool.Read.QueryRowContext(ctx, movieSelect+" WHERE m.status = 'current' LIMIT 1")
 	movie, err := scanMovie(row)

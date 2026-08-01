@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -72,12 +73,25 @@ type ActiveDraw struct {
 	Revealed bool
 }
 
+// DrawResult is the complete publication snapshot of one successful draw.
+// Candidates is the exact pool that was eligible before the winner became
+// current. ActiveDraw is copied from the same lock boundary, so callers never
+// have to reconstruct either value after later pool mutations can proceed.
+type DrawResult struct {
+	Movie      *domain.Movie
+	Candidates []*domain.Movie
+	ActiveDraw ActiveDraw
+}
+
 // DrawConfig wires the server-owned auto-reveal into the Service. The zero
 // value works for callers that don't care about the reveal (unit tests):
 // the default delay applies and a nil OnRevealed just isn't notified.
 type DrawConfig struct {
 	// AutoRevealDelay overrides DefaultAutoRevealDelay when > 0.
 	AutoRevealDelay time.Duration
+	// RandomIndex chooses one candidate index in [0, n). Nil uses the process
+	// random source. Tests inject it to make selection deterministic.
+	RandomIndex func(n int) int
 	// StartTimer schedules fn asynchronously once after d and returns a stop
 	// func. Nil uses time.AfterFunc; tests inject their own to drive the
 	// deadline by hand.
@@ -109,6 +123,9 @@ type Service struct {
 func NewService(movieRepo movieStore, drawCfg DrawConfig) *Service {
 	if drawCfg.AutoRevealDelay <= 0 {
 		drawCfg.AutoRevealDelay = DefaultAutoRevealDelay
+	}
+	if drawCfg.RandomIndex == nil {
+		drawCfg.RandomIndex = rand.IntN
 	}
 	if drawCfg.StartTimer == nil {
 		drawCfg.StartTimer = func(d time.Duration, fn func()) func() {
@@ -419,6 +436,31 @@ func asHeldPoolMovie(movie *domain.Movie, held ActiveDraw) (*domain.Movie, bool)
 	return &shown, true
 }
 
+func cloneMovieSnapshot(movie *domain.Movie) *domain.Movie {
+	if movie == nil {
+		return nil
+	}
+
+	cloned := *movie
+	if movie.AddedAt != nil {
+		addedAt := *movie.AddedAt
+		cloned.AddedAt = &addedAt
+	}
+	if movie.WatchedAt != nil {
+		watchedAt := *movie.WatchedAt
+		cloned.WatchedAt = &watchedAt
+	}
+	if movie.TMDBID != nil {
+		tmdbID := *movie.TMDBID
+		cloned.TMDBID = &tmdbID
+	}
+	if movie.IMDbID != nil {
+		imdbID := *movie.IMDbID
+		cloned.IMDbID = &imdbID
+	}
+	return &cloned
+}
+
 // withHeldDraw puts a drawn-but-unrevealed movie back into a pool listing.
 //
 // DrawRandom flips the winner to "current" the moment it draws, so every pool
@@ -513,7 +555,7 @@ func (s *Service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 // DrawRandom selects a random pooled movie as the current draw. clientID is
 // the opaque id of the client that initiated the draw (see ActiveDraw). It
 // gates who sees the reel's confirm button; "" is acceptable (no drawer).
-func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movie, error) {
+func (s *Service) DrawRandom(ctx context.Context, clientID string) (*DrawResult, error) {
 	// Keep the persisted status flip and the in-memory hold one publication.
 	// Client-facing reads may query the repository concurrently, but they block
 	// on heldDraw before returning and therefore see either side in full.
@@ -538,26 +580,40 @@ func (s *Service) DrawRandom(ctx context.Context, clientID string) (*domain.Movi
 		return nil, domain.ErrCurrentDrawExists
 	}
 
-	movie, err := s.movieRepo.GetRandomPooled(ctx)
-	if err != nil {
-		return nil, err
+	// Detach the candidate snapshot before UpdateStatus. Repository fakes may
+	// expose shared movie pointers, and a later promotion or edit must not mutate
+	// the already-published reel through an alias.
+	candidates := make([]*domain.Movie, len(pooled))
+	for i, candidate := range pooled {
+		candidates[i] = cloneMovieSnapshot(candidate)
 	}
 
-	if err = s.movieRepo.UpdateStatus(ctx, movie.ID, "current"); err != nil {
+	selectedIndex := s.drawCfg.RandomIndex(len(candidates))
+	if selectedIndex < 0 || selectedIndex >= len(candidates) {
+		return nil, domain.ErrInvalidState
+	}
+	selected := cloneMovieSnapshot(candidates[selectedIndex])
+
+	if err = s.movieRepo.UpdateStatus(ctx, selected.ID, "current"); err != nil {
 		return nil, err
 	}
 
 	drawnAt := time.Now().UTC()
 	s.drawGen++
-	s.activeDraw = &ActiveDraw{
-		MovieID:      movie.ID,
+	activeDraw := ActiveDraw{
+		MovieID:      selected.ID,
 		Generation:   s.drawGen,
 		DrawnAt:      drawnAt,
 		RevealAt:     drawnAt.Add(s.drawCfg.AutoRevealDelay),
 		DrawClientID: clientID,
 	}
+	s.activeDraw = &activeDraw
 
-	return movie, nil
+	return &DrawResult{
+		Movie:      selected,
+		Candidates: candidates,
+		ActiveDraw: activeDraw,
+	}, nil
 }
 
 // StartAutoReveal arms the deadline for the active draw after its movie:drawn

@@ -137,22 +137,6 @@ func (r *testMovieRepo) WatchCurrentAndAdvanceNextUp(
 	return nil, nil, false, domain.ErrNoCurrentDraw
 }
 
-// GetRandomPooled returns a deterministic pool movie (lowest id) so the tests
-// can assert on the drawn id without flaking on map iteration order.
-func (r *testMovieRepo) GetRandomPooled(context.Context) (*domain.Movie, error) {
-	best := -1
-	for id, m := range r.movies {
-		if m.Status == "pool" && (best == -1 || id < best) {
-			best = id
-		}
-	}
-	if best == -1 {
-		return nil, sql.ErrNoRows
-	}
-	c := *r.movies[best]
-	return &c, nil
-}
-
 func (r *testMovieRepo) GetCurrent(context.Context) (*domain.Movie, error) {
 	for _, m := range r.movies {
 		if m.Status == "current" {
@@ -233,7 +217,7 @@ func TestActiveDrawLifecycle(t *testing.T) {
 			2: {ID: 2, Title: "Two", Status: string(domain.MovieStatusPool)},
 		},
 	}
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	if _, ok := svc.ActiveDraw(); ok {
@@ -249,8 +233,8 @@ func TestActiveDrawLifecycle(t *testing.T) {
 	if !ok {
 		t.Fatal("expected an active draw after DrawRandom")
 	}
-	if ap.MovieID != drawn.ID {
-		t.Fatalf("active draw movie = %d, want %d", ap.MovieID, drawn.ID)
+	if ap.MovieID != drawn.Movie.ID {
+		t.Fatalf("active draw movie = %d, want %d", ap.MovieID, drawn.Movie.ID)
 	}
 	if ap.DrawnAt.IsZero() {
 		t.Fatal("expected a non-zero drawnAt")
@@ -268,8 +252,8 @@ func TestActiveDrawLifecycle(t *testing.T) {
 	if !flipped {
 		t.Fatal("expected the first reveal to flip the draw")
 	}
-	if revealed.MovieID != drawn.ID {
-		t.Fatalf("revealed movie = %d, want %d", revealed.MovieID, drawn.ID)
+	if revealed.MovieID != drawn.Movie.ID {
+		t.Fatalf("revealed movie = %d, want %d", revealed.MovieID, drawn.Movie.ID)
 	}
 	if _, flippedAgain := svc.RevealCurrentDraw(); flippedAgain {
 		t.Fatal("expected a second reveal to be a no-op")
@@ -282,7 +266,7 @@ func TestActiveDrawLifecycle(t *testing.T) {
 	// runner's pick and stays "current" across the reveal — it becomes "watched"
 	// only when watched. The next-up rotation in the atomic watch store therefore
 	// holds across draw → reveal and passes only here.
-	if got := repo.movies[drawn.ID].Status; got != "current" {
+	if got := repo.movies[drawn.Movie.ID].Status; got != "current" {
 		t.Fatalf("after reveal: movie status = %q, want current (not yet watched)", got)
 	}
 
@@ -290,7 +274,7 @@ func TestActiveDrawLifecycle(t *testing.T) {
 		t.Fatalf("MarkCurrentAsWatchedAndAdvanceNextUp: unexpected error: %v", err)
 	}
 
-	if got := repo.movies[drawn.ID].Status; got != "watched" {
+	if got := repo.movies[drawn.Movie.ID].Status; got != "watched" {
 		t.Fatalf("after watch: movie status = %q, want watched", got)
 	}
 	if _, ok := svc.ActiveDraw(); ok {
@@ -351,13 +335,13 @@ func TestPublishedDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
 	if !ok {
 		t.Fatal("expected an active draw")
 	}
-	svc.StartAutoReveal(drawn.ID+1000, ap.Generation)
-	svc.StartAutoReveal(drawn.ID, ap.Generation+1)
+	svc.StartAutoReveal(drawn.Movie.ID+1000, ap.Generation)
+	svc.StartAutoReveal(drawn.Movie.ID, ap.Generation+1)
 	if ft.starts != 0 {
 		t.Fatalf("stale publication token armed a timer: starts=%d", ft.starts)
 	}
-	svc.StartAutoReveal(drawn.ID, ap.Generation)
-	svc.StartAutoReveal(drawn.ID, ap.Generation)
+	svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
+	svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
 	if ft.starts != 1 || ft.lastDur > 5*time.Second {
 		t.Fatalf("expected one timer within the 5s deadline, got starts=%d dur=%v", ft.starts, ft.lastDur)
 	}
@@ -400,7 +384,7 @@ func TestStartAutoRevealUsesRemainingDeadline(t *testing.T) {
 	svc.mu.Lock()
 	svc.activeDraw.RevealAt = time.Now().Add(-time.Second)
 	svc.mu.Unlock()
-	svc.StartAutoReveal(drawn.ID, ap.Generation)
+	svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
 
 	if ft.starts != 1 || ft.lastDur != 0 {
 		t.Fatalf("expired draw timer starts=%d dur=%v, want one immediate timer", ft.starts, ft.lastDur)
@@ -423,7 +407,7 @@ func TestCloseStopsDelayedAndTriggeredAutoReveal(t *testing.T) {
 		}
 
 		svc.Close()
-		svc.StartAutoReveal(drawn.ID, ap.Generation)
+		svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
 		if ft.starts != 0 {
 			t.Fatalf("post-close publication armed %d timers, want 0", ft.starts)
 		}
@@ -446,7 +430,7 @@ func TestCloseStopsDelayedAndTriggeredAutoReveal(t *testing.T) {
 		if !ok {
 			t.Fatal("expected an active draw")
 		}
-		svc.StartAutoReveal(drawn.ID, ap.Generation)
+		svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
 		triggered := ft.fn
 
 		svc.Close()
@@ -478,7 +462,7 @@ func TestManualRevealCancelsAutoRevealAndNotifiesOnce(t *testing.T) {
 	if !ok {
 		t.Fatal("expected an active draw")
 	}
-	svc.StartAutoReveal(drawn.ID, ap.Generation)
+	svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
 
 	if _, flipped := svc.RevealCurrentDraw(); !flipped {
 		t.Fatal("expected the manual reveal to flip the draw")
@@ -513,7 +497,7 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 	if !ok {
 		t.Fatal("expected an active draw")
 	}
-	svc.StartAutoReveal(drawn.ID, ap.Generation)
+	svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
 	if _, _, _, err := svc.MarkCurrentAsWatchedAndAdvanceNextUp(ctx); err != nil {
 		t.Fatalf("MarkCurrentAsWatchedAndAdvanceNextUp: %v", err)
 	}
@@ -555,33 +539,33 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	if !ok {
 		t.Fatal("expected active draw A")
 	}
-	svc.StartAutoReveal(drawA.ID, activeA.Generation)
+	svc.StartAutoReveal(drawA.Movie.ID, activeA.Generation)
 	fireA := ft.fn
 
 	// A is watched (clearing the draw), then a fresh draw B takes the slot.
 	if _, _, _, err := svc.MarkCurrentAsWatchedAndAdvanceNextUp(ctx); err != nil {
 		t.Fatalf("MarkCurrentAsWatchedAndAdvanceNextUp: %v", err)
 	}
-	if len(revealed) != 1 || revealed[0].MovieID != drawA.ID {
+	if len(revealed) != 1 || revealed[0].MovieID != drawA.Movie.ID {
 		t.Fatalf("watch should reveal draw A once, got %+v", revealed)
 	}
 	drawB, err := svc.DrawRandom(ctx, "c2")
 	if err != nil {
 		t.Fatalf("DrawRandom B: %v", err)
 	}
-	if drawB.ID == drawA.ID {
-		t.Fatalf("test setup: expected B (%d) to differ from A (%d)", drawB.ID, drawA.ID)
+	if drawB.Movie.ID == drawA.Movie.ID {
+		t.Fatalf("test setup: expected B (%d) to differ from A (%d)", drawB.Movie.ID, drawA.Movie.ID)
 	}
 	activeB, ok := svc.ActiveDraw()
 	if !ok {
 		t.Fatal("expected active draw B")
 	}
-	svc.StartAutoReveal(drawA.ID, activeA.Generation)
+	svc.StartAutoReveal(drawA.Movie.ID, activeA.Generation)
 	if ft.starts != 1 {
 		t.Fatalf("stale draw A publication rearmed a timer: starts=%d", ft.starts)
 	}
-	svc.StartAutoReveal(drawB.ID, activeB.Generation)
-	svc.StartAutoReveal(drawB.ID, activeB.Generation)
+	svc.StartAutoReveal(drawB.Movie.ID, activeB.Generation)
+	svc.StartAutoReveal(drawB.Movie.ID, activeB.Generation)
 	if ft.starts != 2 {
 		t.Fatalf("draw B timer starts=%d, want one new timer", ft.starts)
 	}
@@ -713,6 +697,10 @@ func titleRepo() *titlePoolRepo {
 	}}
 }
 
+func firstCandidateDrawConfig() DrawConfig {
+	return DrawConfig{RandomIndex: func(int) int { return 0 }}
+}
+
 // movableTitlePoolRepo adds the conditional promotion write used by
 // MoveToPool. The shared title repo leaves writes loud by default so a pool
 // view test cannot start mutating state accidentally.
@@ -742,6 +730,231 @@ func (r *movableTitlePoolRepo) PromoteToPoolIfRoom(
 
 	target.Status = "pool"
 	return 1, nil
+}
+
+// A promotion that starts after DrawRandom publishes is legal. It belongs to
+// the next draw, not the reel whose candidate set was already selected.
+func TestDrawRandomSnapshotsCandidatesBeforeLaterPromotion(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := &movableTitlePoolRepo{titlePoolRepo: *titleRepo()}
+	repo.movies[4] = &domain.Movie{
+		ID:        4,
+		Title:     "Delta",
+		Status:    string(domain.MovieStatusStash),
+		AddedByID: 10,
+	}
+	svc := NewService(repo, firstCandidateDrawConfig())
+
+	draw, err := svc.DrawRandom(ctx, "client-abc")
+	if err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	changed, err := svc.MoveToPool(ctx, 4)
+	if err != nil {
+		t.Fatalf("promote after draw: %v", err)
+	}
+	if !changed {
+		t.Fatal("promotion after draw was not applied")
+	}
+
+	if got := titles(draw.Candidates); !slices.Equal(got, []string{"Alpha", "Bravo", "Charlie"}) {
+		t.Fatalf("draw candidates after promotion = %v, want pre-draw pool", got)
+	}
+	winnerInSnapshot := false
+	for _, candidate := range draw.Candidates {
+		if candidate.ID == draw.Movie.ID {
+			winnerInSnapshot = true
+		}
+		if candidate.ID == 4 {
+			t.Fatal("post-draw promotion entered the reel candidates")
+		}
+	}
+	if !winnerInSnapshot {
+		t.Fatalf("winner %d missing from candidate snapshot", draw.Movie.ID)
+	}
+
+	visible, err := svc.Pooled(ctx)
+	if err != nil {
+		t.Fatalf("load current pool view: %v", err)
+	}
+	if !slices.Contains(titles(visible), "Delta") {
+		t.Fatal("test setup: promoted movie is not visible in the later pool view")
+	}
+}
+
+// The repository is allowed to reuse movie pointers internally. DrawRandom
+// must still publish detached selected/candidate values from the same pre-draw
+// snapshot.
+func TestDrawRandomDetachesSelectedMovieAndCandidates(t *testing.T) {
+	t.Parallel()
+
+	repo := titleRepo()
+	addedAt := time.Date(2026, time.July, 30, 20, 0, 0, 0, time.UTC)
+	watchedAt := addedAt.Add(time.Hour)
+	wantAddedAt := addedAt
+	wantWatchedAt := watchedAt
+	tmdbID := 100
+	imdbID := "tt0000100"
+	repo.movies[1].AddedAt = &addedAt
+	repo.movies[1].WatchedAt = &watchedAt
+	repo.movies[1].TMDBID = &tmdbID
+	repo.movies[1].IMDbID = &imdbID
+
+	draw, err := NewService(repo, DrawConfig{
+		RandomIndex: func(int) int { return 0 },
+	}).DrawRandom(context.Background(), "")
+	if err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	if draw.Movie.Status != string(domain.MovieStatusPool) {
+		t.Fatalf("selected status = %q, want pre-draw pool", draw.Movie.Status)
+	}
+
+	draw.Movie.Title = "Changed selected"
+	if repo.movies[1].Title != "Alpha" {
+		t.Fatalf("selected movie mutated repository title to %q", repo.movies[1].Title)
+	}
+	if draw.Candidates[0].Title != "Alpha" {
+		t.Fatalf("selected movie mutated candidate title to %q", draw.Candidates[0].Title)
+	}
+
+	draw.Candidates[0].Title = "Changed candidate"
+	if draw.Movie.Title != "Changed selected" {
+		t.Fatalf("candidate mutated selected title to %q", draw.Movie.Title)
+	}
+	if repo.movies[1].Title != "Alpha" {
+		t.Fatalf("candidate mutated repository title to %q", repo.movies[1].Title)
+	}
+
+	*draw.Movie.AddedAt = wantAddedAt.Add(2 * time.Hour)
+	*draw.Movie.TMDBID = 200
+	if got := *draw.Candidates[0].AddedAt; !got.Equal(wantAddedAt) {
+		t.Fatalf("selected movie mutated candidate addedAt to %v", got)
+	}
+	if got := *repo.movies[1].TMDBID; got != 100 {
+		t.Fatalf("selected movie mutated repository TMDB id to %d", got)
+	}
+
+	*draw.Candidates[0].WatchedAt = wantWatchedAt.Add(2 * time.Hour)
+	*draw.Candidates[0].IMDbID = "tt0000200"
+	if got := *draw.Movie.WatchedAt; !got.Equal(wantWatchedAt) {
+		t.Fatalf("candidate mutated selected watchedAt to %v", got)
+	}
+	if got := *repo.movies[1].IMDbID; got != "tt0000100" {
+		t.Fatalf("candidate mutated repository IMDb id to %q", got)
+	}
+}
+
+func TestDrawRandomUsesConfiguredRandomIndex(t *testing.T) {
+	t.Parallel()
+
+	repo := titleRepo()
+	calledWith := 0
+	svc := NewService(repo, DrawConfig{
+		RandomIndex: func(n int) int {
+			calledWith = n
+			return 1
+		},
+	})
+
+	draw, err := svc.DrawRandom(context.Background(), "")
+	if err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	if calledWith != 3 {
+		t.Fatalf("RandomIndex called with %d candidates, want 3", calledWith)
+	}
+	if draw.Movie.ID != 2 || draw.Movie.Title != "Bravo" {
+		t.Fatalf("selected movie = %d/%q, want 2/Bravo", draw.Movie.ID, draw.Movie.Title)
+	}
+	if got := repo.movies[2].Status; got != "current" {
+		t.Fatalf("selected status = %q, want current", got)
+	}
+	if got := repo.movies[1].Status; got != "pool" {
+		t.Fatalf("unselected status = %q, want pool", got)
+	}
+}
+
+type countingStatusUpdateRepo struct {
+	titlePoolRepo
+	updateCalls int
+}
+
+func (r *countingStatusUpdateRepo) UpdateStatus(ctx context.Context, id int, status string) error {
+	r.updateCalls++
+	return r.titlePoolRepo.UpdateStatus(ctx, id, status)
+}
+
+func TestDrawRandomRejectsInvalidRandomIndexBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	for name, index := range map[string]int{
+		"negative": -1,
+		"past end": 3,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &countingStatusUpdateRepo{titlePoolRepo: *titleRepo()}
+			svc := NewService(repo, DrawConfig{
+				RandomIndex: func(int) int { return index },
+			})
+
+			draw, err := svc.DrawRandom(context.Background(), "")
+			if draw != nil {
+				t.Fatalf("draw = %+v, want nil", draw)
+			}
+			if !errors.Is(err, domain.ErrInvalidState) {
+				t.Fatalf("DrawRandom error = %v, want ErrInvalidState", err)
+			}
+			if repo.updateCalls != 0 {
+				t.Fatalf("status updates = %d, want 0", repo.updateCalls)
+			}
+			if _, ok := svc.ActiveDraw(); ok {
+				t.Fatal("invalid random index published an active draw")
+			}
+			for id, movie := range repo.movies {
+				if movie.Status != "pool" {
+					t.Fatalf("movie %d status = %q, want pool", id, movie.Status)
+				}
+			}
+		})
+	}
+}
+
+func TestDrawRandomDoesNotSelectWhenCurrentDrawExists(t *testing.T) {
+	t.Parallel()
+
+	repo := titleRepo()
+	repo.movies[4] = &domain.Movie{
+		ID:        4,
+		Title:     "Current",
+		Status:    string(domain.MovieStatusCurrent),
+		AddedByID: 10,
+	}
+	randomIndexCalled := false
+	svc := NewService(repo, DrawConfig{
+		RandomIndex: func(int) int {
+			randomIndexCalled = true
+			return 0
+		},
+	})
+
+	draw, err := svc.DrawRandom(context.Background(), "")
+	if draw != nil {
+		t.Fatalf("draw = %+v, want nil", draw)
+	}
+	if !errors.Is(err, domain.ErrCurrentDrawExists) {
+		t.Fatalf("DrawRandom error = %v, want ErrCurrentDrawExists", err)
+	}
+	if randomIndexCalled {
+		t.Fatal("RandomIndex called despite an existing current draw")
+	}
+	if _, ok := svc.ActiveDraw(); ok {
+		t.Fatal("existing current draw published a new ActiveDraw")
+	}
 }
 
 // pausingDrawRepo exposes the instant after the winner is persisted as current
@@ -845,8 +1058,12 @@ type drawCallResult struct {
 func startDraw(ctx context.Context, svc *Service) <-chan drawCallResult {
 	done := make(chan drawCallResult, 1)
 	go func() {
-		movie, err := svc.DrawRandom(ctx, "")
-		done <- drawCallResult{movie: movie, err: err}
+		draw, err := svc.DrawRandom(ctx, "")
+		var selected *domain.Movie
+		if draw != nil {
+			selected = draw.Movie
+		}
+		done <- drawCallResult{movie: selected, err: err}
 	}()
 	return done
 }
@@ -875,7 +1092,7 @@ func TestDrawPublicationHidesWinnerAtomically(t *testing.T) {
 		resume:        make(chan struct{}),
 	}
 	t.Cleanup(func() { close(repo.resume) })
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	drawDone := make(chan error, 1)
@@ -933,7 +1150,7 @@ func TestDeleteSerializesBeforeDrawPublication(t *testing.T) {
 		pause:         newRepoCallPause(),
 	}
 	t.Cleanup(func() { close(repo.pause.resume) })
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	deleteDone := make(chan error, 1)
@@ -976,7 +1193,7 @@ func TestMoveToStashSerializesBeforeDrawPublication(t *testing.T) {
 		pause:         newRepoCallPause(),
 	}
 	t.Cleanup(func() { close(repo.pause.resume) })
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	type moveResult struct {
@@ -1082,7 +1299,7 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 	t.Parallel()
 
 	repo := &movableTitlePoolRepo{titlePoolRepo: *titleRepo()}
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	t.Cleanup(svc.Close)
 	ctx := context.Background()
 
@@ -1090,12 +1307,15 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrawRandom: %v", err)
 	}
+	if drawn.Movie.ID != 1 {
+		t.Fatalf("drawn movie = %d, want 1 so movie 2 stays a bystander", drawn.Movie.ID)
+	}
 
 	// Both tiles are projected into the same pool. Reasserting that directional
 	// target must therefore be the same idempotent no-op for the persisted
 	// current winner as it is for an ordinary pool row.
 	for name, movieID := range map[string]int{
-		"held winner":      drawn.ID,
+		"held winner":      drawn.Movie.ID,
 		"pooled bystander": 2,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1108,7 +1328,7 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 			}
 		})
 	}
-	if got := repo.movies[drawn.ID].Status; got != "current" {
+	if got := repo.movies[drawn.Movie.ID].Status; got != "current" {
 		t.Fatalf("held winner status = %q, want current", got)
 	}
 
@@ -1117,7 +1337,7 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 	if _, flipped := svc.RevealCurrentDraw(); !flipped {
 		t.Fatal("expected reveal to flip the draw")
 	}
-	changed, err := svc.MoveToPool(ctx, drawn.ID)
+	changed, err := svc.MoveToPool(ctx, drawn.Movie.ID)
 	if changed {
 		t.Fatal("revealed current movie transitioned to the pool")
 	}
@@ -1128,20 +1348,20 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 
 // The whole point of the pool view: an unrevealed draw stays in the pool, in
 // its title position, so no client can tell which movie was drawn before the
-// reel lands. GetRandomPooled picks the lowest id, so "Alpha" is the winner.
+// reel lands. The injected index picks "Alpha" as the deterministic winner.
 func TestPooledHoldsTheDrawnMovieUntilRevealed(t *testing.T) {
 	t.Parallel()
 
 	repo := titleRepo()
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	drawn, err := svc.DrawRandom(ctx, "client-abc")
 	if err != nil {
 		t.Fatalf("DrawRandom: unexpected error: %v", err)
 	}
-	if drawn.Title != "Alpha" {
-		t.Fatalf("drawn = %q, want Alpha", drawn.Title)
+	if drawn.Movie.Title != "Alpha" {
+		t.Fatalf("drawn = %q, want Alpha", drawn.Movie.Title)
 	}
 
 	pooled, err := svc.Pooled(ctx)
@@ -1171,7 +1391,7 @@ func TestPooledByUserIDHoldsTheDrawnMovieForItsOwner(t *testing.T) {
 	t.Parallel()
 
 	repo := titleRepo()
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	if _, err := svc.DrawRandom(ctx, ""); err != nil {
@@ -1213,7 +1433,7 @@ func TestPooledDropsTheDrawnMovieOnceWatched(t *testing.T) {
 	t.Parallel()
 
 	repo := titleRepo()
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	if _, err := svc.DrawRandom(ctx, ""); err != nil {
@@ -1238,14 +1458,14 @@ func TestPooledSurvivesAHeldDrawWhoseMovieIsGone(t *testing.T) {
 	t.Parallel()
 
 	repo := titleRepo()
-	svc := NewService(repo, DrawConfig{})
+	svc := NewService(repo, firstCandidateDrawConfig())
 	ctx := context.Background()
 
 	drawn, err := svc.DrawRandom(ctx, "")
 	if err != nil {
 		t.Fatalf("DrawRandom: unexpected error: %v", err)
 	}
-	delete(repo.movies, drawn.ID)
+	delete(repo.movies, drawn.Movie.ID)
 
 	pooled, err := svc.Pooled(ctx)
 	if err != nil {

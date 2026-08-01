@@ -13,9 +13,9 @@ multi-statement persistence flows.
 
 ## Outcome
 
-No blocking finding remains in the proposed stack through pull request #295.
-The review produced 32 stacked pull requests and 35 commits. These changes are
-still open, so `develop` retains the original behavior until the stack merges.
+No blocking finding remains in the merged stack through pull request #295.
+That review produced 32 stacked pull requests and 35 commits. The complete
+stack reached `develop` on 2026-08-01.
 
 The highest-impact findings were unrevealed winner leaks, commands that could
 publish lifecycle events out of order, writes that could partially commit, and
@@ -24,8 +24,9 @@ separate pull request except where one state machine owned both symptoms.
 Regression tests were written first where the behavior fit automated testing.
 
 A follow-up audit closed the original measurement gaps and found four defects
-that predate the reviewed range. They do not block this stack. They are recorded
-below for a separate TDD stack after merge.
+that predate the reviewed range. Seven TDD pull requests, #298, #299, and #301
+through #305, now address those defects and two measured image/layout gaps.
+That follow-up stack remains open and is based on `develop`.
 
 ## Fixed findings
 
@@ -107,9 +108,10 @@ ms for a three-candidate draw, 0.156 ms for a 100-member watch rotation, and
 0.251 ms for a move across 100 owned movies. Synthetic extremes reached 6.902
 ms for 3,000 draw candidates, 4.927 ms for 10,000 members, and 14.484 ms for a
 5,000-movie owner library. The lock itself and synchronous broker fanout were
-not material costs. Draw metadata and the move response projection do remain
-inside their serialization boundaries; the earlier assessment that reads were
-outside every critical section was too broad.
+not material costs. At #295, draw metadata and the move response projection
+remained inside their serialization boundaries; the earlier assessment that
+reads were outside every critical section was too broad. #299 removes the move
+projection from that boundary and was not rebenchmarked.
 
 From #278 to #295, the same CI build shows app JavaScript growing by 0.84 kB
 gzip and main CSS by 0.13 kB gzip. No chunk exceeds 200 kB gzip and the stack
@@ -122,40 +124,42 @@ a separate pre-range risk. Movies had 3.752 s median LCP, 0.0831 CLS, and 19 ms
 TBT; Members had 3.688 s LCP, 0.00002 CLS, and 0 ms TBT. These are lab results,
 not field Core Web Vitals.
 
+The exact-parent #304/#305 comparison isolates the mobile Hero reservation.
+Across three cold Movies runs, median CLS fell from 0.43742 to 0, score rose
+from 68 to 87, median LCP stayed at 3.760 s, and TBT moved from 3 to 1 ms.
+Desktop stayed at 100 with median LCP moving from 0.822 to 0.818 s. The #305
+entry chunk is 0.49 kB gzip larger than #295; CSS has no rounded gzip increase.
+
+The follow-up also measured three alternatives that were not retained. A
+smaller responsive backdrop cut image bytes but did not improve LCP.
+Self-hosted fonts improved LCP while delaying mobile FCP by 453 to 602 ms. A
+Movies route split cut unused JavaScript on direct Members visits but delayed
+Movies mobile FCP by 221 ms and LCP by 63 ms. The performance review records
+the full comparisons and their limits.
+
 ## Residual findings
 
-- Hero content and controls wait for the remote backdrop to decode. A slow or
-  stalled image can keep a known draw blank, and same-draw enrichment can leave
-  the painted backdrop stale because its reveal id does not change. Both paths
-  predate the reviewed range.
-- Member create, restore, archive, and delete events do not invalidate cached
-  next-up state. Other clients can retain an archived holder or the empty-roster
-  result. The omission predates the range and survived the stacked cache fixes.
-- A movie move commits before its fallible response projection. A projection
-  error can suppress `movie:moved`, and an idempotent retry cannot republish the
-  durable change. The sequence predates the range; #291 preserves it inside the
-  pool-state serialization boundary.
-- New spring-forward wall times that do not exist in the local timezone still
-  normalize to a later time. The input and conversion predate this range; #294
-  prevents changes to an existing stored timestamp. Repeated fall-back times
-  remain ambiguous without an explicit offset choice.
-- The main Movies route has measured pre-range image waste. Desktop loaded 19
-  fixed `w342` posters, while mobile used a 135 kB `w1280` hero backdrop. A
-  `w185` poster candidate and responsive backdrop sources are the next bounded
-  experiments.
-- Google Fonts remained render-blocking in the final profile. Lighthouse
-  estimated about 300 ms of mobile FCP opportunity, although `display=swap`
-  passed and field impact remains unknown.
-- The Safari 26 `sizes="auto"` fallback is conservative near column resets but
-  remains no worse than the original fixed `w342` behavior. This is an accepted
-  compatibility tradeoff, not a logic defect.
-- Indexed authentication checks added about 3.2 to 3.6 microseconds on affected
-  paths. Migration 010 completed 100,000 rows with 10% identity conflicts in
-  213 ms, and a 50,000-row Bolt import completed in 1.92 s. No change is
-  warranted from those results.
-- Issue [#157](https://github.com/nuxencs/moviepickarr/issues/157) is covered by
-  #282, #283, and #285. It remains open, and #285 targets an intermediate stack
-  branch, so verify or close the issue after the full stack reaches `develop`.
+The actionable pre-range residuals now have focused fixes. Measurements that
+did not support a change remain explicit.
+
+| Residual | Current result |
+|---|---|
+| Known Hero content waited for backdrop decode; same-draw updates could leave stale art. | [#302](https://github.com/nuxencs/moviepickarr/pull/302) renders content independently, repaints same-draw artwork changes, rejects stale decodes, and retains fallback art. Remote backdrop delivery still controls image LCP. |
+| Roster events left cached next-up state stale. | [#298](https://github.com/nuxencs/moviepickarr/pull/298) adds next-up invalidation to member creation, restoration, archive, and deletion events. Event-burst network impact was not profiled. |
+| A committed move could fail during unused response projection and never publish. | [#299](https://github.com/nuxencs/moviepickarr/pull/299) removes the projection, returns `204`, and publishes the changed identifiers directly. The old move benchmark was not rerun. |
+| Spring-forward wall times normalized to a different minute. | [#301](https://github.com/nuxencs/moviepickarr/pull/301) rejects the normalized value. Repeated fall-back times remain ambiguous because `datetime-local` carries no offset. |
+| Members lacked a middle poster candidate and Movies cards lacked size contracts. | [#303](https://github.com/nuxencs/moviepickarr/pull/303) adds `w185`; [#304](https://github.com/nuxencs/moviepickarr/pull/304) adds pool, watched-card, and row size hints. Final mobile Members runs selected `w185` for all three loaded posters with zero resize waste. |
+| Pending mobile Hero content had no reserved height. | [#305](https://github.com/nuxencs/moviepickarr/pull/305) removes the measured shift in its exact-parent comparison. The reservation is a minimum, not a cap for long translated content. |
+| Google Fonts remained render-blocking. | Self-hosting was measured and rejected because every route painted later. Google delivery remains pending field cache and FCP evidence. |
+| Members loads eager Movies route code. | The measured split helped direct Members visits but regressed the default Movies route. It was removed; route traffic data is needed before revisiting. |
+| Other poster surfaces and Safari fallback selection remain unmeasured. | Hero, modal, reel, search, and Stats retain their existing contracts. The conservative Safari 26 fallback remains an accepted compatibility tradeoff. |
+| Authentication, migration, and import costs were bounded but not actionable. | Indexed guards added 3.2 to 3.6 microseconds. Migration 010 took 213 ms for 100,000 rows with 10% conflicts; a 50,000-row Bolt import took 1.92 s. No change is warranted. |
+
+Issue [#157](https://github.com/nuxencs/moviepickarr/issues/157) is closed and
+fully present on `develop`. #282 makes watch and rotation atomic, #283 makes
+identified movie creation atomic, and #285 makes the break-glass seed atomic.
+#299 fixes a separate move-publication problem. Invite and claim flows remain
+intentionally outside the transaction seam under ADR 0001.
 
 ## Verification
 
@@ -172,6 +176,11 @@ not field Core Web Vitals.
 - Performance follow-up: twelve cold-cache Lighthouse runs covered Movies and
   Members on desktop and simulated mobile. Focused serialization, authentication,
   migration, import, and broker benchmarks used disposable SQLite fixtures.
-- CI: all 32 fix pull requests had completed, successful checks at handoff. Pull
-  request #295 passed all seven of its checks; the documentation pull request
-  passed its documentation check.
+- Residual performance pass: matched three-run Lighthouse comparisons covered
+  #304/#305 Hero geometry, self-hosted fonts, and the route-split prototype.
+  Responsive Hero priority and 320/340 px geometry received targeted runs.
+- Current frontend: 41 files and 563 tests pass on #305. Its production build
+  completes in 3.18 seconds.
+- CI: the 32-pull-request original stack is merged. Every open follow-up pull
+  request at #298, #299, and #301 through #305 has seven completed, successful
+  checks.

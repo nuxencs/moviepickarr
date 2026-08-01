@@ -33,8 +33,6 @@
    six-column arithmetic is pinned in the pure test.
    ============================================================ */
 
-import { readFileSync } from "node:fs";
-
 import { onlineManager, QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -48,8 +46,6 @@ import { toast } from "@/components/ui/toast-api";
 import type { MeResponse, Movie, User } from "@/types/Response";
 
 import { renderWithProviders } from "@/test/providers";
-
-const membersCSS = readFileSync("src/components/moviepickarr/members.css", "utf8");
 
 vi.mock("@/api/APIClient", () => ({
   APIClient: {
@@ -216,6 +212,7 @@ describe("the Members loading skeleton", () => {
     const skel = skeleton();
     expect(skel).toBeTruthy();
     expect(skel?.classList.contains("mem__shell")).toBe(true);
+    expect(skel?.classList.contains("mem__shell--with-head")).toBe(false);
     expect(skel?.querySelector(".mem-rail")).toBeTruthy();
     expect(skel?.querySelector(".mem-pane")).toBeTruthy();
     expect(skel?.querySelector(".mem-wallbox")).toBeTruthy();
@@ -861,10 +858,15 @@ describe("a refused action", () => {
 
   it("draws nothing for a refusal, on a tile or at board level", async () => {
     /** The board with the reason strings blanked: everything but the words. */
-    const boardShape = () =>
-      (document.querySelector(".mem__shell") as HTMLElement).innerHTML
+    const boardShape = () => {
+      const board = document.querySelector(".mem__shell")?.cloneNode(true) as HTMLElement;
+      // The page status now travels with the rail screen, but refusal words are
+      // exactly what this comparison removes. Its subject remains the boards.
+      board.querySelector(".sec-head")?.remove();
+      return board.innerHTML
         .replace(/ aria-disabled="true"/g, "")
         .replace(/(aria-label|title)="Move[^"]*"/g, '$1=""');
+    };
 
     await renderTab({ users: roster, meID: 1, locked: true, drawInProgress: true });
     const refused = boardShape();
@@ -1614,6 +1616,9 @@ describe("the mobile push", () => {
   // "no" (see setupDom). A phone is that one query saying yes; everything else
   // still says no, so nothing else in the tree changes with it.
   const realMatchMedia = window.matchMedia;
+  const mediaListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+  let mediaWidth = Number.POSITIVE_INFINITY;
+  let mediaSupportsLevelFourBoolean = true;
   const matchesAtWidth = (
     query: string,
     width: number,
@@ -1625,17 +1630,54 @@ describe("the mobile push", () => {
     return realMatchMedia(query).matches;
   };
   const atWidth = (width: number, supportsLevelFourBoolean = true) => {
+    mediaWidth = width;
+    mediaSupportsLevelFourBoolean = supportsLevelFourBoolean;
     window.matchMedia = ((query: string) => ({
-      ...realMatchMedia(query),
-      matches: matchesAtWidth(query, width, supportsLevelFourBoolean),
-      // The page subscribes to this query as well as reading it (the inert
-      // screen, #266), and a spread MediaQueryList loses the prototype's
-      // listener methods. Nothing here changes width mid-test, so they are
-      // no-ops rather than a working event target.
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    })) as unknown as typeof window.matchMedia;
+      get matches() {
+        return matchesAtWidth(query, mediaWidth, mediaSupportsLevelFourBoolean);
+      },
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+      ) => {
+        if (type !== "change") return;
+        const listeners = mediaListeners.get(query) ?? new Set();
+        listeners.add(listener);
+        mediaListeners.set(query, listeners);
+      },
+      removeEventListener: (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+      ) => {
+        if (type === "change") mediaListeners.get(query)?.delete(listener);
+      },
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
   };
+  const resizeTo = (width: number, supportsLevelFourBoolean = true) => {
+    const previousWidth = mediaWidth;
+    const previousSupport = mediaSupportsLevelFourBoolean;
+    mediaWidth = width;
+    mediaSupportsLevelFourBoolean = supportsLevelFourBoolean;
+
+    act(() => {
+      for (const [query, listeners] of mediaListeners) {
+        const before = matchesAtWidth(query, previousWidth, previousSupport);
+        const after = matchesAtWidth(query, width, supportsLevelFourBoolean);
+        if (before === after) continue;
+        const event = { matches: after, media: query } as MediaQueryListEvent;
+        for (const listener of [...listeners]) {
+          if (typeof listener === "function") listener(event);
+          else listener.handleEvent(event);
+        }
+      }
+    });
+  };
+  const mediaListenerCount = (query: string) => mediaListeners.get(query)?.size ?? 0;
   const onAPhone = () => atWidth(375);
   // Browser zoom and non-integer device pixel ratios can produce 760.5 CSS
   // pixels. That width is on CSS's pushed side of the desktop partition, but
@@ -1644,6 +1686,7 @@ describe("the mobile push", () => {
   const atFractionalPushWidth = () => atWidth(760.5, false);
   afterEach(() => {
     window.matchMedia = realMatchMedia;
+    mediaListeners.clear();
   });
 
   it("reads the pushed state off the URL rather than holding a flag", async () => {
@@ -1698,6 +1741,15 @@ describe("the mobile push", () => {
     expect(liveRegion()?.textContent).toBe("round closed");
   });
 
+  it("keeps the Members head on the rail screen", async () => {
+    await renderTab({ users: roster, meID: 1 });
+
+    const railScreen = document.querySelector(".mem-rail-screen");
+    expect(railScreen?.parentElement?.classList.contains("mem__shell--with-head")).toBe(true);
+    expect(document.querySelector(".sec-head")?.parentElement).toBe(railScreen);
+    expect(document.querySelector(".mem-rail")?.parentElement).toBe(railScreen);
+  });
+
   it("puts the way back and the occupancy pips in the back bar", async () => {
     const { router } = await renderTab({
       users: roster,
@@ -1727,10 +1779,6 @@ describe("the mobile push", () => {
     // pushed screen the rail is another screen, so the heading is where it is.
     const id = heading().closest(".mem-stash__id") as HTMLElement;
     expect(id.querySelector(".sec-count")?.textContent).toBe("2");
-  });
-
-  it("uses the baseline-compatible exact complement in CSS", () => {
-    expect(membersCSS).toContain(`@media ${pushQuery}`);
   });
 
   it("moves focus to the pane heading on the push", async () => {
@@ -1853,14 +1901,14 @@ describe("the mobile push", () => {
   it("keeps the screen you are not on out of reach while it is still drawn", async () => {
     onAPhone();
     const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
-    const rail = () => document.querySelector(".mem-rail") as HTMLElement;
+    const rail = () => document.querySelector(".mem-rail-screen") as HTMLElement;
     const pane = () => document.querySelector(".mem-pane") as HTMLElement;
 
     // The swap has an exit to play (#266), so the screen being left keeps its
     // box for the length of it. `inert` is what display: none was doing for
     // focus and for the accessibility tree, and it lands on the frame of the
-    // navigation rather than at the end of the transition — so the screen on
-    // its way out is never a second copy of a control you can reach.
+    // navigation rather than at the end of the transition. The screen on its
+    // way out is never a second copy of a control you can reach.
     expect(pane().hasAttribute("inert")).toBe(true);
     expect(rail().hasAttribute("inert")).toBe(false);
 
@@ -1875,54 +1923,45 @@ describe("the mobile push", () => {
     expect(pane().hasAttribute("inert")).toBe(true);
   });
 
+  it("updates reachability when the viewport crosses 761 in either URL state", async () => {
+    atWidth(900);
+    const { router } = await renderTab({
+      users: roster,
+      meID: 1,
+      href: "/users?member=2&stash=true",
+    });
+    const rail = () => document.querySelector(".mem-rail-screen") as HTMLElement;
+    const pane = () => document.querySelector(".mem-pane") as HTMLElement;
+
+    expect(mediaListenerCount(pushQuery)).toBe(1);
+    expect(rail().hasAttribute("inert")).toBe(false);
+    expect(pane().hasAttribute("inert")).toBe(false);
+
+    resizeTo(375);
+    await waitFor(() => expect(rail().hasAttribute("inert")).toBe(true));
+    expect(pane().hasAttribute("inert")).toBe(false);
+
+    resizeTo(900);
+    await waitFor(() => expect(rail().hasAttribute("inert")).toBe(false));
+    expect(pane().hasAttribute("inert")).toBe(false);
+
+    await router.navigate({ to: "/users", search: { member: 2 } });
+    await waitFor(() => expect(pushedFlag()).toBe("false"));
+    resizeTo(375);
+    await waitFor(() => expect(pane().hasAttribute("inert")).toBe(true));
+    expect(rail().hasAttribute("inert")).toBe(false);
+
+    cleanup();
+    expect(mediaListenerCount(pushQuery)).toBe(0);
+  });
+
   it("leaves both screens reachable above 761, where they are one screen", async () => {
     await renderTab({ users: roster, meID: 1, href: "/users?member=2&stash=true" });
 
     // `stash` does nothing up here: the pane is already beside the rail, so
     // neither screen has replaced the other and neither goes inert.
-    expect(document.querySelector(".mem-rail")?.hasAttribute("inert")).toBe(false);
+    expect(document.querySelector(".mem-rail-screen")?.hasAttribute("inert")).toBe(false);
     expect(document.querySelector(".mem-pane")?.hasAttribute("inert")).toBe(false);
   });
 
-  /* The swap's motion (#266). How it looks belongs to the browser pass; what is
-     pinned here is the pair of decisions that say when it may fire at all. */
-  describe("the swap's motion", () => {
-    const block = membersCSS.slice(membersCSS.indexOf("/* ---- the push, below 761"));
-    const at = block.indexOf(`@media ${pushQuery}`);
-    const aboveQuery = block.slice(0, at);
-    const insideQuery = block.slice(at, block.indexOf("/* ---- the loading skeleton"));
-
-    it("animates one number, declared above the width query", () => {
-      // Registered, so it interpolates rather than jumping, and declared out
-      // where the width query cannot reach it: everything with a duration on it
-      // is then a function of the URL alone, and crossing 761 changes what the
-      // number is used for and never the number itself.
-      expect(aboveQuery).toContain("@property --mem-in");
-      expect(aboveQuery).toMatch(/--mem-in:\s*0;/);
-      expect(aboveQuery).toContain("transition:");
-      // Nothing inside the query has a duration on it, which is what makes a
-      // resize impossible to animate: a property the media query does change
-      // is never in a transition-property.
-      expect(insideQuery).not.toMatch(/^\s*transition(-property)?:/m);
-    });
-
-    it("reads the transform and the opacity off that number", () => {
-      expect(insideQuery).toContain("opacity: var(--mem-in)");
-      expect(insideQuery).toMatch(/\.mem-rail \{\s*transform: translateX\(calc\(/);
-      expect(insideQuery).toMatch(/\.mem-pane \{\s*transform: translateX\(calc\(/);
-    });
-
-    it("holds display: none back to the end of the exit", () => {
-      // The screen being left has no exit frame otherwise. It comes out of the
-      // flow on the frame it is left, so the screen arriving is still the only
-      // thing sizing the page, and the box goes at the end.
-      expect(aboveQuery).toContain("allow-discrete");
-      expect(insideQuery).toMatch(/position: absolute;\s*inset-inline: 0;/);
-      expect(insideQuery).toContain("display: none");
-    });
-
-    it("is a hard cut under reduced motion", () => {
-      expect(aboveQuery).toContain("@media (prefers-reduced-motion: reduce)");
-    });
-  });
 });

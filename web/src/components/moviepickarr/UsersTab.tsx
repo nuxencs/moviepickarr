@@ -46,10 +46,10 @@ import "@/components/moviepickarr/members.css";
 
 /**
  * The width below which the pane is a screen of its own rather than a column
- * beside the rail (#236). Which screen you are on is CSS — this is read only to
- * decide where focus goes, since a push that takes the rail away has to hand
- * focus somewhere and a member switch beside the rail must not move it at all.
- * Keep in step with the media queries in members.css.
+ * beside the rail (#236). CSS decides which screen is drawn. JavaScript mirrors
+ * the same query for the non-visual parts of that change: the focus handoff and
+ * the `inert` state of the screen being left. Keep in step with the media
+ * queries in members.css.
  */
 const PUSH_WIDTH = "not all and (min-width: 761px)";
 
@@ -77,7 +77,7 @@ const watchPushWidth = (onChange: () => void) => {
  * Subscribed rather than read once, because it decides an attribute and not a
  * style: the screen you are not on is `inert` (#266). Which screen is *drawn*
  * is still CSS alone, and this is still the media query rather than a measured
- * width — the swap now has an exit to play, so the outgoing screen keeps its
+ * width. The swap now has an exit to play, so the outgoing screen keeps its
  * box for the length of it, and `inert` is what display: none was doing for
  * focus and for the accessibility tree in the meantime.
  */
@@ -139,8 +139,8 @@ function moveRegistry(client: QueryClient): MoveRegistry {
  * Both halves are the URL rather than a flag of their own, so a resize to
  * desktop lands on the same board rather than on a state built at 375px, and
  * `stash` simply does nothing up there: the pane is already beside the rail.
- * Which screen is drawn is CSS; the only thing read here is where focus goes
- * when the rail is taken away and put back.
+ * Which screen is drawn is CSS. JavaScript mirrors that query only for the
+ * focus handoff and the `inert` state of the screen being left.
  *
  * Every filled poster on either band is a button opening the movie modal, which
  * is the one way into a film's record from this page — never gated on whose
@@ -348,11 +348,28 @@ export function UsersTab() {
     };
   }, [ordered.length, selected?.userID]);
 
+  const membersHead = (
+    <div className="sec-head">
+      <div className="sec-title">
+        <h2>Members</h2>
+        {/* No count until there's a roster to count: "0 people" while the
+            query is in flight states the one number this slot exists for,
+            wrongly. The row is flex, so leaving it out moves nothing. */}
+        {users && <span className="sec-count">{plural(users.length, "person", "people")}</span>}
+        {status.text === null ? (
+          <Skeleton w={132} h={12} />
+        ) : (
+          <span className="sec-status mono">{status.text}</span>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
       {/* Pushed is the URL, not a flag: below 761 the head goes with the rail
           (see members.css). The whole head, `Members / 6 people` included, not
-          just the status line — the pushed screen's title is the possessive
+          just the status line. The pushed screen's title is the possessive
           heading, and two titles do not fit at 375px. */}
       <div className="mg-rise mem" data-pushed={!!stash}>
         {/* Split off the visible status span on purpose: this region carries
@@ -367,61 +384,54 @@ export function UsersTab() {
           {status.announce}
         </span>
 
-        <div className="sec-head">
-          <div className="sec-title">
-            <h2>Members</h2>
-            {/* No count until there's a roster to count: "0 people" while the
-                query is in flight states the one number this slot exists for,
-                wrongly. The row is flex, so leaving it out moves nothing. */}
-            {users && <span className="sec-count">{plural(users.length, "person", "people")}</span>}
-            {status.text === null ? (
-              <Skeleton w={132} h={12} />
-            ) : (
-              <span className="sec-status mono">{status.text}</span>
-            )}
-          </div>
-        </div>
-
         {usersError ? (
-          <p className="empty text-destructive">Failed to load members.</p>
+          <>
+            {membersHead}
+            <p className="empty text-destructive">Failed to load members.</p>
+          </>
         ) : usersPending ? (
-          // The page's own shape, in the page's own containers (#239). Which
-          // screen it is on below 761 is the data-pushed above, which is the
-          // URL in every state — so a cold deep link onto a member's stash
-          // spends the flight on the screen it is arriving at.
-          <MembersSkeleton />
+          <>
+            {membersHead}
+            {/* The page's own shape, in the page's own containers (#239).
+                Which screen it is on below 761 is the data-pushed above, which
+                is the URL in every state. A cold deep link onto a member's
+                stash spends the flight on the screen it is arriving at. */}
+            <MembersSkeleton />
+          </>
         ) : selected ? (
-          <div className="mem__shell">
-            {/* A nav of links with aria-current on the selected row, matching
-                the app's primary nav — not a disclosure and not a tab list. No
-                aria-expanded: a row navigates, and the drawer opening is a
-                consequence of the row being current. Six plain tab stops, no
-                roving; activating a row leaves focus on the row, so arriving
-                (where you are already selected and nothing was activated) and
-                switching behave the same. Enter activates and Space scrolls,
-                as on any link — deliberately not hand-rolled. */}
-            <nav
-              className="mem-rail"
-              aria-label="Members"
-              ref={railRef}
-              data-overflow={railOverflows}
-              inert={railOffScreen}
-            >
-              {ordered.map((user) => (
-                <RailRow
-                  key={user.userID}
-                  user={user}
-                  active={user.userID === selected.userID}
-                  isOwnBoard={isSelf(me?.id, user.userID)}
-                  isLocked={!!isLocked}
-                  drawInFlight={drawInFlight}
-                  poolStateKnown={poolStateKnown}
-                  onOpen={open}
-                  stashLinks={stashLinks}
-                  requestMove={requestMove}
-                />
-              ))}
-            </nav>
+          <div className="mem__shell mem__shell--with-head">
+            <div className="mem-rail-screen" inert={railOffScreen}>
+              {membersHead}
+              {/* A nav of links with aria-current on the selected row, matching
+                  the app's primary nav. It is not a disclosure or a tab list.
+                  No aria-expanded: a row navigates, and the drawer opening is a
+                  consequence of the row being current. Six plain tab stops, no
+                  roving; activating a row leaves focus on the row, so arriving
+                  (where you are already selected and nothing was activated)
+                  and switching behave the same. Enter activates and Space
+                  scrolls, as on any link, deliberately not hand-rolled. */}
+              <nav
+                className="mem-rail"
+                aria-label="Members"
+                ref={railRef}
+                data-overflow={railOverflows}
+              >
+                {ordered.map((user) => (
+                  <RailRow
+                    key={user.userID}
+                    user={user}
+                    active={user.userID === selected.userID}
+                    isOwnBoard={isSelf(me?.id, user.userID)}
+                    isLocked={!!isLocked}
+                    drawInFlight={drawInFlight}
+                    poolStateKnown={poolStateKnown}
+                    onOpen={open}
+                    stashLinks={stashLinks}
+                    requestMove={requestMove}
+                  />
+                ))}
+              </nav>
+            </div>
 
             {/* Keyed on the member, so a switch remounts the pane: the
                 scroller outlives its contents otherwise and you land halfway
@@ -443,11 +453,14 @@ export function UsersTab() {
             />
           </div>
         ) : (
-          // Unreachable, kept as a defensive fallback: the endpoint lists
-          // non-archived members only, and archiving deletes that member's
-          // logins and sessions in the same transaction, so a live session
-          // implies at least your own row.
-          <p className="empty">No members yet</p>
+          <>
+            {membersHead}
+            {/* Unreachable, kept as a defensive fallback: the endpoint lists
+                non-archived members only, and archiving deletes that member's
+                logins and sessions in the same transaction, so a live session
+                implies at least your own row. */}
+            <p className="empty">No members yet</p>
+          </>
         )}
       </div>
 

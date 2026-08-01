@@ -949,6 +949,10 @@ What each does:
   transition-property. `display: none` still holds the resting state, held back
   to the end of the exit with `allow-discrete` so the screen being left has a
   frame to leave in, and `@starting-style` supplies the frame it arrives from.
+  The Members head and rail share a `.mem-rail-screen` wrapper below 761, so the
+  head exits with the rail and the shell keeps one fixed top edge throughout the
+  swap. At wider widths that wrapper is `display: contents`; the head still spans
+  both columns and the rail and pane keep their original grid tracks.
   (`display` is the one property the width query and the transition list share,
   so a resize does start its discrete transition; the screen it holds is already
   at opacity 0, so it shows nothing.) Focus and the accessibility tree are not

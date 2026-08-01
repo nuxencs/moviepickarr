@@ -122,6 +122,7 @@ export function MoviesTab() {
                   hue={hueOf(movie.title)}
                   posterPath={movie.posterPath}
                   voteAverage={movie.voteAverage}
+                  sizes="auto, 342px"
                 />
                 <div className="t-meta">
                   <span className="t-title">{movie.title}</span>
@@ -257,6 +258,7 @@ function WatchedSection({
                 hue={hueOf(movie.title)}
                 posterPath={movie.posterPath}
                 voteAverage={movie.voteAverage}
+                sizes="auto, 342px"
               />
               <div className="t-meta">
                 <span className="t-title">{movie.title}</span>
@@ -380,7 +382,13 @@ function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
 
       <div className="wrow">
         <button type="button" className="wr-open" onClick={onOpen} aria-label={`Details for ${movie.title}`}>
-          <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
+          <Poster
+            title={movie.title}
+            hue={hueOf(movie.title)}
+            posterPath={movie.posterPath}
+            showTitle={false}
+            sizes="auto, 44px"
+          />
           <div className="wr-main">
             <span className="wr-title">
               {movie.title}

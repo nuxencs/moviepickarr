@@ -144,8 +144,12 @@
   timer at `RevealAt = DrawnAt + AutoRevealDelay` (`DefaultAutoRevealDelay` 16.5s,
   overridable via `DrawConfig`). `RevealCurrentDraw` is the once-per-draw flip fired by
   the drawer's confirm or the timer. An early watch performs the same flip before it
-  clears the active draw. All paths call the `OnRevealed` hook exactly once. The server
-  serializes `RevealAt`/`ServerNow` into every draw payload so clients
+  clears the active draw. All paths call the `OnRevealed` hook exactly once. The HTTP
+  handler's `movieNightMu` serializes draw, reveal, and watch from next-up
+  authorization through synchronous lifecycle event publication. Watch keeps that
+  command lock through next-up rotation, so an outgoing holder cannot start the next
+  draw with stale authorization. The server serializes `RevealAt`/`ServerNow` into
+  every draw payload so clients
   time their confirm countdown off `revealAt − serverNow` (skew-immune) and broadcasts
   `movie:drawn` / `movie:revealed`. It also owns the pool *view*: `Pooled`,
   `PooledByUserID` and the detail read `GetForDisplay` do not expose the held

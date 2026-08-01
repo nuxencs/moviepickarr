@@ -79,6 +79,20 @@ func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
 	return false, writeProblem(c, fiber.StatusForbidden, "not_next_up", "it is not your turn")
 }
 
+// runMovieNightCommand keeps the authorization snapshot, lifecycle command, and
+// synchronous event publication in one process-local critical section. Watch
+// holds the section until next up advances and movie:watched is published, so
+// the outgoing member cannot authorize another command in the gap.
+func (h *handler) runMovieNightCommand(c *fiber.Ctx, command func() error) (ran bool, err error) {
+	h.movieNightMu.Lock()
+	defer h.movieNightMu.Unlock()
+
+	if ok, err := h.requireNextUpOrAdmin(c); !ok {
+		return false, err
+	}
+	return true, command()
+}
+
 // resolveMemberID reads the :memberID path parameter as a positive int.
 func resolveMemberID(c *fiber.Ctx) (int, error) {
 	if v, ok := parseInt(c.Params("memberID")); ok {

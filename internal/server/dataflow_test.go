@@ -394,6 +394,122 @@ func TestHandleWatchCurrentMovie_RevealsUnrevealedDraw(t *testing.T) {
 	}
 }
 
+type pausingBatchMetadataRepo struct {
+	domain.MovieMetadataRepo
+	reached chan struct{}
+	resume  chan struct{}
+}
+
+func (r *pausingBatchMetadataRepo) GetMetadataByMovieIDs(
+	ctx context.Context,
+	ids []int,
+) (map[int]*domain.MovieMetadata, error) {
+	close(r.reached)
+	<-r.resume
+	return r.MovieMetadataRepo.GetMetadataByMovieIDs(ctx, ids)
+}
+
+func TestMovieNightCommandsPublishInMutationOrder(t *testing.T) {
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	first, err := userRepo.Create(ctx, "First")
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	second, err := userRepo.Create(ctx, "Second")
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	for _, title := range []string{"Drive", "Collateral"} {
+		if _, err := movieRepo.Add(ctx, title, "pool", first.ID); err != nil {
+			t.Fatalf("seed pool: %v", err)
+		}
+	}
+	if up, err := h.nextUpService.Get(ctx); err != nil || up.ID != first.ID {
+		t.Fatalf("seed next up: got %+v, err=%v, want member %d", up, err, first.ID)
+	}
+
+	metadataReached := make(chan struct{})
+	resumeMetadata := make(chan struct{})
+	resumed := false
+	resume := func() {
+		if !resumed {
+			close(resumeMetadata)
+			resumed = true
+		}
+	}
+	t.Cleanup(resume)
+	h.movieMetadata = &pausingBatchMetadataRepo{
+		MovieMetadataRepo: h.movieMetadata,
+		reached:           metadataReached,
+		resume:            resumeMetadata,
+	}
+
+	client, _ := h.broker.Subscribe()
+	t.Cleanup(func() { h.broker.Unsubscribe(client) })
+
+	drawDone := startAs(
+		app,
+		jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"first"}`),
+		first.ID,
+		"member",
+	)
+	<-metadataReached
+
+	// A draw owns the command until movie:drawn is published. TryLock chooses the
+	// deterministic order for both the red and green implementations without a
+	// timing assertion: the old implementation lets watch finish while metadata
+	// is paused; the fixed implementation releases draw first.
+	drawOwnsPublication := !h.movieNightMu.TryLock()
+	if !drawOwnsPublication {
+		h.movieNightMu.Unlock()
+	}
+	watchDone := startAs(
+		app,
+		httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil),
+		first.ID,
+		"member",
+	)
+
+	var draw, watch asyncHTTPResult
+	if drawOwnsPublication {
+		resume()
+		draw = <-drawDone
+		watch = <-watchDone
+	} else {
+		watch = <-watchDone
+		resume()
+		draw = <-drawDone
+	}
+	if draw.err != nil || draw.resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("draw: err=%v status=%v", draw.err, draw.resp.StatusCode)
+	}
+	if watch.err != nil || watch.resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("watch: err=%v status=%v", watch.err, watch.resp.StatusCode)
+	}
+
+	var lifecycle []string
+	for len(client) > 0 {
+		switch e := <-client; e.Type {
+		case "movie:drawn", "movie:revealed", "movie:watched":
+			lifecycle = append(lifecycle, e.Type)
+		}
+	}
+	want := []string{"movie:drawn", "movie:revealed", "movie:watched"}
+	if !slices.Equal(lifecycle, want) {
+		t.Fatalf("lifecycle events = %v, want %v", lifecycle, want)
+	}
+
+	up, err := h.nextUpService.Get(ctx)
+	if err != nil {
+		t.Fatalf("next up after watch: %v", err)
+	}
+	if up.ID != second.ID {
+		t.Fatalf("next up after watch = %d, want %d", up.ID, second.ID)
+	}
+}
+
 // The draw must not leak through the pool reads. DrawRandom flips the winner to
 // "current" straight away, so before this hold every pool read dropped the tile
 // mid-spin: reload the page during the reel (or open the board on a second

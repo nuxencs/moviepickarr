@@ -31,7 +31,9 @@ current draw watched. Enforced, not just shown in the hero: only the next-up
 member (or an admin) can draw, reveal, or mark watched. The turn holds on one
 member across the whole draw → reveal → watch cycle and rotates to the next
 member on watch, but only when the pool still has movies left and more than one
-member exists.
+member exists. The server serializes these three commands from authorization
+through lifecycle event publication. A watch therefore owns the outgoing turn
+until rotation and `movie:watched` are published.
 _Avoid_: next picker
 
 ### Identity

@@ -70,6 +70,49 @@ func TestEventBroker_SubscribeReturnsCurrentHead(t *testing.T) {
 	}
 }
 
+// An archived member keeps movie attribution but has no active Members board.
+// The movie payload must carry that distinction so clients do not link the
+// adder's name to a dead id that silently resolves to somebody else's board.
+func TestMoviePayload_MarksArchivedAdder(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	adder, err := userRepo.Create(ctx, "Gwen")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	added, err := movieRepo.Add(ctx, "Heat", "stash", adder.ID)
+	if err != nil {
+		t.Fatalf("add movie: %v", err)
+	}
+	outcome, err := userRepo.Remove(ctx, adder.ID)
+	if err != nil {
+		t.Fatalf("archive user: %v", err)
+	}
+	if outcome != domain.OutcomeArchived {
+		t.Fatalf("remove outcome = %q, want archived", outcome)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/movies/"+strconv.Itoa(added.ID), nil)
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if archived, ok := body["addedByArchived"].(bool); !ok || !archived {
+		t.Fatalf("addedByArchived = %#v, want true", body["addedByArchived"])
+	}
+}
+
 // Delta 2: a draw carries self-contained reel candidates (the pre-draw pool,
 // winner included) on BOTH the HTTP response and the movie:drawn broadcast, so
 // every client renders the full reel without consulting its local pool cache.

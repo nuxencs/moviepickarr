@@ -4,8 +4,9 @@
    The reveal machinery, the turn gate and the draw reel all have their own
    homes (drawMachine.test.ts, turnGate.test.ts, DrawReel.render.test.tsx), and
    none of it is repeated here. What is here is the one thing only the rendered
-   banner can answer: that the adder's name in the eyebrow is the way to their
-   board, and that following it stacks a history entry instead of spending one.
+   banner can answer: that an active adder's name in the eyebrow is the way to
+   their board, that archived attribution is not a dead link, and that following
+   an active link stacks a history entry instead of spending one.
 
    The draw is seeded without a backdrop on purpose: with one, the commit waits
    on an image decode that jsdom will not run, and the banner never reaches its
@@ -57,13 +58,13 @@ function session(id: number): MeResponse {
 }
 
 /** The banner on the Movies page with a draw already up. */
-async function renderHero() {
+async function renderHero(movie: Movie = drawn) {
   let queryClient: QueryClient | undefined;
   const view = await renderWithProviders(<Hero />, {
     path: "/",
     seed: (client) => {
       queryClient = client;
-      client.setQueryData(MoviesKeys.current(), drawn);
+      client.setQueryData(MoviesKeys.current(), movie);
       client.setQueryData(MoviesKeys.listpool(), []);
       client.setQueryData(SettingsKeys.nextUp(), { id: 1, name: "Member 1" });
       client.setQueryData(SettingsKeys.poolLock(), {
@@ -86,6 +87,16 @@ describe("the hero's attribution", () => {
     await renderHero();
 
     expect((await adder()).getAttribute("href")).toBe("/users?member=7");
+  });
+
+  it("keeps an archived adder as attribution without linking to another board", async () => {
+    await renderHero({
+      ...drawn,
+      addedByArchived: true,
+    });
+
+    await waitFor(() => expect(screen.getByText("Ada")).not.toBeNull());
+    expect(screen.queryByRole("link", { name: "Ada" })).toBeNull();
   });
 
   it("stacks the navigation, so Back comes back to the draw", async () => {

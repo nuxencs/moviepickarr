@@ -1238,8 +1238,8 @@
   /* A name you can follow: the credited people out to TMDB, and the adder in to
      their own board (#238) — one treatment, because they are the same thing. */
   .moviemodal__person { font-weight: 550; color: var(--ink-2); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
-  .moviemodal__person:hover,
-  .moviemodal__person:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  a.moviemodal__person:hover,
+  a.moviemodal__person:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
   /* Cast strip: a horizontally scrollable row of 2:3 headshot cards under the
      modal body. The frame falls back to the Avatar initials gradient (stretched
      to fill) when TMDB has no headshot; hidden entirely when cast is empty.

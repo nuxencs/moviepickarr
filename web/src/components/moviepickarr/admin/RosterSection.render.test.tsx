@@ -19,17 +19,18 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AuthKeys, UsersKeys } from "@/api/query_keys";
+import { AuthKeys, MoviesKeys, UsersKeys } from "@/api/query_keys";
 
 import { RosterSection } from "@/components/moviepickarr/admin/RosterSection";
 
-import type { MeResponse, RosterMember } from "@/types/Response";
+import type { MeResponse, RemoveResult, RosterMember } from "@/types/Response";
+import type { QueryClient } from "@tanstack/react-query";
 
 import { renderWithProviders } from "@/test/providers";
 
 
 const setLogin = vi.fn<(id: number, u: string, p: string) => Promise<void>>();
-const removeMember = vi.fn<(id: number) => Promise<void>>();
+const removeMember = vi.fn<(id: number) => Promise<RemoveResult>>();
 
 vi.mock("@/api/APIClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/APIClient")>();
@@ -69,14 +70,17 @@ const admin: MeResponse = {
   otherSessions: 0,
 };
 
-function renderSection(members: RosterMember[]) {
-  return renderWithProviders(<RosterSection />, {
+async function renderSection(members: RosterMember[]) {
+  let queryClient: QueryClient | undefined;
+  const view = await renderWithProviders(<RosterSection />, {
     path: "/admin",
-    seed: (queryClient) => {
-      queryClient.setQueryData(AuthKeys.me(), admin);
-      queryClient.setQueryData(UsersKeys.roster(), members);
+    seed: (client) => {
+      queryClient = client;
+      client.setQueryData(AuthKeys.me(), admin);
+      client.setQueryData(UsersKeys.roster(), members);
     },
   });
+  return { ...view, queryClient: queryClient! };
 }
 
 /** Open a member's row kebab and take one of its actions. The menu portals to
@@ -93,7 +97,7 @@ function dialog() {
 beforeEach(() => {
   vi.useFakeTimers();
   setLogin.mockResolvedValue(undefined);
-  removeMember.mockResolvedValue(undefined);
+  removeMember.mockResolvedValue({ outcome: "archived" });
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -168,6 +172,25 @@ describe("committing a ceremony", () => {
     });
 
     expect(removeMember).toHaveBeenCalledWith(8);
+  });
+
+  it("stales cached movie attribution after its own archive event is lost", async () => {
+    const { queryClient } = await renderSection([
+      member({ id: 8, name: "Bea", moviesAuthored: 1 }),
+    ]);
+    queryClient.setQueryData(MoviesKeys.current(), {
+      movieID: 42,
+      addedByID: 8,
+      addedByName: "Bea",
+    });
+
+    takeAction("Bea", "Remove member");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Archive member" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(queryClient.getQueryState(MoviesKeys.current())?.isInvalidated).toBe(true);
   });
 
   it("sends the new login for the member the dialog named", async () => {

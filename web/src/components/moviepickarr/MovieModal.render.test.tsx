@@ -29,10 +29,10 @@ import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import type { MeResponse, Movie } from "@/types/Response";
 import type { ReactNode } from "react";
 
-// The chips deep-link to /stats and the attribution to /users; outside a router
-// there's no Link, and the modal isn't the place to test routing (nav.test.ts
-// owns that). The stub flattens `to` + `search` into an href and puts `replace`
-// on the element, which is all this file asks of a link's destination.
+// The chips deep-link to /stats and active attribution to /users; outside a
+// router there's no Link, and the modal isn't the place to test routing
+// (nav.test.ts owns that). The stub flattens `to` + `search` into an href and
+// puts `replace` on the element, which is all this file asks of a destination.
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,
@@ -273,6 +273,19 @@ describe("MovieModal", () => {
 
     const link = within(attribution(dialog)).getByRole("link", { name: "Cleo" });
     expect(link.getAttribute("href")).toBe("/users?member=7");
+  });
+
+  it("keeps an archived adder as attribution without linking to another board", () => {
+    const { dialog } = renderModal({
+      movie: lean({
+        addedByID: 7,
+        addedByName: "Cleo",
+        addedByArchived: true,
+      }),
+    });
+
+    expect(within(attribution(dialog)).getByText("Cleo")).not.toBeNull();
+    expect(within(attribution(dialog)).queryByRole("link", { name: "Cleo" })).toBeNull();
   });
 
   it("navigates over the modal's own entry, the way the chips do", () => {

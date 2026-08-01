@@ -15,7 +15,7 @@ import { FormEvent, useState, type CSSProperties, type ReactNode } from "react";
 
 import { APIClient, ApiError } from "@/api/APIClient";
 import { MeQueryOptions, RosterQueryOptions } from "@/api/queries";
-import { UsersKeys } from "@/api/query_keys";
+import { MoviesKeys, UsersKeys } from "@/api/query_keys";
 
 import { credLabel, isPlaceholder, timeAgo, unlinkWouldStrand } from "@/components/moviepickarr/admin/roster";
 import {
@@ -123,6 +123,10 @@ export function RosterSection() {
   const [dialog, setDialog] = useState<Dialog>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: UsersKeys.roster() });
+  // Archive and restore change whether historical attribution is a live board
+  // link. This is the mutation's fallback when its own SSE frame is lost.
+  const refreshMovieAttribution = () =>
+    queryClient.invalidateQueries({ queryKey: MoviesKeys.all });
   const closeDialog = () => setDialog(null);
 
   // Each mutation refetches the roster on success so the surface reflects the
@@ -194,6 +198,7 @@ export function RosterSection() {
     onSuccess: (res, member) => {
       closeDialog();
       refresh();
+      refreshMovieAttribution();
       toast.success(res.outcome === "deleted" ? `${member.name} deleted` : `${member.name} archived`);
     },
     onError: fail("Couldn't remove the member."),
@@ -203,6 +208,7 @@ export function RosterSection() {
     mutationFn: (member: RosterMember) => APIClient.members.restore(member.id),
     onSuccess: (res, member) => {
       refresh();
+      refreshMovieAttribution();
       setDialog({ kind: "invite", name: member.name, claimUrl: res.claimUrl });
     },
     onError: fail("Couldn't restore the member."),

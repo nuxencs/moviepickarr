@@ -38,13 +38,14 @@ type userResponse struct {
 // (backdrop, tagline, overview, credits) are structurally absent: the modal
 // lazy-loads the fullMovie from GET /movies/:id when it opens.
 type leanMovieTile struct {
-	ID          int    `json:"movieID"`
-	Title       string `json:"title"`
-	Link        string `json:"link"`
-	AddedAt     string `json:"addedAt"`
-	AddedByID   int    `json:"addedByID"`
-	AddedByName string `json:"addedByName"`
-	WatchedAt   string `json:"watchedAt"`
+	ID              int    `json:"movieID"`
+	Title           string `json:"title"`
+	Link            string `json:"link"`
+	AddedAt         string `json:"addedAt"`
+	AddedByID       int    `json:"addedByID"`
+	AddedByName     string `json:"addedByName"`
+	AddedByArchived bool   `json:"addedByArchived,omitempty"`
+	WatchedAt       string `json:"watchedAt"`
 
 	// Stable external identities, exposed so the frontend can build links to
 	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).
@@ -151,14 +152,15 @@ func movieLink(movie *domain.Movie) string {
 // toLeanTile builds the tile-class response.
 func toLeanTile(movie *domain.Movie, md *domain.MovieMetadata) leanMovieTile {
 	tile := leanMovieTile{
-		ID:          movie.ID,
-		Title:       movie.Title,
-		Link:        movieLink(movie),
-		AddedAt:     formatTime(movie.AddedAt),
-		AddedByID:   movie.AddedByID,
-		AddedByName: movie.AddedByName,
-		WatchedAt:   formatTime(movie.WatchedAt),
-		TMDBID:      movie.TMDBID,
+		ID:              movie.ID,
+		Title:           movie.Title,
+		Link:            movieLink(movie),
+		AddedAt:         formatTime(movie.AddedAt),
+		AddedByID:       movie.AddedByID,
+		AddedByName:     movie.AddedByName,
+		AddedByArchived: movie.AddedByArchived,
+		WatchedAt:       formatTime(movie.WatchedAt),
+		TMDBID:          movie.TMDBID,
 	}
 	if movie.IMDbID != nil {
 		tile.IMDbID = *movie.IMDbID

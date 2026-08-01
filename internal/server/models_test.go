@@ -203,6 +203,37 @@ func TestToLeanTile_OmitsStatus(t *testing.T) {
 	}
 }
 
+func TestToLeanTile_OnlyMarksArchivedAdders(t *testing.T) {
+	t.Parallel()
+
+	activeJSON, err := json.Marshal(toLeanTile(&domain.Movie{
+		ID:          7,
+		Title:       "The Matrix",
+		AddedByID:   2,
+		AddedByName: "Ada",
+	}, nil))
+	if err != nil {
+		t.Fatalf("marshal active tile: %v", err)
+	}
+	if strings.Contains(string(activeJSON), `"addedByArchived"`) {
+		t.Fatalf("active tile grew an archived flag: %s", activeJSON)
+	}
+
+	archivedJSON, err := json.Marshal(toLeanTile(&domain.Movie{
+		ID:              7,
+		Title:           "The Matrix",
+		AddedByID:       2,
+		AddedByName:     "Ada",
+		AddedByArchived: true,
+	}, nil))
+	if err != nil {
+		t.Fatalf("marshal archived tile: %v", err)
+	}
+	if !strings.Contains(string(archivedJSON), `"addedByArchived":true`) {
+		t.Fatalf("archived attribution flag missing: %s", archivedJSON)
+	}
+}
+
 func TestMovieLinkDerivation(t *testing.T) {
 	t.Parallel()
 

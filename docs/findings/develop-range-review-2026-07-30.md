@@ -1,6 +1,6 @@
 # Develop Range Review: 2026-07-30
 
-Completed: 2026-07-31
+Completed: 2026-08-01
 
 Scope: every change on `develop` from
 `9f7d49885ad2af34e2c32002b27614bb9f187efd` through
@@ -22,6 +22,10 @@ publish lifecycle events out of order, writes that could partially commit, and
 stale enrichment that could overwrite a newer movie identity. Each fix is a
 separate pull request except where one state machine owned both symptoms.
 Regression tests were written first where the behavior fit automated testing.
+
+A follow-up audit closed the original measurement gaps and found four defects
+that predate the reviewed range. They do not block this stack. They are recorded
+below for a separate TDD stack after merge.
 
 ## Fixed findings
 
@@ -96,34 +100,62 @@ Later persistence fixes generally reduce database work. Movie creation removes
 one write. Changed-identity edits fall from about seven statements and four
 commits to five statements and one commit after the required derived-data
 cleanup. Enrichment falls from three commits to one, and draw repository calls
-fall from seven to four. The narrow command serialization in #280, #282, and
-#291 trades possible contention for ordered state transitions; those paths have
-not been load-tested.
+fall from seven to four.
+
+Focused benchmarks on an Apple M4 Pro measured median lock-held work at 0.116
+ms for a three-candidate draw, 0.156 ms for a 100-member watch rotation, and
+0.251 ms for a move across 100 owned movies. Synthetic extremes reached 6.902
+ms for 3,000 draw candidates, 4.927 ms for 10,000 members, and 14.484 ms for a
+5,000-movie owner library. The lock itself and synchronous broker fanout were
+not material costs. Draw metadata and the move response projection do remain
+inside their serialization boundaries; the earlier assessment that reads were
+outside every critical section was too broad.
 
 From #278 to #295, the same CI build shows app JavaScript growing by 0.84 kB
 gzip and main CSS by 0.13 kB gzip. No chunk exceeds 200 kB gzip and the stack
 adds no dependency. The #295 modal reflow is CSS-only and removes horizontal
 overflow at 320 and 340 px without viewport reads or render work.
 
-## Residual notes
+A final cold-cache Lighthouse profile on #295 kept both desktop routes at 99:
+Movies had 0.847 s median LCP and Members had 0.784 s. Simulated mobile exposed
+a separate pre-range risk. Movies had 3.752 s median LCP, 0.0831 CLS, and 19 ms
+TBT; Members had 3.688 s LCP, 0.00002 CLS, and 0 ms TBT. These are lab results,
+not field Core Web Vitals.
 
-- The Safari 26 fallback intentionally advertises conservative desktop stash
-  sizes. At a few column-reset widths and high DPR it can retain `w342` where
-  `w154` would be sufficient.
-- The main Movies route still has pre-existing poster overfetch outside this
-  range. Other bounded poster surfaces can opt into the new source contract in
-  a separate measured change.
-- One cold Movies run reached 2.55 s LCP because the remote TMDB hero backdrop
-  spent 2.08 s waiting to start. Two subsequent runs were 0.91 to 0.98 s. This
-  was not introduced by the reviewed range.
-- New spring-forward wall times that do not exist in the local timezone can
-  still normalize to a later time. The input and conversion predate this range;
-  #294 prevents changes to an existing stored timestamp.
-- The new serialization, indexed authentication checks, and identity migration
-  have no load or large-dataset benchmark. No regression appeared in tests or
-  local profiling.
+## Residual findings
+
+- Hero content and controls wait for the remote backdrop to decode. A slow or
+  stalled image can keep a known draw blank, and same-draw enrichment can leave
+  the painted backdrop stale because its reveal id does not change. Both paths
+  predate the reviewed range.
+- Member create, restore, archive, and delete events do not invalidate cached
+  next-up state. Other clients can retain an archived holder or the empty-roster
+  result. The omission predates the range and survived the stacked cache fixes.
+- A movie move commits before its fallible response projection. A projection
+  error can suppress `movie:moved`, and an idempotent retry cannot republish the
+  durable change. The sequence predates the range; #291 preserves it inside the
+  pool-state serialization boundary.
+- New spring-forward wall times that do not exist in the local timezone still
+  normalize to a later time. The input and conversion predate this range; #294
+  prevents changes to an existing stored timestamp. Repeated fall-back times
+  remain ambiguous without an explicit offset choice.
+- The main Movies route has measured pre-range image waste. Desktop loaded 19
+  fixed `w342` posters, while mobile used a 135 kB `w1280` hero backdrop. A
+  `w185` poster candidate and responsive backdrop sources are the next bounded
+  experiments.
+- Google Fonts remained render-blocking in the final profile. Lighthouse
+  estimated about 300 ms of mobile FCP opportunity, although `display=swap`
+  passed and field impact remains unknown.
+- The Safari 26 `sizes="auto"` fallback is conservative near column resets but
+  remains no worse than the original fixed `w342` behavior. This is an accepted
+  compatibility tradeoff, not a logic defect.
+- Indexed authentication checks added about 3.2 to 3.6 microseconds on affected
+  paths. Migration 010 completed 100,000 rows with 10% identity conflicts in
+  213 ms, and a 50,000-row Bolt import completed in 1.92 s. No change is
+  warranted from those results.
 - Issue [#157](https://github.com/nuxencs/moviepickarr/issues/157) is covered by
-  #282, #283, and #285. It remains open until its closing pull request merges.
+  #282, #283, and #285. It remains open, and #285 targets an intermediate stack
+  branch, so verify or close the issue after the full stack reaches `develop`.
 
 ## Verification
 
@@ -137,5 +169,9 @@ overflow at 320 and 340 px without viewport reads or render work.
   mobile breakpoints. Nested confirmation ownership, interrupted modal history,
   and the 320/340/370/371 px movie-modal boundary were exercised without
   submitting a destructive mutation.
-- CI: all 32 pull requests had completed, successful checks at handoff. Pull
-  request #295 passed all seven of its checks.
+- Performance follow-up: twelve cold-cache Lighthouse runs covered Movies and
+  Members on desktop and simulated mobile. Focused serialization, authentication,
+  migration, import, and broker benchmarks used disposable SQLite fixtures.
+- CI: all 32 fix pull requests had completed, successful checks at handoff. Pull
+  request #295 passed all seven of its checks; the documentation pull request
+  passed its documentation check.

@@ -176,6 +176,46 @@ describe("Modal", () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
+    it("cancels a parent-driven exit when open returns before it finishes", () => {
+      const onClose = vi.fn();
+      const onRequestClose = vi.fn();
+      const view = render(
+        <Modal onClose={onClose} onRequestClose={onRequestClose} open>
+          {modalBody}
+        </Modal>,
+      );
+      const dialog = screen.getByRole("dialog");
+      const closeButton = screen.getByRole("button", { name: "Close" });
+      closeButton.focus();
+
+      // A gesture owns one request for this open interval. The parent then
+      // withdraws its history-backed state and restores it before the exit lands.
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(onRequestClose).toHaveBeenCalledTimes(1);
+      view.rerender(
+        <Modal onClose={onClose} onRequestClose={onRequestClose} open={false}>
+          {modalBody}
+        </Modal>,
+      );
+      expect(dialog.classList.contains("modal--closing")).toBe(true);
+
+      view.rerender(
+        <Modal onClose={onClose} onRequestClose={onRequestClose} open>
+          {modalBody}
+        </Modal>,
+      );
+      expect(dialog.classList.contains("modal--closing")).toBe(false);
+
+      // Reopening keeps this exact surface and its focus alive, cancels the old
+      // timer, and gives the restored open interval one fresh close request.
+      runExit();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toBe(dialog);
+      expect(document.activeElement).toBe(closeButton);
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(onRequestClose).toHaveBeenCalledTimes(2);
+    });
+
     it.each([
       ["Escape", () => fireEvent.keyDown(document, { key: "Escape" })],
       ["a veil click", (dialog: HTMLElement) => fireEvent.mouseDown(veilOf(dialog))],

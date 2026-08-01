@@ -151,6 +151,34 @@ describe.each([
 });
 
 describe("the history stack", () => {
+  it("cancels its exit when Forward restores the entry before the motion finishes", async () => {
+    const { router } = await mount(MOVIES);
+    const opener = poster("Possession");
+    opener.focus();
+    fireEvent.click(opener);
+    const dialog = screen.getByRole("dialog");
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    closeButton.focus();
+
+    act(() => router.history.back());
+    expect(dialog.classList.contains("modal--closing")).toBe(true);
+
+    act(() => router.history.forward());
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(dialog.classList.contains("modal--closing")).toBe(false);
+
+    // The first exit timer is gone, the same surface still owns focus, and the
+    // restored entry can be dismissed normally.
+    await runExit();
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(document.activeElement).toBe(closeButton);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await runExit();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("stays flat however many films are opened and closed", async () => {
     const films = [movie(), movie({ movieID: 7, title: "Stalker" }), movie({ movieID: 9, title: "Solaris" })];
     const { router } = await mount(MOVIES, films);
@@ -198,9 +226,14 @@ describe("an entry left behind by navigating away", () => {
   it("doesn't hold the modal open when the same film is opened again", async () => {
     const { router } = await mount(MOVIES);
 
-    // Leave with the modal up, which strands its entry, then come back to it.
+    // Leave with the modal up, which strands its entry. Let the abandoned
+    // surface finish closing before returning: coming back during that motion
+    // is an interrupted exit, covered above, not an abandoned modal.
     fireEvent.click(poster("Possession"));
     await act(async () => void (await router.navigate({ to: "/admin" })));
+    await runExit();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
     act(() => router.history.back());
     await runExit();
     expect(screen.queryByRole("dialog")).toBeNull();

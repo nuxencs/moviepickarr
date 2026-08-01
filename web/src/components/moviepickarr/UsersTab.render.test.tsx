@@ -368,6 +368,29 @@ describe("the rail of members", () => {
     expect(drawers[2].hasAttribute("inert")).toBe(true);
   });
 
+  it("rechecks rail overflow only after the drawer size transition", async () => {
+    await renderTab({ users: roster, meID: 2 });
+    const rail = screen.getByRole("navigation", { name: "Members" });
+    const heightRead = vi.spyOn(rail, "scrollHeight", "get").mockReturnValue(100);
+
+    // Let the mount-time frame finish, then count only work caused by the
+    // transition events below.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    heightRead.mockClear();
+
+    fireEvent.transitionEnd(rail.querySelector(".mem-row__link") as HTMLElement, {
+      propertyName: "color",
+    });
+    expect(heightRead).not.toHaveBeenCalled();
+
+    const drawer = rail.querySelector(".mem-drop") as HTMLElement;
+    fireEvent.transitionEnd(drawer, { propertyName: "opacity" });
+    expect(heightRead).not.toHaveBeenCalled();
+
+    fireEvent.transitionEnd(drawer, { propertyName: "grid-template-rows" });
+    expect(heightRead).toHaveBeenCalledTimes(1);
+  });
+
   it("draws empty pool slots as dashed cells that say nothing", async () => {
     await renderTab({ users: roster, meID: 3, href: "/users?member=3" });
 

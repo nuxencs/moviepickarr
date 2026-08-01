@@ -290,12 +290,23 @@ export function UsersTab() {
     const ro = new ResizeObserver(check);
     ro.observe(rail);
     // Opening a drawer changes what the rail holds without changing the rail,
-    // so the observer alone would miss it. The drawer's transition says when.
-    rail.addEventListener("transitionend", check);
+    // so the observer alone would miss it. Descendant colour, opacity and
+    // transform transitions bubble through the rail too; only the drawer's
+    // size transition warrants another layout read.
+    const onDrawerTransitionEnd = (event: TransitionEvent) => {
+      if (
+        event.propertyName === "grid-template-rows" &&
+        event.target instanceof HTMLElement &&
+        event.target.classList.contains("mem-drop")
+      ) {
+        check();
+      }
+    };
+    rail.addEventListener("transitionend", onDrawerTransitionEnd);
     return () => {
       cancelAnimationFrame(frame);
       ro.disconnect();
-      rail.removeEventListener("transitionend", check);
+      rail.removeEventListener("transitionend", onDrawerTransitionEnd);
     };
   }, [ordered.length, selected?.userID]);
 

@@ -59,23 +59,6 @@ func (h *handler) getPooledMovies(ctx context.Context) ([]fullMovie, error) {
 	return toFullMovies(movies, h.metaFor(ctx, movies), h.creditsFor(ctx, movies)), nil
 }
 
-func (h *handler) advanceNextUp(ctx context.Context) error {
-	next, changed, err := h.nextUpService.Advance(ctx)
-	if err != nil {
-		return err
-	}
-	if changed {
-		h.broker.Broadcast(event{
-			Type: "settings:next-up-changed",
-			Data: map[string]any{
-				"id":   next.ID,
-				"name": next.Name,
-			},
-		})
-	}
-	return nil
-}
-
 // writeNotAdder is the uniform 403 for a member trying to change a movie they
 // did not add. There is deliberately no admin override: edits, deletes and moves
 // are the adder's alone.
@@ -544,21 +527,32 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 	var payload fullMovie
 	ran, err := h.runMovieNightCommand(c, func() error {
-		watched, watchErr := h.movieService.MarkCurrentAsWatched(ctx)
+		watched, next, changed, watchErr := h.movieService.MarkCurrentAsWatchedAndAdvanceNextUp(ctx)
 		if watchErr != nil {
+			if !errors.Is(watchErr, domain.ErrNoCurrentDraw) {
+				h.log.Error().
+					Err(watchErr).
+					Msg("watch current movie and advance next up failed")
+			}
 			return watchErr
 		}
 
 		// Rotation-on-watch (Model B): the turn passes only once the movie is
 		// actually watched, so the same member holds it across the whole draw →
-		// reveal → watch cycle. Keep the command lock through this update: the
-		// next authorization must observe the new holder.
-		if advanceErr := h.advanceNextUp(ctx); advanceErr != nil {
-			h.log.Error().Err(advanceErr).Msg("failed to advance next up")
+		// reveal → watch cycle. The service commits the watched row and handoff
+		// together; publish only after both are durable.
+		if changed {
+			h.broker.Broadcast(event{
+				Type: "settings:next-up-changed",
+				Data: map[string]any{
+					"id":   next.ID,
+					"name": next.Name,
+				},
+			})
 		}
 
-		// MarkCurrentAsWatched revealed an unrevealed reel, then cleared the draw
-		// and its pending auto-reveal.
+		// The service revealed an unrevealed reel after commit, then cleared the
+		// draw and its pending auto-reveal.
 		h.invalidateStatsCache()
 
 		payload = toFullMovieBare(watched)

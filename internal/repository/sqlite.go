@@ -102,7 +102,7 @@ func (d *SqliteUserRepository) List(ctx context.Context) ([]*domain.User, error)
 	// The roster is active members only: archived members keep their row for
 	// watch-history attribution but never show up in a live read (this backs the
 	// board, stats, and the rotation candidate list alike).
-	query := "SELECT id, name, created_at, updated_at FROM users WHERE archived_at IS NULL ORDER BY created_at ASC"
+	query := "SELECT id, name, created_at, updated_at FROM users WHERE archived_at IS NULL ORDER BY created_at ASC, id ASC"
 
 	rows, err := d.pool.Read.QueryContext(ctx, query)
 	if err != nil {
@@ -621,6 +621,125 @@ func (d *SqliteMoviesRepository) MarkAsWatched(ctx context.Context, id int, watc
 	}
 
 	return nil
+}
+
+// WatchCurrentAndAdvanceNextUp commits the watched lifecycle change and its
+// rotation-on-watch handoff as one writer transaction. Every dependent read
+// stays on tx: using the read pool here could derive the handoff from a
+// different snapshot than the watched update.
+func (d *SqliteMoviesRepository) WatchCurrentAndAdvanceNextUp(
+	ctx context.Context,
+	watchedAt time.Time,
+) (watched *domain.Movie, next *domain.User, changed bool, err error) {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var movieID int
+	err = tx.QueryRowContext(ctx, `
+		UPDATE movies
+		SET status = 'watched', watched_at = ?
+		WHERE status = 'current'
+		RETURNING id
+	`, db.ToUnix(watchedAt)).Scan(&movieID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, false, domain.ErrNoCurrentDraw
+	}
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	watched, err = scanMovie(tx.QueryRowContext(ctx, movieSelect+" WHERE m.id = ?", movieID))
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	var poolRemains bool
+	if err = tx.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM movies WHERE status = 'pool')",
+	).Scan(&poolRemains); err != nil {
+		return nil, nil, false, err
+	}
+
+	if poolRemains {
+		rows, queryErr := tx.QueryContext(ctx, `
+			SELECT id, name, created_at, updated_at
+			FROM users
+			WHERE archived_at IS NULL
+			ORDER BY created_at ASC, id ASC
+		`)
+		if queryErr != nil {
+			return nil, nil, false, queryErr
+		}
+
+		users := make([]*domain.User, 0)
+		for rows.Next() {
+			user, scanErr := scanUser(rows)
+			if scanErr != nil {
+				_ = rows.Close()
+				return nil, nil, false, scanErr
+			}
+			users = append(users, user)
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, nil, false, err
+		}
+		if err = rows.Close(); err != nil {
+			return nil, nil, false, err
+		}
+
+		if len(users) > 1 {
+			var storedNextUp sql.NullInt64
+			err = tx.QueryRowContext(ctx,
+				"SELECT user_id FROM next_up WHERE id = 1",
+			).Scan(&storedNextUp)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return nil, nil, false, err
+			}
+
+			currentIndex := -1
+			if !storedNextUp.Valid {
+				// Advance historically self-seeds the first member, then rotates to
+				// the second. Preserve that fresh-install behavior in one write.
+				currentIndex = 0
+			} else {
+				for i := range users {
+					if int64(users[i].ID) == storedNextUp.Int64 {
+						currentIndex = i
+						break
+					}
+				}
+			}
+
+			nextIndex := 0
+			if currentIndex >= 0 {
+				nextIndex = (currentIndex + 1) % len(users)
+			}
+			next = users[nextIndex]
+
+			if _, err = tx.ExecContext(ctx, `
+				INSERT INTO next_up (id, user_id)
+				VALUES (1, ?)
+				ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
+			`, next.ID); err != nil {
+				return nil, nil, false, err
+			}
+			changed = true
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, nil, false, err
+	}
+
+	// SQLite persists epoch seconds, but the successful request keeps the
+	// original UTC instant in its response.
+	watchedAt = watchedAt.UTC()
+	watched.WatchedAt = &watchedAt
+	return watched, next, changed, nil
 }
 
 func (d *SqliteMoviesRepository) Delete(ctx context.Context, id int) error {

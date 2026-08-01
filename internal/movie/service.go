@@ -21,6 +21,20 @@ const maxPoolSize = 3
 // countdown from it: there is no client-side copy to keep in sync.
 const DefaultAutoRevealDelay = 16500 * time.Millisecond
 
+// watchCurrentAndAdvanceNextUpStore is the consumer-side port for the one
+// lifecycle transition whose durable state crosses movies and next_up.
+type watchCurrentAndAdvanceNextUpStore interface {
+	WatchCurrentAndAdvanceNextUp(
+		ctx context.Context,
+		watchedAt time.Time,
+	) (watched *domain.Movie, next *domain.User, changed bool, err error)
+}
+
+type movieStore interface {
+	domain.MovieRepo
+	watchCurrentAndAdvanceNextUpStore
+}
+
 // ActiveDraw records the most recent random draw so a reloading client — or one
 // that joined late / dropped the SSE event — can resume the draw-reveal spin
 // instead of jumping straight to the result. Held in memory only: a server
@@ -65,7 +79,7 @@ type DrawConfig struct {
 // whole draw lifecycle: the in-memory active draw, the auto-reveal deadline
 // and its timer, and the reveal-once flip behind the cross-client reveal.
 type Service struct {
-	movieRepo domain.MovieRepo
+	movieRepo movieStore
 	drawCfg   DrawConfig
 
 	mu              sync.Mutex
@@ -79,7 +93,7 @@ type Service struct {
 	drawGen uint64
 }
 
-func NewService(movieRepo domain.MovieRepo, drawCfg DrawConfig) *Service {
+func NewService(movieRepo movieStore, drawCfg DrawConfig) *Service {
 	if drawCfg.AutoRevealDelay <= 0 {
 		drawCfg.AutoRevealDelay = DefaultAutoRevealDelay
 	}
@@ -566,28 +580,32 @@ func (s *Service) StartAutoReveal(movieID int, generation uint64) {
 	s.armAutoRevealLocked(generation)
 }
 
-func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error) {
-	// Publish the persisted lifecycle change and the draw removal together.
-	// This also makes watch race cleanly with the auto-reveal timer.
+// MarkCurrentAsWatchedAndAdvanceNextUp persists the watched movie and next-up
+// handoff atomically. The active draw stays untouched until that transaction
+// commits, so a failed handoff remains retryable and emits no reveal.
+func (s *Service) MarkCurrentAsWatchedAndAdvanceNextUp(
+	ctx context.Context,
+) (watched *domain.Movie, next *domain.User, changed bool, err error) {
+	// Hold the draw mutex across the durable transition and its in-memory
+	// counterpart. The timer may wait here, but can never reveal a transaction
+	// that later rolls back.
 	s.mu.Lock()
-
-	current, err := s.movieRepo.GetCurrent(ctx)
+	watched, next, changed, err = s.movieRepo.WatchCurrentAndAdvanceNextUp(ctx, time.Now().UTC())
 	if err != nil {
 		s.mu.Unlock()
-		return nil, err
+		return nil, nil, false, err
 	}
 
-	if current == nil {
-		s.mu.Unlock()
-		return nil, domain.ErrNoCurrentDraw
-	}
+	revealed := s.finishWatchLocked()
+	s.mu.Unlock()
 
-	watchedAt := time.Now().UTC()
-	if err = s.movieRepo.MarkAsWatched(ctx, current.ID, watchedAt); err != nil {
-		s.mu.Unlock()
-		return nil, err
-	}
+	s.notifyWatchReveal(revealed)
+	return watched, next, changed, nil
+}
 
+// finishWatchLocked applies the process-local half of a committed watch.
+// Callers hold s.mu and notify OnRevealed only after releasing it.
+func (s *Service) finishWatchLocked() *ActiveDraw {
 	// An early watch is also a reveal for clients still running the reel. Mark
 	// it before clearing so this path and the timer/manual paths notify once.
 	var revealed *ActiveDraw
@@ -598,16 +616,13 @@ func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 	}
 	s.activeDraw = nil
 	s.cancelAutoRevealLocked()
-	s.mu.Unlock()
+	return revealed
+}
 
-	current.Status = "watched"
-	current.WatchedAt = &watchedAt
-
+func (s *Service) notifyWatchReveal(revealed *ActiveDraw) {
 	if revealed != nil && s.drawCfg.OnRevealed != nil {
 		s.drawCfg.OnRevealed(*revealed)
 	}
-
-	return current, nil
 }
 
 // ActiveDraw reports the in-flight draw (movie id + when it was drawn) that

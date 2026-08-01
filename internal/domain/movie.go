@@ -29,7 +29,6 @@ type MovieRepo interface {
 	// concurrent promotions of distinct movies cannot overshoot the cap. Returns
 	// rows affected (1 = promoted, 0 = not — already pooled, not stashed, or full).
 	PromoteToPoolIfRoom(ctx context.Context, id, maxPool int) (int64, error)
-	MarkAsWatched(ctx context.Context, id int, time time.Time) error
 	GetRandomPooled(ctx context.Context) (*Movie, error)
 	GetCurrent(ctx context.Context) (*Movie, error)
 	Delete(ctx context.Context, id int) error

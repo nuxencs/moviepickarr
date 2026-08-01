@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/rs/zerolog"
 )
 
 // Delta 1: every broadcast gets a monotonic seq starting at 1, and Subscribe
@@ -606,6 +608,139 @@ func TestHandleWatchCurrentMovie_RevealsUnrevealedDraw(t *testing.T) {
 	}
 	if _, ok := h.movieService.ActiveDraw(); ok {
 		t.Fatal("watch left an active draw behind")
+	}
+}
+
+// Watching and handing off the turn are one durable transition. If next-up
+// persistence fails, the movie must stay current, its in-memory draw must stay
+// active, and clients must hear none of the terminal lifecycle events.
+func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo, pool := setupEditMovieTestWithDB(t)
+	var logOutput bytes.Buffer
+	h.log = zerolog.New(&logOutput)
+	h.movieService.Close()
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		AutoRevealDelay: time.Hour,
+		OnRevealed:      revealBroadcaster(h.broker),
+	})
+
+	first, err := userRepo.Create(ctx, "Nora")
+	if err != nil {
+		t.Fatalf("create first member: %v", err)
+	}
+	second, err := userRepo.Create(ctx, "Omar")
+	if err != nil {
+		t.Fatalf("create second member: %v", err)
+	}
+	if next, err := h.nextUpService.Get(ctx); err != nil || next.ID != first.ID {
+		t.Fatalf("seed next up: got %+v, err=%v, want member %d", next, err, first.ID)
+	}
+
+	seedPoolAndDraw(t, app, movieRepo, first.ID, "Thief", "Manhunter")
+	current, err := movieRepo.GetCurrent(ctx)
+	if err != nil {
+		t.Fatalf("get current before watch: %v", err)
+	}
+	activeBefore, ok := h.movieService.ActiveDraw()
+	if !ok || activeBefore.MovieID != current.ID || activeBefore.Revealed {
+		t.Fatalf("active draw before watch = %+v, ok=%v", activeBefore, ok)
+	}
+
+	_, err = pool.Write.ExecContext(ctx, `
+		CREATE TRIGGER fail_next_up_rotation
+		BEFORE UPDATE OF user_id ON next_up
+		BEGIN
+			SELECT RAISE(ABORT, 'forced next-up rotation failure');
+		END
+	`)
+	if err != nil {
+		t.Fatalf("install failure trigger: %v", err)
+	}
+
+	client, _ := h.broker.Subscribe()
+	t.Cleanup(func() { h.broker.Unsubscribe(client) })
+
+	watchReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil)
+	resp := doAs(t, app, watchReq, first.ID, "member")
+	if resp.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("watch status = %d, want 500", resp.StatusCode)
+	}
+	logged := logOutput.String()
+	if !strings.Contains(logged, "watch current movie and advance next up failed") {
+		t.Fatalf("watch failure log missing operation: %q", logged)
+	}
+	if !strings.Contains(logged, "forced next-up rotation failure") {
+		t.Fatalf("watch failure log missing database cause: %q", logged)
+	}
+
+	stillCurrent, err := movieRepo.GetCurrent(ctx)
+	if err != nil {
+		t.Fatalf("get current after failed watch: %v", err)
+	}
+	if stillCurrent.ID != current.ID || stillCurrent.Status != "current" || stillCurrent.WatchedAt != nil {
+		t.Fatalf("current after failed watch = %+v, want unchanged movie %d", stillCurrent, current.ID)
+	}
+
+	activeAfter, ok := h.movieService.ActiveDraw()
+	if !ok || activeAfter.MovieID != activeBefore.MovieID || activeAfter.Generation != activeBefore.Generation || activeAfter.Revealed {
+		t.Fatalf("active draw after failed watch = %+v, ok=%v, want unchanged %+v", activeAfter, ok, activeBefore)
+	}
+
+	next, err := h.nextUpService.Get(ctx)
+	if err != nil {
+		t.Fatalf("get next up after failed watch: %v", err)
+	}
+	if next.ID != first.ID {
+		t.Fatalf("next up after failed watch = %d, want %d", next.ID, first.ID)
+	}
+
+	var events []string
+	for len(client) > 0 {
+		events = append(events, (<-client).Type)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events after failed watch = %v, want none", events)
+	}
+
+	if _, err := pool.Write.ExecContext(ctx, "DROP TRIGGER fail_next_up_rotation"); err != nil {
+		t.Fatalf("remove failure trigger: %v", err)
+	}
+
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil)
+	retry := doAs(t, app, retryReq, first.ID, "member")
+	if retry.StatusCode != fiber.StatusOK {
+		t.Fatalf("retry watch status = %d, want 200", retry.StatusCode)
+	}
+
+	watched, err := movieRepo.FindByID(ctx, current.ID)
+	if err != nil {
+		t.Fatalf("get movie after retry: %v", err)
+	}
+	if watched.Status != "watched" || watched.WatchedAt == nil {
+		t.Fatalf("movie after retry = %+v, want watched with watched_at", watched)
+	}
+	if _, ok := h.movieService.ActiveDraw(); ok {
+		t.Fatal("retry left an active draw behind")
+	}
+
+	next, err = h.nextUpService.Get(ctx)
+	if err != nil {
+		t.Fatalf("get next up after retry: %v", err)
+	}
+	if next.ID != second.ID {
+		t.Fatalf("next up after retry = %d, want %d", next.ID, second.ID)
+	}
+
+	events = events[:0]
+	for len(client) > 0 {
+		events = append(events, (<-client).Type)
+	}
+	wantEvents := []string{"movie:revealed", "settings:next-up-changed", "movie:watched"}
+	if !slices.Equal(events, wantEvents) {
+		t.Fatalf("events after retry = %v, want %v", events, wantEvents)
 	}
 }
 

@@ -88,10 +88,6 @@ func (r *fakeMovieRepo) PromoteToPoolIfRoom(context.Context, int, int) (int64, e
 	panic("unexpected call")
 }
 
-func (r *fakeMovieRepo) MarkAsWatched(context.Context, int, time.Time) error {
-	panic("unexpected call")
-}
-
 func (r *fakeMovieRepo) GetRandomPooled(context.Context) (*domain.Movie, error) {
 	panic("unexpected call")
 }

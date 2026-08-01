@@ -317,7 +317,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		movieService: movie.NewService(movieRepo, movie.DrawConfig{
 			OnRevealed: revealBroadcaster(broker),
 		}),
-		nextUpService:   nextup.NewService(nextUpRepo, userRepo, movieRepo),
+		nextUpService:   nextup.NewService(nextUpRepo, userRepo),
 		settingsService: settings.NewService(settingsRepo),
 		movieMetadata:   movieMetadataRepo,
 		movieCredits:    movieCreditsRepo,

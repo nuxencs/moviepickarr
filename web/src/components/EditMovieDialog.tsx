@@ -41,16 +41,18 @@ function toLocalDateTimeInputValue(value?: string): string {
 }
 
 function toISODateTime(value: string): string | undefined {
-  if (!value.trim()) {
+  const normalized = value.trim();
+  if (!normalized) {
     return undefined;
   }
 
-  const parsed = new Date(value);
+  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) {
     return undefined;
   }
 
-  return parsed.toISOString();
+  const iso = parsed.toISOString();
+  return toLocalDateTimeInputValue(iso) === normalized ? iso : undefined;
 }
 
 export function EditMovieDialog({

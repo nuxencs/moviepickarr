@@ -146,6 +146,55 @@ describe("EditMovieDialog watched date", () => {
     });
   });
 
+  it("rejects a watched time that does not exist during spring-forward", () => {
+    const originalTZ = process.env.TZ;
+    process.env.TZ = "Europe/Berlin";
+    try {
+      const onSubmit = renderWatchedDialog("2026-03-28T01:30:37.123Z");
+      const input = screen.getByLabelText("Watched date and time");
+
+      fireEvent.change(input, { target: { value: "2026-03-29T02:30" } });
+      fireEvent.blur(input);
+
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(screen.getByRole("alert").textContent).toBe(
+        "Enter a valid watched date and time.",
+      );
+      expect(
+        screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled"),
+      ).toBe(true);
+      expect(onSubmit).not.toHaveBeenCalled();
+    } finally {
+      if (originalTZ === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTZ;
+      }
+    }
+  });
+
+  it("preserves an unchanged timestamp in the repeated fall-back hour", () => {
+    const originalTZ = process.env.TZ;
+    process.env.TZ = "Europe/Berlin";
+    try {
+      const onSubmit = renderWatchedDialog("2026-10-25T01:30:37.123Z");
+
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+      expect(onSubmit).toHaveBeenCalledWith({
+        title: "The Matrix",
+        link: "https://www.imdb.com/title/tt0133093/",
+        watchedAt: undefined,
+      });
+    } finally {
+      if (originalTZ === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTZ;
+      }
+    }
+  });
+
   it("converts a changed local watched date to ISO", () => {
     const onSubmit = renderWatchedDialog();
     const input = screen.getByLabelText("Watched date and time");

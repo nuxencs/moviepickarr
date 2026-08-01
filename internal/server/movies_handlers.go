@@ -25,7 +25,8 @@ func (h *handler) metaFor(ctx context.Context, movies []*domain.Movie) metaByID 
 	}
 	meta, err := h.movieMetadata.GetMetadataByMovieIDs(ctx, ids)
 	if err != nil {
-		h.log.Warn().Err(err).Msg("failed to load movie metadata (using empty)")
+		h.log.Warn().Err(err).Int("count", len(ids)).
+			Msg("loading movie metadata failed, responding without it")
 		return metaByID{}
 	}
 	return meta
@@ -45,7 +46,8 @@ func (h *handler) creditsFor(ctx context.Context, movies []*domain.Movie) credit
 	}
 	credits, err := h.movieCredits.GetCreditsByMovieIDs(ctx, ids)
 	if err != nil {
-		h.log.Warn().Err(err).Msg("failed to load movie credits (using empty)")
+		h.log.Warn().Err(err).Int("count", len(ids)).
+			Msg("loading movie credits failed, responding without them")
 		return creditsByID{}
 	}
 	return credits
@@ -499,9 +501,9 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 		watched, next, changed, watchErr := h.movieService.MarkCurrentAsWatchedAndAdvanceNextUp(ctx)
 		if watchErr != nil {
 			if !errors.Is(watchErr, domain.ErrNoCurrentDraw) {
-				h.log.Error().
+				h.reqLog(c).Error().
 					Err(watchErr).
-					Msg("watch current movie and advance next up failed")
+					Msg("watching the current movie and advancing next up failed")
 			}
 			return watchErr
 		}

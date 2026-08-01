@@ -763,11 +763,16 @@ func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) 
 		t.Fatalf("watch status = %d, want 500", resp.StatusCode)
 	}
 	logged := logOutput.String()
-	if !strings.Contains(logged, "watch current movie and advance next up failed") {
+	if !strings.Contains(logged, "watching the current movie and advancing next up failed") {
 		t.Fatalf("watch failure log missing operation: %q", logged)
 	}
 	if !strings.Contains(logged, "forced next-up rotation failure") {
 		t.Fatalf("watch failure log missing database cause: %q", logged)
+	}
+	// The line goes through reqLog, so it identifies who tried to watch and on
+	// which route — not just that some watch somewhere failed.
+	if !strings.Contains(logged, `"member_id":`) {
+		t.Fatalf("watch failure log missing the acting member: %q", logged)
 	}
 
 	stillCurrent, err := movieRepo.GetCurrent(ctx)

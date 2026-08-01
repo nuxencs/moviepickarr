@@ -50,7 +50,7 @@ Sub-loggers are plain `zerolog.Logger` values (cheap to copy); tests pass
 `fiberzerolog` replaces Fiber's text logger. Middleware order is
 `requestid → fiberzerolog → recover`: `requestid` sets the `X-Request-ID`
 response header on the way in, the logger reads it on the way out (so every
-access line carries `requestId`), and it sits ahead of `recover` so a recovered
+access line carries `request_id`), and it sits ahead of `recover` so a recovered
 panic still yields one line.
 
 Each request logs `request_id`, `ip`, `method`, `path`, `status`, `latency`,
@@ -70,6 +70,10 @@ sub-logger carrying `request_id`, `method`, `route`, plus `member_id` once
 `requireSession` has attached one. That correlates an app log line with the
 access line for the same request, and means a handler never has to re-add "who
 and what" by hand.
+
+Middleware that returns before `c.Next()` omits `route`: Fiber still reports the
+middleware prefix at that point, not the endpoint template. Its `request_id`
+still joins the line to the access log's concrete `path`.
 
 ```go
 h.reqLog(c).Error().Err(err).Int("movie_id", id).Msg("advancing next up failed")

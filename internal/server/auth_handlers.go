@@ -118,7 +118,7 @@ func (h *handler) handleLogin(c *fiber.Ctx) error {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			return writeInvalidCredentials(c)
 		}
-		// Not a wrong password (that returned above) — the credential check
+		// Not a wrong password (that returned above). The credential check
 		// itself faulted. The old "login failed" read like a rejection.
 		return h.writeInternal(c, err, "verifying local login failed")
 	}

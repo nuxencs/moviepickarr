@@ -132,7 +132,7 @@ func (h *handler) requireSession(c *fiber.Ctx) error {
 		// requireSession has not attached an actor yet, so this line carries the
 		// request only. That is the point: it is the one 500 whose cause is
 		// invisible from the access log alone.
-		h.reqLog(c).Error().Err(err).Msg("session lookup failed")
+		h.reqLogBeforeRoute(c).Error().Err(err).Msg("session lookup failed")
 		return writeProblem(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 	}
 

@@ -89,3 +89,35 @@ func TestReqLogOmitsRequestIDWhenMiddlewareAbsent(t *testing.T) {
 		t.Errorf("request_id present without the middleware: %v", line)
 	}
 }
+
+func TestReqLogBeforeRouteOmitsMiddlewarePrefix(t *testing.T) {
+	var buf bytes.Buffer
+	h := &handler{log: zerolog.New(&buf)}
+
+	app := fiber.New()
+	app.Use(requestid.New())
+	app.Use("/req", func(c *fiber.Ctx) error {
+		h.reqLogBeforeRoute(c).Error().Msg("probe")
+		return c.SendStatus(fiber.StatusInternalServerError)
+	})
+	app.Get("/req/:movieID", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/req/42", nil))
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var line map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+		t.Fatalf("decode log line %q: %v", buf.String(), err)
+	}
+	if _, ok := line["route"]; ok {
+		t.Errorf("middleware prefix emitted as endpoint route: %v", line)
+	}
+	if got, _ := line["request_id"].(string); got == "" {
+		t.Errorf("request_id missing from %v", line)
+	}
+}

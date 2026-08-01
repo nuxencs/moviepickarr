@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -49,6 +50,16 @@ type Config struct {
 // shutdownTimeout bounds how long Fiber gets to drain in-flight requests. Named
 // so the log line that fires when it expires can report the budget it blew.
 const shutdownTimeout = 10 * time.Second
+
+func logHTTPShutdownError(log zerolog.Logger, err error) {
+	event := log.Error().Err(err)
+	if errors.Is(err, context.DeadlineExceeded) {
+		event.Dur("timeout", shutdownTimeout).
+			Msg("http server did not drain before the shutdown timeout")
+		return
+	}
+	event.Msg("shutting down the http server failed")
+}
 
 // dbMaxBackups resolves DB_BACKUP_MAX: how many pre-migration snapshots to
 // keep next to the DB file. 0 disables backups; invalid values fall back to
@@ -248,8 +259,7 @@ func Run(ctx context.Context, cfg Config) error {
 			defer cancel()
 
 			if err := app.ShutdownWithContext(ctxTimeout); err != nil {
-				rootLog.Error().Err(err).Dur("timeout", shutdownTimeout).
-					Msg("http server did not drain before the shutdown timeout")
+				logHTTPShutdownError(rootLog, err)
 			}
 			// Stop the worker after Fiber has drained (no handler can enqueue)
 			// but before the DB closes (in-flight enrichment still reads it).

@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"moviepickarr/internal/auth"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -59,9 +62,10 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 	// this token to reach here (401 before the stream ever opens); the per-heartbeat
 	// recheck is what drops a session revoked AFTER the handshake.
 	sessionToken := c.Cookies(sessionCookieName)
-	// Same reason: c.Locals is only valid while the request context lives, and
-	// the body-stream writer below outlives it.
-	memberID := actorMemberID(c)
+	// The body-stream writer outlives Fiber's request context, so capture the
+	// complete request scope now. The copied logger owns its fields and remains
+	// safe after c is released.
+	sseLog := h.reqLog(c).With().Str("subsystem", "sse").Logger()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		eventChannel, headSeq := h.broker.Subscribe()
@@ -71,16 +75,6 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			return
 		}
 		defer h.broker.Unsubscribe(eventChannel)
-
-		// One sse sub-logger for the whole stream so every write/flush site is
-		// tagged identically (and a future site can't forget the tag). member_id
-		// is attached here rather than per line: a stream belongs to exactly one
-		// member for its whole life, and "whose stream just died" is the first
-		// thing you want to know.
-		sseLog := h.log.With().
-			Str("subsystem", "sse").
-			Int("member_id", memberID).
-			Logger()
 
 		// emit formats one frame straight into the stream and flushes it. Every
 		// frame goes through here: the write and flush failures used to be six
@@ -130,7 +124,7 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			eventData, err := json.Marshal(e)
 			if err != nil {
 				// Which event type is unmarshalable is the entire diagnostic
-				// here — without it this line names a closure, not a bug.
+				// here; without it this line names a closure, not a bug.
 				sseLog.Error().Err(err).
 					Str("frame", "message").
 					Str("event", e.Type).
@@ -162,7 +156,11 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 				// idle window, or a long-held stream would keep an idle session alive.
 				// Best-effort context: the request's is gone once the writer runs.
 				if err := h.sessions.Revalidate(context.Background(), sessionToken); err != nil {
-					sseLog.Debug().Err(err).Msg("session revoked or expired mid-stream, closing stream")
+					if errors.Is(err, auth.ErrSessionInvalid) {
+						sseLog.Debug().Err(err).Msg("session revoked or expired mid-stream, closing stream")
+					} else {
+						sseLog.Error().Err(err).Msg("session revalidation failed, closing stream")
+					}
 					return
 				}
 

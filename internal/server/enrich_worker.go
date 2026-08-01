@@ -117,7 +117,7 @@ func envDuration(key string) (time.Duration, bool) {
 	d, err := time.ParseDuration(raw)
 	if err != nil || d < 0 {
 		zlog.Warn().Str("component", "enrich").Str("key", key).Str("value", raw).
-			Msg("env value is not a duration, using default")
+			Msg("env value is not a non-negative duration, using default")
 		return 0, false
 	}
 	return d, true
@@ -484,7 +484,7 @@ func (r *enrichRunner) processAttempt(
 	switch {
 	case err == nil:
 		return res, outcomeEnriched, nil
-	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+	case ctx.Err() != nil:
 		return enrichResult{}, outcomeCanceled, err
 	case errors.Is(err, ErrEnrichNoIMDbID) ||
 		errors.Is(err, ErrEnrichNotFound) ||
@@ -512,7 +512,7 @@ func (r *enrichRunner) publishAttempt(
 			Msg("movie enriched")
 		r.recordEnriched(movieID)
 	case outcomeSkipped:
-		r.log.Debug().Int("movie_id", movieID).Err(err).Msg("movie skipped, not enrichable")
+		r.log.Debug().Int("movie_id", movieID).Err(err).Msg("movie enrichment skipped")
 	case outcomeFailed:
 		r.log.Warn().Int("movie_id", movieID).Err(err).Msg("movie enrichment failed")
 	}

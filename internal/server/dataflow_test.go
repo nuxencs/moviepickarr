@@ -770,7 +770,7 @@ func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) 
 		t.Fatalf("watch failure log missing database cause: %q", logged)
 	}
 	// The line goes through reqLog, so it identifies who tried to watch and on
-	// which route — not just that some watch somewhere failed.
+	// which route, not just that some watch somewhere failed.
 	if !strings.Contains(logged, `"member_id":`) {
 		t.Fatalf("watch failure log missing the acting member: %q", logged)
 	}

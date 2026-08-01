@@ -12,6 +12,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -632,6 +633,15 @@ function focusWasDropped(regionOwnsFocus: boolean): boolean {
   return regionOwnsFocus && document.activeElement === document.body;
 }
 
+/** The wall cell owned by a poster or by its sibling corner action. */
+function wallCellOf(target: HTMLElement): number | null {
+  const marked = target.hasAttribute("data-cell")
+    ? target
+    : target.closest(".mem-tile")?.querySelector("[data-cell]");
+  const index = Number(marked?.getAttribute("data-cell"));
+  return Number.isInteger(index) ? index : null;
+}
+
 /**
  * The one corner action a tile carries: promote on a stash poster, demote on a
  * pool one. Rendered only on your own board, and only ever one per tile.
@@ -948,13 +958,26 @@ function StashPane({
     [cellAt],
   );
 
-  // Back to the first cell on a filter change, as on a member switch (which is
-  // a remount, so it costs nothing here). That lands Tab out of the field on
-  // Add on your own board and on the first match on a guest's, which is the
-  // right emphasis in both cases. Keeping the index across a filter would mean
-  // matching identity between two filtered lists to land on "reset" anyway in
-  // the common case. The index only: focus stays in the field being typed in.
-  useEffect(() => setRoving(0), [filter]);
+  const syncedFilter = useRef(filter);
+
+  // A filter deliberately starts a new run at its first result; the index only,
+  // since focus stays in the field being typed in. Otherwise React keeps a keyed
+  // movie node focused when an earlier movie is inserted or removed, but that
+  // preservation fires no focus event. Its numeric cell changes under it, so
+  // take the roving index along before paint. Otherwise a different tile
+  // becomes the tab stop and the next arrow starts from there.
+  useLayoutEffect(() => {
+    if (syncedFilter.current !== filter) {
+      syncedFilter.current = filter;
+      setRoving(0);
+      return;
+    }
+    const grid = gridRef.current;
+    const active = document.activeElement;
+    if (!grid || !(active instanceof HTMLElement) || !grid.contains(active)) return;
+    const actual = wallCellOf(active);
+    if (actual !== null) setRoving(actual);
+  }, [filter, filteredStash, addTile]);
 
   // Whatever focus lands on inside the wall takes the index with it, so the
   // arrows always move from the cell you are actually on. Without this a
@@ -962,12 +985,8 @@ function StashPane({
   // poster, press an arrow, and focus jumps from wherever the index was last
   // left. The corner action counts as its own tile's cell.
   const onWallFocus = (e: React.FocusEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    const marked = target.hasAttribute("data-cell")
-      ? target
-      : target.closest(".mem-tile")?.querySelector("[data-cell]");
-    const index = Number(marked?.getAttribute("data-cell"));
-    if (Number.isInteger(index)) setRoving(index);
+    const index = wallCellOf(e.target as HTMLElement);
+    if (index !== null) setRoving(index);
   };
 
   const onWallKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {

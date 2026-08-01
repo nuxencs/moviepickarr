@@ -524,8 +524,10 @@ Cancel) is the safe choice, so outside-click dismiss is intentional; only the ex
   cell width, so grid coordinates would be announcing the stylesheet. The column count is
   read back off the resolved `grid-template-columns` rather than computed in JS, since a
   JS pixel and a CSS pixel are different sizes under the root zoom ramp (§13). The roving
-  index resets to the first cell on any content change — a filter, a switch of subject —
-  which also decides where Tab out of the field above it lands.
+  index resets to the first cell on an explicit context change, a filter or switch of
+  subject, which also decides where Tab out of the field above it lands. Live keyed-list
+  updates keep a surviving focused film as the tab stop and carry its new cell index
+  along, so the next arrow still starts from that film.
 - **Focus moves only when the thing it is sitting on goes away**, and then to the nearest
   thing that is still there: the item taking the vacated index, else the one before it,
   else the region's heading (focusable at `tabIndex={-1}`, never a tab stop). Removing a

@@ -1054,6 +1054,46 @@ describe("moving around the wall with the keyboard", () => {
     expect(named(document.activeElement)).toBe("Film 101");
   });
 
+  it("keeps the focused movie as the tab stop when an earlier movie is removed", async () => {
+    const { client } = await renderTab({ users: roster, meID: 1 });
+    const focused = within(wall()).getByRole("button", { name: "Film 102" });
+    focused.focus();
+    await waitFor(() =>
+      expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]),
+    );
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10], stash: [101, 102, 103] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(focused.getAttribute("data-cell")).toBe("2"));
+    expect(document.activeElement).toBe(focused);
+    expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]);
+    press("ArrowRight");
+    expect(named(document.activeElement)).toBe("Film 103");
+  });
+
+  it("keeps the focused movie as the tab stop when an earlier movie is inserted", async () => {
+    const { client } = await renderTab({ users: roster, meID: 1 });
+    const focused = within(wall()).getByRole("button", { name: "Film 102" });
+    focused.focus();
+    await waitFor(() =>
+      expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]),
+    );
+
+    client.setQueryData(UsersKeys.list(), [
+      ada({ pool: [10], stash: [1, 100, 101, 102, 103] }),
+      bo,
+    ]);
+
+    await waitFor(() => expect(focused.getAttribute("data-cell")).toBe("4"));
+    expect(document.activeElement).toBe(focused);
+    expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]);
+    press("ArrowRight");
+    expect(named(document.activeElement)).toBe("Film 103");
+  });
+
   it("resets the index to the first cell on a filter change", async () => {
     await renderTab({ users: roster, meID: 1 });
     cells()[0].focus();

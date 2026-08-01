@@ -287,7 +287,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	// it stays nil and all enqueue/start/stop sites no-op (handlers guard on nil).
 	var runner *enrichRunner
 	if tmdbCli.apiKey != "" {
-		enrichmentSvc := newEnrichmentService(movieRepo, movieMetadataRepo, movieCreditsRepo, tmdbCli, enrichCfg.CastLimit)
+		enrichmentSvc := newEnrichmentService(movieRepo, movieMetadataRepo, tmdbCli, enrichCfg.CastLimit)
 		enrichLog := rootLog.With().Str("component", "enrich").Logger()
 		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg, enrichLog)
 	}

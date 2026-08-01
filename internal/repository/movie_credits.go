@@ -18,13 +18,7 @@ func NewSqliteMovieCreditsRepository(pool *db.Pool) *SqliteMovieCreditsRepositor
 	return &SqliteMovieCreditsRepository{pool: pool}
 }
 
-func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movieID int, credits []domain.MovieCredit) error {
-	tx, err := d.pool.Write.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
+func replaceMovieCredits(ctx context.Context, tx *sql.Tx, movieID int, credits []domain.MovieCredit) error {
 	// Upsert people first so the credit FKs resolve. A person's name/photo can
 	// change on TMDB, so re-enrichment refreshes the shared row. Both statements
 	// run ~15-40 times per movie, so prepare each once and reuse it — modernc's
@@ -66,6 +60,19 @@ func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movie
 		); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movieID int, credits []domain.MovieCredit) error {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := replaceMovieCredits(ctx, tx, movieID, credits); err != nil {
+		return err
 	}
 
 	// Stamp the marker even when credits are empty, so genuinely credit-less

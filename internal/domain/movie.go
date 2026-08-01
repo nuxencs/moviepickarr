@@ -79,6 +79,24 @@ type EnrichmentCandidate struct {
 	MovieID int
 }
 
+// MovieIdentity is the stable external identity used to decide whether fetched
+// enrichment still belongs to the current movie.
+type MovieIdentity struct {
+	TMDBID *int
+	IMDbID *string
+}
+
+// MovieEnrichmentWrite carries one complete enrichment commit. Expected is the
+// identity observed before remote TMDB work; Resolved and the derived rows may
+// be stored only while that identity still matches.
+type MovieEnrichmentWrite struct {
+	MovieID  int
+	Expected MovieIdentity
+	Resolved MovieIdentity
+	Metadata MovieMetadata
+	Credits  []MovieCredit
+}
+
 type MovieMetadataRepo interface {
 	UpsertMetadata(ctx context.Context, md MovieMetadata) error
 	GetMetadata(ctx context.Context, movieID int) (*MovieMetadata, error)

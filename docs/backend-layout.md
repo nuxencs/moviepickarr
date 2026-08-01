@@ -199,6 +199,8 @@
   transaction. It skips roster and raw next-up reads when no pooled movie
   remains. See ADR 0002.
 - `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
+- `internal/repository/movie_enrichment.go`: guarded, transaction-bound
+  identity + metadata + credits enrichment write.
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
 - `internal/repository/session.go`: `sessions` repository (active-gated create / find-by-token-hash joined to the active member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).
 - `internal/repository/local_account.go`: `local_accounts` repository (active-member find by NOCASE username / by user id, active-gated create and password/login-state writes, unique→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete) plus the active-gated `oidc_identities` presence read and `/me` member-identity join.
@@ -242,8 +244,9 @@
   reads authorization and status, updates its title, optional watched time and
   identity, marks its metadata stale, and reads its response on one writer
   transaction. A uniqueness failure returns 409 without committing the other
-  edit fields. The enrichment worker treats an identity conflict as non-fatal
-  (metadata/credits still persist so the row leaves the backlog).
+  edit fields. The guarded enrichment write treats a resolved-identity conflict
+  as non-fatal (metadata/credits still persist so the legacy duplicate row
+  leaves the backlog).
 - Migration files: `-- migrate:fk_off` on the first line makes the runner wrap
   the migration in the SQLite table-rebuild procedure (FKs off around the tx +
   `foreign_key_check` before commit). Version numbering has a permanent gap at
@@ -335,14 +338,16 @@ Ingest happens inside the same enrichment call: `MovieDetails` appends
 - **Crew**: filtered to the job whitelist (Director, Writer, Screenplay,
   Original Music Composer, Director of Photography), deduped per (person, job).
 
-`MovieCreditsRepo.ReplaceCredits` runs in one transaction: upsert people,
-delete the movie's credit rows, insert the new ones, and stamp
-`movie_metadata.credits_refreshed_at = CURRENT_TIMESTAMP`. It runs **after**
-`UpsertMetadata` (the stamp lives on the metadata row) and also when the
-mapped credits are empty, so credit-less titles get stamped instead of looping
-the drain. A NULL `credits_refreshed_at` makes a movie a `NeedsEnrichment`
-candidate — existing libraries **backfill credits automatically** on the first
-drain after the migration.
+Production enrichment persists its resolved identity, metadata, people, credit
+replacement, and `movie_metadata.credits_refreshed_at = unixepoch()` marker in
+one `ApplyEnrichment` writer transaction. The metadata upsert sets the marker
+before credit insertion because a later failure rolls the whole transaction
+back. Empty credit sets still commit the marker, so credit-less titles do not
+loop the drain. The standalone `MovieCreditsRepo.ReplaceCredits` path uses the
+same transaction-bound credit helper and stamps after replacement. A NULL
+`credits_refreshed_at` makes a movie a `NeedsEnrichment` candidate, so existing
+libraries backfill credits automatically on the first drain after the
+migration.
 
 Movie responses fold credits in alongside the metadata: the same GET endpoints
 batch-load credits via `GetCreditsByMovieIDs` and emit `cast` / `crew` arrays
@@ -360,8 +365,12 @@ the same transaction.
 Enrichment (`EnrichOne`): if the movie already has a `tmdb_id` (search add /
 prior enrichment) it goes straight to `GET /3/movie/{tmdb_id}`; otherwise it
 reverse-looks-up `GET /3/find/{imdb_id}?external_source=imdb_id` first. Either
-way it persists `tmdb_id`/`imdb_id` back onto the movie and upserts the display
-metadata — so the costly `/find` runs at most once per movie, never on refresh.
+way it snapshots the exact stored `tmdb_id`/`imdb_id` before network work.
+`ApplyEnrichment` uses that pair as a NULL-safe compare-and-set token. If an edit
+changed either id while TMDB was in flight, the old result is discarded without
+writing or publishing. A matching result persists the resolved ids and all
+derived rows atomically, so the costly `/find` runs at most once per stable
+identity and a credit failure cannot leave new metadata beside old credits.
 
 A single background worker (`enrichRunner`) drives it: a startup backfill of
 un-enriched rows, fire-and-forget enqueue when a movie is added or its link is
@@ -370,8 +379,11 @@ requests are paced by a min-interval rate limiter and retried (429 `Retry-After`
 exponential backoff + jitter on 5xx/network). Successful upserts are coalesced
 into a single `movies:enriched-batch` SSE event per burst (debounced, with a hard
 ceiling) rather than one event per movie — a backfill of many rows used to trigger
-one invalidate-refetch wave per movie. Enrichment is skipped entirely when
-`TMDB_API_KEY` is unset.
+one invalidate-refetch wave per movie. An edit enqueue received while that movie
+is actively processing records one coalesced rerun; queued duplicates remain
+deduped. Superseded and deleted attempts are skipped without publishing, and
+only the final successful attempt enters the event batch. Enrichment is skipped
+entirely when `TMDB_API_KEY` is unset.
 
 Env knobs (all optional; sensible defaults): `TMDB_ENRICH_MIN_INTERVAL_MS`
 (250), `TMDB_ENRICH_MAX_RETRIES` (4), `TMDB_ENRICH_BACKOFF_MS` (500),

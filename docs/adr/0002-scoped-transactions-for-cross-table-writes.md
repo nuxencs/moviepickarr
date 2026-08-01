@@ -58,6 +58,21 @@ therefore leaves the movie and its dependent metadata state unchanged. Stats
 cache invalidation, the `movie:updated` event, and enrichment enqueue all run
 after commit.
 
+TMDB enrichment keeps its network work outside SQLite. `EnrichOne` first reads
+the movie's exact TMDB and IMDb identity, fetches and maps the remote result,
+then passes both identities and every derived row to `ApplyEnrichment`. That
+operation conditionally updates the movie only when both stored ids still match
+the pre-request values. A mismatch discards the old result without writing.
+When they match, the resolved identity, metadata, people, credits, and credits
+completion marker commit in one writer transaction. An identity uniqueness
+conflict remains non-fatal for legacy duplicate rows: their metadata and credits
+still commit without changing the ids, so they leave the backlog.
+
+The enrichment runner remembers one follow-up request when an edit enqueue
+arrives during active TMDB work. It publishes only the final successful attempt.
+A superseded attempt is expected control flow: it does not invalidate caches or
+emit `movies:enriched-batch`.
+
 The break-glass admin seed uses the same scoped seam. `SeedAdmin` first runs an
 authoritative name, archive-state, role, and local-login read on a writer
 transaction. When a new login needs a password hash, that call returns a
@@ -87,6 +102,11 @@ partial states do not become transactions under this decision.
 - A failed movie edit does not expose a new title, watched time, or identity
   without its metadata stale marker and client invalidation. A successful
   watched edit clears the stats cache before clients hear `movie:updated`.
+- An enrichment result fetched for an older identity cannot overwrite a newer
+  edit. A failed metadata or credit write rolls back the resolved ids and every
+  derived row, leaving the stale marker or TTL eligible for retry.
+- TMDB requests, credit mapping, and metadata JSON encoding happen before the
+  enrichment transaction. The single writer is held only for local SQL work.
 - A failed break-glass login insert rolls back both a fresh admin row and an
   adopted member's role promotion. Constraint errors still fail boot, but
   leave the roster and credentials unchanged for the next retry.

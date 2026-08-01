@@ -26,15 +26,11 @@ func (f *fakeTMDB) MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDetai
 	return f.detailsFn(ctx, tmdbID)
 }
 
-type setIDsCall struct {
-	id     int
-	tmdbID *int
-	imdbID *string
-}
-
 type fakeMovieRepo struct {
-	movies  map[int]*domain.Movie
-	setCall *setIDsCall
+	movies      map[int]*domain.Movie
+	applyCalls  []domain.MovieEnrichmentWrite
+	applyErr    error
+	applyResult *bool
 }
 
 func (r *fakeMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, error) {
@@ -46,107 +42,29 @@ func (r *fakeMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, erro
 	return &cp, nil
 }
 
-func (r *fakeMovieRepo) SetExternalIDs(_ context.Context, id int, tmdbID *int, imdbID *string) error {
-	r.setCall = &setIDsCall{id: id, tmdbID: tmdbID, imdbID: imdbID}
-	return nil
-}
-
-func (r *fakeMovieRepo) List(context.Context) ([]*domain.Movie, error) { panic("unexpected call") }
-func (r *fakeMovieRepo) FindByUserID(context.Context, int) ([]*domain.Movie, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMovieRepo) FindByStatus(context.Context, string) ([]*domain.Movie, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMovieRepo) FindByUserIDAndStatus(context.Context, int, string) ([]*domain.Movie, error) {
-	panic("unexpected call")
-}
-func (r *fakeMovieRepo) CountByStatus(context.Context, string) (int, error) { panic("unexpected call") }
-func (r *fakeMovieRepo) CountByUserIDAndStatus(context.Context, int, string) (int, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMovieRepo) AddToStash(context.Context, string, int, *int, *string) (*domain.Movie, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMovieRepo) UpdateStatus(context.Context, int, string) error { panic("unexpected call") }
-func (r *fakeMovieRepo) UpdateStatusIf(context.Context, int, string, string) (int64, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMovieRepo) PromoteToPoolIfRoom(context.Context, int, int) (int64, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMovieRepo) GetRandomPooled(context.Context) (*domain.Movie, error) {
-	panic("unexpected call")
-}
-func (r *fakeMovieRepo) GetCurrent(context.Context) (*domain.Movie, error) { panic("unexpected call") }
-func (r *fakeMovieRepo) Delete(context.Context, int) error                 { panic("unexpected call") }
-
-type fakeMetaRepo struct {
-	upserts   []domain.MovieMetadata
-	upsertErr error
-}
-
-func (r *fakeMetaRepo) UpsertMetadata(_ context.Context, md domain.MovieMetadata) error {
-	if r.upsertErr != nil {
-		return r.upsertErr
+func (r *fakeMovieRepo) ApplyEnrichment(
+	_ context.Context,
+	write domain.MovieEnrichmentWrite,
+) (bool, error) {
+	if r.applyErr != nil {
+		return false, r.applyErr
 	}
-	r.upserts = append(r.upserts, md)
-	return nil
-}
-
-func (r *fakeMetaRepo) GetMetadata(context.Context, int) (*domain.MovieMetadata, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMetaRepo) GetMetadataByMovieIDs(context.Context, []int) (map[int]*domain.MovieMetadata, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMetaRepo) NeedsEnrichment(context.Context, time.Time, int) ([]domain.EnrichmentCandidate, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeMetaRepo) MarkEnrichmentStale(context.Context, int) error {
-	panic("unexpected call")
-}
-
-type replaceCall struct {
-	movieID int
-	credits []domain.MovieCredit
-}
-
-type fakeCreditsRepo struct {
-	replaces   []replaceCall
-	replaceErr error
-	onReplace  func() // invoked before recording; lets tests assert ordering
-}
-
-func (r *fakeCreditsRepo) ReplaceCredits(_ context.Context, movieID int, credits []domain.MovieCredit) error {
-	if r.replaceErr != nil {
-		return r.replaceErr
+	r.applyCalls = append(r.applyCalls, write)
+	if r.applyResult != nil {
+		return *r.applyResult, nil
 	}
-	if r.onReplace != nil {
-		r.onReplace()
-	}
-	r.replaces = append(r.replaces, replaceCall{movieID: movieID, credits: credits})
-	return nil
+	return true, nil
 }
 
-func (r *fakeCreditsRepo) GetCreditsByMovieIDs(context.Context, []int) (map[int][]domain.MovieCredit, error) {
+type fakeCandidateRepo struct{}
+
+func (*fakeCandidateRepo) NeedsEnrichment(context.Context, time.Time, int) ([]domain.EnrichmentCandidate, error) {
 	panic("unexpected call")
 }
 
-func newTestEnricher(m *domain.Movie, tmdb tmdbAPI) (*enrichmentService, *fakeMetaRepo, *fakeCreditsRepo) {
+func newTestEnricher(m *domain.Movie, tmdb tmdbAPI) (*enrichmentService, *fakeMovieRepo) {
 	movies := &fakeMovieRepo{movies: map[int]*domain.Movie{m.ID: m}}
-	meta := &fakeMetaRepo{}
-	credits := &fakeCreditsRepo{}
-	return newEnrichmentService(movies, meta, credits, tmdb, 15), meta, credits
+	return newEnrichmentService(movies, &fakeCandidateRepo{}, tmdb, 15), movies
 }
 
 // --- tests -----------------------------------------------------------------
@@ -191,16 +109,7 @@ func TestEnrichOne_HappyPath(t *testing.T) {
 	}
 
 	movies := &fakeMovieRepo{movies: map[int]*domain.Movie{m.ID: m}}
-	meta := &fakeMetaRepo{}
-	credits := &fakeCreditsRepo{}
-	// ReplaceCredits stamps credits_refreshed_at on the metadata row, so the
-	// metadata upsert MUST have happened by the time it runs.
-	credits.onReplace = func() {
-		if len(meta.upserts) != 1 {
-			t.Errorf("ReplaceCredits ran before UpsertMetadata (%d upserts)", len(meta.upserts))
-		}
-	}
-	svc := newEnrichmentService(movies, meta, credits, tmdb, 15)
+	svc := newEnrichmentService(movies, &fakeCandidateRepo{}, tmdb, 15)
 	res, err := svc.EnrichOne(context.Background(), 7)
 	if err != nil {
 		t.Fatalf("EnrichOne: %v", err)
@@ -209,19 +118,22 @@ func TestEnrichOne_HappyPath(t *testing.T) {
 		t.Fatalf("unexpected result: %+v", res)
 	}
 
-	// Identity persisted on the movie row.
-	if movies.setCall == nil || movies.setCall.tmdbID == nil || *movies.setCall.tmdbID != 603 {
-		t.Fatalf("expected SetExternalIDs with tmdb 603, got %+v", movies.setCall)
+	if len(movies.applyCalls) != 1 {
+		t.Fatalf("expected one atomic enrichment write, got %d", len(movies.applyCalls))
 	}
-	if movies.setCall.imdbID == nil || *movies.setCall.imdbID != "tt0133093" {
-		t.Fatalf("expected SetExternalIDs with imdb tt0133093, got %+v", movies.setCall)
+	write := movies.applyCalls[0]
+	if write.MovieID != 7 {
+		t.Fatalf("write movie id = %d, want 7", write.MovieID)
+	}
+	if write.Expected.TMDBID != nil || write.Expected.IMDbID == nil || *write.Expected.IMDbID != "tt0133093" {
+		t.Fatalf("expected identity = %+v", write.Expected)
+	}
+	if write.Resolved.TMDBID == nil || *write.Resolved.TMDBID != 603 ||
+		write.Resolved.IMDbID == nil || *write.Resolved.IMDbID != "tt0133093" {
+		t.Fatalf("resolved identity = %+v", write.Resolved)
 	}
 
-	// Display fields persisted to metadata (ids are NOT on metadata anymore).
-	if len(meta.upserts) != 1 {
-		t.Fatalf("expected 1 upsert, got %d", len(meta.upserts))
-	}
-	md := meta.upserts[0]
+	md := write.Metadata
 	if md.MovieID != 7 || md.Runtime != 136 {
 		t.Fatalf("mapping mismatch: %+v", md)
 	}
@@ -235,19 +147,14 @@ func TestEnrichOne_HappyPath(t *testing.T) {
 		t.Fatalf("genres mismatch: %v", md.Genres)
 	}
 
-	// Mapped credits persisted: cast kept, gaffer dropped by the whitelist.
-	if len(credits.replaces) != 1 {
-		t.Fatalf("expected 1 ReplaceCredits call, got %d", len(credits.replaces))
+	if len(write.Credits) != 2 {
+		t.Fatalf("mapped credits = %+v", write.Credits)
 	}
-	replaced := credits.replaces[0]
-	if replaced.movieID != 7 || len(replaced.credits) != 2 {
-		t.Fatalf("unexpected ReplaceCredits call: %+v", replaced)
+	if write.Credits[0].Kind != domain.CreditKindCast || write.Credits[0].Person.Name != "Keanu Reeves" {
+		t.Fatalf("cast mismatch: %+v", write.Credits[0])
 	}
-	if replaced.credits[0].Kind != domain.CreditKindCast || replaced.credits[0].Person.Name != "Keanu Reeves" {
-		t.Fatalf("cast mismatch: %+v", replaced.credits[0])
-	}
-	if replaced.credits[1].Kind != domain.CreditKindCrew || replaced.credits[1].Job != "Director" {
-		t.Fatalf("crew mismatch: %+v", replaced.credits[1])
+	if write.Credits[1].Kind != domain.CreditKindCrew || write.Credits[1].Job != "Director" {
+		t.Fatalf("crew mismatch: %+v", write.Credits[1])
 	}
 }
 
@@ -261,7 +168,7 @@ func TestEnrichOne_EmptyCreditsStillReplaced(t *testing.T) {
 		},
 	}
 
-	svc, _, credits := newTestEnricher(m, tmdb)
+	svc, movies := newTestEnricher(m, tmdb)
 	res, err := svc.EnrichOne(context.Background(), 9)
 	if err != nil {
 		t.Fatalf("EnrichOne: %v", err)
@@ -269,14 +176,12 @@ func TestEnrichOne_EmptyCreditsStillReplaced(t *testing.T) {
 	if res.Credits != 0 {
 		t.Fatalf("expected 0 credits, got %d", res.Credits)
 	}
-	// Empty credits still call ReplaceCredits — it stamps the marker, so a
-	// credit-less title stops being a backfill candidate.
-	if len(credits.replaces) != 1 || len(credits.replaces[0].credits) != 0 {
-		t.Fatalf("expected one empty ReplaceCredits call, got %+v", credits.replaces)
+	if len(movies.applyCalls) != 1 || len(movies.applyCalls[0].Credits) != 0 {
+		t.Fatalf("expected one atomic write with empty credits, got %+v", movies.applyCalls)
 	}
 }
 
-func TestEnrichOne_ReplaceCreditsErrorBubbles(t *testing.T) {
+func TestEnrichOne_ApplyErrorBubbles(t *testing.T) {
 	t.Parallel()
 	m := &domain.Movie{ID: 10, IMDbID: new("tt0133093")}
 	tmdb := &fakeTMDB{
@@ -286,11 +191,11 @@ func TestEnrichOne_ReplaceCreditsErrorBubbles(t *testing.T) {
 		},
 	}
 
-	svc, _, credits := newTestEnricher(m, tmdb)
-	boom := errors.New("credits write failed")
-	credits.replaceErr = boom
+	svc, movies := newTestEnricher(m, tmdb)
+	boom := errors.New("enrichment write failed")
+	movies.applyErr = boom
 	if _, err := svc.EnrichOne(context.Background(), 10); !errors.Is(err, boom) {
-		t.Fatalf("expected credits error to bubble, got %v", err)
+		t.Fatalf("expected enrichment write error to bubble, got %v", err)
 	}
 }
 
@@ -312,13 +217,12 @@ func TestEnrichOne_SkipsFindWhenTMDBIDKnown(t *testing.T) {
 	}
 
 	movies := &fakeMovieRepo{movies: map[int]*domain.Movie{m.ID: m}}
-	meta := &fakeMetaRepo{}
-	svc := newEnrichmentService(movies, meta, &fakeCreditsRepo{}, tmdb, 15)
+	svc := newEnrichmentService(movies, &fakeCandidateRepo{}, tmdb, 15)
 	if _, err := svc.EnrichOne(context.Background(), 8); err != nil {
 		t.Fatalf("EnrichOne: %v", err)
 	}
-	if len(meta.upserts) != 1 {
-		t.Fatalf("expected 1 upsert, got %d", len(meta.upserts))
+	if len(movies.applyCalls) != 1 {
+		t.Fatalf("expected one atomic write, got %d", len(movies.applyCalls))
 	}
 }
 
@@ -331,7 +235,7 @@ func TestEnrichOne_NoIMDbID(t *testing.T) {
 		detailsFn: func(context.Context, int) (tmdbMovieDetails, error) { called = true; return tmdbMovieDetails{}, nil },
 	}
 
-	svc, meta, _ := newTestEnricher(m, tmdb)
+	svc, movies := newTestEnricher(m, tmdb)
 	_, err := svc.EnrichOne(context.Background(), 1)
 	if !errors.Is(err, ErrEnrichNoIMDbID) {
 		t.Fatalf("expected ErrEnrichNoIMDbID, got %v", err)
@@ -339,8 +243,8 @@ func TestEnrichOne_NoIMDbID(t *testing.T) {
 	if called {
 		t.Fatalf("tmdb should not be called when there is no imdb id")
 	}
-	if len(meta.upserts) != 0 {
-		t.Fatalf("expected no upsert, got %d", len(meta.upserts))
+	if len(movies.applyCalls) != 0 {
+		t.Fatalf("expected no atomic write, got %d", len(movies.applyCalls))
 	}
 }
 
@@ -355,13 +259,13 @@ func TestEnrichOne_FindNotFound(t *testing.T) {
 		},
 	}
 
-	svc, meta, _ := newTestEnricher(m, tmdb)
+	svc, movies := newTestEnricher(m, tmdb)
 	_, err := svc.EnrichOne(context.Background(), 2)
 	if !errors.Is(err, ErrEnrichNotFound) {
 		t.Fatalf("expected ErrEnrichNotFound, got %v", err)
 	}
-	if len(meta.upserts) != 0 {
-		t.Fatalf("expected no upsert")
+	if len(movies.applyCalls) != 0 {
+		t.Fatal("expected no atomic write")
 	}
 }
 
@@ -373,12 +277,12 @@ func TestEnrichOne_DetailsNotFound(t *testing.T) {
 		detailsFn: func(context.Context, int) (tmdbMovieDetails, error) { return tmdbMovieDetails{}, errTMDBNotFound },
 	}
 
-	svc, meta, _ := newTestEnricher(m, tmdb)
+	svc, movies := newTestEnricher(m, tmdb)
 	if _, err := svc.EnrichOne(context.Background(), 5); !errors.Is(err, ErrEnrichNotFound) {
 		t.Fatalf("expected ErrEnrichNotFound, got %v", err)
 	}
-	if len(meta.upserts) != 0 {
-		t.Fatalf("expected no upsert")
+	if len(movies.applyCalls) != 0 {
+		t.Fatal("expected no atomic write")
 	}
 }
 
@@ -391,14 +295,14 @@ func TestEnrichOne_RateLimitBubbles(t *testing.T) {
 		detailsFn: func(context.Context, int) (tmdbMovieDetails, error) { return tmdbMovieDetails{}, nil },
 	}
 
-	svc, meta, _ := newTestEnricher(m, tmdb)
+	svc, movies := newTestEnricher(m, tmdb)
 	_, err := svc.EnrichOne(context.Background(), 3)
 	var rl *tmdbRateLimitError
 	if !errors.As(err, &rl) {
 		t.Fatalf("expected rate-limit error to bubble, got %v", err)
 	}
-	if len(meta.upserts) != 0 {
-		t.Fatalf("expected no upsert on rate limit")
+	if len(movies.applyCalls) != 0 {
+		t.Fatal("expected no atomic write on rate limit")
 	}
 }
 
@@ -412,11 +316,11 @@ func TestEnrichOne_NilRuntimeAndEmptyGenres(t *testing.T) {
 		},
 	}
 
-	svc, meta, _ := newTestEnricher(m, tmdb)
+	svc, movies := newTestEnricher(m, tmdb)
 	if _, err := svc.EnrichOne(context.Background(), 4); err != nil {
 		t.Fatalf("EnrichOne: %v", err)
 	}
-	md := meta.upserts[0]
+	md := movies.applyCalls[0].Metadata
 	if md.Runtime != 0 {
 		t.Fatalf("expected runtime 0 for nil, got %d", md.Runtime)
 	}

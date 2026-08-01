@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"moviepickarr/internal/domain"
+
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -172,7 +174,7 @@ type enrichRunner struct {
 
 	queue    chan int
 	trigger  chan struct{}
-	inflight map[int]struct{}
+	inflight map[int]enrichClaim
 	mu       sync.Mutex // guards inflight only
 
 	// batch coalesces freshly-enriched ids into one SSE broadcast. batchMu guards
@@ -188,6 +190,11 @@ type enrichRunner struct {
 	cancel   context.CancelFunc
 }
 
+type enrichClaim struct {
+	processing bool
+	rerun      bool
+}
+
 func newEnrichRunner(enricher Enricher, broker *eventBroker, cfg enrichConfig, log zerolog.Logger) *enrichRunner {
 	return &enrichRunner{
 		enricher: enricher,
@@ -196,7 +203,7 @@ func newEnrichRunner(enricher Enricher, broker *eventBroker, cfg enrichConfig, l
 		log:      log,
 		queue:    make(chan int, cfg.QueueSize),
 		trigger:  make(chan struct{}, 1),
-		inflight: make(map[int]struct{}),
+		inflight: make(map[int]enrichClaim),
 	}
 }
 
@@ -250,7 +257,7 @@ func (r *enrichRunner) Stop() {
 // if the queue is full the id is dropped and the next scheduled drain re-selects
 // it. Dedup avoids queuing an id that is already pending.
 func (r *enrichRunner) Enqueue(movieID int) {
-	if !r.tryClaim(movieID) {
+	if !r.tryEnqueue(movieID) {
 		return
 	}
 
@@ -262,19 +269,80 @@ func (r *enrichRunner) Enqueue(movieID int) {
 	}
 }
 
-// tryClaim marks a movie in-flight, reporting false if it was already claimed
-// (queued via Enqueue or being drained). It's the single dedup gate shared by
-// the auto-on-add queue and the backfill drain, so a just-added movie that is
-// both queued and a drain candidate is enriched once, not twice. process()
-// always releases the claim via clearInflight in its defer.
+// tryEnqueue claims a new queued movie. A duplicate for a queued movie is
+// already covered by its future read. A duplicate for a processing movie means
+// committed state changed after that read, so remember one coalesced rerun.
+func (r *enrichRunner) tryEnqueue(movieID int) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	claim, ok := r.inflight[movieID]
+	if ok {
+		if claim.processing {
+			claim.rerun = true
+			r.inflight[movieID] = claim
+		}
+		return false
+	}
+	r.inflight[movieID] = enrichClaim{}
+	return true
+}
+
+// tryClaim marks a drain candidate in-flight, reporting false if it was already
+// queued or processing. A drain collision is deduplication, not evidence of a
+// newer edit, so it does not request a rerun.
 func (r *enrichRunner) tryClaim(movieID int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.inflight[movieID]; ok {
 		return false
 	}
-	r.inflight[movieID] = struct{}{}
+	r.inflight[movieID] = enrichClaim{}
 	return true
+}
+
+func (r *enrichRunner) markProcessing(movieID int) {
+	r.mu.Lock()
+	claim := r.inflight[movieID]
+	claim.processing = true
+	r.inflight[movieID] = claim
+	r.mu.Unlock()
+}
+
+// finishAttempt atomically either consumes one requested rerun while retaining
+// the claim, or releases the claim. Enqueue therefore lands on exactly one side
+// of the boundary: it marks this process dirty or creates a fresh queued claim.
+type attemptFinish int
+
+const (
+	attemptComplete attemptFinish = iota
+	attemptRerunInline
+	attemptRerunQueued
+)
+
+func (r *enrichRunner) finishAttempt(
+	movieID int,
+	allowRerun bool,
+	inlineRerunAvailable bool,
+) attemptFinish {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	claim, ok := r.inflight[movieID]
+	if !ok {
+		return attemptComplete
+	}
+	if allowRerun && claim.rerun {
+		claim.processing = false
+		claim.rerun = false
+		r.inflight[movieID] = claim
+		if inlineRerunAvailable {
+			return attemptRerunInline
+		}
+		return attemptRerunQueued
+	}
+	delete(r.inflight, movieID)
+	return attemptComplete
 }
 
 func (r *enrichRunner) clearInflight(movieID int) {
@@ -381,11 +449,59 @@ const (
 )
 
 func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
-	defer r.clearInflight(movieID)
+	inlineRerunAvailable := true
+	for {
+		r.markProcessing(movieID)
+		res, outcome, err := r.processAttempt(ctx, movieID)
+		switch r.finishAttempt(movieID, outcome != outcomeCanceled, inlineRerunAvailable) {
+		case attemptRerunInline:
+			inlineRerunAvailable = false
+			continue
+		case attemptRerunQueued:
+			select {
+			case r.queue <- movieID:
+			default:
+				r.clearInflight(movieID)
+				r.log.Warn().
+					Int("movieID", movieID).
+					Msg("enrich queue full, dropped dirty movie (will retry on next scan)")
+			}
+			return outcomeSkipped
+		case attemptComplete:
+			r.publishAttempt(movieID, res, err, outcome)
+			return outcome
+		}
+	}
+}
 
+func (r *enrichRunner) processAttempt(
+	ctx context.Context,
+	movieID int,
+) (enrichResult, enrichOutcome, error) {
 	res, err := r.enricher.EnrichOne(ctx, movieID)
 	switch {
 	case err == nil:
+		return res, outcomeEnriched, nil
+	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+		return enrichResult{}, outcomeCanceled, err
+	case errors.Is(err, ErrEnrichNoIMDbID) ||
+		errors.Is(err, ErrEnrichNotFound) ||
+		errors.Is(err, ErrEnrichSuperseded) ||
+		errors.Is(err, domain.ErrNotFound):
+		return enrichResult{}, outcomeSkipped, err
+	default:
+		return enrichResult{}, outcomeFailed, err
+	}
+}
+
+func (r *enrichRunner) publishAttempt(
+	movieID int,
+	res enrichResult,
+	err error,
+	outcome enrichOutcome,
+) {
+	switch outcome {
+	case outcomeEnriched:
 		r.log.Debug().
 			Int("movieID", movieID).
 			Int("tmdbID", res.TMDBID).
@@ -393,15 +509,10 @@ func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 			Int("credits", res.Credits).
 			Msg("enrich movie enriched")
 		r.recordEnriched(movieID)
-		return outcomeEnriched
-	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
-		return outcomeCanceled
-	case errors.Is(err, ErrEnrichNoIMDbID) || errors.Is(err, ErrEnrichNotFound):
+	case outcomeSkipped:
 		r.log.Debug().Int("movieID", movieID).Err(err).Msg("enrich skip movie")
-		return outcomeSkipped
-	default:
+	case outcomeFailed:
 		r.log.Warn().Int("movieID", movieID).Err(err).Msg("enrich movie failed")
-		return outcomeFailed
 	}
 }
 

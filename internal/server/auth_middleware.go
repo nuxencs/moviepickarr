@@ -114,7 +114,7 @@ func (h *handler) sweepSessions(ctx context.Context) {
 		return
 	}
 	if removed > 0 {
-		h.log.Debug().Int64("removed", removed).Msg("swept expired sessions")
+		h.log.Debug().Int64("count", removed).Msg("swept expired sessions")
 	}
 }
 
@@ -127,7 +127,10 @@ func (h *handler) requireSession(c *fiber.Ctx) error {
 			clearSessionCookie(c)
 			return writeProblem(c, fiber.StatusUnauthorized, "unauthorized", "authentication required")
 		}
-		h.log.Error().Err(err).Msg("session lookup failed")
+		// requireSession has not attached an actor yet, so this line carries the
+		// request only. That is the point: it is the one 500 whose cause is
+		// invisible from the access log alone.
+		h.reqLog(c).Error().Err(err).Msg("session lookup failed")
 		return writeProblem(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 	}
 

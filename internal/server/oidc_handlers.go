@@ -92,7 +92,7 @@ func destForIntent(intent string) string {
 func (h *handler) beginOIDC(c *fiber.Ctx, tx auth.OIDCTx, dest string) error {
 	sealed, err := h.oidcTx.Seal(tx)
 	if err != nil {
-		h.log.Error().Err(err).Msg("sealing oidc tx cookie failed")
+		h.reqLog(c).Error().Err(err).Str("intent", tx.Intent).Msg("sealing oidc tx cookie failed")
 		return redirectError(c, dest, errOIDCFailed)
 	}
 	h.setOIDCTxCookie(c, sealed)
@@ -105,7 +105,7 @@ func (h *handler) beginOIDC(c *fiber.Ctx, tx auth.OIDCTx, dest string) error {
 func (h *handler) handleOIDCLogin(c *fiber.Ctx) error {
 	tx, err := auth.NewOIDCTx(auth.IntentLogin)
 	if err != nil {
-		h.log.Error().Err(err).Msg("minting oidc login tx failed")
+		h.reqLog(c).Error().Err(err).Msg("minting oidc login tx failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 	return h.beginOIDC(c, tx, oidcLoginRedirect)
@@ -117,7 +117,7 @@ func (h *handler) handleOIDCLogin(c *fiber.Ctx) error {
 func (h *handler) handleOIDCLink(c *fiber.Ctx) error {
 	tx, err := auth.NewOIDCTx(auth.IntentLink)
 	if err != nil {
-		h.log.Error().Err(err).Msg("minting oidc link tx failed")
+		h.reqLog(c).Error().Err(err).Msg("minting oidc link tx failed")
 		return redirectError(c, oidcLinkRedirect, errOIDCFailed)
 	}
 	tx.MemberID = actorMemberID(c)
@@ -138,7 +138,7 @@ func (h *handler) handleClaimOIDC(c *fiber.Ctx) error {
 
 	tx, err := auth.NewOIDCTx(auth.IntentClaim)
 	if err != nil {
-		h.log.Error().Err(err).Msg("minting oidc claim tx failed")
+		h.reqLog(c).Error().Err(err).Msg("minting oidc claim tx failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 	tx.InviteTokenHash = auth.HashToken(token)
@@ -157,19 +157,29 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 	// Provider-side refusal (user denied consent, provider error) comes first,
 	// before we even open the tx. Intent is unknown here, so land on login.
 	if provErr := c.Query("error"); provErr != "" {
-		h.log.Warn().Str("provider_error", provErr).Msg("oidc provider returned an error")
+		h.reqLog(c).Warn().
+			Str("provider_error", provErr).
+			Str("provider_error_description", c.Query("error_description")).
+			Msg("oidc provider returned an error")
 		return redirectError(c, oidcLoginRedirect, errOIDCDenied)
 	}
 
 	tx, err := h.oidcTx.Open(c.Cookies(oidcTxCookieName))
 	if err != nil {
 		// Missing, tampered, or expired tx cookie: one uniform expired outcome.
+		// A tampered cookie and a member who left the tab open overnight are
+		// indistinguishable from here, so this stays warn.
+		h.reqLog(c).Warn().Err(err).Msg("oidc tx cookie missing, tampered, or expired")
 		return redirectError(c, oidcLoginRedirect, errOIDCExpired)
 	}
 
 	dest := destForIntent(tx.Intent)
 
 	if c.Query("state") != tx.State {
+		// The tx opened but its state does not match the callback's: a replayed
+		// or cross-session callback. Silent until now, which made a CSRF probe
+		// look identical to a clean run.
+		h.reqLog(c).Warn().Str("intent", tx.Intent).Msg("oidc callback state mismatch")
 		return redirectError(c, dest, errOIDCFailed)
 	}
 
@@ -177,7 +187,8 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 	if err != nil {
 		// Code exchange, ID-token verification, or nonce comparison failed. Log the
 		// cause internally; the public bucket stays generic.
-		h.log.Warn().Err(err).Msg("oidc code exchange or id-token verification failed")
+		h.reqLog(c).Warn().Err(err).Str("intent", tx.Intent).
+			Msg("oidc code exchange or id-token verification failed")
 		return redirectError(c, dest, errOIDCFailed)
 	}
 
@@ -189,6 +200,9 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 	case auth.IntentClaim:
 		return h.dispatchOIDCClaim(c, tx, claims)
 	default:
+		// We sealed this tx ourselves, so an intent we cannot dispatch means the
+		// mint and dispatch sides have drifted apart. That is a bug, not traffic.
+		h.reqLog(c).Error().Str("intent", tx.Intent).Msg("oidc tx carries an unknown intent")
 		return redirectError(c, dest, errOIDCFailed)
 	}
 }
@@ -200,11 +214,14 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 func (h *handler) dispatchOIDCLogin(c *fiber.Ctx, claims auth.OIDCClaims) error {
 	memberID, found, err := h.linker.Login(c.UserContext(), claims)
 	if err != nil {
-		h.log.Error().Err(err).Msg("oidc login dispatch failed")
+		h.reqLog(c).Error().Err(err).
+			Str("issuer", claims.Issuer).
+			Str("subject", claims.Subject).
+			Msg("oidc login dispatch failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 	if !found {
-		h.log.Warn().
+		h.reqLog(c).Warn().
 			Str("issuer", claims.Issuer).
 			Str("subject", claims.Subject).
 			Str("email", derefOr(claims.Email, "")).
@@ -212,7 +229,8 @@ func (h *handler) dispatchOIDCLogin(c *fiber.Ctx, claims auth.OIDCClaims) error 
 		return redirectError(c, oidcLoginRedirect, errOIDCUnlinked)
 	}
 	if err := h.issueSession(c, memberID); err != nil {
-		h.log.Error().Err(err).Msg("minting session on oidc login failed")
+		h.reqLog(c).Error().Err(err).Int("member_id", memberID).
+			Msg("minting session on oidc login failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 	return c.Redirect(oidcHomeRedirect, fiber.StatusFound)
@@ -227,7 +245,8 @@ func (h *handler) dispatchOIDCLink(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OID
 	as, err := h.sessions.Authenticate(c.UserContext(), c.Cookies(sessionCookieName))
 	if err != nil {
 		if !errors.Is(err, auth.ErrSessionInvalid) {
-			h.log.Error().Err(err).Msg("session lookup on oidc link failed")
+			h.reqLog(c).Error().Err(err).Int("member_id", tx.MemberID).
+				Msg("session lookup on oidc link failed")
 		}
 		return redirectError(c, oidcLinkRedirect, errOIDCSessionExpired)
 	}
@@ -239,7 +258,11 @@ func (h *handler) dispatchOIDCLink(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OID
 		if errors.Is(err, domain.ErrConflict) {
 			return redirectError(c, oidcLinkRedirect, errOIDCLinkConflict)
 		}
-		h.log.Error().Err(err).Msg("oidc link dispatch failed")
+		h.reqLog(c).Error().Err(err).
+			Int("member_id", tx.MemberID).
+			Str("issuer", claims.Issuer).
+			Str("subject", claims.Subject).
+			Msg("oidc link dispatch failed")
 		return redirectError(c, oidcLinkRedirect, errOIDCFailed)
 	}
 	return c.Redirect(oidcLinkRedirect+"?linked=1", fiber.StatusFound)
@@ -255,7 +278,7 @@ func (h *handler) dispatchOIDCClaim(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OI
 	ic, err := h.invites.ResolveClaimByHash(c.UserContext(), tx.InviteTokenHash)
 	if err != nil {
 		// The invite died between initiation and callback (expired, revoked, used).
-		h.log.Warn().Err(err).Msg("oidc claim invite no longer valid at callback")
+		h.reqLog(c).Warn().Err(err).Msg("oidc claim invite no longer valid at callback")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 
@@ -263,18 +286,29 @@ func (h *handler) dispatchOIDCClaim(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OI
 		if errors.Is(err, domain.ErrConflict) {
 			return redirectError(c, oidcLoginRedirect, errOIDCLinkConflict)
 		}
-		h.log.Error().Err(err).Msg("oidc claim link failed")
+		h.reqLog(c).Error().Err(err).
+			Int("member_id", ic.UserID).
+			Int64("invite_id", ic.ID).
+			Str("issuer", claims.Issuer).
+			Str("subject", claims.Subject).
+			Msg("oidc claim link failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 
 	if err := h.issueSession(c, ic.UserID); err != nil {
-		h.log.Error().Err(err).Msg("minting session on oidc claim failed")
+		h.reqLog(c).Error().Err(err).Int("member_id", ic.UserID).
+			Msg("minting session on oidc claim failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 	// Consume last: if this fails the identity is linked and the session is up, so
 	// the member is in; the still-usable invite ages out or is regenerated.
 	if err := h.invites.Consume(c.UserContext(), ic.ID); err != nil {
-		h.log.Error().Err(err).Msg("consuming invite on oidc claim failed")
+		// The member is already in; the invite just stays usable until it ages
+		// out, so this is an operator cleanup signal, not a failed request.
+		h.reqLog(c).Error().Err(err).
+			Int("member_id", ic.UserID).
+			Int64("invite_id", ic.ID).
+			Msg("consuming invite on oidc claim failed")
 	}
 	return c.Redirect(oidcHomeRedirect, fiber.StatusFound)
 }

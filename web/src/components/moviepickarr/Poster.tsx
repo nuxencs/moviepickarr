@@ -1,7 +1,10 @@
-import { StarIcon } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 
-import { posterBg, posterSrcSet, posterUrl, ratingLabel } from "@/components/moviepickarr/lib";
+import { posterBg, posterSrcSet, posterUrl } from "@/components/moviepickarr/lib";
+
+export const GENERAL_POSTER_SIZES =
+  "auto, (max-width: 640px) 104px, (max-width: 1199px) 128px, " +
+  "clamp(144px, 6.4vw, 164px)";
 
 interface PosterProps {
   title: string;
@@ -9,8 +12,6 @@ interface PosterProps {
   posterPath?: string;
   /** Show the procedural alt-poster title overlay (hidden in tight rows/slots). */
   showTitle?: boolean;
-  /** TMDB rating to render as a top-left badge. */
-  voteAverage?: number;
   /** Render-width hint that opts this poster into compact responsive sources. */
   sizes?: string;
   className?: string;
@@ -30,7 +31,6 @@ export const Poster = memo(function Poster({
   hue,
   posterPath,
   showTitle = true,
-  voteAverage,
   sizes,
   className,
 }: PosterProps) {
@@ -49,7 +49,6 @@ export const Poster = memo(function Poster({
   }, [posterPath]);
 
   const url = imgFailed ? null : posterUrl(posterPath);
-  const rating = ratingLabel(voteAverage);
   // The procedural duotone is ALWAYS the backdrop: the loading placeholder until
   // the photo fades in over it, and the permanent art when there's no/failed
   // image. `loading` drives the shimmer + the image's opacity fade.
@@ -75,13 +74,6 @@ export const Poster = memo(function Poster({
       )}
 
       {loading && <div className="poster__shimmer" aria-hidden="true" />}
-
-      {rating && (
-        <div className="poster__badge">
-          <StarIcon />
-          {rating}
-        </div>
-      )}
 
       {/* The alt-poster title only makes sense on the procedural art (no photo). */}
       {showTitle && !url && (

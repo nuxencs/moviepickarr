@@ -29,8 +29,8 @@
    wall is, that the stop moves with the arrows, that it resets on a filter and
    a member switch, and that a film leaving under focus hands focus on rather
    than dropping it. jsdom has no layout, so it reads no column count off the
-   wall (columnCount floors at one there): up and down move a cell here, and the
-   six-column arithmetic is pinned in the pure test.
+   wall (columnCount floors at one there): up and down move a cell here, and
+   multi-column arithmetic is pinned with explicit fixtures in the pure test.
    ============================================================ */
 
 import { onlineManager, QueryClient } from "@tanstack/react-query";
@@ -581,7 +581,8 @@ describe("opening a film's record", () => {
     const candidates = (path: string) =>
       `https://image.tmdb.org/t/p/w154/${path} 154w, ` +
       `https://image.tmdb.org/t/p/w185/${path} 185w, ` +
-      `https://image.tmdb.org/t/p/w342/${path} 342w`;
+      `https://image.tmdb.org/t/p/w342/${path} 342w, ` +
+      `https://image.tmdb.org/t/p/w500/${path} 500w`;
     const poolPoster = screen.getByRole("img", { name: "Film 10" });
     const stashPoster = screen.getByRole("img", { name: "Film 100" });
 
@@ -1015,9 +1016,9 @@ describe("moving around the wall with the keyboard", () => {
   it("is a list, not a grid", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // Six columns is a CSS artifact of a container-derived cell width, and the
-    // wall is an A-Z list of films: grid coordinates would announce the
-    // stylesheet. No row and no cell roles either.
+    // The responsive column count belongs to CSS, and the wall is an A-Z list
+    // of films: grid coordinates would announce the stylesheet. No row and no
+    // cell roles either.
     expect(document.querySelector('[role="grid"]')).toBeNull();
     expect(wall().getAttribute("role")).toBeNull();
     expect(wall().querySelector('[role="row"], [role="gridcell"]')).toBeNull();
@@ -1058,7 +1059,7 @@ describe("moving around the wall with the keyboard", () => {
     expect(named(document.activeElement)).toBe("Add to Ada's stash");
 
     // In jsdom the wall is one column wide (no layout to read), so a row is a
-    // cell. Which cell six columns reach is stashWall.test.ts's table.
+    // cell. Multi-column movement is stashWall.test.ts's table.
     press("ArrowDown");
     expect(named(document.activeElement)).toBe("Film 100");
     press("ArrowUp");

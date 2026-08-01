@@ -937,10 +937,10 @@ function PoolSlots({
  * tile makes no key but title verifiable by looking. The field below is the
  * find-a-film path in its place.
  *
- * The wall is a roving-tabindex list and not a `role="grid"` (#235). Six columns
- * is a CSS artifact of the container-derived cell width and the wall is an A-Z
- * list of films, so announcing grid coordinates would be describing the
- * stylesheet. One cell holds tabindex 0 at a time; the arrows move it, so the
+ * The wall is a roving-tabindex list and not a `role="grid"` (#235). Its
+ * responsive column count belongs to CSS and the wall is an A-Z list of films,
+ * so announcing grid coordinates would be describing the stylesheet. One cell
+ * holds tabindex 0 at a time; the arrows move it, so the
  * whole wall is two tab stops on your own board (the poster, then its corner
  * action) and one on a guest's, whatever it is holding.
  */

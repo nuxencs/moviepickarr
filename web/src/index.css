@@ -44,12 +44,17 @@
   --poster-zoom: 1.06; /* hover/focus zoom for poster + avatar tiles, scaled inside their clipped frame */
   --poster-zoom-press: 1.03; /* the :active press, eased back from the hover zoom */
 
+  /* Compact film rails keep one shared target. Wrapping poster grids resolve
+     their own tracks against the width of the surface they occupy. */
+  --poster-general: clamp(144px, 6.4vw, 164px);
+
   /* layout: real surface growth, never whole-document scaling */
   --page-max: clamp(1240px, 80vw, 2560px);
   --modal-browse-max: clamp(960px, 70vw, 1760px);
-  --modal-record-max: clamp(880px, 58vw, 1560px);
+  --modal-record-max: clamp(880px, 52vw, 1320px);
   --modal-form-max: 460px;
   --modal-block-max: clamp(900px, 72dvh, 1320px);
+  --modal-record-block: clamp(900px, 84dvh, 1600px);
 
   /* accent — gold (fixed) */
   --accent: oklch(0.82 0.13 84);
@@ -59,6 +64,18 @@
 
   --danger: oklch(0.62 0.21 22);
   --danger-ink: oklch(0.98 0.01 22);
+}
+
+@media (max-width: 1199px) {
+  :root {
+    --poster-general: 128px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --poster-general: 104px;
+  }
 }
 
 /* ---- DARK (default / primary) ---- */
@@ -294,15 +311,6 @@
     text-shadow: 0 2px 14px rgba(0,0,0,0.5);
   }
   .poster__rule { width: 22cqw; height: 2.4cqw; background: var(--accent); margin-bottom: 5cqw; border-radius: 2px; z-index: 3; position: relative; }
-  .poster__badge {
-    position: absolute; z-index: 4; top: 5cqw; left: 5cqw;
-    font-family: var(--font-mono); font-size: 5.4cqw; font-weight: 600;
-    padding: 1.5cqw 2.8cqw; border-radius: 2px;
-    background: rgba(0,0,0,0.5); color: #fff; backdrop-filter: blur(4px);
-    display: inline-flex; align-items: center; gap: 2.4cqw;
-  }
-  .poster__badge svg { width: 6.4cqw; height: 6.4cqw; color: var(--accent); }
-
   /* ---- Rating ---- */
   .rating { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-weight: 600; }
   .rating svg { width: 1em; height: 1em; color: var(--accent); }
@@ -487,21 +495,19 @@
   }
   .nav__inner { max-width: var(--page-max); margin: 0 auto; padding: 0 32px; height: 62px; display: flex; align-items: center; gap: 30px; }
   @media (max-width: 700px) { .nav__inner { padding: 0 18px; gap: 16px; } }
-  /* The wordmark (an <h1>) is a home control: its inner button returns to the
-     Movies tab from anywhere. The <button> can't wrap the <h1>, so the heading
-     wraps the button and the layout/type live on the button. */
+  /* The wordmark (an <h1>) is a home control: its inner link returns to the
+     Movies tab from anywhere. The link can't wrap the <h1>, so the heading
+     wraps the link and the layout/type live on the link. */
   .wordmark { margin: 0; flex: none; }
   .wordmark__home {
     display: inline-flex; align-items: center; gap: 11px;
     background: none; border: 0; padding: 0; cursor: pointer; color: inherit; text-decoration: none;
     font-family: var(--font-display); font-size: 16px; font-weight: 700;
     letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
-    border-radius: var(--r-sm); transition: transform var(--dur-fast) var(--ease);
+    border-radius: var(--r-sm);
   }
-  .wordmark__home:active { transform: translateY(1px); }
   .wordmark__home:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .wordmark .mark { width: 30px; height: 30px; border-radius: var(--r-lg); flex: none; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); transition: filter var(--dur-fast) var(--ease); }
-  .wordmark__home:hover .mark { filter: brightness(1.08); }
+  .wordmark .mark { width: 30px; height: 30px; border-radius: var(--r-lg); flex: none; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); }
   .wordmark .mark svg { width: 17px; height: 17px; }
   .nav__tabs { position: relative; display: flex; gap: 2px; align-items: stretch; height: 100%; margin-left: 8px; }
 
@@ -1014,12 +1020,13 @@
   /* Films-in-window rail: poster tiles of the matched films. Inline padding +
      negative margin (as .peoplerail) and a taller top pad keep the edge tiles'
      hover/focus ring — and the -4px hover lift — clear of the scroll-container
-     clip. align-items:flex-start + min-width:0 hold every tile at the 118px
-     basis; without them a poster's aspect-ratio resolves a larger content
-     min-width under the default stretch and tiles render at uneven sizes. */
+     clip. align-items:flex-start + min-width:0 hold every tile at the shared
+     general-poster basis; without them a poster's aspect-ratio resolves a
+     larger content min-width under the default stretch and tiles render at
+     uneven sizes. */
   .movierail { display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; padding: 10px 4px 8px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .movietile {
-    flex: 0 0 118px; min-width: 0; display: flex; flex-direction: column; gap: 9px;
+    flex: 0 0 var(--poster-general); min-width: 0; display: flex; flex-direction: column; gap: 9px;
     background: none; border: none; padding: 0; font: inherit; color: inherit;
     text-align: left; cursor: pointer; border-radius: var(--r-sm);
   }
@@ -1107,7 +1114,7 @@
   .modal { width: min(var(--modal-browse-max), 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
   /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
   .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
-  .modal--movie { width: min(var(--modal-record-max), 100%); }
+  .modal--movie { width: min(var(--modal-record-max), 100%); container-type: inline-size; }
   .modal--form { width: min(var(--modal-form-max), 100%); }
   /* Capped mode (`<Modal capped>`): the surface owns the scroll instead of the veil,
      so it centers in the window at any content length and chrome pinned outside the
@@ -1120,6 +1127,12 @@
   .modal-veil:has(.modal--capped) { justify-content: center; overflow: hidden; overscroll-behavior: contain; }
   .modal-veil:has(.modal--capped)::before, .modal-veil:has(.modal--capped)::after { display: none; }
   .modal--capped { position: relative; max-height: min(var(--modal-block-max), calc(100dvh - 96px)); display: flex; flex-direction: column; min-height: 0; }
+  @media (min-width: 701px) and (min-height: 720px) {
+    .modal--movie.modal--capped {
+      height: min(var(--modal-record-block), calc(100dvh - 96px));
+      max-height: min(var(--modal-record-block), calc(100dvh - 96px));
+    }
+  }
   .modal--capped .modal__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   .modal__body { padding: 22px 26px 0; display: flex; flex-direction: column; gap: 14px; }
   .modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 20px 26px 24px; }
@@ -1161,7 +1174,7 @@
      backdrop, then a rail of poster + links out beside the reading column, then the
      cast strip. The width is what makes the rest work: the overview stops running
      narrow next to the poster and the cast strip shows nine cards before it scrolls. */
-  .moviemodal__hero { position: relative; height: 260px; isolation: isolate; background-size: cover; background-position: center; }
+  .moviemodal__hero { position: relative; height: clamp(260px, 32cqi, 420px); isolation: isolate; background-size: cover; background-position: center; }
   /* Real backdrop crossfading in over the always-painted procedural duotone —
      the wide twin of the poster pattern (HeroBackdrop). The scrim ::after and
      close button sit above it; the img starts faded out and transitions in. */
@@ -1186,7 +1199,7 @@
   .moviemodal__info { flex: 1; min-width: 0; padding-top: 76px; }
   .moviemodal__info h3 { margin: 0 0 12px; font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -0.018em; line-height: 1.05; }
   .moviemodal__tag { margin: 14px 0 0; font-style: italic; font-size: 14px; color: var(--ink-2); }
-  .moviemodal__overview { max-width: 72ch; margin: 14px 0 0; font-size: 14.5px; line-height: 1.62; color: var(--ink-2); }
+  .moviemodal__overview { max-width: 90ch; margin: 14px 0 0; font-size: 14.5px; line-height: 1.62; color: var(--ink-2); text-wrap: pretty; }
   /* The links out, in the rail under the poster: quiet mono text with a small
      icon. Three ghost buttons read as three things to do; three mono lines read
      as reference material attached to the film, which is what they are. */
@@ -1458,7 +1471,7 @@
     .genredonut { flex-direction: column; align-items: flex-start; }
     .donut-legend { max-width: none; width: 100%; }
 
-    /* poster grids become thumbnail grids, not one giant column */
+    /* Poster grids become thumbnail grids, not one giant column. */
     .tile-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 20px 12px; }
     .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
     .result-grid { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 18px 12px; }

@@ -43,7 +43,7 @@ export function missLine(filter: string): string {
  *
  * Left and right step through the wall in its own order, which is the reading
  * order the columns lay out, so at the end of a row they carry on onto the next
- * one: the wall is one A-Z run of films and the six columns are the
+ * one: the wall is one A-Z run of films and the responsive column count is the
  * stylesheet's business, which is the same reason it is not a `role="grid"`.
  * Up and down step by a row.
  *

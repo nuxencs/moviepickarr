@@ -234,10 +234,18 @@ old shadcn primitives.
   decades render as zero columns (a gap is information), counts on non-empty
   columns stay permanently visible, and the axis labels every column ("1990s").
 - **Poster:** `.poster` — the one container; real TMDB art or a deterministic
-  procedural duotone (`lib.ts`), with a rating badge. While the photo loads the
+  procedural duotone (`lib.ts`). Ratings never overlay poster art. They remain in
+  metadata where the surrounding surface calls for them. While the photo loads the
   duotone is the placeholder under a sweeping shimmer (`.poster__shimmer`,
   `mg-shimmer` keyframe) and the photo crossfades in over it (`.poster--loading`);
-  the duotone is the permanent art only when there's no/failed image.
+  the duotone is the permanent art only when there's no/failed image. Wrapping
+  browse grids share sizing rules where their surrounding surface is comparable,
+  then stretch their tracks to meet both content edges. Movies uses a 164px
+  general minimum and a more prominent 184px pool minimum; Search uses a denser
+  140px minimum inside its modal. Members derives stash cells and column count
+  from its narrower pane, while its pool rail keeps local geometry. Stats keeps
+  one responsive fixed basis because it is a horizontal rail rather than a grid.
+  Hero, modal, draw-reel, and 44px list-row art remain purpose-built exceptions.
 - **Meta chips:** `.metachips` — a wrapping row reading `year · runtime · ★rating`
   (mono, dot-separated) `│` genre chips `│` external links. A `.metasep` vertical
   rule divides the rating facts from the genres, and the genres from the links.
@@ -246,8 +254,9 @@ old shadcn primitives.
   (`Bits.tsx`), shared by the hero and the movie modal — the **hero passes `links`**
   so they sit inline after the genres; the **modal omits them** and renders its own
   `.moviemodal__links` column in the rail instead (no duplication).
-- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a film's record on an
-  880px capped surface (§5): a 260px backdrop (190px narrow), then a 172px **rail** (`.moviemodal__rail`)
+- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a film's record on a
+  responsive 880px to 1320px surface (§5). Its backdrop grows with the record from
+  260px to 420px and returns to 190px below 700px. A 172px **rail** (`.moviemodal__rail`)
   of poster + the links out, beside the reading column. The links are quiet mono lines
   with a small icon, not ghost buttons: three buttons read as three things to do, three
   mono lines read as reference material attached to the film. The **credit block**
@@ -263,6 +272,10 @@ old shadcn primitives.
   It navigates with `replace`, like the meta chips, so following it spends the modal's
   own history entry. Each close callback is bound to that entry's token, so a delete
   response arriving after the record has closed cannot pop a newer record or page.
+  The overview stays in the one reading flow and can use up to 90ch. On desktop the
+  record has one viewport-relative outer height, up to 1600px with 48px clearance,
+  so overview length does not resize the surface from movie to movie. Its content
+  scrolls inside that fixed record.
   Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
@@ -373,19 +386,21 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   reason: the page gets its scroll back when the last dialog closes, not the first.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
-  buttons). Widths: `.modal` 960px, `.modal--movie` 880px, `.modal--form` 460px.
+  buttons). Width tiers: browse surfaces grow from 960px to 1760px, movie records
+  grow from 880px to 1320px, and focused forms remain 460px.
 - **Two scroll modes.** By default the veil scrolls and the surface grows to its
   content. Its 56px of breathing room is two spacer items in a flex column rather
   than block padding, because a scroll container's bottom padding is not part of its
   scrollable overflow and a tall dialog would otherwise park flush against the window
   edge. `<Modal capped>` switches to the other mode: the veil stops scrolling
-  (`:has(.modal--capped)` centers it and hides the spacers), the surface caps at
-  `min(900px, 100dvh - 96px)` and lays out as a flex column, and the part marked
+  (`:has(.modal--capped)` centers it and hides the spacers), the generic surface caps
+  against `--modal-block-max` and lays out as a flex column, and the part marked
   `.modal__scroll` scrolls inside it with `overscroll-behavior: contain` so the page
   behind never chains. Chrome outside that region (a close X, a head) stays put while
   the content moves. Opt-in: form dialogs are short and size to their content. The movie
-  detail modal is the capped one — its close X is pinned to the surface, so it holds its
-  corner while the backdrop scrolls under it.
+  detail modal uses `--modal-record-block` for a stable desktop height, up to 84dvh or
+  1600px with the same 48px viewport clearance. Its close X is pinned to the surface,
+  so it holds its corner while the backdrop scrolls under it.
 
 Destructive confirms (`DeletionDialog`) use the same `Modal`: dismissing (Esc / veil /
 Cancel) is the safe choice, so outside-click dismiss is intentional; only the explicit
@@ -622,9 +637,8 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
   height (`--hero-body-h`) and the 2/3 poster ratio so the poster's bottom edge lines up
   exactly with the pinned action button. The dependency is real: the large-screen step
   changes only `--hero-body-h` and the poster width tracks it automatically.
-- The hero poster **omits the rating badge** (it passes no `voteAverage`): the rating
-  already appears in the meta row, so the badge would be redundant. The badge still
-  renders on tile-grid posters, where the meta row carries no rating.
+- Poster art carries no rating badge. The hero keeps the rating in its metadata row,
+  and other surfaces show ratings only when they have a dedicated metadata treatment.
 - **Top group** (eyebrow + title) is anchored to the top. The title is clamped to 2
   lines; a long title gains a second line that grows *downward* into the negative
   space without moving anything else. The eyebrow's adder name (`.hero__by`) links to
@@ -932,7 +946,7 @@ What each does:
   stays CSS: no width is read in JS.
 - **700** — the hero stacks (poster above text), page / top-nav padding tightens, and the
   movie modal's rail becomes a row with its credit columns stacked (§4). It replaced the
-  old 560 stack point when the modal went from 560px to 880px wide.
+  old 560 stack point when the modal became a wider record surface.
 - **760** — the stat strip drops 3 columns → 2.
   The Members rail and stash pane also become separate screens at this boundary.
   CSS and the focus handoff both use `not all and (min-width: 761px)` so fractional
@@ -963,12 +977,16 @@ What each does:
 
 **Large screens.** The UI keeps its normal type, control, and spacing scale. Real surfaces
 grow instead. `--page-max` grows the shell, nav, and hero continuously from 1240px to a
-2560px cap at 80vw. Movies add poster columns through their existing `auto-fill` grids;
-Members adds container-driven stash columns before a poster can outgrow the 128px pool
-poster; Stats gives its charts and rails the available width. Settings keeps its 560px
-reading column. Search uses the browse modal tier (960px to 1760px), movie detail uses the
-record tier (880px to 1560px), and focused forms stay 460px. Capped content modals can grow
-taller, up to 1320px, while retaining 48px of viewport clearance. Portalled menus write
+2560px cap at 80vw. Wrapping poster grids resolve `minmax(…, 1fr)` tracks across
+their available surface, so the first and last columns stay on the content edges.
+Equivalent page-width grids share the same sizing rule; Search and Members resolve
+against their own narrower containers. The Movies pool retains a larger minimum than
+the watched grid. Stats gives its charts and rails the available width. Settings keeps
+its 560px reading column. Search uses the
+browse modal tier (960px to 1760px), movie detail uses the record tier (880px to 1320px),
+and focused forms stay 460px. Movie records take a stable desktop height, up to 84dvh or
+1600px, while retaining 48px of viewport clearance. Other capped dialogs keep the generic
+1320px ceiling. Portalled menus write
 `getBoundingClientRect()` coordinates directly because the document is not author-scaled.
 CSS-anchored filter and date surfaces remain preferred where the trigger can own them. The
 hero keeps its separate 1728px geometry step for hierarchy (§7).

@@ -265,7 +265,6 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
                 hue={hueOf(m.title)}
                 posterPath={m.posterPath}
                 showTitle={false}
-                voteAverage={m.voteAverage}
               />
             </div>
           ))}

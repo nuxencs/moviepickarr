@@ -292,7 +292,8 @@ old shadcn primitives.
   links and the actions pair off beside the poster inside `.moviemodal__railfoot` (a
   `display: contents` wrapper in the rail's column layout): tops flush so the first
   action sits on the first link, a vertical rule between them in place of the stacked
-  one above, and the poster shrinks (to 84px at the floor) rather than the row breaking.
+  one above, and the poster shrinks toward 84px. At 370px and below, that paired footer
+  moves under the 84px poster because the three columns no longer fit without clipping.
 - **Modal:** the bespoke `Modal` component (§5). Every caller supplies an accessible
   name that matches its visible heading. Closing returns focus to the opener; if that
   control disappeared while the dialog was open, focus moves to the first surviving
@@ -902,11 +903,13 @@ use tokens so they follow the theme.
 ## 13. Responsive & touch
 
 Desktop-first, with a dedicated phone/touch pass below and a large-screen scale-up above.
-Breakpoints are content-driven but drawn from one tidy scale — **640 / 700 / 760 /
+Breakpoints are content-driven but drawn from one tidy scale: **370 / 640 / 700 / 760 /
 900** down, **1728 / 2240 / 2560 / 3200 / 3840** up — documented inline in `index.css`
 (the "Responsive — phone & touch adaptations" and "Large-screen scale ramp" blocks).
 What each does:
 
+- **370:** the movie modal keeps its external links and owner actions paired, but moves
+  that footer below the 84px poster once the three columns stop fitting without a clip.
 - **640** — the *phone* breakpoint. Section headers (`.sec-head`) stack to a title row + full-width controls;
   user boards go single-column; the stats window control spans the row and the
   added-by-member bars shrink their name column (`188px → 112px`) so the track keeps

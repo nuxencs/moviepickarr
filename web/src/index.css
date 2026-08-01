@@ -1277,13 +1277,11 @@
   @media (max-width: 700px) {
     .moviemodal__hero { height: 190px; }
     .moviemodal__body { flex-direction: column; gap: 16px; padding: 0 20px 22px; }
-    /* Two items now, the poster and the block of text columns beside it, so the
-       row holds rather than wraps: the poster shrinks instead (below). */
+    /* Two items now, the poster and the block of text columns beside it. From
+       371px up, the row holds rather than wraps: the poster shrinks instead. */
     .moviemodal__rail { flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: 14px; width: auto; }
     /* The poster gives up width before the row breaks: links and actions beside
-       it need ~180px, and at 375 that is more than what's left of 118. Shrinking
-       the thumbnail costs less than dropping both text columns onto their own
-       line under it, with the backdrop already carrying the picture. */
+       it need ~180px, and at 375 that is more than what's left of 118. */
     .moviemodal__rail .poster { width: 118px; flex: 0 1 auto; min-width: 84px; }
     .moviemodal__links { padding-top: 0; border-top: 0; gap: 10px; }
     /* The two blocks pair off beside the poster, tops flush so the first action
@@ -1302,6 +1300,15 @@
     .castrow { padding: 2px 20px 22px; }
     .moviemodal__credit { flex-direction: column; gap: 10px; }
     .moviemodal__credits + .moviemodal__by { padding: 10px 0 0; border-left: 0; border-top: 1px solid var(--line); width: 100%; }
+  }
+
+  /* At the content floor, even the 84px poster plus the paired footer is wider
+     than the modal body. Keep the links and actions paired, but move that pair
+     under the poster so neither column clips. */
+  @media (max-width: 370px) {
+    .moviemodal__rail { flex-direction: column; align-items: flex-start; width: 100%; }
+    .moviemodal__rail .poster { width: 84px; flex: none; }
+    .moviemodal__railfoot { width: 100%; align-self: stretch; }
   }
 
   /* "More actions" menu — bespoke portalled floating surface (moviepickarr/Menu.tsx)

@@ -583,6 +583,7 @@ describe("opening a film's record", () => {
 
     const candidates = (path: string) =>
       `https://image.tmdb.org/t/p/w154/${path} 154w, ` +
+      `https://image.tmdb.org/t/p/w185/${path} 185w, ` +
       `https://image.tmdb.org/t/p/w342/${path} 342w`;
     const poolPoster = screen.getByRole("img", { name: "Film 10" });
     const stashPoster = screen.getByRole("img", { name: "Film 100" });

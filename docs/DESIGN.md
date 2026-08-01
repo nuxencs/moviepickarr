@@ -618,8 +618,8 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
 - `.hero__inner` carries generous vertical padding (`56px` top / `60px` bottom) for a
   cinematic, roomy banner. Horizontal padding stays `32px`. The body height (below) is
   unchanged — the extra room is breathing space around the content, not added to it.
-- `.hero__body` is a fixed-height flex column (`min-height: var(--hero-body-h)`, default
-  18.5rem), sized for the worst case so the banner never resizes.
+- `.hero__body` is a reserved-height flex column (`min-height: var(--hero-body-h)`,
+  default 18.5rem), sized for the expected worst case so the banner does not resize.
 - **Poster** column width is `calc(var(--hero-body-h) * 2 / 3)` — derived from the body
   height (`--hero-body-h`) and the 2/3 poster ratio so the poster's bottom edge lines up
   exactly with the pinned action button. The dependency is real: the large-screen step
@@ -764,9 +764,13 @@ so the reveal replays per draw; reduced-motion collapses it to an instant swap. 
 Verified static: empty vs populated and a 173-char injected tagline all leave
 `eyebrowTop`, `meta top`, `actions top`, and hero height identical.
 
-On phones (≤700px) the hero drops the fixed height and stacks: a 120px poster above
-the eyebrow → title → tagline → meta → actions, full width. The static-layout contract
-governs the desktop banner only. The rest of the responsive system lives in §13.
+On phones (≤700px) the hero stacks a 120px poster above the eyebrow → title →
+tagline → meta → actions. The body stretches to the full content width and keeps the
+18.5rem height reservation so the initial query shell and committed draw share a
+footprint. At 331px and below the reservation steps to 21rem because the action row
+wraps. These are floors, not caps: unusually long metadata or member names can still
+grow instead of clipping links or controls. The rest of the responsive system lives
+in §13.
 
 On large screens (≥1728px) the hero steps *up*: `--hero-body-h` grows (18.5rem → 21rem,
 and the poster width tracks it via the `calc()` above), `.hero__inner` padding opens up,
@@ -903,11 +907,13 @@ use tokens so they follow the theme.
 ## 13. Responsive & touch
 
 Desktop-first, with a dedicated phone/touch pass below and a large-screen scale-up above.
-Breakpoints are content-driven but drawn from one tidy scale: **370 / 640 / 700 / 760 /
+Breakpoints are content-driven but drawn from one tidy scale: **331 / 370 / 640 / 700 / 760 /
 900** down, **1728 / 2240 / 2560 / 3200 / 3840** up — documented inline in `index.css`
 (the "Responsive — phone & touch adaptations" and "Large-screen scale ramp" blocks).
 What each does:
 
+- **331:** the stacked Hero raises its body reservation to 21rem when the action row
+  wraps, leaving room for a two-line title without moving the page below it.
 - **370:** the movie modal keeps its external links and owner actions paired, but moves
   that footer below the 84px poster once the three columns stop fitting without a clip.
 - **640** — the *phone* breakpoint. Section headers (`.sec-head`) stack to a title row + full-width controls;

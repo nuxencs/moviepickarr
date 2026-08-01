@@ -8,8 +8,15 @@ import type { Movie } from "@/types/Response";
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
 /** Full TMDB poster URL from a raw poster_path, or null if absent. */
-export function posterUrl(path?: string | null, size: "w342" | "w500" = "w342"): string | null {
+export function posterUrl(path?: string | null, size: "w154" | "w342" | "w500" = "w342"): string | null {
   return path ? `${TMDB_IMG}/${size}${path}` : null;
+}
+
+/** Responsive poster candidates for compact slots, or null if absent. */
+export function posterSrcSet(path?: string | null): string | null {
+  const compact = posterUrl(path, "w154");
+  const fallback = posterUrl(path);
+  return compact && fallback ? `${compact} 154w, ${fallback} 342w` : null;
 }
 
 /** Full TMDB backdrop URL from a raw backdrop_path, or null if absent. */

@@ -52,6 +52,16 @@ import "@/components/moviepickarr/members.css";
  */
 const PUSH_WIDTH = "not all and (min-width: 761px)";
 
+const POOL_POSTER_SIZES =
+  "auto, (max-width: 700px) calc((100vw - 92px) / 3), " +
+  "(min-width: 761px) and (max-width: 900px) 112px, " +
+  "(min-width: 761px) 128px, calc((100vw - 120px) / 3)";
+const STASH_POSTER_SIZES =
+  "auto, (max-width: 700px) calc((100vw - 66px) / 4), " +
+  "(min-width: 761px) and (max-width: 899px) 120px, " +
+  "(min-width: 761px) and (max-width: 1199px) 112px, " +
+  "(min-width: 761px) 96px, calc((100vw - 94px) / 4)";
+
 const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
 
 type MoveHandlers = {
@@ -597,12 +607,14 @@ function PoolPips({ filled }: { filled: number }) {
  */
 function PosterButton({
   movie,
+  posterSizes,
   showArt = true,
   cell,
   tabIndex,
   onOpen,
 }: {
   movie: Movie;
+  posterSizes: string;
   /** Whether to fetch the art. False in a drawer nobody has opened (see RailRow). */
   showArt?: boolean;
   /** This poster's index in its band, so the band can find it again by number
@@ -625,7 +637,13 @@ function PosterButton({
       tabIndex={tabIndex}
     >
       {showArt && (
-        <Poster title={movie.title} hue={hueOf(movie.title)} posterPath={movie.posterPath} showTitle={false} />
+        <Poster
+          title={movie.title}
+          hue={hueOf(movie.title)}
+          posterPath={movie.posterPath}
+          showTitle={false}
+          sizes={posterSizes}
+        />
       )}
     </button>
   );
@@ -825,7 +843,13 @@ function PoolSlots({
         const movie = pool[i];
         return movie ? (
           <div className="pslot pslot--filled" key={movie.movieID}>
-            <PosterButton movie={movie} showArt={showArt} cell={i} onOpen={onOpen} />
+            <PosterButton
+              movie={movie}
+              posterSizes={POOL_POSTER_SIZES}
+              showArt={showArt}
+              cell={i}
+              onOpen={onOpen}
+            />
             {isOwnBoard && (
               <TileAction
                 kind="demote"
@@ -1315,7 +1339,13 @@ const StashTile = memo(function StashTile({
 
   return (
     <div className="mem-tile">
-      <PosterButton movie={movie} cell={cell} tabIndex={roving ? 0 : -1} onOpen={onOpen} />
+      <PosterButton
+        movie={movie}
+        posterSizes={STASH_POSTER_SIZES}
+        cell={cell}
+        tabIndex={roving ? 0 : -1}
+        onOpen={onOpen}
+      />
       {isOwnBoard && (
         <TileAction
           kind="promote"

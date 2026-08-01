@@ -574,6 +574,37 @@ describe("opening a film's record", () => {
   const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;
   const dialog = () => screen.getByRole("dialog");
 
+  it("sizes pool and stash poster requests for their rendered slots", async () => {
+    const ada = member(1, 1, 1, "Ada");
+    Object.values(ada.currentPool)[0]!.posterPath = "/pool.jpg";
+    Object.values(ada.stash)[0]!.posterPath = "/stash.jpg";
+
+    await renderTab({ users: [ada], meID: 1 });
+
+    const candidates = (path: string) =>
+      `https://image.tmdb.org/t/p/w154/${path} 154w, ` +
+      `https://image.tmdb.org/t/p/w342/${path} 342w`;
+    const poolPoster = screen.getByRole("img", { name: "Film 10" });
+    const stashPoster = screen.getByRole("img", { name: "Film 100" });
+
+    expect(poolPoster.getAttribute("src")).toBe("https://image.tmdb.org/t/p/w342/pool.jpg");
+    expect(poolPoster.getAttribute("srcset")).toBe(candidates("pool.jpg"));
+    expect(poolPoster.getAttribute("sizes")).toBe(
+      "auto, (max-width: 700px) calc((100vw - 92px) / 3), " +
+        "(min-width: 761px) and (max-width: 900px) 112px, " +
+        "(min-width: 761px) 128px, calc((100vw - 120px) / 3)",
+    );
+
+    expect(stashPoster.getAttribute("src")).toBe("https://image.tmdb.org/t/p/w342/stash.jpg");
+    expect(stashPoster.getAttribute("srcset")).toBe(candidates("stash.jpg"));
+    expect(stashPoster.getAttribute("sizes")).toBe(
+      "auto, (max-width: 700px) calc((100vw - 66px) / 4), " +
+        "(min-width: 761px) and (max-width: 899px) 120px, " +
+        "(min-width: 761px) and (max-width: 1199px) 112px, " +
+        "(min-width: 761px) 96px, calc((100vw - 94px) / 4)",
+    );
+  });
+
   it("makes every filled poster a button, on your own board and on a guest's", async () => {
     await renderTab({ users: roster, meID: 1 });
 

@@ -356,8 +356,10 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   keeps a stack of the surfaces on screen and hands out `isTopmost()`; a surface with
   something over it lets those gestures pass. A surface holds its place on the stack
   through its exit motion, so a second Esc mid-close can't take the one underneath
-  with it. The body-scroll lock is refcounted for the same reason: the page gets its
-  scroll back when the last dialog closes, not the first.
+  with it. A modal-only surface stack separately hides and inerts every dialog under
+  the top one until its exit finishes, so assistive technology sees one active modal
+  and focus returns to a live trigger. The body-scroll lock is refcounted for the same
+  reason: the page gets its scroll back when the last dialog closes, not the first.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
   buttons). Widths: `.modal` 960px, `.modal--movie` 880px, `.modal--form` 460px.

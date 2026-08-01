@@ -91,11 +91,9 @@ export function landingCell(vacated: number, left: number): number | null {
 /**
  * How many columns a computed `grid-template-columns` describes.
  *
- * The wall's column count is a media-query artifact of the pane's width, and
- * nothing in JS is allowed to derive it (a JS pixel and a CSS pixel are
- * different sizes under the root zoom ramp — see members.css). So it is read
- * back off the resolved track list, which the browser has already worked out,
- * rather than computed a second time. One column is the floor: a wall that
+ * The wall's column count is a container-query artifact of the pane's width, so
+ * it is read from the resolved track list rather than computed a second time in
+ * JavaScript. One column is the floor: a wall that
  * cannot be measured still moves up and down, a film at a time.
  */
 export function columnCount(template: string): number {

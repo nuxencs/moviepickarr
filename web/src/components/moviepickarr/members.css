@@ -3,9 +3,8 @@
    Namespaced under .mem*, colours and motion from the global tokens
    (index.css).
 
-   Nothing here measures anything in JS. Column counts, cell sizes and the
-   shell's height are CSS, because the root zoom ramp (index.css §13) means a
-   JS pixel and a CSS pixel are different sizes. */
+   CSS owns the column counts, cell sizes, and shell height. JavaScript reads
+   the resolved grid only for keyboard movement. */
 
 .mem {
   /* The rail's width is not a chosen number: it is three pool posters plus
@@ -51,15 +50,6 @@
   .shell:has(.mem) {
     padding-bottom: 30px;
   }
-  /* index.css floors .app at 100vh, and the root zoom ramp does not divide a
-     viewport unit by the zoom it applies: from 1728px up that floor is a zoom
-     step taller than the viewport, so the page scrolls ~64px with nothing to
-     show. This page takes its height from the viewport itself, so it has no
-     use for the floor. */
-  .app:has(.mem) {
-    min-height: 0;
-  }
-
   .mem__shell {
     grid-template-columns:
       calc(3 * var(--mem-post) + 2 * var(--mem-gap) + 2 * var(--mem-pad))
@@ -74,15 +64,7 @@
     /* Fixed chrome above and below, all of it px in index.css: the 63px nav,
        the shell's 40px top padding, the section head, and the padding below. */
     --mem-chrome: 185px;
-    /* The root zoom ramp does not divide viewport units by the zoom it
-       applies, so inside a zoomed root 100dvh is one step too tall and the
-       page scrolls by the difference (88px at 1.08). Every other length here
-       is an ordinary CSS px and scales with the root, so dvh is brought into
-       the same space instead. --zoom is the ramp's own step, published beside
-       it in index.css §13 because `zoom` cannot be read back. */
-    height: calc(
-      100dvh / var(--zoom, 1) - var(--mem-chrome) + var(--mem-head-space)
-    );
+    height: calc(100dvh - var(--mem-chrome) + var(--mem-head-space));
   }
   /* The wrapper is a real screen below 761. Here it flattens into the board's
      grid so the page head still spans both columns and the rail and pane keep
@@ -114,8 +96,7 @@
   }
   /* Only when there is more rail below. Painted over a rail that fits, the
      fade would just be dimming the last member's name. The flag behind it is a
-     comparison, not a size (see UsersTab), so the zoom ramp does not reach
-     it. */
+     comparison, not a measured layout value (see UsersTab). */
   .mem-rail[data-overflow="true"] {
     mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   }
@@ -173,9 +154,7 @@
   .mem-wallbox {
     /* The room under the head, plus one gap: rows are counted by their pitch
        (a row and the gap above the next), and the last row has no gap after. */
-    --mem-avail: calc(
-      100dvh / var(--zoom, 1) - var(--mem-chrome) - var(--mem-headh) + var(--mem-wgap)
-    );
+    --mem-avail: calc(100dvh - var(--mem-chrome) - var(--mem-headh) + var(--mem-wgap));
     --mem-pitch: calc(var(--mem-rowh) + var(--mem-wgap));
     height: calc(max(var(--mem-pitch), round(down, var(--mem-avail), var(--mem-pitch))) - var(--mem-wgap));
     overflow-y: auto;
@@ -206,7 +185,7 @@
 /* The selection is a 2px accent line down the row's left edge, the nav bar's
    tab underline turned on its side. Not a filled box and not a sliding marker:
    a row's height depends on whether it is open, so a fixed pitch cannot place
-   one and measuring in JS hits the zoom ramp. The open row draws the line down
+   one and measuring in JS would duplicate layout state. The open row draws the line down
    its own full height, drawer included, and the drawer's opening is the
    movement. */
 .mem-row {
@@ -524,16 +503,15 @@
 }
 
 /* The wall fills the width it is given: the cell comes from the container's own
-   inline size against a fixed column count, so there is no dead gutter on the
-   right the way a fixed cell plus auto-fill leaves. Row height follows from the
-   cell — all of it in CSS, because the root zoom ramp means a JS pixel and a
-   CSS pixel are different sizes.
+   inline size against a responsive column count, so there is no dead gutter on
+   the right the way a fixed cell plus auto-fill leaves. Row height follows from
+   the cell.
 
-   Six columns is the floor, not a preference: the pane is what the rail leaves
+   Six columns is the desktop floor: the pane is what the rail leaves
    over, and four columns across it puts a stash poster above the rail's 128px
    pool poster, inverting the ranking the two bands exist to express. 96px is
-   the smallest size at which the art still identifies a film, which is the
-   premise of dropping the titles. */
+   the smallest useful size. Wider containers add columns before a cell can grow
+   beyond the 128px pool poster. */
 .mem-stash {
   container-type: inline-size;
 }
@@ -551,6 +529,14 @@
   grid-auto-rows: var(--mem-rowh);
   gap: var(--mem-wgap);
 }
+@container (min-width: 859px) { .mem-wallbox { --mem-cols: 7; } }
+@container (min-width: 1005px) { .mem-wallbox { --mem-cols: 8; } }
+@container (min-width: 1151px) { .mem-wallbox { --mem-cols: 9; } }
+@container (min-width: 1297px) { .mem-wallbox { --mem-cols: 10; } }
+@container (min-width: 1443px) { .mem-wallbox { --mem-cols: 11; } }
+@container (min-width: 1589px) { .mem-wallbox { --mem-cols: 12; } }
+@container (min-width: 1735px) { .mem-wallbox { --mem-cols: 13; } }
+@container (min-width: 1881px) { .mem-wallbox { --mem-cols: 14; } }
 /* Centred in the height the box holds, per DESIGN.md §8. Left in the first row
    band it would read as a poster that failed to load rather than as a statement
    about the wall. The auto row is what lets it centre. */
@@ -926,7 +912,7 @@
      no ceiling left to clip the overdraw against and the tail would become
      page length instead: nine rows of shimmer to flick past on a screen that
      holds three. Cut to roughly one screen — in CSS, not a width branch in JS,
-     so the no-measurement rule holds at every step of the root zoom ramp. */
+     keeping the no-measurement rule intact. */
   .mem-skel__wall .mem-wall > :nth-child(n + 13) {
     display: none;
   }

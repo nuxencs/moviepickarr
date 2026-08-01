@@ -11,8 +11,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { effectiveZoom } from "@/components/moviepickarr/zoom";
-
 import { useDismissible } from "@/hooks/useDismissible";
 
 export interface MenuAction {
@@ -99,13 +97,9 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
     let left = align === "end" ? t.right - m.width : t.left;
     left = Math.max(MARGIN, Math.min(left, window.innerWidth - m.width - MARGIN));
 
-    // Flip/clamp run in the zoomed viewport space (GBCR + innerWidth/Height all
-    // agree there); divide only the written coords so the fixed portal child
-    // doesn't get scaled by the inherited :root zoom a second time.
-    const zoom = effectiveZoom(menu);
     setPlacement({
-      top: top / zoom,
-      left: left / zoom,
+      top,
+      left,
       origin: `${above ? "bottom" : "top"} ${align === "end" ? "right" : "left"}`,
     });
   }, [align]);

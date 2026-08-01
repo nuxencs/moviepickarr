@@ -71,9 +71,9 @@ Three families, by role:
 - `--font-display` **Hubot Sans** — display only: nav wordmark/tabs, section `h2`,
   hero title, stat/section headings. Never use the display font for dense UI labels.
 
-Rules: fixed rem/px scale (no per-element fluid type) for product UI — large screens step
-the whole UI up together via a discrete root `zoom` ramp (§13), never fluid `clamp` on
-type; weight contrast for hierarchy;
+Rules: fixed rem/px scale (no per-element fluid type) for product UI. Large screens grow
+the useful surfaces while type and controls keep their normal scale (§13). Never use fluid
+`clamp` on type; weight contrast for hierarchy;
 sentence case for section/modal headings (nav tabs are the deliberate uppercase
 exception). The mono uppercase tracked "eyebrow" (`.eyebrow`) is a real label element
 (timezone, "Pool", "Next up"), not a decorative kicker on every section.
@@ -428,13 +428,13 @@ closes the movie record.
   `display:inline-block; line-height:1` with internal vertical mask padding
   `round(0.25em/2,1px)`. The mask is **visual-only** — it does *not* move the glyph
   baseline — so a number used **inline with text** (the "Films in Filter View · N" title,
-  the "avg 1h 53m" runtime sub) baseline-aligns on its own at every `:root` zoom step;
+  the "avg 1h 53m" runtime sub) baseline-aligns on its own;
   leave it at `vertical-align: baseline` and add no nudge. The one place that needs a fix
   is the **KPI value cell** (`.statitem__val`, `align-items: flex-end`): `flex-end` aligns
   box *bottoms*, not baselines, so the mask padding lets the numeral float ~4px above where
   the plain-text values (Top adder / Busiest day) land. Compensated with
   `.statitem__val number-flow-react { margin-bottom: -4px }` — at the fixed 29px value size
-  the padding is exactly 4px CSS-px and zoom-invariant. (A previous attempt also added
+  the padding is exactly 4px. (A previous attempt also added
   `vertical-align` lifts to the inline title/sub; that pushed those numerals *off* the text
   baseline and was reverted — the trap is measuring the box, not the glyph.) Standalone
   number-flows (`.b-val`, donut legend, people-rail counts) have no adjacent text and need
@@ -458,10 +458,9 @@ closes the movie record.
   (`prevKeys`), never by whether a position happens to be recorded — so a churned/late
   node stays put instead of wrongly fading in. Positions are measured **container-
   relative**, so a reflow ABOVE a rail (the films rail tripling in height) slides the
-  whole rail without animating every card; and deltas are divided by `effectiveZoom`
-  (`moviepickarr/zoom.ts`) so the glide lands exactly on target under the `:root` zoom ramp
-  (§13). No React remount, so NumberFlow counts keep rolling; reduced-motion skips every
-  transform/entrance and drops exits instantly.
+  whole rail without animating every card. The measured deltas and transforms share one
+  CSS-pixel coordinate space. No React remount, so NumberFlow counts keep rolling;
+  reduced-motion skips every transform/entrance and drops exits instantly.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
   member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use
   `height: calc(--p * 88%)`. Scaling a rounded box squishes its `border-radius` on short
@@ -538,9 +537,8 @@ closes the movie record.
   Members page runs both side by side and is the pattern. A roving list is a **list**, not
   a `role="grid"`: the Members wall's column count is a container-query artifact of the
   cell width, so grid coordinates would be announcing the stylesheet. The column count is
-  read back off the resolved `grid-template-columns` rather than computed in JS, since a
-  JS pixel and a CSS pixel are different sizes under the root zoom ramp (§13). The roving
-  index resets to the first cell on an explicit context change, a filter or switch of
+  read back off the resolved `grid-template-columns` rather than computed again in JS. The
+  roving index resets to the first cell on an explicit context change, a filter or switch of
   subject, which also decides where Tab out of the field above it lands. Live keyed-list
   updates keep a surviving focused film as the tab stop and carry its new cell index
   along, so the next arrow still starts from that film.
@@ -777,7 +775,8 @@ and the poster width tracks it via the `calc()` above), `.hero__inner` padding o
 and the title clamp ceiling rises (54 → 64px) — so the centerpiece feels grander, not
 merely bigger. Like the phone stack this is per-breakpoint geometry, not a break of the
 contract: within the breakpoint the banner stays dimensionally static as the draw changes.
-The whole hero also rides the global `zoom` ramp (§13) on top of this step.
+The shared page-width token gives the hero more horizontal room without scaling its type
+or controls (§13).
 
 ---
 
@@ -962,23 +961,17 @@ What each does:
   6 columns → 3, and the stats two-column sections (weekday | hourly, genres | decades)
   collapse to one.
 
-**Large screens.** A mirror of the phone pass, scaling *up*. Above the 1240px column the
-whole UI steps up through a discrete root `zoom` ramp (`:root { zoom }` at 1728 / 2240 /
-2560 / 3200 / 3840px) so type, posters, modals, menus, grids and the column all grow
-together — keeping the centered cinematic composition instead of leaving content adrift on
-a 2K/4K panel. It lives on `:root` (not `.app`) because modals, toasts and the portalled
-`Menu` (the "more actions" surface, which must escape its row's scroll clip) reach `<body>`;
-only a root-level scale reaches them. The top steps carry a `min-height` guard
-so ultrawide-but-short panels (e.g. 3440×1440) don't over-scale. Stepped, not fluid
-`clamp` — the discrete-scale ethos (§3) holds. **Overlay placement under the ramp:** any
-overlay positioned by JS from `getBoundingClientRect` and written as inline `top/left` on a
-`position:fixed` portal child drifts under the ramp — the zoomed viewport coords get scaled
-by the inherited zoom a second time. So prefer CSS-anchored overlays (the stats filter
-dropdowns and the `DateRange` popover anchor to their trigger in CSS, sharing its space and
-riding the ramp for free); where a portal is unavoidable (the row `Menu` escaping its
-`overflow` clip), divide the GBCR coords by the element's `currentCSSZoom` before writing them. The **hero** takes an extra large-screen
-step on top of the zoom (taller `--hero-body-h`, roomier padding, a higher title ceiling)
-so the centerpiece feels grander, not merely bigger (§7).
+**Large screens.** The UI keeps its normal type, control, and spacing scale. Real surfaces
+grow instead. `--page-max` grows the shell, nav, and hero continuously from 1240px to a
+2560px cap at 80vw. Movies add poster columns through their existing `auto-fill` grids;
+Members adds container-driven stash columns before a poster can outgrow the 128px pool
+poster; Stats gives its charts and rails the available width. Settings keeps its 560px
+reading column. Search uses the browse modal tier (960px to 1760px), movie detail uses the
+record tier (880px to 1560px), and focused forms stay 460px. Capped content modals can grow
+taller, up to 1320px, while retaining 48px of viewport clearance. Portalled menus write
+`getBoundingClientRect()` coordinates directly because the document is not author-scaled.
+CSS-anchored filter and date surfaces remain preferred where the trigger can own them. The
+hero keeps its separate 1728px geometry step for hierarchy (§7).
 
 **Bottom tab bar.** Below 900px the top-bar tabs (`.nav__tabs`) hide and a fixed
 `.navbar-bottom` renders the tabs (4 for an admin, Admin included) in thumb reach; the
@@ -1020,7 +1013,7 @@ buttons grow toward the 44px touch minimum.
 5. The hero stays dimensionally static (§7); 3+ line taglines truncate.
 6. Copy: verb+object buttons, "Failed to X" errors, `plural()` for counts, no em dashes.
 7. Gold = action/selection/state only. Danger = the single `--danger` ramp.
-8. Responsiveness is structural (bottom nav below 900, single-column reflows below 640; a discrete
-   root `zoom` ramp scales the whole UI up on large screens — §13), never per-element fluid
-   type. Every hover-revealed action needs a `hover: none` fallback so touch users can
+8. Responsiveness is structural (bottom nav below 900, single-column reflows below 640,
+   wider real surfaces on large screens, §13), never per-element fluid type. Every
+   hover-revealed action needs a `hover: none` fallback so touch users can
    reach it (§13).

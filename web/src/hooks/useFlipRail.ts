@@ -1,7 +1,6 @@
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
-import { effectiveZoom } from "@/components/moviepickarr/zoom";
 
 /**
  * FLIP motion for a stats rail (films, people, member bars). Instead of fading
@@ -24,11 +23,9 @@ import { effectiveZoom } from "@/components/moviepickarr/zoom";
  * (so each card's NumberFlow count keeps rolling on a same-set refetch); a
  * dropped item renders from its frozen snapshot.
  *
- * Translate deltas are measured from getBoundingClientRect() — already in the
- * `:root` zoom ramp's coordinate space (§13 in index.css) — so they're divided
- * by `effectiveZoom` before being applied as the element's own transform, which
- * the engine re-scales by that same zoom. prefers-reduced-motion skips every
- * transform/entrance and drops exits instantly.
+ * Translate deltas are measured from getBoundingClientRect() and applied in the
+ * same CSS-pixel coordinate space. prefers-reduced-motion skips every transform,
+ * entrance, and exit delay.
  *
  * The FLIP measure/replay runs in a layout effect (before paint), and the
  * exit-retention reconcile is a sibling layout effect, so the list swap and the
@@ -46,7 +43,7 @@ const ENTER_STAGGER_MS = 40;
 // Cap the entrance stagger so a long rail can't trail a multi-second tail
 // (matches the previous fadeUp-replay cap).
 const ENTER_STAGGER_CAP = 12;
-const MOVE_EPSILON = 0.5; // px (zoomed) below which a move reads as "didn't move"
+const MOVE_EPSILON = 0.5; // px below which a move reads as "didn't move"
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -141,7 +138,6 @@ export function useFlipRail<T, E extends HTMLElement = HTMLDivElement>(
     const root = containerRef.current;
     if (!root) return;
     const reduced = prefersReducedMotion();
-    const zoom = effectiveZoom(root) || 1;
     const exiting = new Set(state.filter((e) => e.exiting).map((e) => e.key));
 
     // FIRST: clear any in-flight transforms so getBoundingClientRect reports the
@@ -187,13 +183,13 @@ export function useFlipRail<T, E extends HTMLElement = HTMLDivElement>(
       // (position unrecorded), leave it exactly where it landed — never fade.
       const prev = prevRects.current.get(key);
       if (!prev) return;
-      // INVERT — jump to the old position with no transition (÷ zoom for the
-      // :root ramp). The PLAY pass below releases it under a transition.
+      // INVERT: jump to the old position with no transition. The PLAY pass below
+      // releases it under a transition.
       const dx = prev.left - cur.left;
       const dy = prev.top - cur.top;
       if (!reduced && (Math.abs(dx) > MOVE_EPSILON || Math.abs(dy) > MOVE_EPSILON)) {
         el.style.transition = "none";
-        el.style.transform = `translate(${dx / zoom}px, ${dy / zoom}px)`;
+        el.style.transform = `translate(${dx}px, ${dy}px)`;
         movers.push(el);
       }
     });

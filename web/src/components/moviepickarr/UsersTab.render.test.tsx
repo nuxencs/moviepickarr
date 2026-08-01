@@ -263,7 +263,7 @@ describe("the Members loading skeleton", () => {
   it("overdraws the wall by a fixed shape, wired to no stash", async () => {
     await renderTab({});
 
-    expect(skeleton()?.querySelectorAll(".mem-wall > *").length).toBe(36);
+    expect(skeleton()?.querySelectorAll(".mem-wall > *").length).toBe(126);
   });
 
   it("stays out of the accessibility tree and leaves the live region in it", async () => {
@@ -599,7 +599,7 @@ describe("opening a film's record", () => {
       "auto, (max-width: 700px) calc((100vw - 66px) / 4), " +
         "(min-width: 761px) and (max-width: 899px) 120px, " +
         "(min-width: 761px) and (max-width: 1199px) 112px, " +
-        "(min-width: 761px) 96px, calc((100vw - 94px) / 4)",
+        "(min-width: 761px) 128px, calc((100vw - 94px) / 4)",
     );
   });
 

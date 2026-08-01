@@ -47,10 +47,9 @@ const MAX_SELECTED = 25;
 /**
  * Shared chip-trigger dropdown machinery behind FilterSelect/FilterMultiSelect
  * — the dropdown reuses the `.mg-menu` surface and mg-scaleIn/Out motion, but
- * (unlike the portalled Menu.tsx) anchors to its chip purely in CSS: it shares
- * the trigger's coordinate space, so it rides the large-screen `:root` zoom ramp
- * (§13) without the JS getBoundingClientRect placement that drifts under zoom.
- * Where supported it flips to the chip's right edge near the viewport edge. Long
+ * (unlike the portalled Menu.tsx) anchors to its chip purely in CSS, keeping the
+ * trigger and surface in one coordinate space without JS placement. Where
+ * supported it flips to the chip's right edge near the viewport edge. Long
  * lists opt into an inline `.field` search. Gold tint on the chip = active state.
  */
 function FilterChipMenu<T extends string | number>({
@@ -177,7 +176,8 @@ function FilterChipMenu<T extends string | number>({
   }, [open, closing]);
 
   // Dismiss on Esc or outside click. The menu is CSS-anchored to its chip, so
-  // it tracks the trigger through scroll/resize/zoom with no JS repositioning.
+  // it tracks the trigger through scroll, resize, and browser zoom with no JS
+  // repositioning.
   useEffect(() => {
     if (!open || closing) return;
 
@@ -275,9 +275,9 @@ function FilterChipMenu<T extends string | number>({
         )}
       </span>
 
-      {/* Anchored to the chip in CSS (no portal) so it shares the trigger's
-          coordinate space and rides the :root zoom ramp (§13) without JS
-          placement drift. The listbox role sits on the option list itself — not
+      {/* Anchored to the chip in CSS (no portal), so the trigger and surface share
+          a coordinate space without JS placement. The listbox role sits on the
+          option list itself — not
           this surface — so the search combobox and empty-state copy are not
           announced as stray "options". */}
       {open && (

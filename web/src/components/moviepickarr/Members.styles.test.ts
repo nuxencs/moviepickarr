@@ -14,6 +14,22 @@ const aboveQuery = block.slice(0, at);
 const insideQuery = block.slice(at, block.indexOf("/* ---- the loading skeleton"));
 
 describe("the Members mobile push styles", () => {
+  it("uses viewport height directly", () => {
+    expect(membersCSS).not.toContain("var(--zoom");
+    expect(desktopBlock).toContain(
+      "height: calc(100dvh - var(--mem-chrome) + var(--mem-head-space));",
+    );
+  });
+
+  it("adds columns before wide stash posters outgrow the pool", () => {
+    expect(membersCSS).toContain(
+      "@container (min-width: 859px) { .mem-wallbox { --mem-cols: 7; } }",
+    );
+    expect(membersCSS).toContain(
+      "@container (min-width: 1881px) { .mem-wallbox { --mem-cols: 14; } }",
+    );
+  });
+
   it("uses the baseline-compatible exact width complement", () => {
     expect(membersCSS).toContain(`@media ${pushQuery}`);
   });

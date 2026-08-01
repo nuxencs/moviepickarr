@@ -174,9 +174,8 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
       return;
     }
 
-    // All measurements are in the track's local (CSS px) space, where the
-    // :root zoom ramp cancels out — so no effectiveZoom division is needed: the
-    // translate and the tile offsets scale together under the same ancestor zoom.
+    // All measurements are in the track's local CSS-pixel space, so the
+    // translate and tile offsets share one coordinate system.
     const vpCenter = viewport.clientWidth / 2;
     const winnerCenter = winnerEl.offsetLeft + winnerEl.offsetWidth / 2;
     const edgePad = Math.min(28, winnerEl.offsetWidth * 0.16);

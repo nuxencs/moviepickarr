@@ -49,10 +49,8 @@ const same = (a: GridMetrics, b: GridMetrics) =>
   a.rowGap === b.rowGap &&
   a.offsetTop === b.offsetTop;
 
-/** Document-top offset, from the viewport rect rather than the offsetParent
- *  chain: both it and `scrollY` are in the scaled coordinate space, so this
- *  survives the large-screen `:root` zoom ramp (DESIGN §13) that offsetTop
- *  (unscaled, element-local) drifts under. */
+/** Document-top offset from the viewport rect. This avoids walking a mixed
+ *  offset-parent chain when layout above the grid changes. */
 function documentTop(el: HTMLElement): number {
   return Math.round(el.getBoundingClientRect().top + window.scrollY);
 }

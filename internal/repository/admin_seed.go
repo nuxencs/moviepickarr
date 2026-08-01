@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"moviepickarr/internal/db"
@@ -9,9 +10,9 @@ import (
 )
 
 // SqliteAdminSeedRepository backs the break-glass admin seed over the users +
-// local_accounts tables. Reads route to the read pool and the two writes to the
-// write pool, matching the single-writer discipline the other repositories
-// follow.
+// local_accounts tables. SeedAdmin keeps its decision reads and writes on one
+// writer transaction. CountAdmins remains a read-pool query for the no-seed
+// warning path.
 type SqliteAdminSeedRepository struct {
 	pool *db.Pool
 }
@@ -20,96 +21,241 @@ func NewSqliteAdminSeedRepository(pool *db.Pool) *SqliteAdminSeedRepository {
 	return &SqliteAdminSeedRepository{pool: pool}
 }
 
-// FindUsersByNameFold matches on name case-insensitively. users.name is a
-// case-sensitive UNIQUE, so a NOCASE compare can still return several rows
-// (e.g. "Bob" and "bob"): that plurality is exactly the ambiguity the seed
-// checks for.
-func (d *SqliteAdminSeedRepository) FindUsersByNameFold(ctx context.Context, name string) ([]domain.SeedUser, error) {
-	query := `
-		SELECT id, name, role, archived_at IS NOT NULL
-		FROM users
-		WHERE name = ? COLLATE NOCASE
-		ORDER BY id`
+type adminSeedMatch struct {
+	id       int
+	name     string
+	role     string
+	archived bool
+	hasLogin bool
+}
 
-	rows, err := d.pool.Read.QueryContext(ctx, query, name)
+// SeedAdmin resolves the whole seed decision on one writer transaction. A nil
+// passwordHash is a read-only probe when the target needs a login. This lets the
+// caller run Argon2 after the transaction releases the single writer, then
+// retry with a hash that can be committed with the member and login writes.
+func (d *SqliteAdminSeedRepository) SeedAdmin(
+	ctx context.Context,
+	name string,
+	username string,
+	passwordHash *string,
+) (domain.AdminSeedResult, error) {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.AdminSeedResult{}, fmt.Errorf("begin admin seed transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	matches, err := findAdminSeedMatches(ctx, tx, name)
+	if err != nil {
+		return domain.AdminSeedResult{}, fmt.Errorf("read admin seed target %q: %w", name, err)
+	}
+
+	switch len(matches) {
+	case 0:
+		if passwordHash == nil {
+			return domain.AdminSeedResult{NeedsPasswordHash: true}, nil
+		}
+		return createSeedAdmin(ctx, tx, name, username, *passwordHash)
+	case 1:
+		return adoptSeedAdmin(ctx, tx, matches[0], username, passwordHash)
+	default:
+		names := make([]string, 0, len(matches))
+		for _, match := range matches {
+			names = append(names, match.name)
+		}
+		return domain.AdminSeedResult{AmbiguousNames: names}, nil
+	}
+}
+
+// findAdminSeedMatches performs the authoritative case-insensitive name and
+// login-presence read. users.name is case-sensitive UNIQUE, so a NOCASE match
+// may still be ambiguous ("Bob" and "bob").
+func findAdminSeedMatches(ctx context.Context, tx *sql.Tx, name string) ([]adminSeedMatch, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			u.id,
+			u.name,
+			u.role,
+			u.archived_at IS NOT NULL,
+			EXISTS(SELECT 1 FROM local_accounts la WHERE la.user_id = u.id)
+		FROM users u
+		WHERE u.name = ? COLLATE NOCASE
+		ORDER BY u.id
+	`, name)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	users := make([]domain.SeedUser, 0)
+	matches := make([]adminSeedMatch, 0)
 	for rows.Next() {
-		var u domain.SeedUser
-		if err := rows.Scan(&u.ID, &u.Name, &u.Role, &u.Archived); err != nil {
+		var match adminSeedMatch
+		if err := rows.Scan(
+			&match.id,
+			&match.name,
+			&match.role,
+			&match.archived,
+			&match.hasLogin,
+		); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
-		users = append(users, u)
+		matches = append(matches, match)
 	}
-
-	return users, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return matches, nil
 }
 
-func (d *SqliteAdminSeedRepository) CreateAdmin(ctx context.Context, name string) (int, error) {
-	result, err := d.pool.Write.ExecContext(ctx, "INSERT INTO users (name, role) VALUES (?, 'admin')", name)
+func createSeedAdmin(
+	ctx context.Context,
+	tx *sql.Tx,
+	name string,
+	username string,
+	passwordHash string,
+) (domain.AdminSeedResult, error) {
+	result, err := tx.ExecContext(ctx, "INSERT INTO users (name, role) VALUES (?, 'admin')", name)
 	if err != nil {
-		return 0, err
+		return domain.AdminSeedResult{}, fmt.Errorf(
+			"create admin member %q: %w",
+			name,
+			mapAdminSeedConstraint(err, "member name"),
+		)
 	}
-
 	id, err := result.LastInsertId()
 	if err != nil {
-		return 0, err
+		return domain.AdminSeedResult{}, fmt.Errorf("read created admin member id: %w", err)
+	}
+	if err := insertSeedLogin(ctx, tx, int(id), username, passwordHash); err != nil {
+		return domain.AdminSeedResult{}, err
 	}
 
-	return int(id), nil
+	seeded := domain.AdminSeedResult{
+		UserID:       int(id),
+		Name:         name,
+		Created:      true,
+		LoginCreated: true,
+	}
+	return commitAdminSeed(tx, seeded)
 }
 
-func (d *SqliteAdminSeedRepository) PromoteToAdmin(ctx context.Context, id int) error {
-	res, err := d.pool.Write.ExecContext(ctx,
-		"UPDATE users SET role = 'admin' WHERE id = ? AND archived_at IS NULL", id)
-	if err != nil {
-		return err
+func adoptSeedAdmin(
+	ctx context.Context,
+	tx *sql.Tx,
+	match adminSeedMatch,
+	username string,
+	passwordHash *string,
+) (domain.AdminSeedResult, error) {
+	if match.archived {
+		return domain.AdminSeedResult{}, fmt.Errorf(
+			"%w: member %q is archived; choose unused MPA_ADMIN_NAME and MPA_ADMIN_USERNAME values, then restore this member explicitly",
+			domain.ErrInvalidState,
+			match.name,
+		)
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
+
+	if !match.hasLogin && passwordHash == nil {
+		return domain.AdminSeedResult{
+			UserID:            match.id,
+			Name:              match.name,
+			NeedsPasswordHash: true,
+		}, nil
 	}
-	if affected == 0 {
-		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, id)
+
+	seeded := domain.AdminSeedResult{
+		UserID:         match.id,
+		Name:           match.name,
+		LoginPreserved: match.hasLogin,
 	}
-	return nil
+	if match.role != domain.RoleAdmin {
+		result, err := tx.ExecContext(ctx,
+			"UPDATE users SET role = 'admin' WHERE id = ? AND archived_at IS NULL",
+			match.id,
+		)
+		if err != nil {
+			return domain.AdminSeedResult{}, fmt.Errorf(
+				"promote member %d to admin: %w",
+				match.id,
+				err,
+			)
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return domain.AdminSeedResult{}, fmt.Errorf(
+				"read promotion result for member %d: %w",
+				match.id,
+				err,
+			)
+		}
+		if affected == 0 {
+			return domain.AdminSeedResult{}, fmt.Errorf(
+				"%w: active member %d",
+				domain.ErrNotFound,
+				match.id,
+			)
+		}
+		seeded.Promoted = true
+	}
+
+	if !match.hasLogin {
+		if err := insertSeedLogin(ctx, tx, match.id, username, *passwordHash); err != nil {
+			return domain.AdminSeedResult{}, err
+		}
+		seeded.LoginCreated = true
+	}
+
+	return commitAdminSeed(tx, seeded)
 }
 
-func (d *SqliteAdminSeedRepository) HasLocalAccount(ctx context.Context, userID int) (bool, error) {
-	var exists int
-	err := d.pool.Read.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM local_accounts WHERE user_id = ?)
-		 FROM users WHERE id = ? AND archived_at IS NULL`,
-		userID, userID,
-	).Scan(&exists)
-	if err != nil {
-		return false, err
-	}
-	return exists == 1, nil
-}
-
-func (d *SqliteAdminSeedRepository) CreateLocalAccount(ctx context.Context, userID int, username, passwordHash string) error {
-	res, err := d.pool.Write.ExecContext(ctx, `
+func insertSeedLogin(
+	ctx context.Context,
+	tx *sql.Tx,
+	userID int,
+	username string,
+	passwordHash string,
+) error {
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO local_accounts (user_id, username, password_hash)
 		SELECT ?, ?, ?
 		FROM users
 		WHERE id = ? AND archived_at IS NULL`,
 		userID, username, passwordHash, userID)
 	if err != nil {
-		return err
+		return fmt.Errorf(
+			"create local login for member %d: %w",
+			userID,
+			mapAdminSeedConstraint(err, "username"),
+		)
 	}
-	affected, err := res.RowsAffected()
+	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("read local login result for member %d: %w", userID, err)
 	}
 	if affected == 0 {
 		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, userID)
 	}
 	return nil
+}
+
+func commitAdminSeed(tx *sql.Tx, result domain.AdminSeedResult) (domain.AdminSeedResult, error) {
+	if err := tx.Commit(); err != nil {
+		return domain.AdminSeedResult{}, fmt.Errorf("commit admin seed transaction: %w", err)
+	}
+	return result, nil
+}
+
+func mapAdminSeedConstraint(err error, identity string) error {
+	if db.IsUniqueViolation(err) {
+		return fmt.Errorf("%w: %s already exists", domain.ErrConflict, identity)
+	}
+	if db.IsForeignKeyViolation(err) {
+		return fmt.Errorf("%w: active seed member", domain.ErrNotFound)
+	}
+	return err
 }
 
 func (d *SqliteAdminSeedRepository) CountAdmins(ctx context.Context) (int, error) {

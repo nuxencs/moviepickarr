@@ -123,96 +123,63 @@ func warnIfNoAdmins(ctx context.Context, repo domain.AdminSeedRepo, log zerolog.
 // seedAdmin runs the actual bootstrap once the trio is known good. Any returned
 // error propagates to a loud boot failure.
 func seedAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, log zerolog.Logger) error {
-	matches, err := repo.FindUsersByNameFold(ctx, cfg.Name)
+	result, err := repo.SeedAdmin(ctx, cfg.Name, cfg.Username, nil)
 	if err != nil {
-		return fmt.Errorf("look up member %q: %w", cfg.Name, err)
+		return err
 	}
 
-	switch len(matches) {
-	case 0:
-		return createAdmin(ctx, repo, cfg, log)
-	case 1:
-		if matches[0].Archived {
-			return fmt.Errorf(
-				"member %q is archived; choose unused MPA_ADMIN_NAME and MPA_ADMIN_USERNAME values, then restore this member explicitly",
-				matches[0].Name,
-			)
+	if result.NeedsPasswordHash {
+		hash, err := auth.HashPassword(cfg.Password)
+		if err != nil {
+			return fmt.Errorf("hash seeded password: %w", err)
 		}
-		return adoptAdmin(ctx, repo, matches[0], cfg, log)
-	default:
+		result, err = repo.SeedAdmin(ctx, cfg.Name, cfg.Username, &hash)
+		if err != nil {
+			return err
+		}
+		if result.NeedsPasswordHash {
+			return fmt.Errorf("%w: seed store requested a password hash twice", domain.ErrInvalidState)
+		}
+	}
+
+	if len(result.AmbiguousNames) > 0 {
 		// Ambiguous: two members fold to the same name, so there is no single
 		// row to adopt. Skip and log rather than guess or fail boot; the spec
 		// treats this as a deliberate no-op, not a seed error. Still run the
 		// zero-admins guard so a skipped seed on a fresh DB gets the same loud
 		// signal the no-seed path would give.
-		names := make([]string, 0, len(matches))
-		for _, m := range matches {
-			names = append(names, m.Name)
-		}
 		log.Warn().
 			Str("MPA_ADMIN_NAME", cfg.Name).
-			Strs("matches", names).
+			Strs("matches", result.AmbiguousNames).
 			Msg("break-glass admin seed: multiple members match the name case-insensitively, skipping to avoid adopting the wrong one")
 		warnIfNoAdmins(ctx, repo, log)
 		return nil
 	}
-}
 
-// createAdmin is the fresh-DB path: no member by that name, so create one as an
-// admin and give it the seeded local login.
-func createAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, log zerolog.Logger) error {
-	id, err := repo.CreateAdmin(ctx, cfg.Name)
-	if err != nil {
-		return fmt.Errorf("create admin member %q: %w", cfg.Name, err)
+	if result.Created {
+		log.Info().
+			Int("user_id", result.UserID).
+			Str("name", result.Name).
+			Str("username", cfg.Username).
+			Msg("break-glass admin seeded: created admin member with local login")
+		return nil
 	}
-	if err := attachLocalLogin(ctx, repo, id, cfg); err != nil {
-		return err
-	}
-	log.Info().Int("user_id", id).Str("name", cfg.Name).Str("username", cfg.Username).
-		Msg("break-glass admin seeded: created admin member with local login")
-	return nil
-}
-
-// adoptAdmin is the existing-member path: adopt the row so history stays
-// attached, make sure it is an admin, and attach a local login only if the
-// member does not already have one (non-clobber: an existing password is never
-// overwritten).
-func adoptAdmin(ctx context.Context, repo domain.AdminSeedRepo, member domain.SeedUser, cfg AdminConfig, log zerolog.Logger) error {
-	if member.Role != "admin" {
-		if err := repo.PromoteToAdmin(ctx, member.ID); err != nil {
-			return fmt.Errorf("promote member %d to admin: %w", member.ID, err)
-		}
-		log.Info().Int("user_id", member.ID).Str("name", member.Name).
+	if result.Promoted {
+		log.Info().Int("user_id", result.UserID).Str("name", result.Name).
 			Msg("break-glass admin seed: promoted existing member to admin")
 	}
-
-	hasLogin, err := repo.HasLocalAccount(ctx, member.ID)
-	if err != nil {
-		return fmt.Errorf("check local login for member %d: %w", member.ID, err)
-	}
-	if hasLogin {
-		log.Info().Int("user_id", member.ID).Str("name", member.Name).
+	if result.LoginPreserved {
+		log.Info().Int("user_id", result.UserID).Str("name", result.Name).
 			Msg("break-glass admin seed: member already has a local login, leaving the existing password untouched")
 		return nil
 	}
-
-	if err := attachLocalLogin(ctx, repo, member.ID, cfg); err != nil {
-		return err
+	if result.LoginCreated {
+		log.Info().
+			Int("user_id", result.UserID).
+			Str("name", result.Name).
+			Str("username", cfg.Username).
+			Msg("break-glass admin seed: attached local login to existing admin member")
+		return nil
 	}
-	log.Info().Int("user_id", member.ID).Str("name", member.Name).Str("username", cfg.Username).
-		Msg("break-glass admin seed: attached local login to existing admin member")
-	return nil
-}
-
-// attachLocalLogin hashes the seeded password with the argon2id wrapper and
-// writes the local_accounts row.
-func attachLocalLogin(ctx context.Context, repo domain.AdminSeedRepo, userID int, cfg AdminConfig) error {
-	hash, err := auth.HashPassword(cfg.Password)
-	if err != nil {
-		return fmt.Errorf("hash seeded password: %w", err)
-	}
-	if err := repo.CreateLocalAccount(ctx, userID, cfg.Username, hash); err != nil {
-		return fmt.Errorf("create local login for member %d: %w", userID, err)
-	}
-	return nil
+	return fmt.Errorf("%w: seed store returned no committed outcome", domain.ErrInvalidState)
 }

@@ -2,40 +2,32 @@ package domain
 
 import "context"
 
-// SeedUser is the slim member projection the break-glass seed reasons over:
-// just the identity fields it decides on (id, name) plus the live role it may
-// have to raise. It is deliberately narrower than User (the seed never touches
-// timestamps) so the port stays focused on the bootstrap decision.
-type SeedUser struct {
-	ID       int
-	Name     string
-	Role     string
-	Archived bool
+// AdminSeedResult describes one completed seed decision. A password-less probe
+// sets NeedsPasswordHash and makes no changes. AmbiguousNames likewise reports
+// the deliberate skip without a write. Every other result is returned only
+// after its writer transaction commits, so callers can log it as durable.
+type AdminSeedResult struct {
+	UserID            int
+	Name              string
+	NeedsPasswordHash bool
+	AmbiguousNames    []string
+	Created           bool
+	Promoted          bool
+	LoginCreated      bool
+	LoginPreserved    bool
 }
 
 // AdminSeedRepo is the persistence port the break-glass admin seed runs over.
-// It is a boot-only surface: the env-seeded admin bootstrap is the sole caller,
-// so the methods map one-to-one to the seed's decision tree (match by name,
-// create or adopt, ensure the admin role, attach a local login) rather than to
-// a general member-management API.
+// It is a boot-only surface. SeedAdmin owns the users + local_accounts unit of
+// work instead of exposing a transaction to the seed package.
 type AdminSeedRepo interface {
-	// FindUsersByNameFold returns every member whose name matches the given
-	// name case-insensitively. More than one row means an ambiguous match the
-	// seed refuses to act on; exactly one active row is the adopt path; an
-	// archived row is returned so the seed can refuse it explicitly.
-	FindUsersByNameFold(ctx context.Context, name string) ([]SeedUser, error)
-	// CreateAdmin inserts a fresh member with role='admin' and returns its id.
-	CreateAdmin(ctx context.Context, name string) (int, error)
-	// PromoteToAdmin sets role='admin' on an existing member. Idempotent: a
-	// member who is already an admin is left unchanged.
-	PromoteToAdmin(ctx context.Context, id int) error
-	// HasLocalAccount reports whether the member already holds a local login.
-	// The seed reads this to honor its non-clobber rule: an existing password
-	// is never overwritten.
-	HasLocalAccount(ctx context.Context, userID int) (bool, error)
-	// CreateLocalAccount attaches a local login (username + argon2id hash) to a
-	// member. Only ever called when HasLocalAccount reported false.
-	CreateLocalAccount(ctx context.Context, userID int, username, passwordHash string) error
+	// SeedAdmin resolves case-insensitive name matches and local-login presence
+	// inside one writer transaction. A nil passwordHash is a cheap probe: when
+	// creating a login would be necessary it returns NeedsPasswordHash without
+	// mutating the member or login tables. The caller hashes outside the writer
+	// transaction and retries with the result. Existing passwords are ignored
+	// and never overwritten.
+	SeedAdmin(ctx context.Context, name, username string, passwordHash *string) (AdminSeedResult, error)
 	// CountAdmins returns how many active members currently hold role='admin',
 	// so boot can warn loudly when there are none and no seed is configured.
 	CountAdmins(ctx context.Context) (int, error)

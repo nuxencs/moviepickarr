@@ -3,12 +3,14 @@ package seed
 import (
 	"bytes"
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"moviepickarr/internal/auth"
 	"moviepickarr/internal/db"
+	"moviepickarr/internal/domain"
 	"moviepickarr/internal/repository"
 
 	"github.com/rs/zerolog"
@@ -199,7 +201,7 @@ func TestAdoptedMemberPasswordPreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
-	if err := repo.CreateLocalAccount(ctx, id, "ada-old", existingHash); err != nil {
+	if err := repository.NewSqliteLocalAccountRepository(pool).Create(ctx, id, "ada-old", existingHash); err != nil {
 		t.Fatalf("seed existing login: %v", err)
 	}
 
@@ -286,11 +288,10 @@ func TestAmbiguousMatchSkips(t *testing.T) {
 	}
 }
 
-// TestSeedErrorFailsBoot covers acceptance criterion 4b: with the seed
-// configured, a persistence failure surfaces as a boot error. Here the seeded
-// username already belongs to another member, so attaching the login hits the
-// NOCASE-unique constraint.
-func TestSeedErrorFailsBoot(t *testing.T) {
+// TestFreshSeedLoginFailureRollsBackAdmin covers acceptance criterion 4b: a
+// configured persistence failure surfaces as a boot error and leaves no new
+// admin behind. The seeded username collides case-insensitively.
+func TestFreshSeedLoginFailureRollsBackAdmin(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
 
@@ -300,13 +301,60 @@ func TestSeedErrorFailsBoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
-	if err := repo.CreateLocalAccount(ctx, otherID, "ADA", otherHash); err != nil {
+	if err := repository.NewSqliteLocalAccountRepository(pool).Create(ctx, otherID, "ADA", otherHash); err != nil {
 		t.Fatalf("seed conflicting login: %v", err)
 	}
 
 	err = BreakGlassAdmin(ctx, repo, testCfg, true, zerolog.Nop())
 	if err == nil {
 		t.Fatalf("expected boot to fail loudly on a seed persistence error, got nil")
+	}
+	if got := countUsers(t, pool); got != 1 {
+		t.Fatalf("failed fresh seed left %d users, want only the existing member", got)
+	}
+	admins, countErr := repo.CountAdmins(ctx)
+	if countErr != nil {
+		t.Fatalf("count admins: %v", countErr)
+	}
+	if admins != 0 {
+		t.Fatalf("failed fresh seed left %d admins, want 0", admins)
+	}
+	logins := readLocalLogins(t, pool)
+	if len(logins) != 1 || logins[0].userID != otherID {
+		t.Fatalf("failed fresh seed changed local logins: %+v", logins)
+	}
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("seed collision error = %v, want ErrConflict", err)
+	}
+}
+
+func TestAdoptSeedLoginFailureRollsBackPromotion(t *testing.T) {
+	repo, pool := setup(t)
+	ctx := context.Background()
+
+	targetID := createMember(t, pool, "Ada", "member")
+	otherID := createMember(t, pool, "Someone Else", "member")
+	otherHash, err := auth.HashPassword("whatever")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if err := repository.NewSqliteLocalAccountRepository(pool).Create(ctx, otherID, "ADA", otherHash); err != nil {
+		t.Fatalf("seed conflicting login: %v", err)
+	}
+
+	err = BreakGlassAdmin(ctx, repo, testCfg, true, zerolog.Nop())
+	if err == nil {
+		t.Fatal("expected boot to fail on the seeded username collision")
+	}
+	if role := roleOf(t, pool, targetID); role != "member" {
+		t.Fatalf("failed adopt left target role %q, want member", role)
+	}
+	logins := readLocalLogins(t, pool)
+	if len(logins) != 1 || logins[0].userID != otherID {
+		t.Fatalf("failed adopt changed local logins: %+v", logins)
+	}
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("seed collision error = %v, want ErrConflict", err)
 	}
 }
 

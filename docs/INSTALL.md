@@ -84,8 +84,9 @@ through the admin roster.
 
 The seed is idempotent and never overwrites an existing password, so it is safe
 to leave the vars set while the named member remains active. Boot fails if the
-trio is set but seeding errors, and warns if no active admin exists and no seed
-is configured.
+trio is set but seeding errors. A failed create or adoption leaves the member,
+role, and local login unchanged, so the operator can correct the conflict and
+restart. Boot warns if no active admin exists and no seed is configured.
 
 ### SSO / OIDC
 

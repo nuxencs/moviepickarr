@@ -7,9 +7,10 @@ import "context"
 // have to raise. It is deliberately narrower than User (the seed never touches
 // timestamps) so the port stays focused on the bootstrap decision.
 type SeedUser struct {
-	ID   int
-	Name string
-	Role string
+	ID       int
+	Name     string
+	Role     string
+	Archived bool
 }
 
 // AdminSeedRepo is the persistence port the break-glass admin seed runs over.
@@ -20,7 +21,8 @@ type SeedUser struct {
 type AdminSeedRepo interface {
 	// FindUsersByNameFold returns every member whose name matches the given
 	// name case-insensitively. More than one row means an ambiguous match the
-	// seed refuses to act on; exactly one is the adopt path; none is create.
+	// seed refuses to act on; exactly one active row is the adopt path; an
+	// archived row is returned so the seed can refuse it explicitly.
 	FindUsersByNameFold(ctx context.Context, name string) ([]SeedUser, error)
 	// CreateAdmin inserts a fresh member with role='admin' and returns its id.
 	CreateAdmin(ctx context.Context, name string) (int, error)
@@ -34,7 +36,7 @@ type AdminSeedRepo interface {
 	// CreateLocalAccount attaches a local login (username + argon2id hash) to a
 	// member. Only ever called when HasLocalAccount reported false.
 	CreateLocalAccount(ctx context.Context, userID int, username, passwordHash string) error
-	// CountAdmins returns how many members currently hold role='admin', so boot
-	// can warn loudly when there are none and no seed is configured.
+	// CountAdmins returns how many active members currently hold role='admin',
+	// so boot can warn loudly when there are none and no seed is configured.
 	CountAdmins(ctx context.Context) (int, error)
 }

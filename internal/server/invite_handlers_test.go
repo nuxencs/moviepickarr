@@ -324,6 +324,26 @@ func TestReissueInvite_MissingMemberIsNotFound(t *testing.T) {
 	}
 }
 
+func TestArchivedMemberInviteIsInvalidAndCannotBeReissued(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	memberID, token := e.createMember(t, adminCookie, "Archived")
+	if _, err := e.pool.Write.ExecContext(context.Background(),
+		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", memberID); err != nil {
+		t.Fatalf("archive member without cleanup: %v", err)
+	}
+
+	validate := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+token, "", nil)
+	if validate.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("archived claim validation = %d, want 404", validate.StatusCode)
+	}
+
+	reissue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
+	if reissue.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("archived invite reissue = %d, want 404", reissue.StatusCode)
+	}
+}
+
 // TestSelfServeLocalLogin_SetsFirstCredential proves the completeness path: an
 // authed member with no local login sets one, and a second attempt is a 409.
 func TestSelfServeLocalLogin_SetsFirstCredential(t *testing.T) {

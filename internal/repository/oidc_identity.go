@@ -25,14 +25,15 @@ func NewSqliteOIDCIdentityRepository(pool *db.Pool) *SqliteOIDCIdentityRepositor
 // starts from this exact column list and scans via scanOIDCIdentity.
 const oidcIdentitySelect = `
 	SELECT
-		id,
-		user_id,
-		issuer,
-		subject,
-		email,
-		preferred_username,
-		last_login_at
-	FROM oidc_identities`
+		oi.id,
+		oi.user_id,
+		oi.issuer,
+		oi.subject,
+		oi.email,
+		oi.preferred_username,
+		oi.last_login_at
+	FROM oidc_identities oi
+	JOIN users u ON u.id = oi.user_id AND u.archived_at IS NULL`
 
 func scanOIDCIdentity(scanner rowScanner) (*domain.OIDCIdentity, error) {
 	oi := &domain.OIDCIdentity{}
@@ -64,21 +65,24 @@ func scanOIDCIdentity(scanner rowScanner) (*domain.OIDCIdentity, error) {
 
 func (d *SqliteOIDCIdentityRepository) FindByIssuerSubject(ctx context.Context, issuer, subject string) (*domain.OIDCIdentity, error) {
 	return scanOIDCIdentity(d.pool.Read.QueryRowContext(ctx,
-		oidcIdentitySelect+" WHERE issuer = ? AND subject = ?", issuer, subject))
+		oidcIdentitySelect+" WHERE oi.issuer = ? AND oi.subject = ?", issuer, subject))
 }
 
 func (d *SqliteOIDCIdentityRepository) FindByUserID(ctx context.Context, userID int) (*domain.OIDCIdentity, error) {
 	return scanOIDCIdentity(d.pool.Read.QueryRowContext(ctx,
-		oidcIdentitySelect+" WHERE user_id = ?", userID))
+		oidcIdentitySelect+" WHERE oi.user_id = ?", userID))
 }
 
 func (d *SqliteOIDCIdentityRepository) Insert(ctx context.Context, id domain.OIDCIdentity, createdAt time.Time) error {
 	query := `
 		INSERT INTO oidc_identities (
 			user_id, issuer, subject, email, preferred_username, last_login_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?
+		FROM users
+		WHERE id = ? AND archived_at IS NULL
 	`
-	_, err := d.pool.Write.ExecContext(ctx, query,
+	res, err := d.pool.Write.ExecContext(ctx, query,
 		id.UserID,
 		id.Issuer,
 		id.Subject,
@@ -87,6 +91,7 @@ func (d *SqliteOIDCIdentityRepository) Insert(ctx context.Context, id domain.OID
 		db.ToUnixPtr(id.LastLoginAt),
 		db.ToUnix(createdAt),
 		db.ToUnix(createdAt),
+		id.UserID,
 	)
 	if err != nil {
 		// Either UNIQUE (user_id already linked, or this issuer+subject linked to
@@ -100,6 +105,13 @@ func (d *SqliteOIDCIdentityRepository) Insert(ctx context.Context, id domain.OID
 		}
 		return err
 	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, id.UserID)
+	}
 	return nil
 }
 
@@ -108,6 +120,10 @@ func (d *SqliteOIDCIdentityRepository) TouchLogin(ctx context.Context, id int64,
 		UPDATE oidc_identities
 		SET email = ?, preferred_username = ?, last_login_at = ?, updated_at = ?
 		WHERE id = ?
+			AND EXISTS (
+				SELECT 1 FROM users u
+				WHERE u.id = oidc_identities.user_id AND u.archived_at IS NULL
+			)
 	`
 	res, err := d.pool.Write.ExecContext(ctx, query,
 		email, preferredUsername, db.ToUnix(lastLoginAt), db.ToUnix(updatedAt), id)

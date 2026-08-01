@@ -94,6 +94,42 @@ func TestSessionRepo_FindMissingIsNoRows(t *testing.T) {
 	}
 }
 
+func TestSessionRepo_ArchivedSessionIsInvisible(t *testing.T) {
+	ctx, sessions, users, pool := setupSessionRepo(t)
+	alice, err := users.Create(ctx, "Alice")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	mustCreateSession(t, ctx, sessions, "hash-a", alice.ID, now.Add(24*time.Hour), now)
+	markUserArchived(t, ctx, pool, alice.ID)
+
+	if _, err := sessions.FindByTokenHash(ctx, "hash-a"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("find archived session err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestSessionRepo_CreateRejectsArchivedMember(t *testing.T) {
+	ctx, sessions, users, pool := setupSessionRepo(t)
+	alice, err := users.Create(ctx, "Alice")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	markUserArchived(t, ctx, pool, alice.ID)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	err = sessions.Create(ctx, domain.Session{
+		TokenHash:  "hash-a",
+		UserID:     alice.ID,
+		ExpiresAt:  now.Add(24 * time.Hour),
+		LastSeenAt: now,
+		CreatedAt:  now,
+	})
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("create archived session err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestSessionRepo_TouchLastSeen(t *testing.T) {
 	ctx, sessions, users, _ := setupSessionRepo(t)
 	alice, _ := users.Create(ctx, "Alice")

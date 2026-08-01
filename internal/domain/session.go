@@ -33,10 +33,12 @@ type AuthSession struct {
 // passed in rather than defaulted in SQL so the whole store runs off one
 // injectable clock and time-based behavior is testable without real sleeps.
 type SessionRepo interface {
-	// Create inserts a freshly minted session row.
+	// Create inserts a freshly minted session row for an active member. A
+	// missing or archived member returns ErrNotFound.
 	Create(ctx context.Context, s Session) error
-	// FindByTokenHash returns the session for a cookie's token hash joined to
-	// the member's live role, or sql.ErrNoRows if none matches.
+	// FindByTokenHash returns the session for a cookie's token hash joined to the
+	// active member's live role, or sql.ErrNoRows if none matches. A residual
+	// session belonging to an archived member is treated as absent.
 	FindByTokenHash(ctx context.Context, tokenHash string) (*AuthSession, error)
 	// TouchLastSeen slides a session's last_seen_at forward (the idle refresh).
 	TouchLastSeen(ctx context.Context, id int64, lastSeen time.Time) error

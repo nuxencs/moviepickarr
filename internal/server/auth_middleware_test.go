@@ -172,6 +172,29 @@ func TestSession_MintedCookieRoundTripsWithLiveRole(t *testing.T) {
 	}
 }
 
+func TestSession_ArchivedMemberIsRejectedAndCookieCleared(t *testing.T) {
+	e := setupSessionApp(t)
+	id := e.createUser(t, "Alice")
+	token := e.login(t, id)
+	if _, err := e.pool.Write.ExecContext(context.Background(),
+		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", id); err != nil {
+		t.Fatalf("archive member without cleanup: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", nil)
+	req.Header.Set("Cookie", sessionCookieName+"="+token)
+	resp, err := e.app.Test(req, -1)
+	if err != nil {
+		t.Fatalf("whoami: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("archived session status = %d, want 401", resp.StatusCode)
+	}
+	if !sessionClearedBy(resp) {
+		t.Fatal("archived session response did not clear the cookie")
+	}
+}
+
 func TestSession_MintCookieAttributes(t *testing.T) {
 	e := setupSessionApp(t)
 	id := e.createUser(t, "Alice")

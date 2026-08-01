@@ -27,15 +27,16 @@ type OIDCIdentity struct {
 // service layer never imports the driver. Timestamps are passed in rather than
 // defaulted in SQL so the flow runs off one injectable clock.
 type OIDCIdentityRepo interface {
-	// FindByIssuerSubject resolves the login/link match key to its identity row,
-	// or sql.ErrNoRows when no member has linked that (issuer, subject).
+	// FindByIssuerSubject resolves the login/link match key for an active member,
+	// or returns sql.ErrNoRows when no active member owns it. An archived link is
+	// indistinguishable from an unlinked identity.
 	FindByIssuerSubject(ctx context.Context, issuer, subject string) (*OIDCIdentity, error)
-	// FindByUserID returns a member's linked identity, or sql.ErrNoRows when the
-	// member holds none.
+	// FindByUserID returns an active member's linked identity, or sql.ErrNoRows
+	// when the member holds none or is archived.
 	FindByUserID(ctx context.Context, userID int) (*OIDCIdentity, error)
 	// Insert links a member to an (issuer, subject) with its snapshot fields. A
 	// violation of either UNIQUE (user_id, or issuer+subject) surfaces as
-	// ErrConflict; an insert against a missing member trips the FK as ErrNotFound.
+	// ErrConflict; a missing or archived member returns ErrNotFound.
 	Insert(ctx context.Context, id OIDCIdentity, createdAt time.Time) error
 	// TouchLogin refreshes the informational snapshots (email, preferred_username)
 	// and bumps last_login_at/updated_at: the login-dispatch and idempotent

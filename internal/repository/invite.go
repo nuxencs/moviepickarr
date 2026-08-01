@@ -28,16 +28,25 @@ func (d *SqliteInviteRepository) Create(ctx context.Context, userID int, tokenHa
 	// outlives the issuing admin (the column is ON DELETE SET NULL).
 	query := `
 		INSERT INTO invites (user_id, token_hash, expires_at, created_by)
-		VALUES (?, ?, ?, ?)
+		SELECT ?, ?, ?, ?
+		FROM users
+		WHERE id = ? AND archived_at IS NULL
 	`
-	_, err := d.pool.Write.ExecContext(ctx, query, userID, tokenHash, db.ToUnix(expiresAt), createdBy)
+	res, err := d.pool.Write.ExecContext(ctx, query, userID, tokenHash, db.ToUnix(expiresAt), createdBy, userID)
 	if err != nil {
-		// An insert against a missing member trips the user_id FK: the member does
-		// not exist, which is a not-found, not a 500.
+		// A created_by FK miss still comes through the driver. A missing or
+		// archived target selects no row and is mapped below.
 		if db.IsForeignKeyViolation(err) {
 			return fmt.Errorf("%w: member %d", domain.ErrNotFound, userID)
 		}
 		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, userID)
 	}
 	return nil
 }
@@ -75,7 +84,7 @@ func (d *SqliteInviteRepository) FindContextByTokenHash(ctx context.Context, tok
 			u.name,
 			EXISTS (SELECT 1 FROM local_accounts la WHERE la.user_id = i.user_id)
 		FROM invites i
-		JOIN users u ON u.id = i.user_id
+		JOIN users u ON u.id = i.user_id AND u.archived_at IS NULL
 		WHERE i.token_hash = ?
 	`
 	ic := &domain.InviteContext{}

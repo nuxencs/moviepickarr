@@ -15,10 +15,11 @@
   authored no movies is hard-deleted (credentials/sessions/invites cascade,
   `next_up` nulls, name freed); a member who authored movies is archived
   (`archived_at` set, login rows stripped, row and attribution kept). `POST
-  /members/:memberID/restore` clears `archived_at` and re-issues a fresh claim
-  link in one action (archiving stripped the credentials), returning the roster
-  row plus the one-time `claimUrl`. The membership reads filter `archived_at IS
-  NULL` (`UserRepo.List` backs the roster and the rotation candidate list;
+  /members/:memberID/restore` re-strips any residual authentication rows and
+  clears `archived_at` in one transaction, then re-issues a fresh claim link,
+  returning the roster row plus the one-time `claimUrl`. The membership reads
+  filter `archived_at IS NULL` (`UserRepo.List` backs the roster and the
+  rotation candidate list;
   `FindByID` gates the per-member pool/stash reads; the `next_up` join drops a
   pointer left on an archived member), so archived members leave the active
   board. The all-time stats leaderboard is the opposite case on purpose: it is
@@ -42,9 +43,10 @@
 - `internal/server/events.go`: SSE broker.
 - `internal/server/auth_middleware.go`: the request-time auth chain. `csrfGuard`
   (origin check on unsafe methods, fail-closed) runs before `requireSession`
-  (session cookie → live actor via `SessionManager`, 401 + cookie-clear on any
-  miss), the `mpa_session` cookie set/clear helpers, the scheme-derived Secure
-  flag, and the startup + hourly expired-session sweep.
+  (session cookie → active actor via `SessionManager`, 401 + cookie-clear on any
+  missing, expired, or archived-member session), the `mpa_session` cookie
+  set/clear helpers, the scheme-derived Secure flag, and the startup + hourly
+  expired-session sweep.
 - `internal/server/auth_handlers.go`: the local username/password endpoints.
   `POST /auth/login` (uniform `401 {"error":"invalid credentials"}` on every
   credential miss, `204` + minted cookie on success), `GET /auth/me` (identity +
@@ -59,7 +61,8 @@
   (403 `admin_required`) and `requireNextUpOrAdmin` (403 `not_next_up`).
   `/auth/login` is registered ahead of
   `requireSession` so it stays reachable without a session; it is still behind
-  `csrfGuard`.
+  `csrfGuard`. Local credentials attached to an archived row are treated like
+  an unknown username and return the same timing-equalized 401.
 - `internal/server/invite_handlers.go`: the invite/claim onboarding endpoints.
   Admin issuance `POST /members/:memberID/invite` (re-issue/regenerate, revokes
   the old link) and `DELETE /members/:memberID/invite` (revoke, `404` when
@@ -197,9 +200,11 @@
   remains. See ADR 0002.
 - `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
-- `internal/repository/session.go`: `sessions` repository (create / find-by-token-hash joined to the member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).
-- `internal/repository/local_account.go`: `local_accounts` repository (find by NOCASE username / by user id, create with unique→`ErrConflict` + FK→`ErrNotFound` translation, password-hash and admin-reset updates, failed-attempt/successful-login lockout writes, delete) plus the `oidc_identities` presence read and the `/me` member-identity join.
-- `internal/repository/invite.go`: `invites` repository (create with FK→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, find-context-by-token-hash joining the member's display name + local-login presence for the claim page, mark-used). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`).
+- `internal/repository/session.go`: `sessions` repository (active-gated create / find-by-token-hash joined to the active member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).
+- `internal/repository/local_account.go`: `local_accounts` repository (active-member find by NOCASE username / by user id, active-gated create and password/login-state writes, unique→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete) plus the active-gated `oidc_identities` presence read and `/me` member-identity join.
+- `internal/repository/oidc_identity.go`: `oidc_identities` repository (active-member issuer/subject and user-id reads, active-gated insert and login-snapshot update, collision→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete).
+- `internal/repository/invite.go`: `invites` repository (active-gated create and claim-context read, missing-or-archived→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, mark-used). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`).
+- `internal/repository/admin_seed.go`: boot-only break-glass seed store. Name matching carries archive state so the seed can reject an archived match; admin counts and seed writes are active-only.
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ### SQLite connections & timestamps (migration `007`)

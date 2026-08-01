@@ -33,6 +33,14 @@ func setupLocalAccountRepo(t *testing.T) (context.Context, *SqliteLocalAccountRe
 	return ctx, NewSqliteLocalAccountRepository(dbConn), NewSqliteUserRepository(dbConn), dbConn
 }
 
+func markUserArchived(t *testing.T, ctx context.Context, pool *db.Pool, userID int) {
+	t.Helper()
+	if _, err := pool.Write.ExecContext(ctx,
+		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", userID); err != nil {
+		t.Fatalf("mark member archived: %v", err)
+	}
+}
+
 func TestLocalAccountRepo_CreateAndFind(t *testing.T) {
 	ctx, accounts, users, _ := setupLocalAccountRepo(t)
 	alice, err := users.Create(ctx, "Alice")
@@ -72,6 +80,76 @@ func TestLocalAccountRepo_MissingReturnsNoRows(t *testing.T) {
 	}
 	if _, err := accounts.FindByUserID(ctx, 999); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("find id err = %v, want ErrNoRows", err)
+	}
+}
+
+func TestLocalAccountRepo_ArchivedCredentialIsInvisible(t *testing.T) {
+	ctx, accounts, users, pool := setupLocalAccountRepo(t)
+	alice, err := users.Create(ctx, "Alice")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := accounts.Create(ctx, alice.ID, "alice", "hash-1"); err != nil {
+		t.Fatalf("create local account: %v", err)
+	}
+	if _, err := pool.Write.ExecContext(ctx,
+		"INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (?, 'https://idp.test', 'alice')",
+		alice.ID,
+	); err != nil {
+		t.Fatalf("create linked identity: %v", err)
+	}
+	markUserArchived(t, ctx, pool, alice.ID)
+
+	if _, err := accounts.FindByUsername(ctx, "alice"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("find archived username err = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := accounts.FindByUserID(ctx, alice.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("find archived user id err = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := accounts.GetMemberIdentity(ctx, alice.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("archived identity err = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := accounts.HasLinkedIdentity(ctx, alice.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("archived linked-identity check err = %v, want sql.ErrNoRows", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	lock := now.Add(time.Hour)
+	mutations := []struct {
+		name string
+		run  func() error
+	}{
+		{"change password", func() error {
+			return accounts.UpdatePasswordHash(ctx, alice.ID, "hash-2", now)
+		}},
+		{"admin reset", func() error {
+			return accounts.UpdatePasswordAndClearLockout(ctx, alice.ID, "hash-3", now)
+		}},
+		{"failed attempt", func() error {
+			return accounts.RecordFailedAttempt(ctx, alice.ID, 10, &lock, now)
+		}},
+		{"successful login", func() error {
+			return accounts.RecordSuccessfulLogin(ctx, alice.ID, nil, now, now)
+		}},
+	}
+	for _, mutation := range mutations {
+		if err := mutation.run(); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("%s on archived credential err = %v, want sql.ErrNoRows", mutation.name, err)
+		}
+	}
+}
+
+func TestLocalAccountRepo_CreateRejectsArchivedMember(t *testing.T) {
+	ctx, accounts, users, pool := setupLocalAccountRepo(t)
+	alice, err := users.Create(ctx, "Alice")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	markUserArchived(t, ctx, pool, alice.ID)
+
+	err = accounts.Create(ctx, alice.ID, "alice", "hash-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("create archived credential err = %v, want ErrNotFound", err)
 	}
 }
 

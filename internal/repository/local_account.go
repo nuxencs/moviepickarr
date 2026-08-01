@@ -26,13 +26,14 @@ func NewSqliteLocalAccountRepository(pool *db.Pool) *SqliteLocalAccountRepositor
 // starts from this exact column list and scans via scanLocalAccount.
 const localAccountSelect = `
 	SELECT
-		user_id,
-		username,
-		password_hash,
-		failed_attempts,
-		locked_until,
-		last_login_at
-	FROM local_accounts`
+		la.user_id,
+		la.username,
+		la.password_hash,
+		la.failed_attempts,
+		la.locked_until,
+		la.last_login_at
+	FROM local_accounts la
+	JOIN users u ON u.id = la.user_id AND u.archived_at IS NULL`
 
 func scanLocalAccount(scanner rowScanner) (*domain.LocalAccount, error) {
 	acct := &domain.LocalAccount{}
@@ -58,19 +59,21 @@ func scanLocalAccount(scanner rowScanner) (*domain.LocalAccount, error) {
 func (d *SqliteLocalAccountRepository) FindByUsername(ctx context.Context, username string) (*domain.LocalAccount, error) {
 	// The NOCASE collation on the username column folds case, so a plain equality
 	// match is the trimmed/case-insensitive lookup login needs.
-	return scanLocalAccount(d.pool.Read.QueryRowContext(ctx, localAccountSelect+" WHERE username = ?", username))
+	return scanLocalAccount(d.pool.Read.QueryRowContext(ctx, localAccountSelect+" WHERE la.username = ?", username))
 }
 
 func (d *SqliteLocalAccountRepository) FindByUserID(ctx context.Context, userID int) (*domain.LocalAccount, error) {
-	return scanLocalAccount(d.pool.Read.QueryRowContext(ctx, localAccountSelect+" WHERE user_id = ?", userID))
+	return scanLocalAccount(d.pool.Read.QueryRowContext(ctx, localAccountSelect+" WHERE la.user_id = ?", userID))
 }
 
 func (d *SqliteLocalAccountRepository) Create(ctx context.Context, userID int, username, passwordHash string) error {
 	query := `
 		INSERT INTO local_accounts (user_id, username, password_hash)
-		VALUES (?, ?, ?)
+		SELECT ?, ?, ?
+		FROM users
+		WHERE id = ? AND archived_at IS NULL
 	`
-	_, err := d.pool.Write.ExecContext(ctx, query, userID, username, passwordHash)
+	res, err := d.pool.Write.ExecContext(ctx, query, userID, username, passwordHash, userID)
 	if err != nil {
 		// A NOCASE username collision is a client conflict, not a 500; an insert
 		// against a missing member trips the user_id FK, meaning the member does
@@ -83,11 +86,25 @@ func (d *SqliteLocalAccountRepository) Create(ctx context.Context, userID int, u
 		}
 		return err
 	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, userID)
+	}
 	return nil
 }
 
 func (d *SqliteLocalAccountRepository) UpdatePasswordHash(ctx context.Context, userID int, passwordHash string, updatedAt time.Time) error {
-	query := "UPDATE local_accounts SET password_hash = ?, updated_at = ? WHERE user_id = ?"
+	query := `
+		UPDATE local_accounts
+		SET password_hash = ?, updated_at = ?
+		WHERE user_id = ?
+			AND EXISTS (
+				SELECT 1 FROM users u
+				WHERE u.id = local_accounts.user_id AND u.archived_at IS NULL
+			)`
 	return d.execExpectingRow(ctx, query, passwordHash, db.ToUnix(updatedAt), userID)
 }
 
@@ -96,12 +113,23 @@ func (d *SqliteLocalAccountRepository) UpdatePasswordAndClearLockout(ctx context
 		UPDATE local_accounts
 		SET password_hash = ?, failed_attempts = 0, locked_until = NULL, updated_at = ?
 		WHERE user_id = ?
+			AND EXISTS (
+				SELECT 1 FROM users u
+				WHERE u.id = local_accounts.user_id AND u.archived_at IS NULL
+			)
 	`
 	return d.execExpectingRow(ctx, query, passwordHash, db.ToUnix(updatedAt), userID)
 }
 
 func (d *SqliteLocalAccountRepository) RecordFailedAttempt(ctx context.Context, userID, failedAttempts int, lockedUntil *time.Time, updatedAt time.Time) error {
-	query := "UPDATE local_accounts SET failed_attempts = ?, locked_until = ?, updated_at = ? WHERE user_id = ?"
+	query := `
+		UPDATE local_accounts
+		SET failed_attempts = ?, locked_until = ?, updated_at = ?
+		WHERE user_id = ?
+			AND EXISTS (
+				SELECT 1 FROM users u
+				WHERE u.id = local_accounts.user_id AND u.archived_at IS NULL
+			)`
 	return d.execExpectingRow(ctx, query, failedAttempts, db.ToUnixPtr(lockedUntil), db.ToUnix(updatedAt), userID)
 }
 
@@ -117,6 +145,10 @@ func (d *SqliteLocalAccountRepository) RecordSuccessfulLogin(ctx context.Context
 			last_login_at = ?,
 			updated_at = ?
 		WHERE user_id = ?
+			AND EXISTS (
+				SELECT 1 FROM users u
+				WHERE u.id = local_accounts.user_id AND u.archived_at IS NULL
+			)
 	`
 	return d.execExpectingRow(ctx, query, newPasswordHash, db.ToUnix(lastLoginAt), db.ToUnix(updatedAt), userID)
 }
@@ -128,7 +160,10 @@ func (d *SqliteLocalAccountRepository) Delete(ctx context.Context, userID int) e
 func (d *SqliteLocalAccountRepository) HasLinkedIdentity(ctx context.Context, userID int) (bool, error) {
 	var exists int
 	err := d.pool.Read.QueryRowContext(ctx,
-		"SELECT EXISTS (SELECT 1 FROM oidc_identities WHERE user_id = ?)", userID).Scan(&exists)
+		`SELECT EXISTS (SELECT 1 FROM oidc_identities WHERE user_id = ?)
+		 FROM users WHERE id = ? AND archived_at IS NULL`,
+		userID, userID,
+	).Scan(&exists)
 	if err != nil {
 		return false, err
 	}
@@ -148,7 +183,7 @@ func (d *SqliteLocalAccountRepository) GetMemberIdentity(ctx context.Context, us
 			EXISTS (SELECT 1 FROM oidc_identities oi WHERE oi.user_id = u.id)
 		FROM users u
 		LEFT JOIN local_accounts la ON la.user_id = u.id
-		WHERE u.id = ?
+		WHERE u.id = ? AND u.archived_at IS NULL
 	`
 	id := &domain.MemberIdentity{}
 	var username sql.NullString

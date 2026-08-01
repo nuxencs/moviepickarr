@@ -27,8 +27,8 @@ type InviteContext struct {
 // passed in rather than defaulted in SQL so the whole flow runs off one
 // injectable clock and expiry is testable without real sleeps.
 type InviteRepo interface {
-	// Create inserts a fresh invite for a member. A missing member trips the
-	// user_id foreign key and returns ErrNotFound.
+	// Create inserts a fresh invite for an active member. A missing or archived
+	// member returns ErrNotFound.
 	Create(ctx context.Context, userID int, tokenHash string, expiresAt time.Time, createdBy *int) error
 	// RevokeValidByUserID stamps revoked_at on every currently-valid invite for a
 	// member and returns the number of rows affected, so the caller can enforce
@@ -36,8 +36,8 @@ type InviteRepo interface {
 	// no-op (nothing to revoke).
 	RevokeValidByUserID(ctx context.Context, userID int, now, revokedAt time.Time) (int64, error)
 	// FindContextByTokenHash returns the invite joined to its member's display
-	// name and local-login presence, or sql.ErrNoRows when no invite matches the
-	// hash.
+	// name and local-login presence, or sql.ErrNoRows when no active member's
+	// invite matches the hash.
 	FindContextByTokenHash(ctx context.Context, tokenHash string) (*InviteContext, error)
 	// MarkUsed stamps used_at on an invite: the consume-on-first-credential step
 	// that turns a live invite into the "already set up" state.

@@ -74,9 +74,10 @@ _Avoid_: pending user, inactive user
 **Archived**:
 A removed member who authored movies: their `users` row survives with
 `archived_at` set so watch-history attribution holds, but their credentials,
-sessions, and invites are stripped and they drop off every active read (roster,
-stats, rotation). Restore clears `archived_at` and re-issues a claim link. A
-member who authored nothing is hard-deleted instead, not archived.
+sessions, and invites are stripped and every authentication lookup treats them
+as absent. Restore strips any residual authentication rows again, clears
+`archived_at`, and re-issues a claim link. A member who authored nothing is
+hard-deleted instead, not archived.
 _Avoid_: deleted user, disabled user
 
 **Session**:

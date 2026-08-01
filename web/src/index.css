@@ -609,10 +609,10 @@
      button — and it tracks the height automatically at the large-screen step. */
   .hero__poster { width: calc(var(--hero-body-h) * 2 / 3); flex: none; }
   .hero__poster .poster { box-shadow: 0 34px 64px -26px rgba(0,0,0,0.85); }
-  /* Fixed-height column: top group (eyebrow + title) stays anchored at the top,
+  /* Reserved-height column: top group (eyebrow + title) stays anchored at the top,
      the tagline/meta/actions group is pushed to the bottom via margin-top:auto.
-     min-height holds the worst case (2-line title + 2-line tagline) so the
-     banner never resizes and no row ever moves between draws. */
+     min-height holds the expected worst case (2-line title + 2-line tagline) so
+     common draws do not resize the banner. Longer content can still grow. */
   .hero__body { flex: 1; min-width: 0; color: #fff; display: flex; flex-direction: column; min-height: var(--hero-body-h); }
   .hero__eyebrow { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,0.7); }
   /* The adder's name carries the emphasis: brighter + heavier than the rest of
@@ -650,10 +650,11 @@
   @media (max-width: 700px) {
     .hero__inner { flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px 18px 34px; }
     .hero__poster { width: 120px; }
-    .hero__body { min-height: 0; }
+    .hero__body { align-self: stretch; }
     .hero__tag { margin-top: 12px; }
     .hero__nextup { margin-left: 0; padding-left: 0; border-left: none; }
   }
+  @media (max-width: 331px) { .hero { --hero-body-h: 21rem; } }
   /* Large screens — the hero is the centerpiece, so give it more than the global
      zoom: a taller body (the poster width tracks --hero-body-h automatically),
      roomier padding, and a higher title ceiling. Still static across draws within

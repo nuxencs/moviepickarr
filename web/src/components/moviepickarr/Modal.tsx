@@ -1,4 +1,5 @@
 import {
+  type MouseEvent as ReactMouseEvent,
   ReactNode,
   useCallback,
   useEffect,
@@ -188,6 +189,36 @@ export function Modal({
     requestClose();
   }, [isTopmost, requestClose]);
 
+  // A veil dismissal runs on the release, not the press, so the tail of the
+  // gesture stays on the veil instead of landing on whatever the veil was
+  // covering. Both halves have to be the veil's own: a press that started on
+  // the surface (dragging a selection out of the dialog) or a release over it
+  // is not a dismissal.
+  const veilPressRef = useRef(false);
+
+  const onVeilMouseDown = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
+    // A tall dialog leaves the veil scrollable, and its scrollbar reports the
+    // veil as the target. Dragging that is a scroll, not a dismissal, and it
+    // needs its own default.
+    const veil = e.currentTarget;
+    const onScrollbar =
+      e.nativeEvent.offsetX > veil.clientWidth || e.nativeEvent.offsetY > veil.clientHeight;
+    veilPressRef.current = e.target === veil && !onScrollbar;
+    // The word-selection default of this press belongs to the page behind the
+    // veil, and it takes focus off the dialog. Neither is wanted here.
+    if (veilPressRef.current) e.preventDefault();
+  }, []);
+
+  const onVeilMouseUp = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      const pressed = veilPressRef.current;
+      veilPressRef.current = false;
+      if (!pressed || e.target !== e.currentTarget) return;
+      requestCloseFromGesture();
+    },
+    [requestCloseFromGesture],
+  );
+
   // Reopening during the exit keeps this exact surface and its captured opener.
   // Cancel before paint so neither the closing frame nor its old timer can win,
   // then give the restored open interval one close request of its own.
@@ -298,7 +329,8 @@ export function Modal({
   return createPortal(
     <div
       className={`modal-veil${closing ? " modal-veil--closing" : ""}`}
-      onMouseDown={requestCloseFromGesture}
+      onMouseDown={onVeilMouseDown}
+      onMouseUp={onVeilMouseUp}
     >
       <div
         ref={surfaceRef}

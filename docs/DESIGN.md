@@ -367,7 +367,10 @@ control system. Extend `.btn`/`.field`/`.modal` instead.
 One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.tsx`).
 - Portalled; dark blurred veil (`rgba(5,6,10,0.62)` + `blur(8px)`); `--r-xl` corners;
   matching `mg-scaleIn` enter / `mg-scaleOut` exit.
-- Dismiss via Esc, veil click, or an explicit top-right close X (`.iconbtn`).
+- Dismiss via Esc, veil click, or an explicit top-right close X (`.iconbtn`). A veil
+  click closes on the release, with both halves of the gesture on the veil, and the
+  press cancels its own selection default so the browser's click chain cannot
+  word-select the page once the veil is gone (#310).
 - Has a **focus trap + focus restore** and `role="dialog"` / `aria-modal`, so it is a
   proper accessible dialog. On open, focus moves to the first form field (else the
   surface), not the close X.

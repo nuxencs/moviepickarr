@@ -255,7 +255,7 @@ old shadcn primitives.
   so they sit inline after the genres; the **modal omits them** and renders its own
   `.moviemodal__links` column in the rail instead (no duplication).
 - **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a film's record on a
-  responsive 880px to 1320px surface (§5). Its backdrop grows with the record from
+  responsive 880px to 1120px surface (§5). Its backdrop grows with the record from
   260px to 420px and returns to 190px below 700px. A 172px **rail** (`.moviemodal__rail`)
   of poster + the links out, beside the reading column. The links are quiet mono lines
   with a small icon, not ghost buttons: three buttons read as three things to do, three
@@ -272,10 +272,12 @@ old shadcn primitives.
   It navigates with `replace`, like the meta chips, so following it spends the modal's
   own history entry. Each close callback is bound to that entry's token, so a delete
   response arriving after the record has closed cannot pop a newer record or page.
-  The overview stays in the one reading flow and can use up to 90ch. On desktop the
-  record has one viewport-relative outer height, up to 1600px with 48px clearance,
-  so overview length does not resize the surface from movie to movie. Its content
-  scrolls inside that fixed record.
+  The overview stays in the one reading flow and fills its column; the record width
+  keeps the resulting line length bounded. Every record starts at the same
+  viewport-aware top inset, from 48px to 96px, while its bottom follows the content.
+  A long record grows to the viewport limit and then scrolls internally. Wider
+  viewports under 720px tall cap the backdrop at half the viewport height, up to
+  260px, so landscape phones reveal record content below it.
   Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
@@ -387,7 +389,7 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
   buttons). Width tiers: browse surfaces grow from 960px to 1760px, movie records
-  grow from 880px to 1320px, and focused forms remain 460px.
+  grow from 880px to 1120px, and focused forms remain 460px.
 - **Two scroll modes.** By default the veil scrolls and the surface grows to its
   content. Its 56px of breathing room is two spacer items in a flex column rather
   than block padding, because a scroll container's bottom padding is not part of its
@@ -398,9 +400,10 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   `.modal__scroll` scrolls inside it with `overscroll-behavior: contain` so the page
   behind never chains. Chrome outside that region (a close X, a head) stays put while
   the content moves. Opt-in: form dialogs are short and size to their content. The movie
-  detail modal uses `--modal-record-block` for a stable desktop height, up to 84dvh or
-  1600px with the same 48px viewport clearance. Its close X is pinned to the surface,
-  so it holds its corner while the backdrop scrolls under it.
+  detail modal is the exception to vertical centering: it starts at
+  `--modal-record-top`, sizes to its content, and caps against the remaining viewport
+  height. Its close X is pinned to the surface, so it holds its corner while the
+  backdrop scrolls under it.
 
 Destructive confirms (`DeletionDialog`) use the same `Modal`: dismissing (Esc / veil /
 Cancel) is the safe choice, so outside-click dismiss is intentional; only the explicit
@@ -983,10 +986,10 @@ Equivalent page-width grids share the same sizing rule; Search and Members resol
 against their own narrower containers. The Movies pool retains a larger minimum than
 the watched grid. Stats gives its charts and rails the available width. Settings keeps
 its 560px reading column. Search uses the
-browse modal tier (960px to 1760px), movie detail uses the record tier (880px to 1320px),
-and focused forms stay 460px. Movie records take a stable desktop height, up to 84dvh or
-1600px, while retaining 48px of viewport clearance. Other capped dialogs keep the generic
-1320px ceiling. Portalled menus write
+browse modal tier (960px to 1760px), movie detail uses the record tier (880px to 1120px),
+and focused forms stay 460px. Movie records share a 48px to 96px top inset, size to
+their content, and scroll internally only when they reach the viewport limit. Other
+capped dialogs keep the generic 1320px ceiling. Portalled menus write
 `getBoundingClientRect()` coordinates directly because the document is not author-scaled.
 CSS-anchored filter and date surfaces remain preferred where the trigger can own them. The
 hero keeps its separate 1728px geometry step for hierarchy (§7).

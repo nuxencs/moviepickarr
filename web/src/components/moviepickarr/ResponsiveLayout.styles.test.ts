@@ -17,18 +17,26 @@ describe("the responsive layout contract", () => {
 
   it("keeps browse, record, and form dialogs on separate width tiers", () => {
     expect(css).toContain("--modal-browse-max: clamp(960px, 70vw, 1760px)");
-    expect(css).toContain("--modal-record-max: clamp(880px, 52vw, 1320px)");
+    expect(css).toContain("--modal-record-max: clamp(880px, 52vw, 1120px)");
     expect(css).toContain("--modal-form-max: 460px");
     expect(css).toContain(".modal--movie { width: min(var(--modal-record-max), 100%);");
     expect(css).toContain(".modal--form { width: min(var(--modal-form-max), 100%); }");
   });
 
-  it("gives movie records stable wide-screen geometry", () => {
-    expect(css).toContain("--modal-record-block: clamp(900px, 84dvh, 1600px)");
-    expect(css).toContain(".modal--movie.modal--capped {");
-    expect(css).toContain("height: min(var(--modal-record-block), calc(100dvh - 96px));");
-    expect(css).toContain("height: clamp(260px, 32cqi, 420px)");
-    expect(css).toContain(".moviemodal__overview { max-width: 90ch;");
+  it("top-aligns content-sized movie records without shrinking their wide hero", () => {
+    expect(css).toContain("--modal-record-top: clamp(48px, 7dvh, 96px)");
+    expect(css).toContain(
+      ".modal-veil:has(.modal--movie.modal--capped) { justify-content: flex-start; padding-block: var(--modal-record-top) 48px; }",
+    );
+    expect(css).toContain(
+      ".modal--movie.modal--capped { max-height: calc(100dvh - var(--modal-record-top) - 48px); }",
+    );
+    expect(css).not.toContain("--modal-record-block");
+    expect(css).not.toContain("height: min(var(--modal-record-block)");
+    expect(css).toContain("height: clamp(260px, 38cqi, 420px)");
+    expect(css).toContain(".moviemodal__overview { width: 100%;");
+    expect(css).toContain("@media (min-width: 701px) and (max-height: 719px)");
+    expect(css).toContain(".moviemodal__hero { height: min(260px, 50dvh); }");
     expect(css).toContain(".moviemodal__hero { height: 190px;");
   });
 

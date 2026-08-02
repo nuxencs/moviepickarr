@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, MeResponse, Movie, MoveTarget, RemoveResult, RosterMember, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 // Carries the HTTP status alongside the human-readable message so callers can
 // branch on it (the login page shows the uniform banner only for a 401, and
@@ -301,7 +301,7 @@ export const APIClient = {
         getAll: () => appClient.Get<User[]>("api/v1/members"),
         // Adds always land in the session member's stash.
         addMovie: (title: string, tmdbId: number) =>
-            appClient.Post<Movie>("api/v1/movies", {
+            appClient.Post<MovieDetail>("api/v1/movies", {
                 body: {
                     title,
                     tmdbId,
@@ -310,7 +310,7 @@ export const APIClient = {
         deleteMovie: (movieID: number) =>
             appClient.Delete(`api/v1/movies/${movieID}`),
         updateMovie: (movieID: number, title: string, link: string, watchedAt?: string) =>
-            appClient.Put<Movie>(`api/v1/movies/${movieID}`, {
+            appClient.Put<MovieDetail>(`api/v1/movies/${movieID}`, {
                 body: {
                     title,
                     link,
@@ -324,31 +324,31 @@ export const APIClient = {
         // Board reads stay keyed by member id (a public per-member read, not a
         // mutation): the pool/stash tiles for the given member.
         getPool: (userID: number) =>
-            appClient.Get<Movie[]>(`api/v1/members/${userID}/pool`),
+            appClient.Get<MovieTile[]>(`api/v1/members/${userID}/pool`),
         getStash: (userID: number) =>
-            appClient.Get<Movie[]>(`api/v1/members/${userID}/stash`),
+            appClient.Get<MovieTile[]>(`api/v1/members/${userID}/stash`),
     },
     movies: {
-        getPooled: () => appClient.Get<Movie[]>("api/v1/movies/pool"),
+        getPooled: () => appClient.Get<MovieTile[]>("api/v1/movies/pool"),
         // Identify the drawer so only this client shows the reel's confirm button.
         getRandom: () =>
-            appClient.Post<Movie>("api/v1/movies/random", {
+            appClient.Post<MovieDrawPayload>("api/v1/movies/random", {
                 body: { clientId: getClientId() },
             }),
-        getCurrent: () => appClient.Get<Movie>("api/v1/movies/current"),
+        getCurrent: () => appClient.Get<MovieDetail | null>("api/v1/movies/current"),
         // Confirm the draw — closes the reel for every client (via movie:revealed).
         reveal: () => appClient.Post<void>("api/v1/movies/current/reveal"),
         getWatched: () =>
-            appClient.Get<Movie[]>("api/v1/movies/watched"),
+            appClient.Get<MovieTile[]>("api/v1/movies/watched"),
         // Full enriched record (cast/crew/overview/backdrop) for the detail modal;
         // the list payloads are lean, so the modal lazy-loads this on open.
         get: (movieID: number, signal?: AbortSignal) =>
-            appClient.Get<Movie>(`api/v1/movies/${movieID}`, { signal }),
+            appClient.Get<MovieDetail>(`api/v1/movies/${movieID}`, { signal }),
         // Stats filter choices, derived server-side from the watched library.
         getFilterOptions: (signal?: AbortSignal) =>
             appClient.Get<FilterOptionsResponse>("api/v1/movies/filter-options", { signal }),
         markWatched: () =>
-            appClient.Post<Movie>("api/v1/movies/current/watch"),
+            appClient.Post<MovieDetail>("api/v1/movies/current/watch"),
     },
     settings: {
         toggleLock: (lock: boolean) =>

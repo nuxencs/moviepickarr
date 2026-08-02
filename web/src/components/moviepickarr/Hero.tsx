@@ -29,7 +29,7 @@ import { Poster } from "@/components/moviepickarr/Poster";
 import { drawLockedTip, revealLockedTip, useTurnGate, watchLockedTip } from "@/components/moviepickarr/turnGate";
 import { toast } from "@/components/ui/toast-api";
 
-import type { Movie } from "@/types/Response";
+import type { MovieDetail } from "@/types/Response";
 
 /** Stagger index for the draw-reveal; each slot settles a touch after the last. */
 const ri = (i: number) => ({ "--i": i }) as CSSProperties;
@@ -73,10 +73,10 @@ function Backdrop({ bg, revision }: { bg: string; revision: number }) {
 const reportScrollDone = () => drawStore.send({ type: "SCROLL_DONE" });
 const confirmDraw = () => drawStore.send({ type: "CONFIRM", source: "local" });
 
-const drawIdentity = (movie: Movie | null): string =>
+const drawIdentity = (movie: MovieDetail | null): string =>
   movie ? `${movie.movieID}:${movie.drawnAt ?? ""}` : "none";
 
-function artworkDescriptor(movie: Movie | null) {
+function artworkDescriptor(movie: MovieDetail | null) {
   const identity = drawIdentity(movie);
   const url = backdropUrl(movie?.backdropPath);
   const fallback = backdropBg(hueOf(movie?.title ?? "moviepickarr"));
@@ -186,7 +186,7 @@ export function Hero() {
     },
   });
 
-  const [shown, setShown] = useState<Movie | null>(null);
+  const [shown, setShown] = useState<MovieDetail | null>(null);
   const [revealId, setRevealId] = useState(0);
   const [artwork, setArtwork] = useState<HeroArtwork>(() => ({
     revision: 0,
@@ -199,7 +199,7 @@ export function Hero() {
   const artworkTarget = useRef<ArtworkTarget | null>(null);
   // The last draw committed to the hero, so an unrelated refetch re-running
   // the commit effect can't replay the reveal (see the sameDraw guard below).
-  const committed = useRef<Movie | null | undefined>(undefined);
+  const committed = useRef<MovieDetail | null | undefined>(undefined);
 
   // Reveal handoff: the machine bumps commitSeq once the winner's backdrop has
   // decoded, in the SAME store update that drops the reel (phase → idle).
@@ -213,20 +213,31 @@ export function Hero() {
     setSeenCommitSeq(drawState.commitSeq);
     const next = current ?? null;
     const nextArtwork = artworkDescriptor(next);
+    const decodedBackdrop = drawState.decodedBackdrop;
+    const reuseDecodedBackdrop =
+      nextArtwork.url !== null &&
+      decodedBackdrop !== null &&
+      decodedBackdrop.movieID === next?.movieID &&
+      decodedBackdrop.drawnAt === next?.drawnAt &&
+      decodedBackdrop.backdropPath === next?.backdropPath;
     committed.current = current;
     setShown(next);
     setRevealId((n) => n + 1);
-    // commitSeq synchronizes the reel and content, but its lean candidate does
-    // not prove that this full current-draw backdrop was decoded. Hand off to a
-    // fallback now and let the artwork effect verify the remote source.
-    artworkTarget.current = nextArtwork.url
-      ? null
-      : { source: nextArtwork.source, settled: true };
+    // The machine already proved the draw payload's backdrop paintable. Reuse
+    // it when the current query still agrees; a changed path falls through to
+    // the normal fallback + decode path below.
+    artworkTarget.current =
+      reuseDecodedBackdrop || !nextArtwork.url
+        ? { source: nextArtwork.source, settled: true }
+        : null;
     setArtwork((previous) => ({
       revision: previous.revision + 1,
       identity: nextArtwork.identity,
-      source: nextArtwork.url ? `${nextArtwork.identity}:fallback` : nextArtwork.source,
-      bg: nextArtwork.fallback,
+      source:
+        reuseDecodedBackdrop || !nextArtwork.url
+          ? nextArtwork.source
+          : `${nextArtwork.identity}:fallback`,
+      bg: reuseDecodedBackdrop ? `url(${nextArtwork.url})` : nextArtwork.fallback,
     }));
   }
 

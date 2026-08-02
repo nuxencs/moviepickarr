@@ -23,7 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Modal } from "@/components/moviepickarr/Modal";
 
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 
 import { clearMovieModalHistory, useMovieModal } from "@/hooks/useMovieModalHistory";
 import { renderWithProviders } from "@/test/providers";
@@ -33,8 +33,16 @@ const MOVIES = "/" as const;
 // pushes must not disturb them, which is the bug that started the issue.
 const STATS = "/stats?win=year&genres=27" as const;
 
-function movie(overrides: Partial<Movie> = {}): Movie {
-  return { movieID: 42, title: "Possession", ...overrides } as Movie;
+function movie(overrides: Partial<MovieTile> = {}): MovieTile {
+  return {
+    movieID: 42,
+    title: "Possession",
+    link: "",
+    addedAt: "2026-07-01T00:00:00Z",
+    addedByID: 1,
+    addedByName: "Ada",
+    ...overrides,
+  };
 }
 
 /** What both tabs do: open pushes an entry, every dismiss pops it, and the
@@ -43,7 +51,7 @@ function Subject({
   films = [movie()],
   deleteResult,
 }: {
-  films?: Movie[];
+  films?: MovieTile[];
   deleteResult?: Promise<void>;
 } = {}) {
   const { selected, isOpen, open, close, onClosed } = useMovieModal();
@@ -77,7 +85,7 @@ function Subject({
 
 function mount(
   path: typeof MOVIES | typeof STATS,
-  films?: Movie[],
+  films?: MovieTile[],
   deleteResult?: Promise<void>,
 ) {
   return renderWithProviders(<Subject films={films} deleteResult={deleteResult} />, {

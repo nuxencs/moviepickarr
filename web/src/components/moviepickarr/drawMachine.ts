@@ -27,7 +27,7 @@
                the hero handoff paints in one frame.
    ============================================================ */
 
-import type { Movie } from "@/types/Response";
+import type { MovieDetail, MovieDrawPayload, MovieTile } from "@/types/Response";
 
 /** Environment snapshot, resolved by the store at send() time. Tests pass a
  *  plain object; nothing in the machine reads the DOM or the clock. */
@@ -51,10 +51,10 @@ export interface DrawEnv {
 export interface SpinDescriptor {
   /** Server draw time (RFC3339): the identity of this draw. */
   drawnAt: string;
-  /** The movie the reel must land on. */
-  winnerId: number;
+  /** Authoritative full winner record, used for reveal artwork. */
+  winner: MovieDetail;
   /** Reel source: the draw candidates (winner included), deduped by id. */
-  candidates: Movie[];
+  candidates: MovieTile[];
   /** How long THIS client scrolls: full duration fresh, remaining on resume. */
   durationMs: number;
   /** Wall clock when the scroll started. The reel is a component and its
@@ -89,6 +89,13 @@ export interface DrawState {
   /** Bumps once per completed reveal (after the backdrop decode), signalling
    *  the Hero to commit the winner in the same render that drops the reel. */
   commitSeq: number;
+  /** Backdrop proven paintable by the reveal decode. Hero reuses it only when
+   *  its current-query record still describes the same draw and path. */
+  decodedBackdrop: {
+    movieID: number;
+    drawnAt: string;
+    backdropPath: string;
+  } | null;
 }
 
 export const initialDrawState: DrawState = {
@@ -96,14 +103,15 @@ export const initialDrawState: DrawState = {
   spin: null,
   seen: [],
   commitSeq: 0,
+  decodedBackdrop: null,
 };
 
 export type DrawEvent =
   /** A draw happened, from the movie:drawn SSE event or the drawer's own
    *  mutation response (whichever lands first; the other dedups). */
-  | { type: "DRAWN"; movie: Movie }
+  | { type: "DRAWN"; movie: MovieDrawPayload }
   /** Reload with a pending draw: current movie + the (post-draw) pool. */
-  | { type: "RESUME"; current: Movie; pool: Movie[] }
+  | { type: "RESUME"; current: MovieDetail; pool: MovieTile[] }
   /** The reel finished (or skipped) its scroll and rests on the winner. */
   | { type: "SCROLL_DONE" }
   /** The reveal is decided: the drawer's OK / the fallback timer (local), or
@@ -111,8 +119,9 @@ export type DrawEvent =
   | { type: "CONFIRM"; source: "local" | "remote" }
   /** movie:revealed from the server; closes the matching reel everywhere. */
   | { type: "REVEALED"; drawnAt: string }
-  /** The winner's backdrop finished decoding (or there was none). */
-  | { type: "DECODE_DONE"; drawnAt: string };
+  /** The reveal decode completed. decodedBackdropPath is null when there was
+   *  no backdrop or decoding failed, so Hero can retry without trusting it. */
+  | { type: "DECODE_DONE"; drawnAt: string; decodedBackdropPath: string | null };
 
 export type DrawCommand =
   /** Tell the server the draw is confirmed (POST reveal). Emitted exactly
@@ -129,9 +138,9 @@ export type DrawCommand =
 const NONE: DrawCommand[] = [];
 
 /** Dedup movies by id, preserving first-seen order. */
-function uniqueById(movies: Movie[]): Movie[] {
+function uniqueById(movies: MovieTile[]): MovieTile[] {
   const seenIds = new Set<number>();
-  const out: Movie[] = [];
+  const out: MovieTile[] = [];
   for (const m of movies) {
     if (m && !seenIds.has(m.movieID)) {
       seenIds.add(m.movieID);
@@ -161,7 +170,7 @@ function deadline(reference: string | undefined, revealAt: string | undefined, d
 /** Whether a current movie still has a reel pending: drawn but not yet
  *  revealed. Lets a reload decide, from the current movie alone (before the
  *  pool loads), whether to hold the hero commit for a resume. */
-export function drawAwaitingReveal(current: Movie, env: DrawEnv): boolean {
+export function drawAwaitingReveal(current: MovieDetail, env: DrawEnv): boolean {
   if (env.reducedMotion) return false;
   return !!current.drawnAt && !current.revealed;
 }
@@ -169,13 +178,13 @@ export function drawAwaitingReveal(current: Movie, env: DrawEnv): boolean {
 /** The spin for a fresh draw. Null when the spin should be skipped: reduced
  *  motion, no draw time, or fewer than two candidates (a pool of one isn't
  *  really a draw, and the graceful degradation if candidates are absent). */
-function buildLiveSpin(drawn: Movie, env: DrawEnv): SpinDescriptor | null {
+function buildLiveSpin(drawn: MovieDrawPayload, env: DrawEnv): SpinDescriptor | null {
   if (env.reducedMotion || !drawn.drawnAt) return null;
   const candidates = uniqueById([...(drawn.candidates ?? []), drawn]);
   if (candidates.length < 2) return null;
   return {
     drawnAt: drawn.drawnAt,
-    winnerId: drawn.movieID,
+    winner: drawn,
     candidates,
     durationMs: env.spinDurationMs,
     startedAtMs: env.now,
@@ -190,16 +199,18 @@ function buildLiveSpin(drawn: Movie, env: DrawEnv): SpinDescriptor | null {
  *  the settled winner when the scroll already finished (durationMs 0). Null
  *  when there's nothing to resume: reduced motion, missing timing, already
  *  revealed, or no decoys to scroll past. */
-function buildResumeSpin(current: Movie, pool: Movie[], env: DrawEnv): SpinDescriptor | null {
+function buildResumeSpin(current: MovieDetail, pool: MovieTile[], env: DrawEnv): SpinDescriptor | null {
   if (env.reducedMotion || !current.drawnAt || !current.serverNow || current.revealed) return null;
   const elapsed = Date.parse(current.serverNow) - Date.parse(current.drawnAt);
   if (!Number.isFinite(elapsed)) return null;
+  // The held winner may already ride the pool as a lean tile. Keep that tile's
+  // position and poster; the separate full winner owns reveal-only artwork.
   const candidates = uniqueById([...(pool ?? []), current]);
   if (candidates.length < 2) return null;
   const durationMs = Math.max(0, env.spinDurationMs - elapsed);
   return {
     drawnAt: current.drawnAt,
-    winnerId: current.movieID,
+    winner: current,
     candidates,
     durationMs,
     startedAtMs: env.now,
@@ -261,7 +272,10 @@ export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawS
         // holds the pool refresh back, so release it right away.
         return [{ ...state, seen }, [{ cmd: "invalidatePool" }]];
       }
-      return [{ phase: "spinning", spin, seen, commitSeq: state.commitSeq }, [scheduleFallback(spin, env)]];
+      return [
+        { phase: "spinning", spin, seen, commitSeq: state.commitSeq, decodedBackdrop: null },
+        [scheduleFallback(spin, env)],
+      ];
     }
 
     case "RESUME": {
@@ -272,7 +286,10 @@ export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawS
       // No reel to resume: mark the draw handled so the hero commits the
       // result directly. The pool is already fresh on a reload: no refresh.
       if (!spin) return [{ ...state, seen }, NONE];
-      return [{ phase: "spinning", spin, seen, commitSeq: state.commitSeq }, [scheduleFallback(spin, env)]];
+      return [
+        { phase: "spinning", spin, seen, commitSeq: state.commitSeq, decodedBackdrop: null },
+        [scheduleFallback(spin, env)],
+      ];
     }
 
     case "SCROLL_DONE": {
@@ -293,10 +310,9 @@ export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawS
         return [state, NONE];
       }
       const spin = state.spin;
-      const winner = spin.candidates.find((m) => m.movieID === spin.winnerId);
       const commands: DrawCommand[] = [{ cmd: "cancelFallback" }];
       if (event.source === "local") commands.push({ cmd: "postReveal" });
-      commands.push({ cmd: "decode", drawnAt: spin.drawnAt, backdropPath: winner?.backdropPath ?? null });
+      commands.push({ cmd: "decode", drawnAt: spin.drawnAt, backdropPath: spin.winner.backdropPath ?? null });
       return [{ ...state, phase: "revealing" }, commands];
     }
 
@@ -312,8 +328,23 @@ export function reduce(state: DrawState, event: DrawEvent, env: DrawEnv): [DrawS
     case "DECODE_DONE": {
       // Stale completions (a decode outliving its draw) must not commit.
       if (state.phase !== "revealing" || state.spin?.drawnAt !== event.drawnAt) return [state, NONE];
+      const winner = state.spin.winner;
+      const decodedBackdrop =
+        event.decodedBackdropPath && event.decodedBackdropPath === winner.backdropPath
+          ? {
+              movieID: winner.movieID,
+              drawnAt: state.spin.drawnAt,
+              backdropPath: event.decodedBackdropPath,
+            }
+          : null;
       return [
-        { phase: "idle", spin: null, seen: state.seen, commitSeq: state.commitSeq + 1 },
+        {
+          phase: "idle",
+          spin: null,
+          seen: state.seen,
+          commitSeq: state.commitSeq + 1,
+          decodedBackdrop,
+        },
         [{ cmd: "invalidatePool" }],
       ];
     }

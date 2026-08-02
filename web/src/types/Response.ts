@@ -15,7 +15,10 @@ export type MovieStatus = "pool" | "stash" | "current" | "watched";
 // Derived from MovieStatus so renaming a status breaks here too.
 export type MoveTarget = Extract<MovieStatus, "pool" | "stash">;
 
-export interface Movie {
+// The list/tile wire class. Pool, watched, and member-board reads return only
+// these fields; modal-only metadata is structurally unavailable until detail
+// is fetched.
+export interface MovieTile {
     movieID: number;
     title: string;
     link: string;
@@ -27,13 +30,22 @@ export interface Movie {
     addedByArchived?: boolean;
     watchedAt?: string;
 
-    // The film's client-visible place in the app, carried by the detail payload
-    // only (GET /movies/:id, current, pool). The server keeps a held winner
-    // projected as pooled until reveal. A lean list tile has no status, so it
-    // is absent on the tile object the modal renders while its detail request
-    // is in flight: read it the way cast and overview are read, as a field that
-    // arrives with the detail.
-    status?: MovieStatus;
+    // Stable external identities used to build IMDb / TMDB / Letterboxd links.
+    tmdbId?: number;
+    imdbId?: string;
+
+    // Enriched tile metadata. All optional while enrichment is pending.
+    posterPath?: string;
+    releaseDate?: string;
+    runtime?: number;
+    genres?: string[];
+    voteAverage?: number;
+}
+
+// The full/detail wire class. Detail, current, mutation, and movie lifecycle
+// payloads carry it. A held winner remains projected as pooled until reveal.
+export interface MovieDetail extends MovieTile {
+    status: MovieStatus;
 
     // Draw-reveal coordination — present only on the current-movie endpoint and
     // the movie:drawn event. drawnAt is when the current movie was drawn;
@@ -49,24 +61,9 @@ export interface Movie {
     // been confirmed, so a reload after the reveal skips the reel (see drawSpin).
     drawClientId?: string;
     revealed?: boolean;
-    // candidates is the reel source carried by the movie:drawn event (and the
-    // draw mutation response): the pre-draw pool as lean tiles, winner included.
-    // Present only on a draw payload — it makes the reel self-contained so every
-    // client spins regardless of its local pool cache (see buildLiveSpin).
-    candidates?: Movie[];
-
-    // Stable external identities — used to build IMDb / TMDB / Letterboxd links.
-    tmdbId?: number;
-    imdbId?: string;
-
-    // Enriched TMDB metadata — all optional (a movie may not be enriched yet).
-    // posterPath/backdropPath are raw TMDB paths (e.g. "/abc.jpg").
-    posterPath?: string;
+    // Modal-only enriched metadata. All optional while enrichment is pending;
+    // backdropPath is a raw TMDB path (e.g. "/abc.jpg").
     backdropPath?: string;
-    releaseDate?: string;
-    runtime?: number;
-    genres?: string[];
-    voteAverage?: number;
     tagline?: string;
     overview?: string;
 
@@ -76,11 +73,18 @@ export interface Movie {
     crew?: CreditPerson[];
 }
 
+// The draw mutation and movie:drawn event add a self-contained, lean reel
+// source to the full winning record. The exceptional recovery broadcast may
+// omit candidates, in which case clients skip the reel.
+export interface MovieDrawPayload extends MovieDetail {
+    candidates?: MovieTile[];
+}
+
 export interface User {
     userID: number;
     name: string;
-    currentPool: Record<string, Movie>;
-    stash: Record<string, Movie>;
+    currentPool: Record<string, MovieTile>;
+    stash: Record<string, MovieTile>;
     createdAt: string;
 }
 

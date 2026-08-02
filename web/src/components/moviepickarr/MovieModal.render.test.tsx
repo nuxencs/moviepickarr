@@ -26,7 +26,7 @@ import { AuthKeys, MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 
-import type { MeResponse, Movie } from "@/types/Response";
+import type { MeResponse, MovieDetail, MovieTile } from "@/types/Response";
 import type { ReactNode } from "react";
 
 // The chips deep-link to /stats and active attribution to /users; outside a
@@ -92,7 +92,7 @@ const MOVIE_ID = 42;
 const ADDER_ID = 1;
 
 /** The lean tile object: no overview, credits, cast or backdrop. */
-function lean(overrides: Partial<Movie> = {}): Movie {
+function lean(overrides: Partial<MovieTile> = {}): MovieTile {
   return {
     movieID: MOVIE_ID,
     title: "Apocalypse Now",
@@ -104,12 +104,14 @@ function lean(overrides: Partial<Movie> = {}): Movie {
     tmdbId: 28,
     imdbId: "tt0078788",
     ...overrides,
-  } as Movie;
+  };
 }
 
 /** The same movie as the detail payload answers it. */
-function detailed(overrides: Partial<Movie> = {}): Movie {
-  return lean({
+function detailed(overrides: Partial<MovieDetail> = {}): MovieDetail {
+  return {
+    ...lean(),
+    status: "pool",
     overview: "At the height of the Vietnam war…",
     backdropPath: "/backdrop.jpg",
     crew: [
@@ -119,7 +121,7 @@ function detailed(overrides: Partial<Movie> = {}): Movie {
     ],
     cast: [{ id: 9, name: "Martin Sheen", character: "Willard" }],
     ...overrides,
-  });
+  };
 }
 
 function session(id: number): MeResponse {
@@ -142,8 +144,8 @@ function renderModal({
   drawInProgress,
   useDefaultRetry = false,
 }: {
-  movie?: Movie;
-  detail?: Movie;
+  movie?: MovieTile;
+  detail?: MovieDetail;
   /** The session member. Left out, /auth/me never lands and nobody owns the film. */
   meID?: number;
   locked?: boolean;
@@ -216,15 +218,6 @@ describe("MovieModal", () => {
 
     // Two placeholder rows, one per credit line the landed detail will fill.
     expect(creditBlock(dialog).querySelectorAll(".moviemodal__credits__ghost")).toHaveLength(2);
-  });
-
-  it("holds only the rows still missing, so a half-filled block doesn't jump either", () => {
-    const { dialog } = renderModal({
-      movie: lean({ crew: [{ id: 1, name: "Francis Ford Coppola", job: "Director" }] } as Partial<Movie>),
-    });
-
-    expect(dialog.textContent).toContain("Directed by");
-    expect(creditBlock(dialog).querySelectorAll(".moviemodal__credits__ghost")).toHaveLength(1);
   });
 
   it("fills the credits in beside the attribution once the detail lands", () => {
@@ -330,6 +323,33 @@ describe("MovieModal", () => {
     const { dialog } = renderModal({ detail: detailed({ cast: [] }) });
 
     expect(dialog.querySelector(".castrow")).toBeNull();
+  });
+});
+
+describe("MovieModal hero", () => {
+  function heroImg(dialog: HTMLElement) {
+    return dialog.querySelector(".moviemodal__hero__img") as HTMLImageElement | null;
+  }
+
+  it("does not stand the poster in for the backdrop while the detail loads", async () => {
+    const { client, dialog } = renderModal();
+
+    // The lean object has no backdropPath, but the detail is about to bring
+    // one: painting the poster here means a visible swap a moment later.
+    expect(heroImg(dialog)?.src ?? "").not.toContain("poster.jpg");
+
+    act(() => {
+      client.setQueryData(MoviesKeys.detail(MOVIE_ID), detailed());
+    });
+    await vi.waitFor(() =>
+      expect(heroImg(dialog)?.src ?? "").toContain("backdrop.jpg"),
+    );
+  });
+
+  it("stands the poster in once the detail says the film has no backdrop", () => {
+    const { dialog } = renderModal({ detail: detailed({ backdropPath: undefined }) });
+
+    expect(heroImg(dialog)?.src ?? "").toContain("poster.jpg");
   });
 });
 

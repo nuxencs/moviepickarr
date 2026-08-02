@@ -514,8 +514,8 @@ closes the movie record.
 - **Skeletons:** the detail modal lazy-loads its heavy fields (overview, credits, cast
   row) from `GET /movies/:id`; while that's in flight they render `Skeleton`/`SkeletonText`
   shimmer blocks (`.skel`, reusing `mg-shimmer`) instead of popping in all at once —
-  gated on the query being *pending AND* the field absent, so a full (pool) payload shows
-  its data immediately and a genuinely empty field renders nothing, not a perma-skeleton.
+  gated on the query being *pending AND* the field absent, so cached detail shows
+  immediately and a genuinely empty field renders nothing, not a perma-skeleton.
   Each placeholder holds the space its real content will take, so nothing grows under the
   reader: the credit rows are reserved at one line height each
   (`.moviemodal__credits__ghost`, `height: 1lh`), not at the height of the skeleton bar.
@@ -680,7 +680,13 @@ the same lock that publishes the draw and includes the snapshot in `movie:drawn`
 A promotion that completes after publication stays visible in the pool but belongs to
 the next draw, never the reel already in flight. Candidate metadata loads after the lock
 is released, from one batch query; the handler does not query the pool again. The strip
-is deduped at the landing seam so no poster sits beside an identical copy of itself.
+is deduped at the landing seam so no poster sits beside an identical copy of itself. In
+the client draw state, candidates remain `MovieTile[]` while the authoritative winner is
+a separate `MovieDetail`. Reel order and posters come from the lean candidates; backdrop
+preloading and reveal decoding come from the full winner. The successful decode is carried
+into the Hero commit when the current-query path still matches; if enrichment changed the
+path during the reel, Hero keeps its fallback and decodes the replacement. A lean winner
+can therefore never shadow the detail artwork on either a fresh draw or reload resume.
 Motion is the **measure-then-transition**
 idiom (§6): JS measures the winner tile and glides the track there with a CSS transition
 over `--dur-spin` (6.5s) / `--ease-reel` (easeOutCubic — a higher-order ease-out whose
@@ -891,7 +897,7 @@ use tokens so they follow the theme.
   so the phase has to be read when the invalidation actually fires. Exact lifecycle
   facts bypass that delay: draw, reveal, watch, and pool-lock events patch the cached
   mutation gate immediately; reveal and watch also patch the open detail lifecycle in
-  the same turn. The queued refetch still reconciles full records afterward.
+  the same turn. The queued refetch still reconciles authoritative query state afterward.
 - **Routing & URL state (TanStack Router).** Three path routes — `/` (Movies),
   `/stats`, `/users` — defined code-based in `router.tsx`. The root route is the app
   shell (NavBar + `<Outlet/>` + Toaster) and owns the single `useSSE()` mount, so the

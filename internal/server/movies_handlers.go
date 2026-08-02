@@ -52,12 +52,12 @@ func (h *handler) creditsFor(c *fiber.Ctx, movies []*domain.Movie) creditsByID {
 	return credits
 }
 
-func (h *handler) getPooledMovies(c *fiber.Ctx) ([]fullMovie, error) {
+func (h *handler) getPooledMovies(c *fiber.Ctx) ([]leanMovieTile, error) {
 	movies, err := h.movieService.Pooled(c.UserContext())
 	if err != nil {
 		return nil, err
 	}
-	return toFullMovies(movies, h.metaFor(c, movies), h.creditsFor(c, movies)), nil
+	return toLeanTiles(movies, h.metaFor(c, movies)), nil
 }
 
 // writeNotAdder is the uniform 403 for a member trying to change a movie they
@@ -426,7 +426,17 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		// current. Metadata stays outside the draw mutex; only the candidate ids
 		// and movie fields need the draw publication boundary.
 		candidateMovies := drawResult.Candidates
-		drawn.Candidates = toLeanTiles(candidateMovies, h.metaFor(c, candidateMovies))
+		candidateMeta := h.metaFor(c, candidateMovies)
+		drawn.Candidates = toLeanTiles(candidateMovies, candidateMeta)
+
+		// The candidates remain lean, but reveal needs the winning backdrop before
+		// the reel drops. The winner is in the captured candidate set, so reuse the
+		// same metadata batch instead of adding another read.
+		payload = toFullMovie(selectedMovie, candidateMeta[selectedMovie.ID], nil)
+		payload.DrawnAt = formatTime(&activeDraw.DrawnAt)
+		payload.RevealAt = formatTimePrecise(activeDraw.RevealAt)
+		payload.DrawClientID = activeDraw.DrawClientID
+		drawn.fullMovie = payload
 
 		// Stamp the server clock after candidate I/O, immediately before
 		// publication, so revealAt - serverNow is the actual remaining window.

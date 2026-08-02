@@ -11,7 +11,7 @@ import {
   reelResume,
 } from "@/components/moviepickarr/drawMachine";
 
-import type { Movie } from "@/types/Response";
+import type { MovieDetail, MovieDrawPayload, MovieTile } from "@/types/Response";
 
 const T0 = "2026-07-17T20:00:00Z";
 const T0_PLUS = (ms: number) => new Date(Date.parse(T0) + ms).toISOString();
@@ -31,7 +31,7 @@ function env(overrides: Partial<DrawEnv> = {}): DrawEnv {
   };
 }
 
-function movie(id: number, overrides: Partial<Movie> = {}): Movie {
+function tile(id: number, overrides: Partial<MovieTile> = {}): MovieTile {
   return {
     movieID: id,
     title: `Movie ${id}`,
@@ -40,27 +40,37 @@ function movie(id: number, overrides: Partial<Movie> = {}): Movie {
     addedByID: 1,
     addedByName: "ana",
     ...overrides,
-  } as Movie;
+  };
+}
+
+function detail(id: number, overrides: Partial<MovieDetail> = {}): MovieDetail {
+  return {
+    ...tile(id),
+    status: "pool",
+    ...overrides,
+  };
 }
 
 /** A drawn payload: winner + self-contained candidates, drawn at T0 with the
  *  server deadline at T0 + 16.5s (6.5s scroll + 10s confirm). */
-function drawn(overrides: Partial<Movie> = {}): Movie {
-  return movie(1, {
+function drawn(overrides: Partial<MovieDrawPayload> = {}): MovieDrawPayload {
+  return {
+    ...detail(1),
     drawnAt: T0,
     revealAt: T0_PLUS(16_500),
     drawClientId: "me",
-    candidates: [movie(1, { backdropPath: "/w.jpg" }), movie(2), movie(3)],
+    backdropPath: "/w.jpg",
+    candidates: [tile(1, { posterPath: "/winner.jpg" }), tile(2), tile(3)],
     ...overrides,
-  });
+  };
 }
 
-function spinning(overrides: Partial<Movie> = {}): DrawState {
+function spinning(overrides: Partial<MovieDrawPayload> = {}): DrawState {
   const [state] = reduce(initialDrawState, { type: "DRAWN", movie: drawn(overrides) }, env());
   return state;
 }
 
-function settled(overrides: Partial<Movie> = {}): DrawState {
+function settled(overrides: Partial<MovieDrawPayload> = {}): DrawState {
   const [state] = reduce(spinning(overrides), { type: "SCROLL_DONE" }, env());
   return state;
 }
@@ -76,7 +86,7 @@ describe("DRAWN", () => {
     expect(commands).toEqual([{ cmd: "scheduleFallback", afterMs: 21_500 }]);
     expect(state.spin).toMatchObject({
       drawnAt: T0,
-      winnerId: 1,
+      winner: { movieID: 1, backdropPath: "/w.jpg" },
       durationMs: 6500,
       live: true,
       mine: true,
@@ -128,7 +138,7 @@ describe("DRAWN", () => {
   });
 
   it("skips the reel for a pool of one (no decoys to scroll past)", () => {
-    const lone = drawn({ candidates: [movie(1)] });
+    const lone = drawn({ candidates: [tile(1)] });
     const [state, commands] = reduce(initialDrawState, { type: "DRAWN", movie: lone }, env());
     expect(state.phase).toBe("idle");
     expect(cmds(commands)).toEqual(["invalidatePool"]);
@@ -136,20 +146,45 @@ describe("DRAWN", () => {
 });
 
 describe("RESUME", () => {
-  const current = (overrides: Partial<Movie> = {}) =>
-    movie(1, {
+  const current = (overrides: Partial<MovieDetail> = {}) =>
+    detail(1, {
       drawnAt: T0,
       revealAt: T0_PLUS(16_500),
       serverNow: T0_PLUS(2000),
       drawClientId: "other",
       ...overrides,
     });
-  const pool = [movie(2), movie(3)];
+  const pool = [tile(2), tile(3)];
 
   it("resumes with the remaining scroll time (server-relative, skew-free)", () => {
     const [state] = reduce(initialDrawState, { type: "RESUME", current: current(), pool }, env());
     expect(state.phase).toBe("spinning");
     expect(state.spin).toMatchObject({ durationMs: 4500, live: false, mine: false });
+  });
+
+  it("keeps the full current winner when the held pool tile is lean", () => {
+    const heldPool = [tile(1, { posterPath: "/winner.jpg" }), ...pool];
+    const [resuming] = reduce(
+      initialDrawState,
+      {
+        type: "RESUME",
+        current: current({ backdropPath: "/winner-backdrop.jpg" }),
+        pool: heldPool,
+      },
+      env(),
+    );
+
+    expect(resuming.spin!.candidates.map((candidate) => candidate.movieID)).toEqual([1, 2, 3]);
+    expect(resuming.spin!.candidates[0].posterPath).toBe("/winner.jpg");
+    expect(resuming.spin!.winner.backdropPath).toBe("/winner-backdrop.jpg");
+
+    const [settledState] = reduce(resuming, { type: "SCROLL_DONE" }, env());
+    const [, commands] = reduce(settledState, { type: "REVEALED", drawnAt: T0 }, env());
+    expect(commands).toContainEqual({
+      cmd: "decode",
+      drawnAt: T0,
+      backdropPath: "/winner-backdrop.jpg",
+    });
   });
 
   it("times the reveal deadline to the same absolute instant", () => {
@@ -196,7 +231,7 @@ describe("RESUME", () => {
     expect(drawAwaitingReveal(current(), env())).toBe(true);
     expect(drawAwaitingReveal(current({ revealed: true }), env())).toBe(false);
     expect(drawAwaitingReveal(current(), env({ reducedMotion: true }))).toBe(false);
-    expect(drawAwaitingReveal(movie(1), env())).toBe(false);
+    expect(drawAwaitingReveal(detail(1), env())).toBe(false);
   });
 });
 
@@ -209,7 +244,7 @@ describe("settle and reveal", () => {
     expect(commands).toEqual([]);
   });
 
-  it("a local confirm posts the reveal and decodes the winner's backdrop", () => {
+  it("decodes the full drawn winner backdrop when reel candidates are lean", () => {
     const [state, commands] = reduce(settled(), { type: "CONFIRM", source: "local" }, env());
     expect(state.phase).toBe("revealing");
     expect(commands).toEqual([
@@ -254,14 +289,38 @@ describe("settle and reveal", () => {
 describe("commit", () => {
   it("DECODE_DONE commits: idle, commitSeq bump, pool refresh released", () => {
     const [revealing] = reduce(settled(), { type: "CONFIRM", source: "local" }, env());
-    const [state, commands] = reduce(revealing, { type: "DECODE_DONE", drawnAt: T0 }, env());
-    expect(state).toMatchObject({ phase: "idle", spin: null, commitSeq: 1 });
+    const [state, commands] = reduce(
+      revealing,
+      { type: "DECODE_DONE", drawnAt: T0, decodedBackdropPath: "/w.jpg" },
+      env(),
+    );
+    expect(state).toMatchObject({
+      phase: "idle",
+      spin: null,
+      commitSeq: 1,
+      decodedBackdrop: { movieID: 1, drawnAt: T0, backdropPath: "/w.jpg" },
+    });
     expect(cmds(commands)).toEqual(["invalidatePool"]);
+  });
+
+  it("does not expose artwork when the reveal decode failed", () => {
+    const [revealing] = reduce(settled(), { type: "CONFIRM", source: "local" }, env());
+    const [state] = reduce(
+      revealing,
+      { type: "DECODE_DONE", drawnAt: T0, decodedBackdropPath: null },
+      env(),
+    );
+
+    expect(state.decodedBackdrop).toBeNull();
   });
 
   it("a stale decode from an outlived draw never commits", () => {
     const [revealing] = reduce(settled(), { type: "CONFIRM", source: "local" }, env());
-    const [state, commands] = reduce(revealing, { type: "DECODE_DONE", drawnAt: T0_PLUS(99) }, env());
+    const [state, commands] = reduce(
+      revealing,
+      { type: "DECODE_DONE", drawnAt: T0_PLUS(99), decodedBackdropPath: "/w.jpg" },
+      env(),
+    );
     expect(state).toBe(revealing);
     expect(commands).toEqual([]);
   });
@@ -274,7 +333,7 @@ describe("commit", () => {
     step({ type: "DRAWN", movie: drawn() });
     step({ type: "SCROLL_DONE" });
     step({ type: "CONFIRM", source: "local" });
-    step({ type: "DECODE_DONE", drawnAt: T0 });
+    step({ type: "DECODE_DONE", drawnAt: T0, decodedBackdropPath: "/w.jpg" });
     expect(state).toMatchObject({ phase: "idle", commitSeq: 1 });
 
     const nextDrawnAt = T0_PLUS(60_000);

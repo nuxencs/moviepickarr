@@ -43,7 +43,7 @@ import { AuthKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 import { UsersTab } from "@/components/moviepickarr/UsersTab";
 import { toast } from "@/components/ui/toast-api";
 
-import type { MeResponse, Movie, User } from "@/types/Response";
+import type { MeResponse, MovieTile, User } from "@/types/Response";
 
 import { renderWithProviders } from "@/test/providers";
 
@@ -75,7 +75,7 @@ function deferred<T = void>() {
   return { promise, resolve, reject };
 }
 
-function movie(movieID: number): Movie {
+function movie(movieID: number): MovieTile {
   return {
     movieID,
     title: `Film ${movieID}`,
@@ -88,9 +88,9 @@ function movie(movieID: number): Movie {
 
 /** A member with `pooled` of their three slots filled and `stashed` in stash. */
 function member(userID: number, pooled: number, stashed = 0, name = `Member ${userID}`): User {
-  const currentPool: Record<string, Movie> = {};
+  const currentPool: Record<string, MovieTile> = {};
   for (let i = 0; i < pooled; i++) currentPool[`${userID}${i}`] = movie(userID * 10 + i);
-  const stash: Record<string, Movie> = {};
+  const stash: Record<string, MovieTile> = {};
   for (let i = 0; i < stashed; i++) stash[`s${userID}${i}`] = movie(userID * 100 + i);
   return { userID, name, currentPool, stash, createdAt: "2026-07-01T00:00:00Z" };
 }

@@ -18,7 +18,7 @@ import { SkeletonText } from "@/components/moviepickarr/Skeletons";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
 import { toast } from "@/components/ui/toast-api";
 
-import type { CreditPerson, Movie } from "@/types/Response";
+import type { CreditPerson, MovieDetail, MovieTile } from "@/types/Response";
 
 /** First occurrence per person id (a writer credited for Writer AND Screenplay shows once). */
 function dedupeById(people: CreditPerson[]): CreditPerson[] {
@@ -66,7 +66,18 @@ function GhostCreditRow({ w }: { w: number }) {
  *  duotone (backdropBg) is painted underneath as the instant first frame, so a
  *  slow TMDB CDN fetch crossfades in over colour instead of flashing the surface
  *  through (pure white in light mode). Mirrors Poster's cache-sync + shimmer. */
-function HeroBackdrop({ hue, src }: { hue: number; src: string | null }) {
+function HeroBackdrop({
+  hue,
+  src,
+  /** True while the detail that carries `backdropPath` is still in flight. The
+   *  duotone holds with its shimmer rather than resolving to a stand-in we may
+   *  be about to replace. */
+  pending,
+}: {
+  hue: number;
+  src: string | null;
+  pending: boolean;
+}) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -80,7 +91,7 @@ function HeroBackdrop({ hue, src }: { hue: number; src: string | null }) {
   }, [src]);
 
   const url = failed ? null : src;
-  const loading = url !== null && !loaded;
+  const loading = pending || (url !== null && !loaded);
 
   return (
     <div
@@ -132,7 +143,7 @@ function MovieActions({
   onDeleted,
   recordStateKnown,
 }: {
-  movie: Movie;
+  movie: MovieDetail;
   open: boolean;
   onDeleted: () => void;
   /** False while the lifecycle-bearing detail is refreshing or failed. */
@@ -250,7 +261,7 @@ export function MovieModal({
   onRequestClose,
   onClose,
 }: {
-  movie: Movie;
+  movie: MovieTile;
   /** False once the backing history entry is gone, which plays the exit (#196). */
   open: boolean;
   /** Every dismiss gesture goes here, so all four pop the same entry. */
@@ -278,7 +289,7 @@ export function MovieModal({
   // it loads, the lean tile object lacks them — show skeletons in their place so
   // the body fills in progressively instead of popping in all at once. A field
   // that's genuinely empty (query settled, not pending) renders nothing rather
-  // than a perma-skeleton; a full list object (pool) shows its data immediately.
+  // than a perma-skeleton; cached detail still shows immediately.
   const detailLoading = isPending;
   const recordStateKnown = !detailIsFetching && !detailIsError;
 
@@ -288,22 +299,31 @@ export function MovieModal({
   // lean tile object has none, and it is what decides whether delete is offered
   // at all. So the pair arrives with the rest of the detail, the way the
   // credits and the overview do.
-  const canAct = m.status !== undefined && isSelf(me?.id, m.addedByID);
+  const canAct = detail !== undefined && isSelf(me?.id, detail.addedByID);
 
   const hue = hueOf(m.title);
   const links = externalLinks(m);
-  const cast = m.cast ?? [];
-  const crew = m.crew ?? [];
+  const cast = detail?.cast ?? [];
+  const crew = detail?.crew ?? [];
   const directors = dedupeById(crew.filter((p) => p.job === "Director"));
   const writers = dedupeById(crew.filter((p) => p.job === "Writer" || p.job === "Screenplay"));
   const hasCredits = directors.length > 0 || writers.length > 0;
   // HeroBackdrop always paints the procedural duotone base; this is just the
   // photo that crossfades over it (real backdrop, else the poster as a stand-in).
-  const heroSrc = m.backdropPath
-    ? backdropUrl(m.backdropPath)
-    : m.posterPath
-      ? posterUrl(m.posterPath, "w500")
-      : null;
+  //
+  // The stand-in waits for the detail. `backdropPath` is a detail field, so a
+  // lean tile object has a poster and no backdrop for as long as the fetch takes.
+  // Reading that as "this film has no backdrop" puts the poster in the
+  // wide hero for a moment, then swaps it for the real backdrop. The duotone
+  // holds instead, and the poster only stands in once we know there is nothing
+  // else coming.
+  const heroSrc = detail?.backdropPath
+    ? backdropUrl(detail.backdropPath)
+    : detailLoading
+      ? null
+      : m.posterPath
+        ? posterUrl(m.posterPath, "w500")
+        : null;
 
   return (
     // Capped (#177): the surface caps at the window height and scrolls inside
@@ -325,7 +345,7 @@ export function MovieModal({
           </button>
 
           <div className="modal__scroll">
-            <HeroBackdrop hue={hue} src={heroSrc} />
+            <HeroBackdrop hue={hue} src={heroSrc} pending={detailLoading} />
 
             <div className="moviemodal__body">
               {/* The rail: identity, then the links out as reference material
@@ -356,9 +376,9 @@ export function MovieModal({
                     </div>
                   )}
 
-                  {canAct && (
+                  {detail && canAct && (
                     <MovieActions
-                      movie={m}
+                      movie={detail}
                       open={open}
                       onDeleted={onRequestClose}
                       recordStateKnown={recordStateKnown}
@@ -430,9 +450,9 @@ export function MovieModal({
                   </div>
                 </div>
 
-                {m.tagline && <p className="moviemodal__tag">"{m.tagline}"</p>}
-                {m.overview ? (
-                  <p className="moviemodal__overview">{m.overview}</p>
+                {detail?.tagline && <p className="moviemodal__tag">"{detail.tagline}"</p>}
+                {detail?.overview ? (
+                  <p className="moviemodal__overview">{detail.overview}</p>
                 ) : detailLoading ? (
                   <div className="moviemodal__overview" aria-hidden="true">
                     <SkeletonText w="100%" />

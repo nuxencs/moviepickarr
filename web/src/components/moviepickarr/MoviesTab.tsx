@@ -28,7 +28,7 @@ import { Poster } from "@/components/moviepickarr/Poster";
 import { chunkRows, filterWatched } from "@/components/moviepickarr/search";
 import { toast } from "@/components/ui/toast-api";
 
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 
 import { useToggle } from "@/hooks/hooks";
 import { useFlipRail } from "@/hooks/useFlipRail";
@@ -56,7 +56,7 @@ export function MoviesTab() {
     containerRef: poolRef,
     entries: poolEntries,
     itemProps: poolItemProps,
-  } = useFlipRail<Movie>(pooled ?? [], (m) => String(m.movieID));
+  } = useFlipRail<MovieTile>(pooled ?? [], (m) => String(m.movieID));
 
   // Opening the modal pushes a history entry, so browser Back closes it (#196).
   const { selected, isOpen, open, close, onClosed } = useMovieModal();
@@ -185,10 +185,10 @@ function WatchedSection({
   isError,
   onOpen,
 }: {
-  watched: Movie[] | undefined;
+  watched: MovieTile[] | undefined;
   isPending: boolean;
   isError: boolean;
-  onOpen: (movie: Movie) => void;
+  onOpen: (movie: MovieTile) => void;
 }) {
   const [search, setSearch] = useState("");
   // Keystrokes update the input at once and the (expensive) list at React's
@@ -300,10 +300,10 @@ function VirtualWatched({
   render,
 }: {
   className: string;
-  movies: readonly Movie[];
+  movies: readonly MovieTile[];
   /** Starting row height, in px; real heights are measured once rendered. */
   estimateSize: number;
-  render: (movie: Movie) => ReactNode;
+  render: (movie: MovieTile) => ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { template, lanes, columnGap, rowGap, offsetTop } = useGridMetrics(containerRef);
@@ -342,7 +342,7 @@ function VirtualWatched({
   );
 }
 
-function WatchedRow({ movie, onOpen }: { movie: Movie; onOpen: () => void }) {
+function WatchedRow({ movie, onOpen }: { movie: MovieTile; onOpen: () => void }) {
   const [editOpen, toggleEdit] = useToggle(false);
   const { date, time } = dateTimeParts(movie.watchedAt);
   // Editing is adder-only server-side (no admin override), so only the adder

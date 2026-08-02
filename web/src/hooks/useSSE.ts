@@ -6,7 +6,7 @@ import { MoviesKeys } from "@/api/query_keys";
 
 import { drawStore } from "@/components/moviepickarr/drawStore";
 
-import type { Movie } from "@/types/Response";
+import type { MovieDrawPayload } from "@/types/Response";
 import type { SSEConnectedFrame, SSEEvent, SSEHeartbeatFrame } from "@/types/SSEEvent";
 
 import { type ConnFrame, initialConnState, reduceConnection } from "@/hooks/sseConnection";
@@ -152,7 +152,7 @@ export function useSSE() {
           // Draw events drive the machine (identity dedup, the reel,
           // reveal-once, pool-release timing) on top of their table row.
           if (sseEvent.type === "movie:drawn") {
-            const drawnMovie = sseEvent.data as Movie | undefined;
+            const drawnMovie = sseEvent.data as MovieDrawPayload | undefined;
             if (drawnMovie) drawStore.send({ type: "DRAWN", movie: drawnMovie });
           } else if (sseEvent.type === "movie:revealed") {
             const data = sseEvent.data as { drawnAt?: string } | undefined;

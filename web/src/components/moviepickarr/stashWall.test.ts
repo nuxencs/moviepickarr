@@ -8,9 +8,9 @@ import {
   nextCell,
 } from "@/components/moviepickarr/stashWall";
 
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 
-function film(movieID: number, title: string): Movie {
+function film(movieID: number, title: string): MovieTile {
   return {
     movieID,
     title,

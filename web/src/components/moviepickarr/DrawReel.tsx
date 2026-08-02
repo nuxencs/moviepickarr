@@ -10,7 +10,7 @@ import { reelEaseOutput, reelEaseTimeAt, spinDurationMs } from "@/components/mov
 import { backdropUrl, hueOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
 
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 
 import { isAudioRunning, playDrawJingle } from "@/lib/sound";
 
@@ -85,11 +85,11 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
   // winner isn't the very last cell.
   const { strip, winnerIndex } = useMemo(() => {
     const cands = spin.candidates;
-    const winnerPos = cands.findIndex((m) => m.movieID === spin.winnerId);
+    const winnerPos = cands.findIndex((m) => m.movieID === spin.winner.movieID);
     const winnerAt = winnerPos >= 0 ? winnerPos : cands.length - 1;
     const winner = cands[winnerAt];
     const loops = Math.max(6, Math.ceil(TARGET_LEAD / cands.length));
-    const lead: Movie[] = [];
+    const lead: MovieTile[] = [];
     for (let i = 0; i < loops; i++) lead.push(...cands);
     // Avoid a double-poster at the landing seam: if the lead already ends on the
     // winner, drop that tile so the winner cell isn't next to an identical copy.
@@ -99,7 +99,7 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
     // where a fixed unique-slice would run out and leave a gap after the winner.
     // Start one slot past the winner so its right neighbour is never an identical
     // copy; the loop may repeat the winner far down the trail, which is fine.
-    const trail: Movie[] = [];
+    const trail: MovieTile[] = [];
     for (let i = 1; i <= TARGET_TRAIL; i++) trail.push(cands[(winnerAt + i) % cands.length]);
     return { strip: [...lead, winner, ...trail], winnerIndex: lead.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,8 +130,7 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
   // Warm the winner's backdrop while the reel spins, so the Hero's decode-then-
   // commit handoff paints in one frame instead of waiting on the network.
   useEffect(() => {
-    const winner = spin.candidates.find((m) => m.movieID === spin.winnerId);
-    const url = winner?.backdropPath ? backdropUrl(winner.backdropPath) : null;
+    const url = spin.winner.backdropPath ? backdropUrl(spin.winner.backdropPath) : null;
     if (url) new Image().src = url;
   }, [spin]);
 

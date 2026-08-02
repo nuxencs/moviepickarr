@@ -154,6 +154,7 @@ describe("ChangePasswordDialog", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.mouseDown(veil());
+    fireEvent.mouseUp(veil());
     runExit();
 
     expect(onClose).not.toHaveBeenCalled();

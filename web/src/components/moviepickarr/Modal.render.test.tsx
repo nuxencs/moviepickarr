@@ -11,7 +11,8 @@
    That's Esc, veil-click, the body-scroll lock, focus in and back out, and the
    deferred unmount that lets the exit motion play.
 
-   Dismissal is driven the way a member does it (Escape, mousedown on the veil)
+   Dismissal is driven the way a member does it (Escape, a press and release on
+   the veil)
    and asserted through onClose plus what's on screen, not component state.
    ============================================================ */
 
@@ -58,6 +59,13 @@ function veilOf(dialog: HTMLElement) {
   return dialog.parentElement as HTMLElement;
 }
 
+/** Dismissal runs on the release, so a veil click is both halves of it (#310). */
+function clickVeil(dialog: HTMLElement) {
+  const veil = veilOf(dialog);
+  fireEvent.mouseDown(veil);
+  fireEvent.mouseUp(veil);
+}
+
 function runExit() {
   act(() => void vi.advanceTimersByTime(AFTER_EXIT));
 }
@@ -100,16 +108,56 @@ describe("Modal", () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it("closes on a veil click but not on a click inside the surface", () => {
+    it("closes only after a veil press is released on the veil", () => {
+      const { onClose, dialog } = renderModal({ capped });
+      const veil = veilOf(dialog);
+
+      // Veil -> surface: the valid press cancels the browser default, but a
+      // mismatched release is inert.
+      expect(fireEvent.mouseDown(veil)).toBe(false);
+      expect(dialog.classList.contains("modal--closing")).toBe(false);
+      fireEvent.mouseUp(dialog);
+      expect(dialog.classList.contains("modal--closing")).toBe(false);
+
+      // Surface -> veil: the surface press keeps its default and does not arm
+      // the veil's dismissal.
+      expect(fireEvent.mouseDown(dialog)).toBe(true);
+      fireEvent.mouseUp(veil);
+      expect(dialog.classList.contains("modal--closing")).toBe(false);
+
+      // Matching halves leave the surface open on the press, then start its
+      // exit on the release.
+      expect(fireEvent.mouseDown(veil)).toBe(false);
+      expect(dialog.classList.contains("modal--closing")).toBe(false);
+      fireEvent.mouseUp(veil);
+      expect(dialog.classList.contains("modal--closing")).toBe(true);
+
+      runExit();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves later page presses alone", () => {
+      const { dialog } = renderModal({ capped });
+      const behind = document.createElement("p");
+      behind.textContent = "text under the veil";
+      document.body.appendChild(behind);
+
+      clickVeil(dialog);
+
+      // The veil press already canceled the selection default that belonged to
+      // the dismissal. A later page press is the page's to handle.
+      expect(fireEvent.mouseDown(behind, { detail: 2 })).toBe(true);
+
+      behind.remove();
+    });
+
+    it("does not close from a click inside the surface", () => {
       const { onClose, dialog } = renderModal({ capped });
 
       fireEvent.mouseDown(dialog);
+      fireEvent.mouseUp(dialog);
       runExit();
       expect(onClose).not.toHaveBeenCalled();
-
-      fireEvent.mouseDown(veilOf(dialog));
-      runExit();
-      expect(onClose).toHaveBeenCalledTimes(1);
     });
 
     it("closes from the render-prop close", () => {
@@ -124,7 +172,7 @@ describe("Modal", () => {
       const { onClose, dialog } = renderModal({ capped, dismissible: false });
 
       fireEvent.keyDown(document, { key: "Escape" });
-      fireEvent.mouseDown(veilOf(dialog));
+      clickVeil(dialog);
       runExit();
 
       expect(onClose).not.toHaveBeenCalled();
@@ -271,7 +319,7 @@ describe("Modal", () => {
 
     it.each([
       ["Escape", () => fireEvent.keyDown(document, { key: "Escape" })],
-      ["a veil click", (dialog: HTMLElement) => fireEvent.mouseDown(veilOf(dialog))],
+      ["a veil click", (dialog: HTMLElement) => clickVeil(dialog)],
       ["the render-prop close", () => fireEvent.click(screen.getByRole("button", { name: "Close" }))],
     ])("asks the parent to close on %s instead of closing itself", (_name, gesture) => {
       const onRequestClose = vi.fn();
@@ -294,7 +342,7 @@ describe("Modal", () => {
       // twice would pop the entry behind the modal and leave the page.
       fireEvent.keyDown(document, { key: "Escape" });
       fireEvent.keyDown(document, { key: "Escape" });
-      fireEvent.mouseDown(veilOf(dialog));
+      clickVeil(dialog);
 
       expect(onRequestClose).toHaveBeenCalledTimes(1);
     });
@@ -304,7 +352,7 @@ describe("Modal", () => {
       const { dialog } = renderModal({ onRequestClose, dismissible: false });
 
       fireEvent.keyDown(document, { key: "Escape" });
-      fireEvent.mouseDown(veilOf(dialog));
+      clickVeil(dialog);
       runExit();
 
       expect(onRequestClose).not.toHaveBeenCalled();
@@ -457,7 +505,7 @@ describe("Modal", () => {
 
       // The inner veil sits over the outer one, so this is the click a member
       // lands when aiming past the confirm.
-      fireEvent.mouseDown(veilOf(inner));
+      clickVeil(inner);
       runExit();
 
       expect(onInnerClose).toHaveBeenCalledTimes(1);

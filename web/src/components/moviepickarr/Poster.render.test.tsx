@@ -34,7 +34,8 @@ describe("Poster image sources", () => {
     expect(image.getAttribute("srcset")).toBe(
       "https://image.tmdb.org/t/p/w154/possession.jpg 154w, " +
         "https://image.tmdb.org/t/p/w185/possession.jpg 185w, " +
-        "https://image.tmdb.org/t/p/w342/possession.jpg 342w",
+        "https://image.tmdb.org/t/p/w342/possession.jpg 342w, " +
+        "https://image.tmdb.org/t/p/w500/possession.jpg 500w",
     );
     expect(image.getAttribute("sizes")).toBe("auto, 128px");
     expect(image.getAttribute("loading")).toBe("lazy");

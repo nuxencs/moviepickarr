@@ -44,6 +44,18 @@
   --poster-zoom: 1.06; /* hover/focus zoom for poster + avatar tiles, scaled inside their clipped frame */
   --poster-zoom-press: 1.03; /* the :active press, eased back from the hover zoom */
 
+  /* Compact film rails keep one shared target. Wrapping poster grids resolve
+     their own tracks against the width of the surface they occupy. */
+  --poster-general: clamp(144px, 6.4vw, 164px);
+
+  /* layout: real surface growth, never whole-document scaling */
+  --page-max: clamp(1240px, 80vw, 2560px);
+  --modal-browse-max: clamp(960px, 70vw, 1760px);
+  --modal-record-max: clamp(880px, 52vw, 1120px);
+  --modal-record-top: clamp(48px, 7dvh, 96px);
+  --modal-form-max: 460px;
+  --modal-block-max: clamp(900px, 72dvh, 1320px);
+
   /* accent — gold (fixed) */
   --accent: oklch(0.82 0.13 84);
   --accent-soft: oklch(0.82 0.13 84 / 0.16);
@@ -52,6 +64,18 @@
 
   --danger: oklch(0.62 0.21 22);
   --danger-ink: oklch(0.98 0.01 22);
+}
+
+@media (max-width: 1199px) {
+  :root {
+    --poster-general: 128px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --poster-general: 104px;
+  }
 }
 
 /* ---- DARK (default / primary) ---- */
@@ -287,15 +311,6 @@
     text-shadow: 0 2px 14px rgba(0,0,0,0.5);
   }
   .poster__rule { width: 22cqw; height: 2.4cqw; background: var(--accent); margin-bottom: 5cqw; border-radius: 2px; z-index: 3; position: relative; }
-  .poster__badge {
-    position: absolute; z-index: 4; top: 5cqw; left: 5cqw;
-    font-family: var(--font-mono); font-size: 5.4cqw; font-weight: 600;
-    padding: 1.5cqw 2.8cqw; border-radius: 2px;
-    background: rgba(0,0,0,0.5); color: #fff; backdrop-filter: blur(4px);
-    display: inline-flex; align-items: center; gap: 2.4cqw;
-  }
-  .poster__badge svg { width: 6.4cqw; height: 6.4cqw; color: var(--accent); }
-
   /* ---- Rating ---- */
   .rating { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-weight: 600; }
   .rating svg { width: 1em; height: 1em; color: var(--accent); }
@@ -451,9 +466,8 @@
   .filterchip > .filterchip__clear { flex: none; border-left: 1px solid var(--accent-line); padding: 0 7px; }
   /* Positioning context for the dropdown. Separate from the chip so the chip
      keeps its overflow:hidden corner clip while the menu (a child of the wrap)
-     escapes it. The menu anchors here in CSS rather than via a portal, so it
-     rides the :root zoom ramp (§13) in the same space as the chip — no JS
-     placement to drift on large screens. */
+     escapes it. The menu anchors here in CSS rather than via a portal, keeping
+     the trigger and surface in one coordinate space without JS placement. */
   .filterchip-wrap { position: relative; display: inline-flex; }
   /* Name the trigger (not the clear X) as the dropdown's anchor, scoped per
      chip via the inherited --chip-anchor ident. */
@@ -464,7 +478,7 @@
   /* ============================================================
      Layout: nav · hero · tabs
      ============================================================ */
-  .shell { max-width: 1240px; margin: 0 auto; padding: 40px 32px 110px; }
+  .shell { max-width: var(--page-max); margin: 0 auto; padding: 40px 32px 110px; }
   /* Bottom padding is spelled out rather than folded into the shorthand: every
      width in this block is also under the 900 bar breakpoint, so the clearance
      belongs here instead of depending on which block the cascade reads last. */
@@ -479,23 +493,21 @@
     backdrop-filter: blur(16px) saturate(1.2);
     border-bottom: 1px solid var(--line);
   }
-  .nav__inner { max-width: 1240px; margin: 0 auto; padding: 0 32px; height: 62px; display: flex; align-items: center; gap: 30px; }
+  .nav__inner { max-width: var(--page-max); margin: 0 auto; padding: 0 32px; height: 62px; display: flex; align-items: center; gap: 30px; }
   @media (max-width: 700px) { .nav__inner { padding: 0 18px; gap: 16px; } }
-  /* The wordmark (an <h1>) is a home control: its inner button returns to the
-     Movies tab from anywhere. The <button> can't wrap the <h1>, so the heading
-     wraps the button and the layout/type live on the button. */
+  /* The wordmark (an <h1>) is a home control: its inner link returns to the
+     Movies tab from anywhere. The link can't wrap the <h1>, so the heading
+     wraps the link and the layout/type live on the link. */
   .wordmark { margin: 0; flex: none; }
   .wordmark__home {
     display: inline-flex; align-items: center; gap: 11px;
     background: none; border: 0; padding: 0; cursor: pointer; color: inherit; text-decoration: none;
     font-family: var(--font-display); font-size: 16px; font-weight: 700;
     letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
-    border-radius: var(--r-sm); transition: transform var(--dur-fast) var(--ease);
+    border-radius: var(--r-sm);
   }
-  .wordmark__home:active { transform: translateY(1px); }
   .wordmark__home:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .wordmark .mark { width: 30px; height: 30px; border-radius: var(--r-lg); flex: none; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); transition: filter var(--dur-fast) var(--ease); }
-  .wordmark__home:hover .mark { filter: brightness(1.08); }
+  .wordmark .mark { width: 30px; height: 30px; border-radius: var(--r-lg); flex: none; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); }
   .wordmark .mark svg { width: 17px; height: 17px; }
   .nav__tabs { position: relative; display: flex; gap: 2px; align-items: stretch; height: 100%; margin-left: 8px; }
 
@@ -603,7 +615,7 @@
   .hero__bgimg { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; }
   /* The incoming backdrop layer; the initial layer carries no --enter and just paints. */
   .hero__bgimg--enter { animation: mg-bgReveal var(--dur-reveal) var(--ease-reveal) both; }
-  .hero__inner { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; display: flex; gap: 34px; padding: 56px 32px 60px; align-items: flex-start; }
+  .hero__inner { position: relative; z-index: 1; max-width: var(--page-max); margin: 0 auto; display: flex; gap: 34px; padding: 56px 32px 60px; align-items: flex-start; }
   /* Width derived from the body's static height (--hero-body-h, §7) and the 2/3
      poster ratio, so the poster's bottom edge lines up with the pinned action
      button — and it tracks the height automatically at the large-screen step. */
@@ -655,10 +667,9 @@
     .hero__nextup { margin-left: 0; padding-left: 0; border-left: none; }
   }
   @media (max-width: 331px) { .hero { --hero-body-h: 21rem; } }
-  /* Large screens — the hero is the centerpiece, so give it more than the global
-     zoom: a taller body (the poster width tracks --hero-body-h automatically),
-     roomier padding, and a higher title ceiling. Still static across draws within
-     this breakpoint (§7); mirrors the phone step above. */
+  /* Large screens: a taller body (the poster width tracks --hero-body-h
+     automatically), roomier padding, and a higher title ceiling. Still static
+     across draws within this breakpoint (§7); mirrors the phone step above. */
   @media (min-width: 1728px) {
     .hero { --hero-body-h: 21rem; }
     .hero__inner { padding: 72px 32px 76px; }
@@ -884,14 +895,14 @@
   .statitem__val { font-size: 29px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.05; height: 2.1em; display: flex; align-items: flex-end; overflow: hidden; }
   .statitem__val.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
   /* NumberFlow's box carries internal mask padding round(0.25em/2,1px) below the
-     glyph — at this fixed 29px value size exactly 4px CSS-px (zoom-invariant). The
+     glyph — at this fixed 29px value size exactly 4px. The
      value cell is align-items:flex-end, which aligns box bottoms (not baselines),
      so the numeral floats 4px above where the plain-text values (Most-watched
      adder / Busiest day) land. Pull it down so numbers and names share one baseline.
      NOTE: this comp is only needed because of flex-end box alignment. Inline
      NumberFlows (the .statitem__sub runtime + .statsec__title count) baseline-align
-     on their own — the mask is visual-only and does not move the glyph baseline,
-     at any :root zoom step. Do NOT add vertical-align nudges there; they shove the
+     on their own — the mask is visual-only and does not move the glyph baseline.
+     Do NOT add vertical-align nudges there; they shove the
      numeral off the text baseline (regressed the avg-runtime sub once already). */
   .statitem__val number-flow-react { margin-bottom: -4px; }
   .statitem__sub { font-size: 12.5px; color: var(--ink-3); }
@@ -1009,12 +1020,13 @@
   /* Films-in-window rail: poster tiles of the matched films. Inline padding +
      negative margin (as .peoplerail) and a taller top pad keep the edge tiles'
      hover/focus ring — and the -4px hover lift — clear of the scroll-container
-     clip. align-items:flex-start + min-width:0 hold every tile at the 118px
-     basis; without them a poster's aspect-ratio resolves a larger content
-     min-width under the default stretch and tiles render at uneven sizes. */
+     clip. align-items:flex-start + min-width:0 hold every tile at the shared
+     general-poster basis; without them a poster's aspect-ratio resolves a
+     larger content min-width under the default stretch and tiles render at
+     uneven sizes. */
   .movierail { display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; padding: 10px 4px 8px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .movietile {
-    flex: 0 0 118px; min-width: 0; display: flex; flex-direction: column; gap: 9px;
+    flex: 0 0 var(--poster-general); min-width: 0; display: flex; flex-direction: column; gap: 9px;
     background: none; border: none; padding: 0; font: inherit; color: inherit;
     text-align: left; cursor: pointer; border-radius: var(--r-sm);
   }
@@ -1030,8 +1042,8 @@
 
   /* Filter-change motion for the stats rails (films, people, member bars), driven
      by useFlipRail. The hook measures each item's old→new box and animates by how
-     it actually moved: persistent items glide (an inline transform it sets in JS,
-     zoom-corrected for the :root ramp), so an item whose position didn't change —
+     it actually moved: persistent items glide via an inline transform set in JS,
+     so an item whose position didn't change —
      e.g. the 30d films that are a prefix of the 1y set — gets a zero delta and
      never moves. Newcomers fade in (data-flip-enter, set by the hook with a capped
      per-newcomer stagger via inline animation-delay) — the exit played in reverse,
@@ -1099,22 +1111,24 @@
   .modal-veil > *, .modal-veil::before, .modal-veil::after { flex: none; }
   .modal-veil::before, .modal-veil::after { content: ""; height: 56px; }
   .modal-veil--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
-  .modal { width: min(960px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
+  .modal { width: min(var(--modal-browse-max), 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
   /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
   .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
-  .modal--movie { width: min(880px, 100%); }
-  .modal--form { width: min(460px, 100%); }
+  .modal--movie { width: min(var(--modal-record-max), 100%); container-type: inline-size; }
+  .modal--form { width: min(var(--modal-form-max), 100%); }
   /* Capped mode (`<Modal capped>`): the surface owns the scroll instead of the veil,
-     so it centers in the window at any content length and chrome pinned outside the
-     `.modal__scroll` region (a close X, a head) stays put while the content moves.
-     The veil stops scrolling entirely, which is also what stops the whole blurred
-     page from sliding under a tall dialog. `position: relative` so that pinned chrome
-     anchors to the surface, `overscroll-behavior` on the veil so a wheel over the
-     pinned part doesn't chain to the page either. Opt-in: form dialogs are short and
-     should keep sizing to their content. */
+     so chrome pinned outside the `.modal__scroll` region (a close X, a head) stays put
+     while the content moves. Generic capped surfaces center; movie records override
+     that below with a stable top inset and a content-driven bottom. The veil stops
+     scrolling entirely, which is also what stops the whole blurred page from sliding
+     under a tall dialog. `position: relative` anchors pinned chrome to the surface,
+     while `overscroll-behavior` keeps a wheel over that chrome from chaining to the
+     page. Opt-in: form dialogs are short and should keep sizing to their content. */
   .modal-veil:has(.modal--capped) { justify-content: center; overflow: hidden; overscroll-behavior: contain; }
   .modal-veil:has(.modal--capped)::before, .modal-veil:has(.modal--capped)::after { display: none; }
-  .modal--capped { position: relative; max-height: min(900px, calc(100dvh - 96px)); display: flex; flex-direction: column; min-height: 0; }
+  .modal-veil:has(.modal--movie.modal--capped) { justify-content: flex-start; padding-block: var(--modal-record-top) 48px; }
+  .modal--capped { position: relative; max-height: min(var(--modal-block-max), calc(100dvh - 96px)); display: flex; flex-direction: column; min-height: 0; }
+  .modal--movie.modal--capped { max-height: calc(100dvh - var(--modal-record-top) - 48px); }
   .modal--capped .modal__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   .modal__body { padding: 22px 26px 0; display: flex; flex-direction: column; gap: 14px; }
   .modal__foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 20px 26px 24px; }
@@ -1152,11 +1166,11 @@
   /* watched grid<->list crossfade */
   .watch-body { animation: mg-fadeUp var(--dur-base) var(--ease); }
 
-  /* movie detail modal — an 880px capped surface (`.modal--movie` + `<Modal capped>`):
+  /* movie detail modal — a record-width capped surface (`.modal--movie` + `<Modal capped>`):
      backdrop, then a rail of poster + links out beside the reading column, then the
      cast strip. The width is what makes the rest work: the overview stops running
      narrow next to the poster and the cast strip shows nine cards before it scrolls. */
-  .moviemodal__hero { position: relative; height: 260px; isolation: isolate; background-size: cover; background-position: center; }
+  .moviemodal__hero { position: relative; height: clamp(260px, 38cqi, 420px); isolation: isolate; background-size: cover; background-position: center; }
   /* Real backdrop crossfading in over the always-painted procedural duotone —
      the wide twin of the poster pattern (HeroBackdrop). The scrim ::after and
      close button sit above it; the img starts faded out and transitions in. */
@@ -1181,7 +1195,7 @@
   .moviemodal__info { flex: 1; min-width: 0; padding-top: 76px; }
   .moviemodal__info h3 { margin: 0 0 12px; font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -0.018em; line-height: 1.05; }
   .moviemodal__tag { margin: 14px 0 0; font-style: italic; font-size: 14px; color: var(--ink-2); }
-  .moviemodal__overview { margin: 14px 0 0; font-size: 14.5px; line-height: 1.62; color: var(--ink-2); }
+  .moviemodal__overview { width: 100%; margin: 14px 0 0; font-size: 14.5px; line-height: 1.62; color: var(--ink-2); text-wrap: pretty; }
   /* The links out, in the rail under the poster: quiet mono text with a small
      icon. Three ghost buttons read as three things to do; three mono lines read
      as reference material attached to the film, which is what they are. */
@@ -1272,6 +1286,11 @@
   .castcard__caption { display: flex; flex-direction: column; gap: 2px; }
   .castcard__name { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink); transition: color var(--dur-fast) var(--ease); }
   .castcard__role { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink-3); }
+  /* Wide, short viewports are usually phones in landscape. Keep enough of the
+     record below the backdrop visible to make the internal scroll obvious. */
+  @media (min-width: 701px) and (max-height: 719px) {
+    .moviemodal__hero { height: min(260px, 50dvh); }
+  }
   /* Narrow: the rail becomes a row (links beside the poster, bottom-aligned so
      they clear the backdrop the poster overlaps) and the credit columns stack,
      the rule turning into a top border. */
@@ -1344,7 +1363,7 @@
     .filterchip-wrap > .filtermenu {
       /* Fixed so position-try measures overflow against the viewport (not the
          chip-sized wrapper) and can flip; anchor() keeps it tethered and the
-         engine re-tracks on scroll/zoom natively — no JS placement. */
+         engine re-tracks on scroll and viewport changes, with no JS placement. */
       position: fixed;
       top: anchor(bottom); left: anchor(left); right: auto; bottom: auto; margin-top: 6px;
       position-anchor: var(--chip-anchor);
@@ -1453,7 +1472,7 @@
     .genredonut { flex-direction: column; align-items: flex-start; }
     .donut-legend { max-width: none; width: 100%; }
 
-    /* poster grids become thumbnail grids, not one giant column */
+    /* Poster grids become thumbnail grids, not one giant column. */
     .tile-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 20px 12px; }
     .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
     .result-grid { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 18px 12px; }
@@ -1502,25 +1521,6 @@
     .peoplecard__ext svg { width: 16px; height: 16px; }
   }
 }
-
-/* ============================================================
-   Large-screen scale ramp — stepped root zoom so type, posters,
-   modals, menus, grids and the centered column all grow together
-   on big panels. Lives on :root because modals/menus/toasts portal
-   to <body>; only a root-level scale reaches them. Width-keyed with
-   a height guard so ultrawide-but-short panels don't over-scale.
-   Discrete steps preserve the fixed-scale ethos (§3 / §13).
-   ============================================================ */
-/* `--zoom` carries the same number as a custom property, because `zoom` itself
-   cannot be read back in CSS. A viewport unit is NOT divided by the zoom the
-   root applies, so anything sizing itself off dvh/vh has to divide by this to
-   land in the same space (the Members shell does). Keep the two in step. */
-:root { --zoom: 1; }
-@media (min-width: 1728px) { :root { zoom: 1.08; --zoom: 1.08; } }
-@media (min-width: 2240px) { :root { zoom: 1.14; --zoom: 1.14; } }
-@media (min-width: 2560px) and (min-height: 1300px) { :root { zoom: 1.22; --zoom: 1.22; } }
-@media (min-width: 3200px) and (min-height: 1700px) { :root { zoom: 1.34; --zoom: 1.34; } }
-@media (min-width: 3840px) and (min-height: 1700px) { :root { zoom: 1.46; --zoom: 1.46; } }
 
 /* Respect reduced-motion: neutralize entrances, transitions, and the live pulse. */
 @media (prefers-reduced-motion: reduce) {

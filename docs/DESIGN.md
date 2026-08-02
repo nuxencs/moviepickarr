@@ -71,9 +71,9 @@ Three families, by role:
 - `--font-display` **Hubot Sans** — display only: nav wordmark/tabs, section `h2`,
   hero title, stat/section headings. Never use the display font for dense UI labels.
 
-Rules: fixed rem/px scale (no per-element fluid type) for product UI — large screens step
-the whole UI up together via a discrete root `zoom` ramp (§13), never fluid `clamp` on
-type; weight contrast for hierarchy;
+Rules: fixed rem/px scale (no per-element fluid type) for product UI. Large screens grow
+the useful surfaces while type and controls keep their normal scale (§13). Never use fluid
+`clamp` on type; weight contrast for hierarchy;
 sentence case for section/modal headings (nav tabs are the deliberate uppercase
 exception). The mono uppercase tracked "eyebrow" (`.eyebrow`) is a real label element
 (timezone, "Pool", "Next up"), not a decorative kicker on every section.
@@ -234,10 +234,18 @@ old shadcn primitives.
   decades render as zero columns (a gap is information), counts on non-empty
   columns stay permanently visible, and the axis labels every column ("1990s").
 - **Poster:** `.poster` — the one container; real TMDB art or a deterministic
-  procedural duotone (`lib.ts`), with a rating badge. While the photo loads the
+  procedural duotone (`lib.ts`). Ratings never overlay poster art. They remain in
+  metadata where the surrounding surface calls for them. While the photo loads the
   duotone is the placeholder under a sweeping shimmer (`.poster__shimmer`,
   `mg-shimmer` keyframe) and the photo crossfades in over it (`.poster--loading`);
-  the duotone is the permanent art only when there's no/failed image.
+  the duotone is the permanent art only when there's no/failed image. Wrapping
+  browse grids share sizing rules where their surrounding surface is comparable,
+  then stretch their tracks to meet both content edges. Movies uses a 164px
+  general minimum and a more prominent 184px pool minimum; Search uses a denser
+  140px minimum inside its modal. Members derives stash cells and column count
+  from its narrower pane, while its pool rail keeps local geometry. Stats keeps
+  one responsive fixed basis because it is a horizontal rail rather than a grid.
+  Hero, modal, draw-reel, and 44px list-row art remain purpose-built exceptions.
 - **Meta chips:** `.metachips` — a wrapping row reading `year · runtime · ★rating`
   (mono, dot-separated) `│` genre chips `│` external links. A `.metasep` vertical
   rule divides the rating facts from the genres, and the genres from the links.
@@ -246,8 +254,9 @@ old shadcn primitives.
   (`Bits.tsx`), shared by the hero and the movie modal — the **hero passes `links`**
   so they sit inline after the genres; the **modal omits them** and renders its own
   `.moviemodal__links` column in the rail instead (no duplication).
-- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a film's record on an
-  880px capped surface (§5): a 260px backdrop (190px narrow), then a 172px **rail** (`.moviemodal__rail`)
+- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a film's record on a
+  responsive 880px to 1120px surface (§5). Its backdrop grows with the record from
+  260px to 420px and returns to 190px below 700px. A 172px **rail** (`.moviemodal__rail`)
   of poster + the links out, beside the reading column. The links are quiet mono lines
   with a small icon, not ghost buttons: three buttons read as three things to do, three
   mono lines read as reference material attached to the film. The **credit block**
@@ -263,6 +272,12 @@ old shadcn primitives.
   It navigates with `replace`, like the meta chips, so following it spends the modal's
   own history entry. Each close callback is bound to that entry's token, so a delete
   response arriving after the record has closed cannot pop a newer record or page.
+  The overview stays in the one reading flow and fills its column; the record width
+  keeps the resulting line length bounded. Every record starts at the same
+  viewport-aware top inset, from 48px to 96px, while its bottom follows the content.
+  A long record grows to the viewport limit and then scrolls internally. Wider
+  viewports under 720px tall cap the backdrop at half the viewport height, up to
+  260px, so landscape phones reveal record content below it.
   Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
@@ -373,19 +388,22 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   reason: the page gets its scroll back when the last dialog closes, not the first.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
-  buttons). Widths: `.modal` 960px, `.modal--movie` 880px, `.modal--form` 460px.
+  buttons). Width tiers: browse surfaces grow from 960px to 1760px, movie records
+  grow from 880px to 1120px, and focused forms remain 460px.
 - **Two scroll modes.** By default the veil scrolls and the surface grows to its
   content. Its 56px of breathing room is two spacer items in a flex column rather
   than block padding, because a scroll container's bottom padding is not part of its
   scrollable overflow and a tall dialog would otherwise park flush against the window
   edge. `<Modal capped>` switches to the other mode: the veil stops scrolling
-  (`:has(.modal--capped)` centers it and hides the spacers), the surface caps at
-  `min(900px, 100dvh - 96px)` and lays out as a flex column, and the part marked
+  (`:has(.modal--capped)` centers it and hides the spacers), the generic surface caps
+  against `--modal-block-max` and lays out as a flex column, and the part marked
   `.modal__scroll` scrolls inside it with `overscroll-behavior: contain` so the page
   behind never chains. Chrome outside that region (a close X, a head) stays put while
   the content moves. Opt-in: form dialogs are short and size to their content. The movie
-  detail modal is the capped one — its close X is pinned to the surface, so it holds its
-  corner while the backdrop scrolls under it.
+  detail modal is the exception to vertical centering: it starts at
+  `--modal-record-top`, sizes to its content, and caps against the remaining viewport
+  height. Its close X is pinned to the surface, so it holds its corner while the
+  backdrop scrolls under it.
 
 Destructive confirms (`DeletionDialog`) use the same `Modal`: dismissing (Esc / veil /
 Cancel) is the safe choice, so outside-click dismiss is intentional; only the explicit
@@ -428,13 +446,13 @@ closes the movie record.
   `display:inline-block; line-height:1` with internal vertical mask padding
   `round(0.25em/2,1px)`. The mask is **visual-only** — it does *not* move the glyph
   baseline — so a number used **inline with text** (the "Films in Filter View · N" title,
-  the "avg 1h 53m" runtime sub) baseline-aligns on its own at every `:root` zoom step;
+  the "avg 1h 53m" runtime sub) baseline-aligns on its own;
   leave it at `vertical-align: baseline` and add no nudge. The one place that needs a fix
   is the **KPI value cell** (`.statitem__val`, `align-items: flex-end`): `flex-end` aligns
   box *bottoms*, not baselines, so the mask padding lets the numeral float ~4px above where
   the plain-text values (Top adder / Busiest day) land. Compensated with
   `.statitem__val number-flow-react { margin-bottom: -4px }` — at the fixed 29px value size
-  the padding is exactly 4px CSS-px and zoom-invariant. (A previous attempt also added
+  the padding is exactly 4px. (A previous attempt also added
   `vertical-align` lifts to the inline title/sub; that pushed those numerals *off* the text
   baseline and was reverted — the trap is measuring the box, not the glyph.) Standalone
   number-flows (`.b-val`, donut legend, people-rail counts) have no adjacent text and need
@@ -458,10 +476,9 @@ closes the movie record.
   (`prevKeys`), never by whether a position happens to be recorded — so a churned/late
   node stays put instead of wrongly fading in. Positions are measured **container-
   relative**, so a reflow ABOVE a rail (the films rail tripling in height) slides the
-  whole rail without animating every card; and deltas are divided by `effectiveZoom`
-  (`moviepickarr/zoom.ts`) so the glide lands exactly on target under the `:root` zoom ramp
-  (§13). No React remount, so NumberFlow counts keep rolling; reduced-motion skips every
-  transform/entrance and drops exits instantly.
+  whole rail without animating every card. The measured deltas and transforms share one
+  CSS-pixel coordinate space. No React remount, so NumberFlow counts keep rolling;
+  reduced-motion skips every transform/entrance and drops exits instantly.
 - **Stat bars** are sized by real geometry, NOT `transform` scale: horizontal
   member/weekday bars use `width: calc(--p * 100%)`, vertical hourly bars use
   `height: calc(--p * 88%)`. Scaling a rounded box squishes its `border-radius` on short
@@ -538,9 +555,8 @@ closes the movie record.
   Members page runs both side by side and is the pattern. A roving list is a **list**, not
   a `role="grid"`: the Members wall's column count is a container-query artifact of the
   cell width, so grid coordinates would be announcing the stylesheet. The column count is
-  read back off the resolved `grid-template-columns` rather than computed in JS, since a
-  JS pixel and a CSS pixel are different sizes under the root zoom ramp (§13). The roving
-  index resets to the first cell on an explicit context change, a filter or switch of
+  read back off the resolved `grid-template-columns` rather than computed again in JS. The
+  roving index resets to the first cell on an explicit context change, a filter or switch of
   subject, which also decides where Tab out of the field above it lands. Live keyed-list
   updates keep a surviving focused film as the tab stop and carry its new cell index
   along, so the next arrow still starts from that film.
@@ -624,9 +640,8 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
   height (`--hero-body-h`) and the 2/3 poster ratio so the poster's bottom edge lines up
   exactly with the pinned action button. The dependency is real: the large-screen step
   changes only `--hero-body-h` and the poster width tracks it automatically.
-- The hero poster **omits the rating badge** (it passes no `voteAverage`): the rating
-  already appears in the meta row, so the badge would be redundant. The badge still
-  renders on tile-grid posters, where the meta row carries no rating.
+- Poster art carries no rating badge. The hero keeps the rating in its metadata row,
+  and other surfaces show ratings only when they have a dedicated metadata treatment.
 - **Top group** (eyebrow + title) is anchored to the top. The title is clamped to 2
   lines; a long title gains a second line that grows *downward* into the negative
   space without moving anything else. The eyebrow's adder name (`.hero__by`) links to
@@ -777,7 +792,8 @@ and the poster width tracks it via the `calc()` above), `.hero__inner` padding o
 and the title clamp ceiling rises (54 → 64px) — so the centerpiece feels grander, not
 merely bigger. Like the phone stack this is per-breakpoint geometry, not a break of the
 contract: within the breakpoint the banner stays dimensionally static as the draw changes.
-The whole hero also rides the global `zoom` ramp (§13) on top of this step.
+The shared page-width token gives the hero more horizontal room without scaling its type
+or controls (§13).
 
 ---
 
@@ -933,7 +949,7 @@ What each does:
   stays CSS: no width is read in JS.
 - **700** — the hero stacks (poster above text), page / top-nav padding tightens, and the
   movie modal's rail becomes a row with its credit columns stacked (§4). It replaced the
-  old 560 stack point when the modal went from 560px to 880px wide.
+  old 560 stack point when the modal became a wider record surface.
 - **760** — the stat strip drops 3 columns → 2.
   The Members rail and stash pane also become separate screens at this boundary.
   CSS and the focus handoff both use `not all and (min-width: 761px)` so fractional
@@ -962,23 +978,21 @@ What each does:
   6 columns → 3, and the stats two-column sections (weekday | hourly, genres | decades)
   collapse to one.
 
-**Large screens.** A mirror of the phone pass, scaling *up*. Above the 1240px column the
-whole UI steps up through a discrete root `zoom` ramp (`:root { zoom }` at 1728 / 2240 /
-2560 / 3200 / 3840px) so type, posters, modals, menus, grids and the column all grow
-together — keeping the centered cinematic composition instead of leaving content adrift on
-a 2K/4K panel. It lives on `:root` (not `.app`) because modals, toasts and the portalled
-`Menu` (the "more actions" surface, which must escape its row's scroll clip) reach `<body>`;
-only a root-level scale reaches them. The top steps carry a `min-height` guard
-so ultrawide-but-short panels (e.g. 3440×1440) don't over-scale. Stepped, not fluid
-`clamp` — the discrete-scale ethos (§3) holds. **Overlay placement under the ramp:** any
-overlay positioned by JS from `getBoundingClientRect` and written as inline `top/left` on a
-`position:fixed` portal child drifts under the ramp — the zoomed viewport coords get scaled
-by the inherited zoom a second time. So prefer CSS-anchored overlays (the stats filter
-dropdowns and the `DateRange` popover anchor to their trigger in CSS, sharing its space and
-riding the ramp for free); where a portal is unavoidable (the row `Menu` escaping its
-`overflow` clip), divide the GBCR coords by the element's `currentCSSZoom` before writing them. The **hero** takes an extra large-screen
-step on top of the zoom (taller `--hero-body-h`, roomier padding, a higher title ceiling)
-so the centerpiece feels grander, not merely bigger (§7).
+**Large screens.** The UI keeps its normal type, control, and spacing scale. Real surfaces
+grow instead. `--page-max` grows the shell, nav, and hero continuously from 1240px to a
+2560px cap at 80vw. Wrapping poster grids resolve `minmax(…, 1fr)` tracks across
+their available surface, so the first and last columns stay on the content edges.
+Equivalent page-width grids share the same sizing rule; Search and Members resolve
+against their own narrower containers. The Movies pool retains a larger minimum than
+the watched grid. Stats gives its charts and rails the available width. Settings keeps
+its 560px reading column. Search uses the
+browse modal tier (960px to 1760px), movie detail uses the record tier (880px to 1120px),
+and focused forms stay 460px. Movie records share a 48px to 96px top inset, size to
+their content, and scroll internally only when they reach the viewport limit. Other
+capped dialogs keep the generic 1320px ceiling. Portalled menus write
+`getBoundingClientRect()` coordinates directly because the document is not author-scaled.
+CSS-anchored filter and date surfaces remain preferred where the trigger can own them. The
+hero keeps its separate 1728px geometry step for hierarchy (§7).
 
 **Bottom tab bar.** Below 900px the top-bar tabs (`.nav__tabs`) hide and a fixed
 `.navbar-bottom` renders the tabs (4 for an admin, Admin included) in thumb reach; the
@@ -1020,7 +1034,7 @@ buttons grow toward the 44px touch minimum.
 5. The hero stays dimensionally static (§7); 3+ line taglines truncate.
 6. Copy: verb+object buttons, "Failed to X" errors, `plural()` for counts, no em dashes.
 7. Gold = action/selection/state only. Danger = the single `--danger` ramp.
-8. Responsiveness is structural (bottom nav below 900, single-column reflows below 640; a discrete
-   root `zoom` ramp scales the whole UI up on large screens — §13), never per-element fluid
-   type. Every hover-revealed action needs a `hover: none` fallback so touch users can
+8. Responsiveness is structural (bottom nav below 900, single-column reflows below 640,
+   wider real surfaces on large screens, §13), never per-element fluid type. Every
+   hover-revealed action needs a `hover: none` fallback so touch users can
    reach it (§13).

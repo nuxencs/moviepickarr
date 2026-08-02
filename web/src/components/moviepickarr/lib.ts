@@ -17,8 +17,9 @@ export function posterSrcSet(path?: string | null): string | null {
   const compact = posterUrl(path, "w154");
   const medium = posterUrl(path, "w185");
   const fallback = posterUrl(path);
-  return compact && medium && fallback
-    ? `${compact} 154w, ${medium} 185w, ${fallback} 342w`
+  const large = posterUrl(path, "w500");
+  return compact && medium && fallback && large
+    ? `${compact} 154w, ${medium} 185w, ${fallback} 342w, ${large} 500w`
     : null;
 }
 

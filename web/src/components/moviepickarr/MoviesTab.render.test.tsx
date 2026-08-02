@@ -30,6 +30,7 @@ const poolMovie: Movie = {
   addedByID: 7,
   addedByName: "Ada",
   posterPath: "/pool.jpg",
+  voteAverage: 8.1,
 };
 
 const watchedMovie: Movie = {
@@ -68,10 +69,11 @@ async function renderTab() {
 const candidates = (path: string) =>
   `https://image.tmdb.org/t/p/w154/${path} 154w, ` +
   `https://image.tmdb.org/t/p/w185/${path} 185w, ` +
-  `https://image.tmdb.org/t/p/w342/${path} 342w`;
+  `https://image.tmdb.org/t/p/w342/${path} 342w, ` +
+  `https://image.tmdb.org/t/p/w500/${path} 500w`;
 
 describe("Movies poster sources", () => {
-  it("sizes pool and watched-grid posters for full cards", async () => {
+  it("provides responsive candidates for fluid pool and watched grids", async () => {
     await renderTab();
 
     const pool = screen.getByRole("img", { name: "Pool Film" });
@@ -81,6 +83,8 @@ describe("Movies poster sources", () => {
     expect(pool.getAttribute("srcset")).toBe(candidates("pool.jpg"));
     expect(watched.getAttribute("sizes")).toBe("auto, 342px");
     expect(watched.getAttribute("srcset")).toBe(candidates("watched.jpg"));
+    expect(watched.closest(".tile")?.parentElement?.style.justifyContent).toBe("");
+    expect(document.querySelector(".poster__badge")).toBeNull();
   });
 
   it("sizes the fixed poster in watched-list rows at 44px", async () => {
@@ -93,5 +97,6 @@ describe("Movies poster sources", () => {
     );
     expect(watched.getAttribute("sizes")).toBe("auto, 44px");
     expect(watched.getAttribute("srcset")).toBe(candidates("watched.jpg"));
+    expect(watched.closest(".wrow")?.querySelector(".rating")?.textContent).toBe("8.1");
   });
 });

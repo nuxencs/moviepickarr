@@ -61,7 +61,7 @@ const STASH_POSTER_SIZES =
   "auto, (max-width: 700px) calc((100vw - 66px) / 4), " +
   "(min-width: 761px) and (max-width: 899px) 120px, " +
   "(min-width: 761px) and (max-width: 1199px) 112px, " +
-  "(min-width: 761px) 96px, calc((100vw - 94px) / 4)";
+  "(min-width: 761px) 128px, calc((100vw - 94px) / 4)";
 
 const isPushWidth = () => window.matchMedia(PUSH_WIDTH).matches;
 
@@ -263,8 +263,8 @@ export function UsersTab() {
   // The rail's scrollbar is out of the layout (its width is three posters
   // exactly), so a fade at the bottom edge is the only sign there are more
   // members below — and it has to be conditional, or it just dims the last
-  // name. This asks whether the rail overflows, not by how much: a comparison,
-  // not a size, so the root zoom ramp does not touch it.
+  // name. This asks whether the rail overflows, not by how much, so it stays a
+  // boolean signal rather than duplicating layout state.
   const railRef = useRef<HTMLElement>(null);
   const [railOverflows, setRailOverflows] = useState(false);
 
@@ -937,10 +937,10 @@ function PoolSlots({
  * tile makes no key but title verifiable by looking. The field below is the
  * find-a-film path in its place.
  *
- * The wall is a roving-tabindex list and not a `role="grid"` (#235). Six columns
- * is a CSS artifact of the container-derived cell width and the wall is an A-Z
- * list of films, so announcing grid coordinates would be describing the
- * stylesheet. One cell holds tabindex 0 at a time; the arrows move it, so the
+ * The wall is a roving-tabindex list and not a `role="grid"` (#235). Its
+ * responsive column count belongs to CSS and the wall is an A-Z list of films,
+ * so announcing grid coordinates would be describing the stylesheet. One cell
+ * holds tabindex 0 at a time; the arrows move it, so the
  * whole wall is two tab stops on your own board (the poster, then its corner
  * action) and one on a guest's, whatever it is holding.
  */
@@ -999,8 +999,8 @@ function StashPane({
 
   // The scrollbar is out of the layout (see members.css), so a fade at the
   // bottom edge is the only sign there is more wall below — and conditional, or
-  // it dims the last row for nothing. A comparison, not a size, so the root
-  // zoom ramp does not reach it. Same shape as the rail's, one scroller up.
+  // it dims the last row for nothing. This stays a boolean signal rather than
+  // duplicating layout state. Same shape as the rail's, one scroller up.
   const wallRef = useRef<HTMLDivElement>(null);
   const [wallOverflows, setWallOverflows] = useState(false);
 

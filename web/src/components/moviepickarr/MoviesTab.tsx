@@ -121,7 +121,6 @@ export function MoviesTab() {
                   title={movie.title}
                   hue={hueOf(movie.title)}
                   posterPath={movie.posterPath}
-                  voteAverage={movie.voteAverage}
                   sizes="auto, 342px"
                 />
                 <div className="t-meta">
@@ -257,7 +256,6 @@ function WatchedSection({
                 title={movie.title}
                 hue={hueOf(movie.title)}
                 posterPath={movie.posterPath}
-                voteAverage={movie.voteAverage}
                 sizes="auto, 342px"
               />
               <div className="t-meta">
@@ -292,8 +290,8 @@ function WatchedSection({
  *
  * Layout stays in the stylesheet. The container keeps its `.tile-grid` (or
  * `.watch-list`) class and `useGridMetrics` reads back the resolved column
- * count and gaps, so the responsive `repeat(auto-fill, minmax(…))` ramp and its
- * breakpoints are never restated in JS. The list view resolves to one lane.
+ * count and gaps, so the responsive `repeat(auto-fill, minmax(…))` tracks and
+ * their breakpoints are never restated in JS. The list view resolves to one lane.
  */
 function VirtualWatched({
   className,

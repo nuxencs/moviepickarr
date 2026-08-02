@@ -30,7 +30,7 @@ import {
 } from "@/components/moviepickarr/lib";
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { StatNumber } from "@/components/moviepickarr/numberRoll";
-import { Poster } from "@/components/moviepickarr/Poster";
+import { GENERAL_POSTER_SIZES, Poster } from "@/components/moviepickarr/Poster";
 import { StatsBodySkeleton } from "@/components/moviepickarr/Skeletons";
 import {
   filtersFromSearch,
@@ -516,8 +516,8 @@ function MatchedMoviesRail({
                   title={movie.title}
                   hue={hueOf(movie.title)}
                   posterPath={movie.posterPath}
-                  voteAverage={movie.voteAverage}
                   showTitle={false}
+                  sizes={GENERAL_POSTER_SIZES}
                 />
                 <span className="movietile__meta">
                   <span className="movietile__title">{movie.title}</span>

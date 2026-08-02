@@ -68,7 +68,7 @@ describe("nextCell", () => {
     expect(from(0, "ArrowRight")).toBe(1);
     expect(from(6, "ArrowLeft")).toBe(5);
     // Across a row boundary, because the order the wall reads in is one run and
-    // the six columns are the stylesheet's business.
+    // the supplied column count is the stylesheet's business.
     expect(from(5, "ArrowRight")).toBe(6);
   });
 

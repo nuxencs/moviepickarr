@@ -35,16 +35,16 @@ const RAIL_ROWS = 6;
 
 /**
  * More tiles than any pane will hold, so the wall fills the space it is given
- * at every viewport height and every step of the root zoom ramp without
- * measuring one. The box clips the rest, with `overflow: hidden` rather than
- * `auto` — the overdrawn tail is filler, so it must not be reachable.
+ * at every supported viewport height without measuring one. The box clips the
+ * rest with `overflow: hidden` rather than `auto`: the overdrawn tail is filler,
+ * so it must not be reachable.
  *
  * Below 760 the wall stops being a scroller and the page carries it, so there
  * is no ceiling left to clip against and the tail would become page length
  * instead. The cap there is CSS (`nth-child`), not a width branch in JS, for
  * the same no-measurement reason.
  */
-const WALL_TILES = 36;
+const WALL_TILES = 126;
 
 /** The name lines differ in width, because six identical bars read as a table
  *  rather than as six people. The counts do not: they stand in for `N in

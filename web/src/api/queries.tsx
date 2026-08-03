@@ -36,6 +36,19 @@ export const MeQueryOptions = () =>
     retry: false,
   })
 
+/** The actor's own live sessions. Nothing pushes a session change (another
+ *  device logging in or out broadcasts nothing), so this refetches on mount and
+ *  on focus rather than sitting on a cached list: coming back to the tab is
+ *  exactly when a stale device list would mislead. */
+export const SessionsQueryOptions = () =>
+  queryOptions({
+    queryKey: AuthKeys.sessions(),
+    queryFn: () => APIClient.auth.sessions(),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    retry: false,
+  })
+
 /** Claim-page data for a token. 404/410 (no-longer-valid / already-set-up) are
  *  terminal answers, not transient failures, so it must not retry. */
 export const ClaimQueryOptions = (token: string) =>

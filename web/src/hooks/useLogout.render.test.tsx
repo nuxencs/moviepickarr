@@ -47,7 +47,6 @@ const actor: MeResponse = {
   role: "member",
   hasLocalLogin: true,
   hasLinkedIdentity: false,
-  otherSessions: 0,
 };
 
 /** Whether the actor was still cached at the moment navigate was called. */

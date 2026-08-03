@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -36,6 +37,41 @@ const sessionSelect = `
 		u.role
 	FROM sessions s
 	JOIN users u ON u.id = s.user_id AND u.archived_at IS NULL`
+
+// scanSession reads the bare session row (no role join) the device list needs.
+// It duplicates scanAuthSession's column order minus u.role rather than sharing
+// it: database/sql wants every destination in one Scan call, so the two shapes
+// can't be composed without a slice of anys and a cast per field.
+func scanSession(scanner rowScanner) (*domain.Session, error) {
+	s := &domain.Session{}
+	var expiresAt, lastSeenAt, createdAt int64
+	var userAgent, ip sql.NullString
+
+	if err := scanner.Scan(
+		&s.ID,
+		&s.UserID,
+		&s.TokenHash,
+		&expiresAt,
+		&lastSeenAt,
+		&userAgent,
+		&ip,
+		&createdAt,
+	); err != nil {
+		return nil, err
+	}
+
+	s.ExpiresAt = db.FromUnix(expiresAt)
+	s.LastSeenAt = db.FromUnix(lastSeenAt)
+	s.CreatedAt = db.FromUnix(createdAt)
+	if userAgent.Valid {
+		s.UserAgent = &userAgent.String
+	}
+	if ip.Valid {
+		s.IP = &ip.String
+	}
+
+	return s, nil
+}
 
 func scanAuthSession(scanner rowScanner) (*domain.AuthSession, error) {
 	as := &domain.AuthSession{}
@@ -139,15 +175,48 @@ func (d *SqliteSessionRepository) DeleteOthersByUserID(ctx context.Context, user
 	return res.RowsAffected()
 }
 
-func (d *SqliteSessionRepository) CountOthersByUserID(ctx context.Context, userID int, keepTokenHash string, now, idleCutoff time.Time) (int, error) {
-	// Live mirrors Authenticate's two windows (strict >), so the count matches
-	// exactly the sessions that would still authenticate.
+func (d *SqliteSessionRepository) DeleteByIDForUser(ctx context.Context, id int64, userID int) (string, error) {
+	// user_id is the authorization, not a filter: without it any member could
+	// revoke any session by guessing a row id. RETURNING hands back what was
+	// actually removed, so the caller learns whether it just ended its own
+	// device in the same statement.
+	query := "DELETE FROM sessions WHERE id = ? AND user_id = ? RETURNING token_hash"
+	var tokenHash string
+	err := d.pool.Write.QueryRowContext(ctx, query, id, userID).Scan(&tokenHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return tokenHash, nil
+}
+
+func (d *SqliteSessionRepository) ListLiveByUserID(ctx context.Context, userID int, now, idleCutoff time.Time) ([]domain.Session, error) {
+	// Live mirrors Authenticate's two windows (strict >), so the list holds
+	// exactly the sessions that would still authenticate. Ordered by most recent
+	// activity, id breaking ties, so the device list is stable across reads.
 	query := `
-		SELECT COUNT(*) FROM sessions
-		WHERE user_id = ? AND token_hash <> ? AND expires_at > ? AND last_seen_at > ?`
-	var n int
-	err := d.pool.Read.QueryRowContext(ctx, query, userID, keepTokenHash, db.ToUnix(now), db.ToUnix(idleCutoff)).Scan(&n)
-	return n, err
+		SELECT id, user_id, token_hash, expires_at, last_seen_at, user_agent, ip, created_at
+		FROM sessions
+		WHERE user_id = ? AND expires_at > ? AND last_seen_at > ?
+		ORDER BY last_seen_at DESC, id DESC`
+
+	rows, err := d.pool.Read.QueryContext(ctx, query, userID, db.ToUnix(now), db.ToUnix(idleCutoff))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := []domain.Session{}
+	for rows.Next() {
+		s, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, *s)
+	}
+	return sessions, rows.Err()
 }
 
 func (d *SqliteSessionRepository) DeleteExpired(ctx context.Context, now, idleCutoff time.Time) (int64, error) {

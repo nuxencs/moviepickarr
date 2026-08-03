@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -177,14 +178,54 @@ func (m *SessionManager) RevokeOthers(ctx context.Context, userID int, keepRawTo
 	return err
 }
 
-// CountOtherSessions reports how many OTHER live sessions the member holds
-// besides the one carried by currentRawToken. It measures against the same two
-// windows Authenticate enforces, so the number matches exactly the devices a
-// log-out-everywhere would close. The account page shows it to make that choice
-// concrete. An empty current token counts every live session (no row to exclude).
-func (m *SessionManager) CountOtherSessions(ctx context.Context, userID int, currentRawToken string) (int, error) {
+// SessionView is one live session as its owner sees it: the stored row plus
+// whether it is the device making the request. Current is derived here rather
+// than stored, so the caller never has to hash a cookie itself.
+type SessionView struct {
+	domain.Session
+	Current bool
+}
+
+// List returns the member's live sessions, most recently active first, with the
+// caller's own session flagged. It measures against the same two windows
+// Authenticate enforces, so the list holds exactly the devices that could still
+// make a request, and exactly the ones a log-out-everywhere would close. An
+// empty current token flags nothing as current (no row to match).
+func (m *SessionManager) List(ctx context.Context, userID int, currentRawToken string) ([]SessionView, error) {
 	now := m.now()
-	return m.repo.CountOthersByUserID(ctx, userID, HashToken(currentRawToken), now, now.Add(-SessionIdleTTL))
+	rows, err := m.repo.ListLiveByUserID(ctx, userID, now, now.Add(-SessionIdleTTL))
+	if err != nil {
+		return nil, err
+	}
+
+	currentHash := ""
+	if currentRawToken != "" {
+		currentHash = HashToken(currentRawToken)
+	}
+
+	views := make([]SessionView, 0, len(rows))
+	for _, s := range rows {
+		views = append(views, SessionView{Session: s, Current: currentHash != "" && s.TokenHash == currentHash})
+	}
+	return views, nil
+}
+
+// RevokeByID revokes one of the member's own sessions (the per-device sign-out)
+// and reports whether that was the session carried by currentRawToken, so the
+// caller knows to clear the cookie. The member id is passed to the store as part
+// of the delete predicate, so revoking someone else's session is impossible
+// rather than merely refused. A row that isn't there (already gone, or never
+// theirs) returns ErrNotFound: the caller answers 404 instead of pretending it
+// revoked something.
+func (m *SessionManager) RevokeByID(ctx context.Context, userID int, id int64, currentRawToken string) (wasCurrent bool, err error) {
+	deletedHash, err := m.repo.DeleteByIDForUser(ctx, id, userID)
+	if err != nil {
+		return false, err
+	}
+	if deletedHash == "" {
+		return false, fmt.Errorf("%w: session %d", domain.ErrNotFound, id)
+	}
+	return currentRawToken != "" && deletedHash == HashToken(currentRawToken), nil
 }
 
 // Sweep deletes every session past its absolute cap or its idle window. It runs

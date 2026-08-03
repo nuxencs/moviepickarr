@@ -148,6 +148,21 @@
   flex: none;
 }
 
+/* ---------- Sessions: the device list ----------
+   Rows reuse .acc__row, so a device sits at the same weight as the two levers
+   under it. The list is a <ul> for the semantics; the reset keeps it looking
+   like the stack of rows it is. */
+.acc-sessions {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+/* The current device's marker sits where the other rows' button does, so the
+   right edge stays a single column. */
+.acc-sessions .acc-tag {
+  flex: none;
+}
+
 /* ---------- loading / error state ---------- */
 .acc-state {
   padding: 64px 16px;

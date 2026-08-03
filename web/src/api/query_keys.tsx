@@ -4,6 +4,9 @@ export const AuthKeys = {
     config: () => [...AuthKeys.all, "config"] as const,
     posterWall: () => [...AuthKeys.all, "poster-wall"] as const,
     claim: (token: string) => [...AuthKeys.all, "claim", token] as const,
+    // The actor's own live sessions (the account page's device list). Rides the
+    // "auth" root, so an identity change stales the devices with it.
+    sessions: () => [...AuthKeys.all, "sessions"] as const,
 }
 
 export const UsersKeys = {

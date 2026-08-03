@@ -378,42 +378,6 @@ func TestChangePassword_RotatesAndRevokes(t *testing.T) {
 	}
 }
 
-func TestMe_ReportsOtherSessionCount(t *testing.T) {
-	e := setupAuthApp(t)
-	id := e.seedMember(t, "Gwen", "member")
-	e.seedLocalLogin(t, id, "gwen", "correct horse battery")
-
-	deviceA := e.login(t, "gwen", "correct horse battery")
-
-	// One session: /me from device A sees no other devices.
-	meOf := func(cookie string) meResponse {
-		t.Helper()
-		resp := e.request(t, http.MethodGet, "/api/v1/auth/me", cookie, nil)
-		if resp.StatusCode != fiber.StatusOK {
-			t.Fatalf("me status = %d, want 200", resp.StatusCode)
-		}
-		var me meResponse
-		if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
-			t.Fatalf("decode me: %v", err)
-		}
-		return me
-	}
-	if n := meOf(deviceA).OtherSessions; n != 0 {
-		t.Fatalf("otherSessions with one device = %d, want 0", n)
-	}
-
-	// Two more logins: device A now sees two others, and each new device sees
-	// two others too (the count excludes only the asking session).
-	deviceB := e.login(t, "gwen", "correct horse battery")
-	_ = e.login(t, "gwen", "correct horse battery")
-	if n := meOf(deviceA).OtherSessions; n != 2 {
-		t.Fatalf("otherSessions with three devices = %d, want 2", n)
-	}
-	if n := meOf(deviceB).OtherSessions; n != 2 {
-		t.Fatalf("otherSessions from device B = %d, want 2", n)
-	}
-}
-
 func TestLogout_CurrentDeviceOnly(t *testing.T) {
 	e := setupAuthApp(t)
 	id := e.seedMember(t, "Hank", "member")

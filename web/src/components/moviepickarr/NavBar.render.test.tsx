@@ -61,7 +61,6 @@ function actor(role: MeResponse["role"]): MeResponse {
     role,
     hasLocalLogin: true,
     hasLinkedIdentity: false,
-    otherSessions: 0,
   };
 }
 

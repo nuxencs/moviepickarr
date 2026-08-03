@@ -192,7 +192,7 @@ func TestSessionRepo_RevokeVariants(t *testing.T) {
 	}
 }
 
-func TestSessionRepo_CountOthers(t *testing.T) {
+func TestSessionRepo_ListLiveOrdersByActivity(t *testing.T) {
 	ctx, sessions, users, _ := setupSessionRepo(t)
 	alice, _ := users.Create(ctx, "Alice")
 	bob, _ := users.Create(ctx, "Bob")
@@ -200,32 +200,115 @@ func TestSessionRepo_CountOthers(t *testing.T) {
 	exp := now.Add(90 * 24 * time.Hour)
 	idleCutoff := now.Add(-30 * 24 * time.Hour)
 
-	// Alice: the current session (a1) plus two other live ones, one capped-out,
-	// one idle-expired. Bob's session must never count toward Alice.
-	mustCreateSession(t, ctx, sessions, "a1", alice.ID, exp, now)
-	mustCreateSession(t, ctx, sessions, "a2", alice.ID, exp, now)
-	mustCreateSession(t, ctx, sessions, "a3", alice.ID, exp, now)
+	// Alice: two live sessions with distinct activity, one capped-out, one
+	// idle-expired. Bob's live session must never appear in Alice's list.
+	mustCreateSession(t, ctx, sessions, "a-stale", alice.ID, exp, now.Add(-2*time.Hour))
+	mustCreateSession(t, ctx, sessions, "a-fresh", alice.ID, exp, now)
 	mustCreateSession(t, ctx, sessions, "a-capped", alice.ID, now.Add(-time.Hour), now)
 	mustCreateSession(t, ctx, sessions, "a-idle", alice.ID, exp, now.Add(-31*24*time.Hour))
 	mustCreateSession(t, ctx, sessions, "b1", bob.ID, exp, now)
 
-	// Excluding a1: only a2 and a3 are other live sessions (dead + Bob excluded).
-	n, err := sessions.CountOthersByUserID(ctx, alice.ID, "a1", now, idleCutoff)
+	live, err := sessions.ListLiveByUserID(ctx, alice.ID, now, idleCutoff)
 	if err != nil {
-		t.Fatalf("count others: %v", err)
+		t.Fatalf("list live: %v", err)
 	}
-	if n != 2 {
-		t.Fatalf("count others = %d, want 2", n)
+	if len(live) != 2 {
+		t.Fatalf("listed %d sessions, want 2 (dead rows and Bob excluded)", len(live))
+	}
+	if live[0].TokenHash != "a-fresh" || live[1].TokenHash != "a-stale" {
+		t.Fatalf("order = %q, %q, want a-fresh then a-stale", live[0].TokenHash, live[1].TokenHash)
+	}
+	if live[0].UserID != alice.ID {
+		t.Fatalf("listed user id = %d, want %d", live[0].UserID, alice.ID)
 	}
 
-	// A token that matches no row (e.g. an empty current token) excludes nothing,
-	// so all three live sessions count.
-	n, err = sessions.CountOthersByUserID(ctx, alice.ID, "", now, idleCutoff)
+	// Nothing live at all is an empty list, not a nil-vs-empty distinction the
+	// handler has to special-case.
+	empty, err := sessions.ListLiveByUserID(ctx, bob.ID, now.Add(200*24*time.Hour), idleCutoff)
 	if err != nil {
-		t.Fatalf("count others (no exclude): %v", err)
+		t.Fatalf("list live (none): %v", err)
 	}
-	if n != 3 {
-		t.Fatalf("count others with no exclusion = %d, want 3", n)
+	if len(empty) != 0 {
+		t.Fatalf("listed %d sessions past every window, want 0", len(empty))
+	}
+}
+
+func TestSessionRepo_ListLiveCarriesDeviceFields(t *testing.T) {
+	ctx, sessions, users, _ := setupSessionRepo(t)
+	alice, _ := users.Create(ctx, "Alice")
+	now := time.Now().UTC().Truncate(time.Second)
+
+	ua := "Mozilla/5.0 (Macintosh) Chrome/126.0.0.0"
+	ip := "192.168.1.40"
+	if err := sessions.Create(ctx, domain.Session{
+		TokenHash: "a1", UserID: alice.ID, ExpiresAt: now.Add(24 * time.Hour),
+		LastSeenAt: now, CreatedAt: now.Add(-time.Hour), UserAgent: &ua, IP: &ip,
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	// A session with neither recorded (an API client, a stripped agent) stays
+	// nil rather than becoming an empty string.
+	mustCreateSession(t, ctx, sessions, "a2", alice.ID, now.Add(24*time.Hour), now.Add(-time.Minute))
+
+	live, err := sessions.ListLiveByUserID(ctx, alice.ID, now, now.Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("list live: %v", err)
+	}
+	if len(live) != 2 {
+		t.Fatalf("listed %d sessions, want 2", len(live))
+	}
+	if live[0].UserAgent == nil || *live[0].UserAgent != ua {
+		t.Errorf("user agent = %v, want %q", live[0].UserAgent, ua)
+	}
+	if live[0].IP == nil || *live[0].IP != ip {
+		t.Errorf("ip = %v, want %q", live[0].IP, ip)
+	}
+	if !live[0].CreatedAt.Equal(now.Add(-time.Hour)) {
+		t.Errorf("created at = %v, want %v", live[0].CreatedAt, now.Add(-time.Hour))
+	}
+	if live[1].UserAgent != nil || live[1].IP != nil {
+		t.Errorf("missing agent/ip scanned as %v/%v, want nil", live[1].UserAgent, live[1].IP)
+	}
+}
+
+func TestSessionRepo_DeleteByIDForUserIsScopedToOwner(t *testing.T) {
+	ctx, sessions, users, _ := setupSessionRepo(t)
+	alice, _ := users.Create(ctx, "Alice")
+	bob, _ := users.Create(ctx, "Bob")
+	now := time.Now().UTC().Truncate(time.Second)
+	exp := now.Add(90 * 24 * time.Hour)
+
+	mustCreateSession(t, ctx, sessions, "a1", alice.ID, exp, now)
+	mustCreateSession(t, ctx, sessions, "b1", bob.ID, exp, now)
+
+	live, err := sessions.ListLiveByUserID(ctx, bob.ID, now, now.Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("list live: %v", err)
+	}
+	bobSessionID := live[0].ID
+
+	// Alice aiming at Bob's row id removes nothing and reports nothing removed.
+	hash, err := sessions.DeleteByIDForUser(ctx, bobSessionID, alice.ID)
+	if err != nil {
+		t.Fatalf("delete another member's session: %v", err)
+	}
+	if hash != "" {
+		t.Fatalf("deleted hash = %q, want empty (nothing removed)", hash)
+	}
+	if _, err := sessions.FindByTokenHash(ctx, "b1"); err != nil {
+		t.Fatalf("another member's session was removed: %v", err)
+	}
+
+	// Its owner removes it, and learns which row went.
+	hash, err = sessions.DeleteByIDForUser(ctx, bobSessionID, bob.ID)
+	if err != nil {
+		t.Fatalf("delete own session: %v", err)
+	}
+	if hash != "b1" {
+		t.Fatalf("deleted hash = %q, want b1", hash)
+	}
+	if _, err := sessions.FindByTokenHash(ctx, "b1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal("own session survived the delete")
 	}
 }
 

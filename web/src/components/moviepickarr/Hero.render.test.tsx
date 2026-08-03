@@ -104,7 +104,6 @@ function session(id: number): MeResponse {
     role: "admin",
     hasLocalLogin: true,
     hasLinkedIdentity: false,
-    otherSessions: 0,
   };
 }
 

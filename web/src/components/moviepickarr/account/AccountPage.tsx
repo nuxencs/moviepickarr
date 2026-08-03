@@ -4,13 +4,12 @@ import { KeyRoundIcon, LinkIcon, LogOutIcon, MonitorSmartphoneIcon, UnlinkIcon }
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { APIClient, ApiError, oidcLinkPath } from "@/api/APIClient";
-import { AuthConfigQueryOptions, MeQueryOptions } from "@/api/queries";
+import { AuthConfigQueryOptions, MeQueryOptions, SessionsQueryOptions } from "@/api/queries";
 import { AuthKeys } from "@/api/query_keys";
 
 import {
   apiMessage,
   linkResultFromSearch,
-  otherDevicesLabel,
   PROVIDER,
   unlinkWouldStrand,
 } from "@/components/moviepickarr/account/account";
@@ -20,10 +19,15 @@ import {
   SetPasswordDialog,
   UnlinkGuardDialog,
 } from "@/components/moviepickarr/account/AccountOverlays";
+import { SessionList } from "@/components/moviepickarr/account/SessionList";
+import { otherDeviceCount } from "@/components/moviepickarr/account/sessions";
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { toast } from "@/components/ui/toast-api";
 
+import type { SessionSummary } from "@/types/Response";
+
 import { useLogout } from "@/hooks/useLogout";
+
 
 import "@/components/moviepickarr/account/account.css";
 
@@ -126,6 +130,32 @@ export function AccountPage() {
 
   // Both sessions rows: false ends this device, true ends every session.
   const logout = useLogout();
+
+  const sessions = useQuery(SessionsQueryOptions());
+  const [revokingID, setRevokingID] = useState<number | null>(null);
+  const revokeSession = useMutation({
+    mutationFn: (s: SessionSummary) => APIClient.auth.revokeSession(s.id),
+    onMutate: (s: SessionSummary) => setRevokingID(s.id),
+    onSettled: () => setRevokingID(null),
+    onSuccess: (_data, s) => {
+      void queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() });
+      toast.success(`Signed out of ${s.device}`);
+    },
+    onError: (err, s) => {
+      // A 404 means that device was already gone (swept, or signed out
+      // elsewhere): the list the member clicked was stale, so refresh it and
+      // say what happened rather than reporting a failure they can't act on.
+      void queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() });
+      if (err instanceof ApiError && err.status === 404) {
+        toast.success(`${s.device} was already signed out`);
+        return;
+      }
+      toast.error(apiMessage(err, `Couldn't sign out of ${s.device}.`));
+    },
+  });
+
+  const deviceList = sessions.data ?? [];
+  const otherDevices = otherDeviceCount(deviceList);
 
   if (me.isPending) {
     return <p className="acc-state">Loading your account…</p>;
@@ -246,9 +276,23 @@ export function AccountPage() {
           ))}
       </section>
 
-      {/* Sessions */}
+      {/* Sessions: the devices you're signed in on, then the two blunt levers.
+          Nothing pushes a session change, so the list refetches on focus. */}
       <section className="acc__section mg-rise" style={{ "--i": 3 } as CSSProperties}>
         <h2 className="acc__label">Sessions</h2>
+
+        {sessions.isPending ? (
+          <p className="empty">Loading your devices…</p>
+        ) : sessions.isError ? (
+          <p className="empty">Couldn&apos;t load your devices.</p>
+        ) : (
+          <SessionList
+            sessions={deviceList}
+            revokingID={revokingID}
+            onRevoke={(s) => revokeSession.mutate(s)}
+          />
+        )}
+
         <div className="acc__row">
           <span className="acc__rowicon">
             <LogOutIcon />
@@ -272,11 +316,7 @@ export function AccountPage() {
           </span>
           <div className="acc__rowtext">
             <div className="acc__rowtitle">Log out everywhere</div>
-            <div className="acc__rowmeta">
-              {actor.otherSessions > 0
-                ? `Signed in on ${otherDevicesLabel(actor.otherSessions)}.`
-                : "End every session for your account."}
-            </div>
+            <div className="acc__rowmeta">End every session for your account.</div>
           </div>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => openDialog("logout-all")}>
             Log out all
@@ -302,7 +342,7 @@ export function AccountPage() {
       )}
       {dialog === "logout-all" && (
         <LogoutEverywhereDialog
-          otherSessions={actor.otherSessions}
+          otherSessions={otherDevices}
           pending={logout.isPending}
           onConfirm={() => logout.mutate(true)}
           onClose={closeDialog}

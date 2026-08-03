@@ -511,6 +511,18 @@ closes the movie record.
   duotone is painted underneath as the instant first frame, so a slow TMDB CDN fetch
   never flashes the surface through (pure white in light mode) — then the real backdrop
   `<img>` crossfades in (`.moviemodal__hero__img` / `--loading` / `__shimmer`).
+  A film with **no backdrop** stands its poster in there instead, as a **wash**:
+  `blur(36px)`, with its source box reaching at least three blur standard deviations past
+  every edge (`--wash-overscan`). CSS blur samples transparent pixels beyond its
+  source; the overscan keeps that boundary outside the hero, and
+  `.moviemodal__hero` carries `overflow: hidden` to stop the enlarged layer painting
+  down over the rail (`.modal__scroll` clips at the surface, not at the hero). A deeper scrim
+  (`.moviemodal__hero--wash::after`) to answer how much brighter a blurred poster
+  reads than a photograph. The blur is deliberately far past soft-focus, because the
+  rail shows that same poster sharp a few pixels below and anything less reads as the
+  poster printed twice. The stand-in is fetched at `w185` (the blur discards the
+  detail a larger one would buy), and it only appears once the detail has confirmed
+  there is no backdrop coming; a poster that fails to load leaves the duotone.
 - **Skeletons:** the detail modal lazy-loads its heavy fields (overview, credits, cast
   row) from `GET /movies/:id`; while that's in flight they render `Skeleton`/`SkeletonText`
   shimmer blocks (`.skel`, reusing `mg-shimmer`) instead of popping in all at once —

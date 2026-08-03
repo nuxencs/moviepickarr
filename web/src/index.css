@@ -1170,12 +1170,29 @@
      backdrop, then a rail of poster + links out beside the reading column, then the
      cast strip. The width is what makes the rest work: the overview stops running
      narrow next to the poster and the cast strip shows nine cards before it scrolls. */
-  .moviemodal__hero { position: relative; height: clamp(260px, 38cqi, 420px); isolation: isolate; background-size: cover; background-position: center; }
+  /* Clipped because the wash source reaches past the box (see `--wash` below) and
+     nothing else would catch it: `.modal__scroll` clips at the surface, not here,
+     so the overspill would paint down over the rail and the title. */
+  .moviemodal__hero { position: relative; height: clamp(260px, 38cqi, 420px); isolation: isolate; overflow: hidden; background-size: cover; background-position: center; }
   /* Real backdrop crossfading in over the always-painted procedural duotone —
      the wide twin of the poster pattern (HeroBackdrop). The scrim ::after and
      close button sit above it; the img starts faded out and transitions in. */
   .moviemodal__hero__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transition: opacity var(--dur) var(--ease); }
   .moviemodal__hero--loading .moviemodal__hero__img { opacity: 0; }
+  /* Films with no backdrop stand their poster in here, and the rail shows that
+     same poster sharp just below. The blur has to be far past soft-focus or the
+     hero reads as a broken copy of the poster rather than as colour lifted off
+     it. CSS blur samples transparent pixels beyond its source, so the source
+     extends at least three standard deviations past every clipped edge. */
+  .moviemodal__hero__img--wash {
+    --wash-blur: 36px;
+    --wash-overscan: 144px;
+    inset: calc(0px - var(--wash-overscan));
+    width: calc(100% + var(--wash-overscan) + var(--wash-overscan));
+    max-width: none;
+    height: calc(100% + var(--wash-overscan) + var(--wash-overscan));
+    filter: blur(var(--wash-blur));
+  }
   .moviemodal__hero__shimmer {
     position: absolute; inset: 0; z-index: 2; pointer-events: none;
     background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);
@@ -1183,6 +1200,10 @@
   }
   @media (prefers-reduced-motion: reduce) { .moviemodal__hero__shimmer { animation: none; } }
   .moviemodal__hero::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(0deg, var(--surface), transparent 72%), linear-gradient(95deg, rgba(8,9,14,0.5), transparent 60%); }
+  /* The scrim above is tuned to a photograph. A blurred poster comes back
+     brighter and more saturated than one, so the wash gets a deeper left-hand
+     pass to hold the close button and the title's contrast. */
+  .moviemodal__hero--wash::after { background: linear-gradient(0deg, var(--surface), transparent 72%), linear-gradient(95deg, rgba(8,9,14,0.68), rgba(8,9,14,0.18) 60%); }
   /* Anchored to the surface (`.modal--capped` is the positioned ancestor), not to
      the hero, so it stays put while the hero scrolls under it. */
   .moviemodal__close { position: absolute; top: 12px; right: 12px; z-index: 4; background: rgba(8,9,14,0.45); color: #fff; backdrop-filter: blur(6px); }

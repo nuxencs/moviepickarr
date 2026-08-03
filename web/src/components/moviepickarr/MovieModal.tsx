@@ -73,10 +73,17 @@ function HeroBackdrop({
    *  duotone holds with its shimmer rather than resolving to a stand-in we may
    *  be about to replace. */
   pending,
+  /** What `src` actually is. A poster in the wide hero is a stand-in, and the
+   *  rail shows that same poster sharp a few pixels below: left as a photograph
+   *  it reads as the poster printed twice. Blurred past recognition it reads as
+   *  a colour field taken from the film, which is what the duotone was
+   *  approximating from the title hash all along. */
+  wash = false,
 }: {
   hue: number;
   src: string | null;
   pending: boolean;
+  wash?: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -92,16 +99,19 @@ function HeroBackdrop({
 
   const url = failed ? null : src;
   const loading = pending || (url !== null && !loaded);
+  // A poster that 404s leaves the duotone showing, and the duotone needs the
+  // ordinary scrim: the deepened one is there to answer the wash's brightness.
+  const washing = wash && url !== null;
 
   return (
     <div
-      className={`moviemodal__hero${loading ? " moviemodal__hero--loading" : ""}`}
+      className={`moviemodal__hero${loading ? " moviemodal__hero--loading" : ""}${washing ? " moviemodal__hero--wash" : ""}`}
       style={{ backgroundImage: backdropBg(hue) }}
     >
       {url && (
         <img
           ref={imgRef}
-          className="moviemodal__hero__img"
+          className={`moviemodal__hero__img${wash ? " moviemodal__hero__img--wash" : ""}`}
           src={url}
           alt=""
           onLoad={() => setLoaded(true)}
@@ -317,13 +327,14 @@ export function MovieModal({
   // wide hero for a moment, then swaps it for the real backdrop. The duotone
   // holds instead, and the poster only stands in once we know there is nothing
   // else coming.
-  const heroSrc = detail?.backdropPath
-    ? backdropUrl(detail.backdropPath)
-    : detailLoading
-      ? null
-      : m.posterPath
-        ? posterUrl(m.posterPath, "w500")
-        : null;
+  //
+  // The stand-in is asked for at w185: it is about to be blurred past the point
+  // where any detail in it survives, so a w500 would be paying for pixels the
+  // filter throws away.
+  const heroBackdrop = detail?.backdropPath ? backdropUrl(detail.backdropPath) : null;
+  const heroStandIn =
+    heroBackdrop || detailLoading || !m.posterPath ? null : posterUrl(m.posterPath, "w185");
+  const heroSrc = heroBackdrop ?? heroStandIn;
 
   return (
     // Capped (#177): the surface caps at the window height and scrolls inside
@@ -345,7 +356,12 @@ export function MovieModal({
           </button>
 
           <div className="modal__scroll">
-            <HeroBackdrop hue={hue} src={heroSrc} pending={detailLoading} />
+            <HeroBackdrop
+              hue={hue}
+              src={heroSrc}
+              pending={detailLoading}
+              wash={heroStandIn !== null}
+            />
 
             <div className="moviemodal__body">
               {/* The rail: identity, then the links out as reference material

@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 import { APIClient } from "@/api/APIClient";
-import { AuthKeys } from "@/api/query_keys";
+import { clearPrincipalCache } from "@/api/principalCache";
 
 import { apiMessage } from "@/components/moviepickarr/account/account";
 import { toast } from "@/components/ui/toast-api";
@@ -16,9 +16,9 @@ import { toast } from "@/components/ui/toast-api";
  * `all` picks the scope: false ends this device's session, true ends every
  * session on the account.
  *
- * removeQueries before navigate is load-bearing, not stylistic. The login page
- * reads the cached actor, so leaving it in place for even a frame lets it
- * decide the member is still signed in and bounce them back into the app.
+ * Clearing the principal cache before navigate is load-bearing, not stylistic.
+ * The login page reads the cached actor, and principal-owned query or mutation
+ * data must not survive into whoever signs in next on the same browser.
  *
  * A failed logout navigates nowhere and leaves the cache alone: the session
  * may well still be live, so the member stays where they are with the toast as
@@ -30,8 +30,8 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: (all: boolean) => APIClient.auth.logout(all),
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey: AuthKeys.me() });
+    onSuccess: async () => {
+      await clearPrincipalCache(queryClient);
       void navigate({ to: "/login" });
     },
     onError: (err) => toast.error(apiMessage(err, "Couldn't log out.")),

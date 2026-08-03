@@ -64,6 +64,8 @@ function Harness({ all }: { all: boolean }) {
 function renderHook({ all = false }: { all?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   client.setQueryData(AuthKeys.me(), actor);
+  client.setQueryData(AuthKeys.sessions(), [{ id: "old-device", device: "Safari on iPhone" }]);
+  client.setQueryData(["invites", "list"], [{ id: "old-invite" }]);
   navigate.mockImplementation(() => {
     cachedAtNavigate = client.getQueryData<MeResponse>(AuthKeys.me());
   });
@@ -120,6 +122,8 @@ describe("useLogout", () => {
     // so the login page can't see a stale session.
     expect(cachedAtNavigate).toBeUndefined();
     expect(client.getQueryData(AuthKeys.me())).toBeUndefined();
+    expect(client.getQueryData(AuthKeys.sessions())).toBeUndefined();
+    expect(client.getQueryData(["invites", "list"])).toBeUndefined();
   });
 
   it("stays put and toasts when the request fails", async () => {
@@ -131,6 +135,7 @@ describe("useLogout", () => {
     expect(navigate).not.toHaveBeenCalled();
     // The session may well still be live, so the cached actor stands.
     expect(client.getQueryData(AuthKeys.me())).toEqual(actor);
+    expect(client.getQueryData(AuthKeys.sessions())).toBeDefined();
     // The server's own wording, not the fallback: the two differ here so the
     // branch is actually pinned.
     expect(toastError).toHaveBeenCalledWith("Session store is unreachable.");

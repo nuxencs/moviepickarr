@@ -309,7 +309,7 @@ func TestLogin_Lockout(t *testing.T) {
 	id := e.seedMember(t, "Carol", "member")
 	e.seedLocalLogin(t, id, "carol", "the right password")
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		resp := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "carol", "password": "wrong"})
 		if resp.StatusCode != fiber.StatusUnauthorized {
 			t.Fatalf("attempt %d status = %d, want 401", i, resp.StatusCode)
@@ -458,7 +458,7 @@ func TestChangePassword_WrongCurrentAndNoLocalLogin(t *testing.T) {
 	// A member with a valid session but no local login → 409. Mint a session for
 	// a placeholder member directly (they cannot obtain one through login).
 	placeholder := e.seedMember(t, "Frank", "member")
-	raw, _, err := e.h.sessions.Mint(context.Background(), placeholder, nil, nil)
+	raw, _, err := e.h.sessions.Mint(context.Background(), placeholder, nil)
 	if err != nil {
 		t.Fatalf("mint placeholder session: %v", err)
 	}

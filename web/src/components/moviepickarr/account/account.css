@@ -1,6 +1,6 @@
 /* Account settings surface: a narrow centered column, sections stacked top to
-   bottom (You / Sign-in / Sessions), each a labelled block of rows. Reads like a
-   classic settings page: everything visible at once, linear to scan. Colors come
+   bottom (You / Sign-in / Signed-in devices). The current device stays visible;
+   other devices are disclosed on demand instead of filling the page. Colors come
    from the global tokens (index.css); everything is namespaced under .acc*.
    Ported from the locked prototype direction (proto/auth-login-claim, Variant A
    "Settings page"). */
@@ -78,11 +78,11 @@
   margin-top: 3px;
 }
 .acc-tag {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 2px 6px;
+  padding: 3px 7px;
   border-radius: 999px;
   line-height: 1;
   background: color-mix(in oklab, var(--ink) 10%, transparent);
@@ -148,19 +148,186 @@
   flex: none;
 }
 
-/* ---------- Sessions: the device list ----------
-   Rows reuse .acc__row, so a device sits at the same weight as the two levers
-   under it. The list is a <ul> for the semantics; the reset keeps it looking
-   like the stack of rows it is. */
-.acc-sessions {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
+/* ---------- Signed-in devices ----------
+   The current device is the stable surface. Other sessions sit behind one
+   native disclosure, so the common settings view reports their count without
+   painting a card for every browser. The expanded register is flat, with
+   dividers rather than nested surfaces. */
+.acc-devices {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
-/* The current device's marker sits where the other rows' button does, so the
-   right edge stays a single column. */
-.acc-sessions .acc-tag {
-  flex: none;
+.acc-device {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+.acc-device + .acc-device {
+  border-top: 1px solid var(--line);
+}
+.acc-device--current {
+  padding: 14px 16px;
+}
+.acc-device__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--ink-3);
+}
+.acc-device__icon--current {
+  color: var(--accent);
+}
+.acc-device__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.acc-device__text {
+  min-width: 0;
+}
+.acc-device__name {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 560;
+  overflow-wrap: anywhere;
+}
+.acc-device__meta {
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.acc-device__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.acc-device > .btn {
+  min-width: 92px;
+}
+.acc-devices__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 45px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.acc-devices__status > span {
+  margin-right: auto;
+}
+.acc-devices__others {
+  border-top: 1px solid var(--line);
+}
+.acc-devices__others > summary {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease);
+}
+.acc-devices__others > summary::-webkit-details-marker {
+  display: none;
+}
+.acc-devices__others > summary:hover {
+  background: var(--surface-2);
+}
+.acc-devices__others > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.acc-devices__others > summary strong,
+.acc-devices__others > summary small {
+  display: block;
+}
+.acc-devices__others > summary strong {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 560;
+}
+.acc-devices__others > summary small {
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.acc-devices__summaryicon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+.acc-devices__summaryicon svg,
+.acc-devices__chevron {
+  width: 18px;
+  height: 18px;
+}
+.acc-devices__chevron {
+  color: var(--ink-3);
+  transition: transform var(--dur-base) var(--ease);
+}
+.acc-devices__others[open] .acc-devices__chevron {
+  transform: rotate(180deg);
+}
+.acc-devicelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.acc-devices__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+@media (max-width: 480px) {
+  .acc-device {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+  .acc-device__actions,
+  .acc-device > .btn {
+    grid-column: 2;
+    justify-self: stretch;
+  }
+  .acc-device__actions .btn,
+  .acc-device > .btn {
+    flex: 1;
+  }
+  .acc-devices__status,
+  .acc-devices__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .acc-devices__status .btn,
+  .acc-devices__footer .btn {
+    width: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .acc-devices .btn,
+  .acc-devices__others > summary {
+    min-height: 44px;
+  }
 }
 
 /* ---------- loading / error state ---------- */

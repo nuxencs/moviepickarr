@@ -4,8 +4,8 @@ import { CheckCircle2Icon, KeyRoundIcon, LockIcon, TriangleAlertIcon, UserIcon }
 import { useState } from "react";
 
 import { APIClient, oidcClaimPath } from "@/api/APIClient";
+import { clearPrincipalCache } from "@/api/principalCache";
 import { ClaimQueryOptions } from "@/api/queries";
-import { AuthKeys } from "@/api/query_keys";
 
 import { AuthFrame } from "@/components/moviepickarr/auth/AuthFrame";
 import { claimTerminalFromError, validateClaimForm } from "@/components/moviepickarr/auth/authScreens";
@@ -79,7 +79,7 @@ function ClaimForm({ token, claim }: { token: string; claim: ClaimInfo }) {
     mutationFn: () =>
       APIClient.auth.claimPassword(token, password, reset ? undefined : username.trim()),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: AuthKeys.me() });
+      await clearPrincipalCache(queryClient);
       void navigate({ to: "/" });
     },
   });

@@ -18,6 +18,11 @@ import (
 // session cookies, invite claim URLs, and OIDC state/nonce/PKCE alike.
 const tokenBytes = 32
 
+// publicIDBytes is the entropy width for non-secret external handles. A
+// 128-bit random id is short enough for an API path and large enough that a
+// collision or useful guess is not realistic.
+const publicIDBytes = 16
+
 // Token pairs a freshly minted opaque token with the hash a table stores. Raw
 // goes to the caller (session cookie, claim URL, OIDC parameter) and is never
 // persisted; Hash is the only representation written to the database, so a
@@ -39,6 +44,17 @@ func GenerateToken() (Token, error) {
 	}
 	raw := base64.RawURLEncoding.EncodeToString(buf)
 	return Token{Raw: raw, Hash: HashToken(raw)}, nil
+}
+
+// GeneratePublicID returns an immutable, URL-safe handle for a stored object
+// whose integer row id must stay private. Unlike a credential token this value
+// is stored and returned to clients, so it has no paired hash.
+func GeneratePublicID() (string, error) {
+	buf := make([]byte, publicIDBytes)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // HashToken returns the storage hash of a raw token so an inbound cookie or

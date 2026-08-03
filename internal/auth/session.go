@@ -64,8 +64,12 @@ func NewSessionManager(repo domain.SessionRepo, opts ...Option) *SessionManager 
 // opaque token, stores its hash with a 90-day absolute cap, and returns the raw
 // token (for the cookie) plus its expiry. Login always mints fresh and never
 // adopts an inbound cookie, so session fixation is impossible by construction.
-func (m *SessionManager) Mint(ctx context.Context, userID int, userAgent, ip *string) (rawToken string, expiresAt time.Time, err error) {
+func (m *SessionManager) Mint(ctx context.Context, userID int, userAgent *string) (rawToken string, expiresAt time.Time, err error) {
 	tok, err := GenerateToken()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	publicID, err := GeneratePublicID()
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -74,12 +78,12 @@ func (m *SessionManager) Mint(ctx context.Context, userID int, userAgent, ip *st
 	expiresAt = now.Add(SessionAbsoluteTTL)
 
 	if err := m.repo.Create(ctx, domain.Session{
+		PublicID:   publicID,
 		UserID:     userID,
 		TokenHash:  tok.Hash,
 		ExpiresAt:  expiresAt,
 		LastSeenAt: now,
 		UserAgent:  userAgent,
-		IP:         ip,
 		CreatedAt:  now,
 	}); err != nil {
 		return "", time.Time{}, err
@@ -210,20 +214,20 @@ func (m *SessionManager) List(ctx context.Context, userID int, currentRawToken s
 	return views, nil
 }
 
-// RevokeByID revokes one of the member's own sessions (the per-device sign-out)
+// RevokeByPublicID revokes one of the member's own sessions (the per-device sign-out)
 // and reports whether that was the session carried by currentRawToken, so the
 // caller knows to clear the cookie. The member id is passed to the store as part
 // of the delete predicate, so revoking someone else's session is impossible
 // rather than merely refused. A row that isn't there (already gone, or never
 // theirs) returns ErrNotFound: the caller answers 404 instead of pretending it
 // revoked something.
-func (m *SessionManager) RevokeByID(ctx context.Context, userID int, id int64, currentRawToken string) (wasCurrent bool, err error) {
-	deletedHash, err := m.repo.DeleteByIDForUser(ctx, id, userID)
+func (m *SessionManager) RevokeByPublicID(ctx context.Context, userID int, publicID string, currentRawToken string) (wasCurrent bool, err error) {
+	deletedHash, err := m.repo.DeleteByPublicIDForUser(ctx, publicID, userID)
 	if err != nil {
 		return false, err
 	}
 	if deletedHash == "" {
-		return false, fmt.Errorf("%w: session %d", domain.ErrNotFound, id)
+		return false, fmt.Errorf("%w: session %s", domain.ErrNotFound, publicID)
 	}
 	return currentRawToken != "" && deletedHash == HashToken(currentRawToken), nil
 }

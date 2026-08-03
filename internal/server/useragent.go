@@ -49,12 +49,18 @@ func firstMatch(ua string, tokens []token) string {
 	return ""
 }
 
-// Edge and Opera carry Chrome's token, and Chrome carries Safari's, so the
-// impostors have to come before the originals.
+// Edge, Samsung Internet, and Opera carry Chrome's token, and Chrome carries
+// Safari's, so the impostors have to come before the originals.
 var browserTokens = []token{
+	{"EdgiOS/", "Edge"},
+	{"EdgA/", "Edge"},
 	{"Edg/", "Edge"},
+	{"SamsungBrowser/", "Samsung Internet"},
+	{"OPiOS/", "Opera"},
 	{"OPR/", "Opera"},
+	{"FxiOS/", "Firefox"},
 	{"Firefox/", "Firefox"},
+	{"CriOS/", "Chrome"},
 	{"Chrome/", "Chrome"},
 	{"Safari/", "Safari"},
 }

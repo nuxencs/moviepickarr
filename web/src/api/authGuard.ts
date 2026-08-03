@@ -13,11 +13,17 @@ import { ApiError } from "@/api/APIClient";
  * painted. A non-401 failure (network, 5xx) falls through so the page surfaces
  * its own load-error state instead of masquerading as logged-out.
  */
-export async function requireSession(fetchMe: () => Promise<unknown>): Promise<void> {
+type ClearPrincipal = () => void | Promise<void>;
+
+export async function requireSession(
+  fetchMe: () => Promise<unknown>,
+  clearPrincipal: ClearPrincipal = () => {},
+): Promise<void> {
   try {
     await fetchMe();
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
+      await clearPrincipal();
       throw redirect({ to: "/login" });
     }
   }
@@ -29,8 +35,19 @@ export async function requireSession(fetchMe: () => Promise<unknown>): Promise<v
  * ahead of a post-render redirect. Any /me failure (the logged-out case,
  * including the OIDC ?error= landing) falls through and the form renders.
  */
-export async function redirectIfSignedIn(fetchMe: () => Promise<unknown>): Promise<void> {
-  const me = await fetchMe().catch(() => null);
+export async function redirectIfSignedIn(
+  fetchMe: () => Promise<unknown>,
+  clearPrincipal: ClearPrincipal = () => {},
+): Promise<void> {
+  let me: unknown;
+  try {
+    me = await fetchMe();
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      await clearPrincipal();
+    }
+    return;
+  }
   if (me) {
     throw redirect({ to: "/" });
   }

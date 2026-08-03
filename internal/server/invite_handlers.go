@@ -2,8 +2,10 @@ package server
 
 import (
 	"errors"
+	"fmt"
 
 	"moviepickarr/internal/auth"
+	"moviepickarr/internal/domain"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -139,6 +141,84 @@ func (h *handler) handleRevokeInvite(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// inviteOverviewResponse is one row of the admin invites surface. status is the
+// server's word (open / expired), derived per read rather than stored, so the
+// client never re-decides expiry against a clock that may be off. issuedBy is
+// omitted when the invite has no recorded issuer, which the surface renders by
+// dropping the line rather than naming a system that didn't issue it. There is
+// no claim URL here and there never can be: only the token's hash is stored, so
+// an existing invite's link is unrecoverable by construction.
+type inviteOverviewResponse struct {
+	ID         int64  `json:"id"`
+	MemberID   int    `json:"memberId"`
+	MemberName string `json:"memberName"`
+	Status     string `json:"status"`
+	ExpiresAt  string `json:"expiresAt"`
+	IssuedAt   string `json:"issuedAt"`
+	IssuedBy   string `json:"issuedBy,omitempty"`
+}
+
+// handleListInvites returns the invites still worth an admin's attention
+// (admin only): one row per member who cannot yet log in, newest invite only,
+// each tagged open or expired. Its own read rather than a widening of the
+// roster, since the roster is per-member and this is per-invite.
+func (h *handler) handleListInvites(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+
+	summaries, err := h.invites.Overview(c.UserContext())
+	if err != nil {
+		return h.writeInternal(c, err, "listing invites failed")
+	}
+
+	rows := make([]inviteOverviewResponse, 0, len(summaries))
+	for _, s := range summaries {
+		row := inviteOverviewResponse{
+			ID:         s.ID,
+			MemberID:   s.UserID,
+			MemberName: s.MemberName,
+			Status:     s.Status,
+			ExpiresAt:  formatTime(&s.ExpiresAt),
+			IssuedAt:   formatTime(&s.CreatedAt),
+		}
+		if s.IssuedBy != nil {
+			row.IssuedBy = *s.IssuedBy
+		}
+		rows = append(rows, row)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(rows)
+}
+
+// handleDismissInvite clears one expired invite off the overview (admin). It is
+// addressed by invite id, not member id, because that is the one thing
+// DELETE /members/:memberID/invite cannot reach: the member-scoped revoke only
+// touches currently-valid invites, which a lapsed one by definition isn't.
+// Dismissing something already gone is a 404, not a silent no-op.
+func (h *handler) handleDismissInvite(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+	inviteID, err := resolveInviteID(c)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	if err := h.invites.Dismiss(c.UserContext(), inviteID); err != nil {
+		return writeError(c, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// resolveInviteID reads the :inviteID path parameter as a positive int64.
+func resolveInviteID(c *fiber.Ctx) (int64, error) {
+	if v, ok := parseInt(c.Params("inviteID")); ok {
+		return int64(v), nil
+	}
+	return 0, fmt.Errorf("%w: inviteID path parameter is required", domain.ErrInvalidInput)
 }
 
 // handleSelfServeLocalLogin is the authed credential-completeness path

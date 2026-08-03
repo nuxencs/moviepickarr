@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InviteSummary, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 // Carries the HTTP status alongside the human-readable message so callers can
 // branch on it (the login page shows the uniform banner only for a 401, and
@@ -297,6 +297,17 @@ export const APIClient = {
         // Reactivate an archived member and re-issue their claim link in one step.
         restore: (memberID: number) =>
             appClient.Post<InviteResult>(`api/v1/members/${memberID}/restore`),
+    },
+    // The admin invites overview: who still can't log in, and their newest
+    // outstanding invite. Issuing and revoking stay on `members` above, since
+    // both are addressed by member; only the dismiss needs an invite id, because
+    // the member-scoped revoke reaches valid invites only and a lapsed one is
+    // exactly what it can't touch. 403 on either is the "Admins only" signal.
+    invites: {
+        list: () => appClient.Get<InviteSummary[]>("api/v1/invites"),
+        // Clear one row off the overview. It is a revoke, so the invite is gone
+        // rather than hidden. 204; 404 when the row was already spent or gone.
+        dismiss: (inviteID: number) => appClient.Delete(`api/v1/invites/${inviteID}`),
     },
     // The Members board and its self-service movie actions. Reads hit /members
     // (the board's per-member pool + stash tiles); mutations hit /movies. Movie

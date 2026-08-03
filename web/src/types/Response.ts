@@ -123,6 +123,27 @@ export interface InviteResult {
     claimUrl: string;
 }
 
+// The two invite states the admin overview renders. Used and revoked invites
+// have no row: neither is actionable, and a revoked one is what Dismiss writes.
+export type InviteStatus = "open" | "expired";
+
+// One row of GET /invites: a member still waiting to set up a login, with their
+// newest outstanding invite. `status` is the server's word, derived per read
+// against its clock, so the surface never re-decides expiry locally. `issuedBy`
+// is absent when the invite has no recorded issuer (a seeded invite, or an admin
+// since deleted), and the line is dropped rather than inventing one. There is no
+// claim URL and there cannot be: only the token's hash is stored, so an existing
+// invite's link is gone for good and Regenerate is the only way to a new one.
+export interface InviteSummary {
+    id: number;
+    memberId: number;
+    memberName: string;
+    status: InviteStatus;
+    expiresAt: string;
+    issuedAt: string;
+    issuedBy?: string;
+}
+
 // Which of the two removal paths ran, so the surface can report "deleted" (gone,
 // name freed) vs "archived" (restorable, attribution kept) after the same action.
 export type RemoveOutcome = "deleted" | "archived";

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"moviepickarr/internal/auth"
 
@@ -386,5 +387,141 @@ func TestSelfServeLocalLogin_RequiresSession(t *testing.T) {
 		map[string]string{"username": "nobody", "password": "a good long password"})
 	if resp.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("unauth self-serve local-login = %d, want 401", resp.StatusCode)
+	}
+}
+
+// invitesOverview reads GET /invites as the given actor, asserting 200.
+func (e *authTestEnv) invitesOverview(t *testing.T, cookie string) []inviteOverviewResponse {
+	t.Helper()
+	resp := e.request(t, http.MethodGet, "/api/v1/invites", cookie, nil)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("invites overview status = %d, want 200", resp.StatusCode)
+	}
+	var rows []inviteOverviewResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		t.Fatalf("decode invites overview: %v", err)
+	}
+	return rows
+}
+
+// TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired is the surface's whole
+// contract in one walk: a member re-invited after their first link lapsed
+// appears once (the newest invite, open), a member never re-invited appears as
+// expired, and open leads expired. Both rows name the issuing admin.
+func TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+
+	benID, _ := e.createMember(t, adminCookie, "Ben")
+	cleoID, _ := e.createMember(t, adminCookie, "Cleo")
+
+	// Past the 7-day TTL: both first links have lapsed, and neither was revoked
+	// (Issue only revokes valid invites), so both rows are still on the table.
+	e.clk.t = e.clk.t.Add(auth.InviteTTL + time.Hour)
+
+	// Cleo is re-invited; Ben is left waiting on a dead link.
+	reissue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(cleoID)+"/invite", adminCookie, nil)
+	if reissue.StatusCode != fiber.StatusCreated {
+		t.Fatalf("reissue status = %d, want 201", reissue.StatusCode)
+	}
+
+	rows := e.invitesOverview(t, adminCookie)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v, want 2 (one per member)", rows)
+	}
+	if rows[0].MemberID != cleoID || rows[0].Status != auth.InviteOpen {
+		t.Fatalf("first row = %+v, want Cleo open", rows[0])
+	}
+	if rows[1].MemberID != benID || rows[1].Status != auth.InviteExpired {
+		t.Fatalf("second row = %+v, want Ben expired", rows[1])
+	}
+	if rows[0].MemberName != "Cleo" || rows[1].MemberName != "Ben" {
+		t.Fatalf("names = %q/%q, want Cleo/Ben", rows[0].MemberName, rows[1].MemberName)
+	}
+	for _, row := range rows {
+		if row.IssuedBy != "Admin" {
+			t.Fatalf("row %+v issuedBy = %q, want Admin", row, row.IssuedBy)
+		}
+		if row.ExpiresAt == "" || row.IssuedAt == "" {
+			t.Fatalf("row %+v is missing a timestamp", row)
+		}
+	}
+}
+
+// TestInvitesOverview_DropsMembersWhoCanLogIn is the self-clearing rule at the
+// HTTP seam: claiming the invite is what a member does, and the row goes with
+// it. No admin action is involved.
+func TestInvitesOverview_DropsMembersWhoCanLogIn(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	_, token := e.createMember(t, adminCookie, "Ben")
+
+	if rows := e.invitesOverview(t, adminCookie); len(rows) != 1 {
+		t.Fatalf("rows before claim = %+v, want 1", rows)
+	}
+
+	claim := e.request(t, http.MethodPost, "/api/v1/auth/claim/"+token+"/password", "",
+		map[string]string{"username": "ben", "password": "a good long password"})
+	if claim.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("password claim status = %d, want 204", claim.StatusCode)
+	}
+
+	if rows := e.invitesOverview(t, adminCookie); len(rows) != 0 {
+		t.Fatalf("rows after claim = %+v, want none", rows)
+	}
+}
+
+// TestDismissInvite_ClearsTheRowThenIs404 covers Dismiss end to end: it reaches
+// a lapsed invite (which the member-scoped revoke cannot), takes it off the
+// surface, and refuses a repeat rather than reporting a second success.
+func TestDismissInvite_ClearsTheRowThenIs404(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	memberID, _ := e.createMember(t, adminCookie, "Ben")
+	e.clk.t = e.clk.t.Add(auth.InviteTTL + time.Hour)
+
+	// The member-scoped revoke has nothing valid left to cancel, which is exactly
+	// why the expired row needs its own id.
+	stale := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
+	if stale.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("member-scoped revoke of a lapsed invite = %d, want 404", stale.StatusCode)
+	}
+
+	rows := e.invitesOverview(t, adminCookie)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %+v, want 1", rows)
+	}
+	path := "/api/v1/invites/" + strconv.FormatInt(rows[0].ID, 10)
+
+	dismiss := e.request(t, http.MethodDelete, path, adminCookie, nil)
+	if dismiss.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("dismiss status = %d, want 204", dismiss.StatusCode)
+	}
+	if left := e.invitesOverview(t, adminCookie); len(left) != 0 {
+		t.Fatalf("rows after dismiss = %+v, want none", left)
+	}
+
+	again := e.request(t, http.MethodDelete, path, adminCookie, nil)
+	if again.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("second dismiss status = %d, want 404", again.StatusCode)
+	}
+}
+
+// TestInvitesOverview_AdminOnly: the overview names every member still waiting
+// to set up a login and who invited them. Both routes are admin-gated.
+func TestInvitesOverview_AdminOnly(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	memberID, _ := e.createMember(t, adminCookie, "Ben")
+	e.seedLocalLogin(t, memberID, "ben", "a good long password")
+	memberCookie := e.login(t, "ben", "a good long password")
+
+	list := e.request(t, http.MethodGet, "/api/v1/invites", memberCookie, nil)
+	if list.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("member invites list = %d, want 403", list.StatusCode)
+	}
+	dismiss := e.request(t, http.MethodDelete, "/api/v1/invites/1", memberCookie, nil)
+	if dismiss.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("member dismiss = %d, want 403", dismiss.StatusCode)
 	}
 }

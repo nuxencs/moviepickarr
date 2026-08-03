@@ -463,6 +463,11 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// itself (create + first invite) lives in registerV1Routes with the roster.
 	v1.Post("/members/:memberID/invite", h.handleReissueInvite)
 	v1.Delete("/members/:memberID/invite", h.handleRevokeInvite)
+	// The admin invites overview and its per-row dismiss. Invite-addressed, not
+	// member-addressed: the member-scoped revoke above reaches only currently
+	// valid invites, so a lapsed row needs its own id to clear.
+	v1.Get("/invites", h.handleListInvites)
+	v1.Delete("/invites/:inviteID", h.handleDismissInvite)
 
 	// Authed OIDC surface: link (start the link intent for the session member) and
 	// unlink (self + admin), mounted only when a provider is configured. When off,

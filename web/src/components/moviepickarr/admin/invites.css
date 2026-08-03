@@ -1,0 +1,112 @@
+/* The admin invites section: who still can't log in, above the roster on the
+   same page. Namespaced .inv*, and deliberately NOT the roster's table dialect.
+   The roster is a scannable grid of many members across fixed columns; this is
+   a short list that is usually absent, whose rows carry two lines of prose (an
+   expiry and an attribution) rather than column values. Rows read as the
+   account page's device list does, because they are the same shape: an
+   identity, some state about it, one control. Tokens come from index.css. */
+
+.inv {
+  /* Matches .adm's horizontal padding so the two sections share one measure
+     down the page; the bottom is tighter because the roster follows it rather
+     than the page ending. */
+  padding: 0 4px 28px;
+}
+
+.inv-groups {
+  display: grid;
+  gap: 18px;
+}
+
+/* Subheading per group, the same shape as the roster's Archived subhead, so a
+   count beside a word means the same thing in both sections. */
+.inv-grouphead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* The group's count and the load-failure line. Deliberately own classes rather
+   than borrowing roster.css's .adm-count / .adm-state: those only reach this
+   section because RosterSection happens to be mounted on the same page and
+   imports that sheet, and this section can render without it. The count copies
+   roster's values so the two read identically side by side; the state line
+   does not, because roster's is a centered 48px table cell and this one is a
+   standalone line above the table. */
+.inv-count {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.inv-state {
+  margin: 0;
+  padding: 12px 0;
+  color: var(--ink-3);
+  font-size: 14px;
+}
+
+.inv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.inv-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.inv-rowtext {
+  flex: 1;
+  min-width: 0;
+}
+.inv-rowname {
+  font-size: 14.5px;
+  font-weight: 550;
+  color: var(--ink);
+}
+
+/* The two meta clauses. They sit on one line on a comfortable width and stack
+   on a phone, which is why they are separate spans with a rendered separator
+   rather than one pre-joined string: a joined "·" would strand mid-wrap. */
+.inv-rowmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+.inv-issued::before {
+  content: "·";
+  margin-right: 8px;
+}
+
+/* Below 640 the clauses own their own lines: the row has an avatar and a kebab
+   eating the width, and both clauses together overflow it. Stacked, the
+   separator becomes a dangling dot at the head of the second line, so it goes.
+   Stacking is a column flex, not `display: block` on the container — block
+   would leave the spans inline and butt them together with no separator at all
+   ("expires in 6 daysissued by Ada"). */
+@media (max-width: 640px) {
+  .inv-rowmeta {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .inv-issued::before {
+    content: none;
+  }
+}

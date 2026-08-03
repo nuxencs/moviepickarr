@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -45,6 +47,23 @@ type ClaimContext struct {
 type ClaimOptions struct {
 	Password bool
 	OIDC     bool
+}
+
+// The two invite states an admin can still act on, and the only two the
+// overview renders. Open is issued, unclaimed and not yet lapsed; Expired is
+// lapsed unclaimed. Used and revoked invites have no row: nothing about them is
+// actionable, and a revoked one is what Dismiss writes.
+const (
+	InviteOpen    = "open"
+	InviteExpired = "expired"
+)
+
+// InviteSummary is one row of the admin invites overview: the stored invite plus
+// the open/expired word derived from the manager's clock at read time. The word
+// is computed, never stored, the same way the claim path derives validity.
+type InviteSummary struct {
+	domain.InviteOverview
+	Status string
 }
 
 // ClaimResult reports the outcome of a password claim so the HTTP layer can
@@ -124,6 +143,63 @@ func (m *InviteManager) Revoke(ctx context.Context, userID int) error {
 	}
 	if n == 0 {
 		return fmt.Errorf("%w: no valid invite for member %d", domain.ErrNotFound, userID)
+	}
+	return nil
+}
+
+// Overview lists the invites an admin can still act on: one row per member who
+// is still waiting to set up a login, newest invite only, each tagged open or
+// expired against this manager's clock. Ordering is open before expired, then
+// soonest-to-lapse first inside Open and most-recently-lapsed first inside
+// Expired, so the row nearest needing attention leads each group.
+func (m *InviteManager) Overview(ctx context.Context) ([]InviteSummary, error) {
+	rows, err := m.repo.ListOutstanding(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	now := m.now()
+	summaries := make([]InviteSummary, 0, len(rows))
+	for _, row := range rows {
+		// Same predicate as the claim path's validity check (strict now < expiry),
+		// so a link that would still redeem always reads as Open here.
+		status := InviteExpired
+		if now.Before(row.ExpiresAt) {
+			status = InviteOpen
+		}
+		summaries = append(summaries, InviteSummary{InviteOverview: row, Status: status})
+	}
+
+	slices.SortFunc(summaries, func(a, b InviteSummary) int {
+		if a.Status != b.Status {
+			if a.Status == InviteOpen {
+				return -1
+			}
+			return 1
+		}
+		if a.ExpiresAt.Equal(b.ExpiresAt) {
+			return cmp.Compare(a.ID, b.ID)
+		}
+		if a.Status == InviteOpen {
+			return a.ExpiresAt.Compare(b.ExpiresAt)
+		}
+		return b.ExpiresAt.Compare(a.ExpiresAt)
+	})
+	return summaries, nil
+}
+
+// Dismiss clears one invite off the overview by row id, whatever its expiry. It
+// is a revoke: there is no separate hidden flag, so the dismissed row leaves the
+// list the same way a revoked one does and can never be resurrected. An id that
+// is already spent or gone returns a wrapped ErrNotFound (→404) rather than
+// reporting it cleared something.
+func (m *InviteManager) Dismiss(ctx context.Context, id int64) error {
+	n, err := m.repo.RevokeByID(ctx, id, m.now())
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: invite %d", domain.ErrNotFound, id)
 	}
 	return nil
 }

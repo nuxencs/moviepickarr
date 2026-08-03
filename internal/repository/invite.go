@@ -110,6 +110,98 @@ func (d *SqliteInviteRepository) FindContextByTokenHash(ctx context.Context, tok
 	return ic, nil
 }
 
+func (d *SqliteInviteRepository) ListOutstanding(ctx context.Context) ([]domain.InviteOverview, error) {
+	// "Outstanding" is unused and unrevoked, for an active member who still has
+	// no way in. Expiry is deliberately absent from the predicate: a lapsed
+	// invite is the Expired group, and dropping it here would leave the surface
+	// with nothing to dismiss.
+	//
+	// The two NOT EXISTS are the self-clearing rule. Issue never revokes an
+	// already-expired invite, so a member who set a password or signed in with
+	// SSO in the meantime would otherwise keep a dead row on the admin's screen
+	// forever.
+	//
+	// The id subquery is the one-row-per-member rule. Because Issue only revokes
+	// *valid* invites, a member re-invited after each lapse leaves an unrevoked
+	// row behind each time; without this they'd appear once per attempt. Newest
+	// is by created_at with the row id breaking ties, since created_at is only
+	// second-precise and two invites can share a second.
+	//
+	// It deliberately ranks over ALL of the member's invites, spent ones
+	// included, and lets the outer unused/unrevoked filter reject the winner.
+	// Ranking over only the outstanding rows would make an older lapsed invite
+	// resurface the moment the newest was revoked: an admin revoking Ben's open
+	// invite would watch Ben reappear under Expired, from a link that has been
+	// dead for weeks. The member's latest invite is the only one that describes
+	// where they stand.
+	query := `
+		SELECT
+			i.id,
+			i.user_id,
+			u.name,
+			i.expires_at,
+			i.created_at,
+			issuer.name
+		FROM invites i
+		JOIN users u ON u.id = i.user_id AND u.archived_at IS NULL
+		LEFT JOIN users issuer ON issuer.id = i.created_by
+		WHERE i.used_at IS NULL
+			AND i.revoked_at IS NULL
+			AND NOT EXISTS (SELECT 1 FROM local_accounts la WHERE la.user_id = i.user_id)
+			AND NOT EXISTS (SELECT 1 FROM oidc_identities oi WHERE oi.user_id = i.user_id)
+			AND i.id = (
+				SELECT i2.id
+				FROM invites i2
+				WHERE i2.user_id = i.user_id
+				ORDER BY i2.created_at DESC, i2.id DESC
+				LIMIT 1
+			)
+	`
+
+	rows, err := d.pool.Read.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	overviews := []domain.InviteOverview{}
+	for rows.Next() {
+		var o domain.InviteOverview
+		var expiresAt, createdAt int64
+		var issuedBy sql.NullString
+		if err := rows.Scan(&o.ID, &o.UserID, &o.MemberName, &expiresAt, &createdAt, &issuedBy); err != nil {
+			return nil, err
+		}
+		o.ExpiresAt = db.FromUnix(expiresAt)
+		o.CreatedAt = db.FromUnix(createdAt)
+		if issuedBy.Valid {
+			name := issuedBy.String
+			o.IssuedBy = &name
+		}
+		overviews = append(overviews, o)
+	}
+	return overviews, rows.Err()
+}
+
+func (d *SqliteInviteRepository) RevokeByID(ctx context.Context, id int64, revokedAt time.Time) (int64, error) {
+	// No expiry predicate: this is precisely the revoke that reaches a lapsed
+	// invite, which RevokeValidByUserID cannot. The used_at/revoked_at guards
+	// keep it to rows that are still outstanding, so dismissing twice affects
+	// nothing and a claimed invite keeps its history.
+	query := `
+		UPDATE invites
+		SET revoked_at = ?
+		WHERE id = ?
+			AND used_at IS NULL
+			AND revoked_at IS NULL
+	`
+	res, err := d.pool.Write.ExecContext(ctx, query, db.ToUnix(revokedAt), id)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (d *SqliteInviteRepository) MarkUsed(ctx context.Context, id int64, usedAt time.Time) error {
 	res, err := d.pool.Write.ExecContext(ctx,
 		"UPDATE invites SET used_at = ? WHERE id = ?", db.ToUnix(usedAt), id)

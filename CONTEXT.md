@@ -60,7 +60,27 @@ Binding a member to an SSO identity.
 
 **Invite**:
 A single-use, expiring link an admin sends so a member can set up their login.
+It ends in one of four states: open, used (claimed), revoked, or expired. Only
+open and expired are visible to an admin, because only they leave someone still
+waiting to get in. Only the link's hash is stored, so an issued link can never
+be shown a second time by anyone.
 _Avoid_: registration, signup
+
+**Open**:
+An invite that has been issued, not yet claimed, not revoked, and not past its
+expiry. The one state whose link still works.
+_Avoid_: active, pending, valid
+
+**Expired**:
+An invite whose window lapsed before anyone claimed it. Its link is dead, but
+the member is still waiting, which is why it stays on screen.
+_Avoid_: stale, lapsed (as a noun)
+
+**Dismiss**:
+An admin clearing an expired invite off the invites view. Implemented as a
+revoke, so the invite is genuinely gone rather than hidden: there is no
+dismissed-but-alive state.
+_Avoid_: hide, archive, ignore
 
 **Claim**:
 A member redeeming an invite to set a password and/or link SSO, turning a

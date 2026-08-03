@@ -84,6 +84,14 @@
   session → `204` + cookie) sit ahead of `requireSession`. `POST
   /auth/local-login` is the authed self-serve completeness path (first
   username+password for a member with no local login, `409` if one exists).
+  The same file holds the admin invites overview: `GET /invites` (one row per
+  member who still holds no credential, their newest outstanding invite, each
+  tagged `open` or `expired` server-side) and `DELETE /invites/:inviteID` (the
+  dismiss, `404` when the row is already spent or gone). Addressed by invite id
+  rather than member id, because the member-scoped revoke above reaches only
+  currently-valid invites and a lapsed one is exactly what it cannot touch. No
+  claim URL appears in either: only the token hash is stored, so an issued link
+  is unrecoverable and Regenerate is the sole path to a fresh one.
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
   `fullMovie` (detail payload: embeds `leanMovieTile` plus the film's client-visible
@@ -134,8 +142,12 @@
   deep module over the invite/claim flow: `Issue` (revoke-then-insert, enforcing
   one valid invite per member, 7-day `InviteTTL`), `Revoke`, `Validate`
   (time-derived state machine → `ClaimContext` or the `ErrInviteInvalid` /
-  `ErrInviteUsed` sentinels), and `ClaimPassword` (reuses `LocalAuth.SetLocalLogin`
-  for the placeholder/reset upsert, then consumes the invite). It shares the same
+  `ErrInviteUsed` sentinels), `ClaimPassword` (reuses `LocalAuth.SetLocalLogin`
+  for the placeholder/reset upsert, then consumes the invite), `Overview` (the
+  admin list: tags each outstanding row `InviteOpen`/`InviteExpired` off the
+  same clock and orders open-before-expired, most urgent first in each), and
+  `Dismiss` (revoke one row by id, `ErrNotFound` when nothing was outstanding).
+  It shares the same
   injectable clock so invite expiry is testable without sleeps; session mint and
   cookie handling stay in the HTTP layer. `oidc.go` is the `RelyingParty` deep
   module over the go-oidc/oauth2 protocol: `OIDCConfigFromEnv` (presence-derived
@@ -230,7 +242,7 @@
 - `internal/repository/session.go`: `sessions` repository (active-gated create / find-by-token-hash joined to the active member's live role / touch-last-seen / per-token, per-member, revoke-others and owner-scoped per-id deletes, the last returning the deleted token hash / live-sessions-for-member list, newest activity first / expiry sweep).
 - `internal/repository/local_account.go`: `local_accounts` repository (active-member find by NOCASE username / by user id, active-gated create and password/login-state writes, unique→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete) plus the active-gated `oidc_identities` presence read and `/me` member-identity join.
 - `internal/repository/oidc_identity.go`: `oidc_identities` repository (active-member issuer/subject and user-id reads, active-gated insert and login-snapshot update, collision→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete).
-- `internal/repository/invite.go`: `invites` repository (active-gated create and claim-context read, missing-or-archived→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, mark-used). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`).
+- `internal/repository/invite.go`: `invites` repository (active-gated create and claim-context read, missing-or-archived→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, revoke-by-id for the admin dismiss, mark-used, and the outstanding-invites list behind the admin overview). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`). The overview read deliberately omits the expiry clause (a lapsed invite is still outstanding), excludes members who hold a local login or a linked identity (so a dead row self-clears once they can get in), and keeps one row per member via an id subquery ordered `created_at DESC, id DESC`.
 - `internal/repository/admin_seed.go`: boot-only break-glass seed store. Its
   `SeedAdmin` operation resolves name matches, archive state, role, and
   local-login presence on one writer transaction. A hash-needed probe writes
@@ -322,8 +334,9 @@ always the session member, never a path id: member-scoped routes carry no
   stats / settings reads, `/tmdb/search`). `PUT`/`DELETE /movies/:movieID` and
   `/move` are **adder-only** (403 `not_adder`, no admin override). Draw / reveal /
   watch are **next-up-or-admin** (403 `not_next_up`). Member
-  create/delete/restore, pool-lock, local-login admin actions, and invite
-  issuance/revocation (`POST`/`DELETE /members/:memberID/invite`) are
+  create/delete/restore, pool-lock, local-login admin actions, invite
+  issuance/revocation (`POST`/`DELETE /members/:memberID/invite`) and the
+  invites overview (`GET /invites`, `DELETE /invites/:inviteID`) are
   **admin-only** (403 `admin_required`). The claim endpoints (`GET`/`POST /auth/claim/:token...`) and
   `POST /auth/login` are unauthenticated (no session yet); `POST
   /auth/local-login` is any-authenticated self-serve.

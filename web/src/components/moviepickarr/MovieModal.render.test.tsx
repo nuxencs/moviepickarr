@@ -351,6 +351,28 @@ describe("MovieModal hero", () => {
 
     expect(heroImg(dialog)?.src ?? "").toContain("poster.jpg");
   });
+
+  // The rail below the hero shows the same poster sharp, so a stand-in that
+  // reads as a photograph reads as the poster printed twice. The wash is what
+  // makes it a colour field instead: blurred past recognition, and asked for at
+  // a width that only a blur could get away with.
+  it("blurs the stand-in poster and asks for a small one", () => {
+    const { dialog } = renderModal({ detail: detailed({ backdropPath: undefined }) });
+
+    expect(heroImg(dialog)?.className).toContain("moviemodal__hero__img--wash");
+    expect(dialog.querySelector(".moviemodal__hero")?.className).toContain(
+      "moviemodal__hero--wash",
+    );
+    expect(heroImg(dialog)?.src ?? "").toContain("w185");
+  });
+
+  it("leaves a real backdrop sharp", async () => {
+    const { dialog } = renderModal({ detail: detailed() });
+
+    await vi.waitFor(() => expect(heroImg(dialog)?.src ?? "").toContain("backdrop.jpg"));
+    expect(heroImg(dialog)?.className).not.toContain("--wash");
+    expect(dialog.querySelector(".moviemodal__hero")?.className).not.toContain("--wash");
+  });
 });
 
 /* ------------------------------------------------------------

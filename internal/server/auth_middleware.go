@@ -73,7 +73,7 @@ func clearSessionCookie(c *fiber.Ctx) {
 // login path calls this after establishing identity; it never adopts an inbound
 // cookie, so a fixed token can't be promoted into an authenticated one.
 func (h *handler) issueSession(c *fiber.Ctx, memberID int) error {
-	rawToken, _, err := h.sessions.Mint(c.UserContext(), memberID, stringPtrOrNil(c.Get(fiber.HeaderUserAgent)), stringPtrOrNil(c.IP()))
+	rawToken, _, err := h.sessions.Mint(c.UserContext(), memberID, stringPtrOrNil(c.Get(fiber.HeaderUserAgent)))
 	if err != nil {
 		return err
 	}
@@ -185,8 +185,8 @@ func isSafeMethod(method string) bool {
 	}
 }
 
-// stringPtrOrNil returns nil for an empty string so an absent User-Agent or IP
-// lands as SQL NULL rather than an empty-string row.
+// stringPtrOrNil returns nil for an empty string so an absent User-Agent lands
+// as SQL NULL rather than an empty-string row.
 func stringPtrOrNil(s string) *string {
 	if s == "" {
 		return nil

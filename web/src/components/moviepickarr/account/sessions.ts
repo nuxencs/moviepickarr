@@ -7,16 +7,13 @@ import { timeAgo } from "@/lib/time";
 
 
 /**
- * The muted second line under a device: when it was last active, then the IP it
- * was last seen from. Either half can be missing (a session with no recorded IP,
- * an unparseable timestamp), so the parts are joined rather than templated.
+ * The muted second line under a device: when that session was last active.
+ * An unparseable timestamp produces no label rather than misleading copy.
  */
 export function sessionMeta(s: SessionSummary, now: number = Date.now()): string {
-  const parts: string[] = [];
   const active = timeAgo(s.lastSeenAt, now);
-  if (active) parts.push(active === "now" ? "active now" : `active ${active}`);
-  if (s.ip) parts.push(s.ip);
-  return parts.join(" · ");
+  if (!active) return "";
+  return active === "now" ? "active now" : `active ${active}`;
 }
 
 /**

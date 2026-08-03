@@ -258,8 +258,9 @@ export const APIClient = {
         sessions: () => appClient.Get<SessionSummary[]>("api/v1/auth/sessions"),
         // Sign one of your own devices out. 204; 404 when the session is already
         // gone or was never yours (the delete is scoped to the session member,
-        // so another member's id matches nothing).
-        revokeSession: (sessionID: number) => appClient.Delete(`api/v1/auth/sessions/${sessionID}`),
+        // so another member's public handle matches nothing).
+        revokeSession: (sessionID: string) =>
+            appClient.Delete(`api/v1/auth/sessions/${encodeRFC3986URIComponent(sessionID)}`),
     },
     // The admin roster surface. Reads the presence-derived roster and drives every
     // per-member admin action off the session actor (never a path id for the actor).

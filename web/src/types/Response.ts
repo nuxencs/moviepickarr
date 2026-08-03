@@ -164,13 +164,12 @@ export interface MeResponse {
 }
 
 // One live session from GET /auth/sessions: the member's own devices, never
-// anyone else's. `device` is derived server-side from the stored user agent
-// ("Safari on iPhone"); `current` marks the session making the request, which is
-// the one row that offers no sign-out. `ip` is omitted when none was recorded.
+// anyone else's. `id` is an immutable public handle, never the store row id.
+// `device` is derived server-side from the stored user agent
+// ("Safari on iPhone"); `current` marks the session making the request.
 export interface SessionSummary {
-    id: number;
+    id: string;
     device: string;
-    ip?: string;
     lastSeenAt: string;
     current: boolean;
 }

@@ -1,5 +1,5 @@
 import { isRedirect } from "@tanstack/react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/api/APIClient";
 import { redirectIfSignedIn, requireSession } from "@/api/authGuard";
@@ -25,8 +25,13 @@ const rejectsWith = (err: unknown) => () => Promise.reject(err);
 
 describe("requireSession (app-layout gate)", () => {
   it("redirects a 401 to /login instead of letting the page render", async () => {
+    const clearPrincipal = vi.fn();
     // The main-page bug: a dead session used to paint the chrome behind 401s.
-    await expectRedirect(requireSession(rejectsWith(new ApiError(401, "no session"))), "/login");
+    await expectRedirect(
+      requireSession(rejectsWith(new ApiError(401, "no session")), clearPrincipal),
+      "/login",
+    );
+    expect(clearPrincipal).toHaveBeenCalledOnce();
   });
 
   it("lets a live session through without redirecting", async () => {
@@ -34,9 +39,15 @@ describe("requireSession (app-layout gate)", () => {
   });
 
   it("falls through on a non-401 failure so the page shows its own error", async () => {
+    const clearPrincipal = vi.fn();
     // A 5xx / network error is a genuine load failure, not a logged-out state.
-    await expect(requireSession(rejectsWith(new ApiError(500, "boom")))).resolves.toBeUndefined();
-    await expect(requireSession(rejectsWith(new Error("network")))).resolves.toBeUndefined();
+    await expect(
+      requireSession(rejectsWith(new ApiError(500, "boom")), clearPrincipal),
+    ).resolves.toBeUndefined();
+    await expect(
+      requireSession(rejectsWith(new Error("network")), clearPrincipal),
+    ).resolves.toBeUndefined();
+    expect(clearPrincipal).not.toHaveBeenCalled();
   });
 });
 
@@ -47,10 +58,18 @@ describe("redirectIfSignedIn (login gate)", () => {
   });
 
   it("shows the form (no redirect) when not signed in", async () => {
-    await expect(redirectIfSignedIn(rejectsWith(new ApiError(401, "no session")))).resolves.toBeUndefined();
+    const clearPrincipal = vi.fn();
+    await expect(
+      redirectIfSignedIn(rejectsWith(new ApiError(401, "no session")), clearPrincipal),
+    ).resolves.toBeUndefined();
+    expect(clearPrincipal).toHaveBeenCalledOnce();
   });
 
   it("shows the form when /me fails for any other reason", async () => {
-    await expect(redirectIfSignedIn(rejectsWith(new Error("network")))).resolves.toBeUndefined();
+    const clearPrincipal = vi.fn();
+    await expect(
+      redirectIfSignedIn(rejectsWith(new Error("network")), clearPrincipal),
+    ).resolves.toBeUndefined();
+    expect(clearPrincipal).not.toHaveBeenCalled();
   });
 });

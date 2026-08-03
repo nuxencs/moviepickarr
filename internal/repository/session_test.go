@@ -36,6 +36,7 @@ func setupSessionRepo(t *testing.T) (context.Context, *SqliteSessionRepository, 
 func mustCreateSession(t *testing.T, ctx context.Context, repo *SqliteSessionRepository, hash string, userID int, expiresAt, lastSeen time.Time) {
 	t.Helper()
 	err := repo.Create(ctx, domain.Session{
+		PublicID:   "public-" + hash,
 		TokenHash:  hash,
 		UserID:     userID,
 		ExpiresAt:  expiresAt,
@@ -119,6 +120,7 @@ func TestSessionRepo_CreateRejectsArchivedMember(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	err = sessions.Create(ctx, domain.Session{
+		PublicID:   "public-a",
 		TokenHash:  "hash-a",
 		UserID:     alice.ID,
 		ExpiresAt:  now.Add(24 * time.Hour),
@@ -239,10 +241,9 @@ func TestSessionRepo_ListLiveCarriesDeviceFields(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	ua := "Mozilla/5.0 (Macintosh) Chrome/126.0.0.0"
-	ip := "192.168.1.40"
 	if err := sessions.Create(ctx, domain.Session{
-		TokenHash: "a1", UserID: alice.ID, ExpiresAt: now.Add(24 * time.Hour),
-		LastSeenAt: now, CreatedAt: now.Add(-time.Hour), UserAgent: &ua, IP: &ip,
+		PublicID: "public-a1", TokenHash: "a1", UserID: alice.ID, ExpiresAt: now.Add(24 * time.Hour),
+		LastSeenAt: now, CreatedAt: now.Add(-time.Hour), UserAgent: &ua,
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -260,18 +261,15 @@ func TestSessionRepo_ListLiveCarriesDeviceFields(t *testing.T) {
 	if live[0].UserAgent == nil || *live[0].UserAgent != ua {
 		t.Errorf("user agent = %v, want %q", live[0].UserAgent, ua)
 	}
-	if live[0].IP == nil || *live[0].IP != ip {
-		t.Errorf("ip = %v, want %q", live[0].IP, ip)
-	}
 	if !live[0].CreatedAt.Equal(now.Add(-time.Hour)) {
 		t.Errorf("created at = %v, want %v", live[0].CreatedAt, now.Add(-time.Hour))
 	}
-	if live[1].UserAgent != nil || live[1].IP != nil {
-		t.Errorf("missing agent/ip scanned as %v/%v, want nil", live[1].UserAgent, live[1].IP)
+	if live[1].UserAgent != nil {
+		t.Errorf("missing agent scanned as %v, want nil", live[1].UserAgent)
 	}
 }
 
-func TestSessionRepo_DeleteByIDForUserIsScopedToOwner(t *testing.T) {
+func TestSessionRepo_DeleteByPublicIDForUserIsScopedToOwner(t *testing.T) {
 	ctx, sessions, users, _ := setupSessionRepo(t)
 	alice, _ := users.Create(ctx, "Alice")
 	bob, _ := users.Create(ctx, "Bob")
@@ -285,10 +283,10 @@ func TestSessionRepo_DeleteByIDForUserIsScopedToOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list live: %v", err)
 	}
-	bobSessionID := live[0].ID
+	bobSessionID := live[0].PublicID
 
-	// Alice aiming at Bob's row id removes nothing and reports nothing removed.
-	hash, err := sessions.DeleteByIDForUser(ctx, bobSessionID, alice.ID)
+	// Alice aiming at Bob's public handle removes nothing and reports nothing removed.
+	hash, err := sessions.DeleteByPublicIDForUser(ctx, bobSessionID, alice.ID)
 	if err != nil {
 		t.Fatalf("delete another member's session: %v", err)
 	}
@@ -300,7 +298,7 @@ func TestSessionRepo_DeleteByIDForUserIsScopedToOwner(t *testing.T) {
 	}
 
 	// Its owner removes it, and learns which row went.
-	hash, err = sessions.DeleteByIDForUser(ctx, bobSessionID, bob.ID)
+	hash, err = sessions.DeleteByPublicIDForUser(ctx, bobSessionID, bob.ID)
 	if err != nil {
 		t.Fatalf("delete own session: %v", err)
 	}
@@ -309,6 +307,47 @@ func TestSessionRepo_DeleteByIDForUserIsScopedToOwner(t *testing.T) {
 	}
 	if _, err := sessions.FindByTokenHash(ctx, "b1"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("own session survived the delete")
+	}
+}
+
+func TestSessionRepo_StalePublicIDCannotDeleteAReusedRowID(t *testing.T) {
+	ctx, sessions, users, _ := setupSessionRepo(t)
+	alice, _ := users.Create(ctx, "Alice")
+	now := time.Now().UTC().Truncate(time.Second)
+	expires := now.Add(90 * 24 * time.Hour)
+
+	mustCreateSession(t, ctx, sessions, "old", alice.ID, expires, now)
+	oldRows, err := sessions.ListLiveByUserID(ctx, alice.ID, now, now.Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("list old session: %v", err)
+	}
+	oldRowID := oldRows[0].ID
+	stalePublicID := oldRows[0].PublicID
+	if _, err := sessions.DeleteByPublicIDForUser(ctx, stalePublicID, alice.ID); err != nil {
+		t.Fatalf("delete old session: %v", err)
+	}
+
+	mustCreateSession(t, ctx, sessions, "new", alice.ID, expires, now)
+	newRows, err := sessions.ListLiveByUserID(ctx, alice.ID, now, now.Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("list new session: %v", err)
+	}
+	if newRows[0].ID != oldRowID {
+		t.Fatalf("internal row id = %d, want reused id %d for the regression setup", newRows[0].ID, oldRowID)
+	}
+	if newRows[0].PublicID == stalePublicID {
+		t.Fatal("new session reused the deleted public id")
+	}
+
+	deleted, err := sessions.DeleteByPublicIDForUser(ctx, stalePublicID, alice.ID)
+	if err != nil {
+		t.Fatalf("stale delete: %v", err)
+	}
+	if deleted != "" {
+		t.Fatalf("stale delete removed token hash %q", deleted)
+	}
+	if _, err := sessions.FindByTokenHash(ctx, "new"); err != nil {
+		t.Fatalf("new session did not survive stale delete: %v", err)
 	}
 }
 

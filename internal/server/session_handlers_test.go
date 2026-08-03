@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -56,10 +55,10 @@ func (e *authTestEnv) sessions(t *testing.T, cookie string) []sessionResponse {
 	return rows
 }
 
-// sessionID finds the id of the caller's current device (current=true) or of
-// their other one (current=false). Every revoke test needs a row id, and the
-// list is the only place a client can learn one.
-func (e *authTestEnv) sessionID(t *testing.T, cookie string, current bool) int64 {
+// sessionID finds the public handle of the caller's current device
+// (current=true) or another one (current=false). The list is the only place a
+// client can learn one.
+func (e *authTestEnv) sessionID(t *testing.T, cookie string, current bool) string {
 	t.Helper()
 	for _, r := range e.sessions(t, cookie) {
 		if r.Current == current {
@@ -67,7 +66,7 @@ func (e *authTestEnv) sessionID(t *testing.T, cookie string, current bool) int64
 		}
 	}
 	t.Fatalf("no session with current=%v in the list", current)
-	return 0
+	return ""
 }
 
 func TestListSessions_DescribesOwnDevicesOnly(t *testing.T) {
@@ -121,7 +120,7 @@ func TestRevokeSession_EndsThatDeviceOnly(t *testing.T) {
 
 	phoneID := e.sessionID(t, laptop, false)
 
-	resp := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+strconv.FormatInt(phoneID, 10), laptop, nil)
+	resp := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+phoneID, laptop, nil)
 	if resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("revoke status = %d, want 204", resp.StatusCode)
 	}
@@ -142,9 +141,41 @@ func TestRevokeSession_EndsThatDeviceOnly(t *testing.T) {
 
 	// The list the member acted on can be stale; a second revoke says so rather
 	// than reporting a success that revoked nothing.
-	again := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+strconv.FormatInt(phoneID, 10), laptop, nil)
+	again := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+phoneID, laptop, nil)
 	if again.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("re-revoke status = %d, want 404", again.StatusCode)
+	}
+}
+
+func TestRevokeSession_StaleHandleCannotReachANewerLogin(t *testing.T) {
+	e := setupAuthApp(t)
+	id := e.seedMember(t, "Gwen", "member")
+	e.seedLocalLogin(t, id, "gwen", "correct horse battery")
+
+	laptop := e.loginFrom(t, "gwen", "correct horse battery", chromeMacUA)
+	oldPhone := e.loginFrom(t, "gwen", "correct horse battery", safariPhoneUA)
+	staleID := e.sessionID(t, laptop, false)
+
+	first := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+staleID, laptop, nil)
+	if first.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("first revoke status = %d, want 204", first.StatusCode)
+	}
+	if me := e.request(t, http.MethodGet, "/api/v1/auth/me", oldPhone, nil); me.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("old phone me = %d, want 401", me.StatusCode)
+	}
+
+	newPhone := e.loginFrom(t, "gwen", "correct horse battery", safariPhoneUA)
+	newID := e.sessionID(t, laptop, false)
+	if newID == staleID {
+		t.Fatal("new login reused a public session handle")
+	}
+
+	stale := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+staleID, laptop, nil)
+	if stale.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("stale revoke status = %d, want 404", stale.StatusCode)
+	}
+	if me := e.request(t, http.MethodGet, "/api/v1/auth/me", newPhone, nil); me.StatusCode != fiber.StatusOK {
+		t.Fatalf("new phone me after stale revoke = %d, want 200", me.StatusCode)
 	}
 }
 
@@ -161,7 +192,7 @@ func TestRevokeSession_AnotherMembersSessionIsUnreachable(t *testing.T) {
 
 	gwenSessionID := e.sessionID(t, gwenCookie, true)
 
-	resp := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+strconv.FormatInt(gwenSessionID, 10), halCookie, nil)
+	resp := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+gwenSessionID, halCookie, nil)
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("revoking another member's session = %d, want 404", resp.StatusCode)
 	}
@@ -178,7 +209,7 @@ func TestRevokeSession_CurrentDeviceClearsTheCookie(t *testing.T) {
 	laptop := e.loginFrom(t, "gwen", "correct horse battery", chromeMacUA)
 	currentID := e.sessionID(t, laptop, true)
 
-	resp := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+strconv.FormatInt(currentID, 10), laptop, nil)
+	resp := e.request(t, http.MethodDelete, "/api/v1/auth/sessions/"+currentID, laptop, nil)
 	if resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("revoke current status = %d, want 204", resp.StatusCode)
 	}

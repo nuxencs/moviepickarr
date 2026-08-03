@@ -73,7 +73,7 @@ func (e *userRemoveEnv) seedLogin(t *testing.T, userID int, username string) {
 		t.Fatalf("seed oidc identity: %v", err)
 	}
 	if err := e.sessions.Create(e.ctx, domain.Session{
-		UserID: userID, TokenHash: "sess-" + username,
+		PublicID: "public-" + username, UserID: userID, TokenHash: "sess-" + username,
 		ExpiresAt: now.Add(24 * time.Hour), LastSeenAt: now, CreatedAt: now,
 	}); err != nil {
 		t.Fatalf("seed session: %v", err)
@@ -111,7 +111,7 @@ func (e *userRemoveEnv) seedResidualAuthRows(t *testing.T, userID int, suffix st
 	}{
 		{"INSERT INTO local_accounts (user_id, username, password_hash) VALUES (?, ?, 'hash')", []any{userID, "login-" + suffix}},
 		{"INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (?, 'https://idp.test', ?)", []any{userID, "subject-" + suffix}},
-		{"INSERT INTO sessions (user_id, token_hash, expires_at, last_seen_at) VALUES (?, ?, ?, ?)", []any{userID, "session-" + suffix, db.ToUnix(now.Add(time.Hour)), db.ToUnix(now)}},
+		{"INSERT INTO sessions (public_id, user_id, token_hash, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)", []any{"public-" + suffix, userID, "session-" + suffix, db.ToUnix(now.Add(time.Hour)), db.ToUnix(now)}},
 		{"INSERT INTO invites (user_id, token_hash, expires_at) VALUES (?, ?, ?)", []any{userID, "invite-" + suffix, db.ToUnix(now.Add(time.Hour))}},
 	}
 	for _, stmt := range stmts {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { KeyRoundIcon, LinkIcon, LogOutIcon, MonitorSmartphoneIcon, UnlinkIcon } from "lucide-react";
+import { ChevronDownIcon, KeyRoundIcon, LinkIcon, LogOutIcon, MonitorSmartphoneIcon, UnlinkIcon } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { APIClient, ApiError, oidcLinkPath } from "@/api/APIClient";
@@ -19,8 +19,8 @@ import {
   SetPasswordDialog,
   UnlinkGuardDialog,
 } from "@/components/moviepickarr/account/AccountOverlays";
-import { SessionList } from "@/components/moviepickarr/account/SessionList";
-import { otherDeviceCount } from "@/components/moviepickarr/account/sessions";
+import { DeviceIcon, SessionList } from "@/components/moviepickarr/account/SessionList";
+import { otherDeviceCount, sessionMeta } from "@/components/moviepickarr/account/sessions";
 import { Avatar } from "@/components/moviepickarr/Bits";
 import { toast } from "@/components/ui/toast-api";
 
@@ -82,9 +82,12 @@ export function AccountPage() {
   const changePassword = useMutation({
     mutationFn: ({ current, next }: { current: string; next: string }) =>
       APIClient.auth.changePassword(current, next),
-    onSuccess: () => {
+    onSuccess: async () => {
       closeDialog();
-      void refreshMe();
+      await Promise.all([
+        refreshMe(),
+        queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() }),
+      ]);
       toast.success("Password changed. Your other devices were signed out.");
     },
     onError: (err) => {
@@ -132,20 +135,20 @@ export function AccountPage() {
   const logout = useLogout();
 
   const sessions = useQuery(SessionsQueryOptions());
-  const [revokingID, setRevokingID] = useState<number | null>(null);
+  const [revokingID, setRevokingID] = useState<string | null>(null);
   const revokeSession = useMutation({
     mutationFn: (s: SessionSummary) => APIClient.auth.revokeSession(s.id),
     onMutate: (s: SessionSummary) => setRevokingID(s.id),
     onSettled: () => setRevokingID(null),
-    onSuccess: (_data, s) => {
-      void queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() });
+    onSuccess: async (_data, s) => {
+      await queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() });
       toast.success(`Signed out of ${s.device}`);
     },
-    onError: (err, s) => {
+    onError: async (err, s) => {
       // A 404 means that device was already gone (swept, or signed out
       // elsewhere): the list the member clicked was stale, so refresh it and
       // say what happened rather than reporting a failure they can't act on.
-      void queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() });
+      await queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() });
       if (err instanceof ApiError && err.status === 404) {
         toast.success(`${s.device} was already signed out`);
         return;
@@ -155,7 +158,10 @@ export function AccountPage() {
   });
 
   const deviceList = sessions.data ?? [];
+  const currentDevice = deviceList.find((session) => session.current);
+  const remoteDevices = deviceList.filter((session) => !session.current);
   const otherDevices = otherDeviceCount(deviceList);
+  const sessionActionsBusy = logout.isPending || revokeSession.isPending;
 
   if (me.isPending) {
     return <p className="acc-state">Loading your account…</p>;
@@ -276,51 +282,92 @@ export function AccountPage() {
           ))}
       </section>
 
-      {/* Sessions: the devices you're signed in on, then the two blunt levers.
-          Nothing pushes a session change, so the list refetches on focus. */}
+      {/* The current device stays visible. Other devices are progressive
+          disclosure: the count is enough for the common case, while the full
+          revoke register appears only when the member chooses to manage it. */}
       <section className="acc__section mg-rise" style={{ "--i": 3 } as CSSProperties}>
-        <h2 className="acc__label">Sessions</h2>
+        <h2 className="acc__label">Signed-in devices</h2>
 
-        {sessions.isPending ? (
-          <p className="empty">Loading your devices…</p>
-        ) : sessions.isError ? (
-          <p className="empty">Couldn&apos;t load your devices.</p>
-        ) : (
-          <SessionList
-            sessions={deviceList}
-            revokingID={revokingID}
-            onRevoke={(s) => revokeSession.mutate(s)}
-          />
-        )}
-
-        <div className="acc__row">
-          <span className="acc__rowicon">
-            <LogOutIcon />
-          </span>
-          <div className="acc__rowtext">
-            <div className="acc__rowtitle">Log out</div>
-            <div className="acc__rowmeta">Sign out on this device.</div>
-          </div>
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => logout.mutate(false)}
-            disabled={logout.isPending}
+        <div className="acc-devices">
+          <div
+            className="acc-device acc-device--current"
+            aria-busy={logout.isPending || undefined}
           >
-            Log out
-          </button>
-        </div>
-        <div className="acc__row">
-          <span className="acc__rowicon">
-            <MonitorSmartphoneIcon />
-          </span>
-          <div className="acc__rowtext">
-            <div className="acc__rowtitle">Log out everywhere</div>
-            <div className="acc__rowmeta">End every session for your account.</div>
+            <span className="acc-device__icon acc-device__icon--current">
+              {currentDevice ? <DeviceIcon device={currentDevice.device} /> : <MonitorSmartphoneIcon />}
+            </span>
+            <div className="acc-device__text">
+              <div className="acc-device__name">{currentDevice?.device ?? "This device"}</div>
+              {currentDevice && <div className="acc-device__meta">{sessionMeta(currentDevice)}</div>}
+            </div>
+            <div className="acc-device__actions">
+              <span className="acc-tag">This device</span>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                aria-label={logout.isPending ? "Logging out of this device" : "Log out this device"}
+                onClick={() => logout.mutate(false)}
+                disabled={sessionActionsBusy}
+              >
+                <LogOutIcon />
+                {logout.isPending ? "Logging out…" : "Log out"}
+              </button>
+            </div>
           </div>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => openDialog("logout-all")}>
-            Log out all
-          </button>
+
+          {sessions.isPending && (
+            <div className="acc-devices__status" role="status">Loading other devices…</div>
+          )}
+          {sessions.isError && (
+            <div className="acc-devices__status" role="alert">
+              <span>Couldn&apos;t load other devices.</span>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => void sessions.refetch()}>
+                Retry
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => openDialog("logout-all")}
+                disabled={sessionActionsBusy}
+              >
+                Log out everywhere
+              </button>
+            </div>
+          )}
+
+          {!sessions.isPending && !sessions.isError && otherDevices === 0 && (
+            <div className="acc-devices__status">No other devices are signed in.</div>
+          )}
+
+          {!sessions.isPending && !sessions.isError && otherDevices > 0 && (
+            <details className="acc-devices__others">
+              <summary>
+                <span className="acc-devices__summaryicon"><MonitorSmartphoneIcon /></span>
+                <span>
+                  <strong>{otherDevices === 1 ? "1 other device" : `${otherDevices} other devices`}</strong>
+                  <small>Review or sign out devices you no longer use.</small>
+                </span>
+                <ChevronDownIcon className="acc-devices__chevron" />
+              </summary>
+              <SessionList
+                sessions={remoteDevices}
+                revokingID={revokingID}
+                disabled={logout.isPending}
+                onRevoke={(s) => revokeSession.mutate(s)}
+              />
+              <div className="acc-devices__footer">
+                <span>Don&apos;t recognize a device?</span>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => openDialog("logout-all")}
+                  disabled={sessionActionsBusy}
+                >
+                  Log out everywhere
+                </button>
+              </div>
+            </details>
+          )}
         </div>
       </section>
 

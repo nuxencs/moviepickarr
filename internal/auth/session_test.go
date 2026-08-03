@@ -81,9 +81,9 @@ func (f *fakeSessionRepo) DeleteOthersByUserID(_ context.Context, userID int, ke
 	return n, nil
 }
 
-func (f *fakeSessionRepo) DeleteByIDForUser(_ context.Context, id int64, userID int) (string, error) {
+func (f *fakeSessionRepo) DeleteByPublicIDForUser(_ context.Context, publicID string, userID int) (string, error) {
 	for h, as := range f.rows {
-		if as.ID == id && as.UserID == userID {
+		if as.PublicID == publicID && as.UserID == userID {
 			delete(f.rows, h)
 			return h, nil
 		}
@@ -127,7 +127,7 @@ func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
 func mintFor(t *testing.T, m *SessionManager, userID int) string {
 	t.Helper()
-	raw, _, err := m.Mint(context.Background(), userID, nil, nil)
+	raw, _, err := m.Mint(context.Background(), userID, nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestMint_StoresHashNotRawAndSetsAbsoluteCap(t *testing.T) {
 	clk := &fakeClock{t: base}
 	m := NewSessionManager(repo, WithClock(clk.now))
 
-	raw, expiresAt, err := m.Mint(context.Background(), 7, nil, nil)
+	raw, expiresAt, err := m.Mint(context.Background(), 7, nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -156,6 +156,9 @@ func TestMint_StoresHashNotRawAndSetsAbsoluteCap(t *testing.T) {
 	}
 	if stored.UserID != 7 {
 		t.Fatalf("stored user id = %d, want 7", stored.UserID)
+	}
+	if stored.PublicID == "" {
+		t.Fatal("stored public id is empty")
 	}
 	if want := base.Add(SessionAbsoluteTTL); !expiresAt.Equal(want) {
 		t.Fatalf("expiresAt = %v, want %v", expiresAt, want)
@@ -442,7 +445,7 @@ func TestList_NoCurrentTokenFlagsNothing(t *testing.T) {
 	}
 }
 
-func TestRevokeByID_ScopedToOwner(t *testing.T) {
+func TestRevokeByPublicID_ScopedToOwner(t *testing.T) {
 	repo := newFakeSessionRepo()
 	clk := &fakeClock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	m := NewSessionManager(repo, WithClock(clk.now))
@@ -456,18 +459,18 @@ func TestRevokeByID_ScopedToOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	var otherID, currentID int64
+	var otherID, currentID string
 	for _, v := range views {
 		if v.TokenHash == HashToken(other) {
-			otherID = v.ID
+			otherID = v.PublicID
 		}
 		if v.Current {
-			currentID = v.ID
+			currentID = v.PublicID
 		}
 	}
 
 	// Revoking another of your own devices leaves this one signed in.
-	wasCurrent, err := m.RevokeByID(ctx, 1, otherID, current)
+	wasCurrent, err := m.RevokeByPublicID(ctx, 1, otherID, current)
 	if err != nil {
 		t.Fatalf("revoke own other session: %v", err)
 	}
@@ -481,9 +484,9 @@ func TestRevokeByID_ScopedToOwner(t *testing.T) {
 		t.Error("revoking another device closed the current one")
 	}
 
-	// Someone else's session id matches nothing: not refused, unreachable.
-	strangerID := repo.rows[HashToken(stranger)].ID
-	if _, err := m.RevokeByID(ctx, 1, strangerID, current); !errors.Is(err, domain.ErrNotFound) {
+	// Someone else's session handle matches nothing: not refused, unreachable.
+	strangerID := repo.rows[HashToken(stranger)].PublicID
+	if _, err := m.RevokeByPublicID(ctx, 1, strangerID, current); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("revoking another member's session = %v, want ErrNotFound", err)
 	}
 	if _, ok := repo.rows[HashToken(stranger)]; !ok {
@@ -491,12 +494,12 @@ func TestRevokeByID_ScopedToOwner(t *testing.T) {
 	}
 
 	// A row that is already gone reports not-found rather than a silent success.
-	if _, err := m.RevokeByID(ctx, 1, otherID, current); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := m.RevokeByPublicID(ctx, 1, otherID, current); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("revoking a gone session = %v, want ErrNotFound", err)
 	}
 
 	// Ending the device you're holding says so, so the caller clears the cookie.
-	wasCurrent, err = m.RevokeByID(ctx, 1, currentID, current)
+	wasCurrent, err = m.RevokeByPublicID(ctx, 1, currentID, current)
 	if err != nil {
 		t.Fatalf("revoke current session: %v", err)
 	}

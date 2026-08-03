@@ -466,7 +466,7 @@ func TestOIDC_UnlinkSelfLastCredentialGuard(t *testing.T) {
 	e := setupOIDCApp(t)
 	member := e.seedMember(t, "Zoe", "member")
 	e.linkIdentity(t, member, "zoe-sub", "zoe@example.com")
-	raw, _, err := e.h.sessions.Mint(context.Background(), member, nil, nil)
+	raw, _, err := e.h.sessions.Mint(context.Background(), member, nil)
 	if err != nil {
 		t.Fatalf("mint session: %v", err)
 	}

@@ -4,8 +4,8 @@ import { KeyRoundIcon, LockIcon, TriangleAlertIcon, UserIcon } from "lucide-reac
 import { useState } from "react";
 
 import { APIClient, oidcLoginPath } from "@/api/APIClient";
+import { clearPrincipalCache } from "@/api/principalCache";
 import { AuthConfigQueryOptions } from "@/api/queries";
-import { AuthKeys } from "@/api/query_keys";
 
 import { AuthFrame } from "@/components/moviepickarr/auth/AuthFrame";
 import {
@@ -41,8 +41,7 @@ export function LoginPage() {
   const login = useMutation({
     mutationFn: () => APIClient.auth.login(username.trim(), password),
     onSuccess: async () => {
-      // Hydrate /me from the fresh session cookie, then land in the app.
-      await queryClient.invalidateQueries({ queryKey: AuthKeys.me() });
+      await clearPrincipalCache(queryClient);
       void navigate({ to: "/" });
     },
   });

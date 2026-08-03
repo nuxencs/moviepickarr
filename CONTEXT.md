@@ -105,13 +105,16 @@ A server-side, revocable login for a member, carried by an opaque cookie. A
 member holds one per device they signed in on, sees their own (never anyone
 else's), and can end any single one or all of them at once. A session is live
 while it is inside both its absolute cap and its idle window; past either it is
-no longer a device the member is signed in on.
+no longer a device the member is signed in on. Member-facing actions address a
+session through an immutable random handle; the database row id never crosses
+the API boundary.
 _Avoid_: token, cookie (those are how a session travels, not what it is)
 
 **Device**:
 How a member reads one of their own sessions: the browser and platform it was
 created from. Descriptive only, derived from what the browser said about
 itself at sign-in, so it identifies a session to its owner and nothing more.
+Network addresses are neither captured nor shown.
 
 ### Movie lifecycle
 

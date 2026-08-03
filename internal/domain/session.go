@@ -11,12 +11,12 @@ import (
 // 90-day cap set at mint; LastSeenAt drives the 30-day idle slide.
 type Session struct {
 	ID         int64
+	PublicID   string
 	UserID     int
 	TokenHash  string
 	ExpiresAt  time.Time
 	LastSeenAt time.Time
 	UserAgent  *string
-	IP         *string
 	CreatedAt  time.Time
 }
 
@@ -51,13 +51,13 @@ type SessionRepo interface {
 	// whose token hash is keepTokenHash (password-change: drop others, keep
 	// current). Returns the number of rows removed.
 	DeleteOthersByUserID(ctx context.Context, userID int, keepTokenHash string) (int64, error)
-	// DeleteByIDForUser revokes one session by row id, scoped to its owner: the
-	// per-device sign-out. The user_id predicate is the authorization, so a
-	// guessed id belonging to someone else removes nothing. It returns the
+	// DeleteByPublicIDForUser revokes one session by its immutable public handle,
+	// scoped to its owner. The user_id predicate is the authorization, so a
+	// guessed handle belonging to someone else removes nothing. It returns the
 	// deleted row's token hash (empty when nothing matched), so the caller can
 	// tell "revoked another device" from "revoked the one I'm holding" without a
 	// second read racing the delete.
-	DeleteByIDForUser(ctx context.Context, id int64, userID int) (deletedTokenHash string, err error)
+	DeleteByPublicIDForUser(ctx context.Context, publicID string, userID int) (deletedTokenHash string, err error)
 	// DeleteExpired sweeps rows past their absolute cap (expires_at <= now) or
 	// their idle window (last_seen_at <= idleCutoff). Returns rows removed.
 	DeleteExpired(ctx context.Context, now, idleCutoff time.Time) (int64, error)

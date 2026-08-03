@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 
 import { redirectIfSignedIn, requireSession } from "@/api/authGuard";
+import { clearPrincipalCache } from "@/api/principalCache";
 import { MeQueryOptions } from "@/api/queries";
 import { queryClient } from "@/api/QueryClient";
 
@@ -45,7 +46,11 @@ const appLayoutRoute = createRoute({
   id: "_app",
   // Auth gate for every app page: a dead/absent session bounces to /login before
   // the chrome paints behind a wall of 401s (see requireSession).
-  beforeLoad: ({ context }) => requireSession(() => resolveMe(context.queryClient)),
+  beforeLoad: ({ context }) =>
+    requireSession(
+      () => resolveMe(context.queryClient),
+      () => clearPrincipalCache(context.queryClient),
+    ),
   component: AppLayout,
 });
 
@@ -67,7 +72,11 @@ const loginRoute = createRoute({
   // A member with a live session never sees the login form: /me is resolved
   // before render so there is no one-frame flash of the form (see
   // redirectIfSignedIn).
-  beforeLoad: ({ context }) => redirectIfSignedIn(() => resolveMe(context.queryClient)),
+  beforeLoad: ({ context }) =>
+    redirectIfSignedIn(
+      () => resolveMe(context.queryClient),
+      () => clearPrincipalCache(context.queryClient),
+    ),
   component: lazyRouteComponent(
     () => import("@/components/moviepickarr/auth/LoginPage"),
     "LoginPage",

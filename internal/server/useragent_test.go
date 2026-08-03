@@ -21,6 +21,21 @@ func TestDeviceLabel(t *testing.T) {
 			want: "Safari on iPhone",
 		},
 		{
+			name: "chrome on iphone",
+			ua:   strptr("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.108 Mobile/15E148 Safari/604.1"),
+			want: "Chrome on iPhone",
+		},
+		{
+			name: "firefox on iphone",
+			ua:   strptr("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/127.0 Mobile/15E148 Safari/605.1.15"),
+			want: "Firefox on iPhone",
+		},
+		{
+			name: "edge on iphone",
+			ua:   strptr("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/126.0 Mobile/15E148 Safari/605.1.15"),
+			want: "Edge on iPhone",
+		},
+		{
 			name: "safari on ipad",
 			ua:   strptr("Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/604.1"),
 			want: "Safari on iPad",
@@ -45,6 +60,16 @@ func TestDeviceLabel(t *testing.T) {
 			name: "edge on windows",
 			ua:   strptr("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"),
 			want: "Edge on Windows",
+		},
+		{
+			name: "edge on android",
+			ua:   strptr("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 EdgA/126.0.0.0"),
+			want: "Edge on Android",
+		},
+		{
+			name: "samsung internet on android",
+			ua:   strptr("Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36"),
+			want: "Samsung Internet on Android",
 		},
 		{
 			// Opera ships both Chrome and Safari tokens.

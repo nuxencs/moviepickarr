@@ -34,7 +34,7 @@ const setPassword = vi.fn<(username: string, password: string) => Promise<void>>
 const logout = vi.fn<(all: boolean) => Promise<void>>();
 const unlinkSelf = vi.fn<() => Promise<void>>();
 const listSessions = vi.fn<() => Promise<SessionSummary[]>>();
-const revokeSession = vi.fn<(id: number) => Promise<void>>();
+const revokeSession = vi.fn<(id: string) => Promise<void>>();
 
 // ApiError and oidcLinkPath stay real: the page branches on the error's status,
 // so a stubbed error class would let a wrong branch pass.
@@ -48,7 +48,7 @@ vi.mock("@/api/APIClient", async (importOriginal) => {
         setPassword: (u: string, p: string) => setPassword(u, p),
         logout: (all: boolean) => logout(all),
         sessions: () => listSessions(),
-        revokeSession: (id: number) => revokeSession(id),
+        revokeSession: (id: string) => revokeSession(id),
       },
       members: { unlinkSelf: () => unlinkSelf() },
     },
@@ -70,9 +70,8 @@ function actor(overrides: Partial<MeResponse> = {}): MeResponse {
 /** One live session. `current` marks the device the page is being read on. */
 function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
-    id: 1,
+    id: "session-current",
     device: "Chrome on macOS",
-    ip: "192.168.1.40",
     lastSeenAt: new Date().toISOString(),
     current: true,
     ...overrides,
@@ -80,7 +79,7 @@ function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
 }
 
 const thisDevice = session();
-const phone = session({ id: 2, device: "Safari on iPhone", current: false });
+const phone = session({ id: "session-phone", device: "Safari on iPhone", current: false });
 
 function renderPage({ me = actor(), oidc = false, sessions = [thisDevice] } = {}) {
   listSessions.mockResolvedValue(sessions);
@@ -161,9 +160,10 @@ describe("opening a ceremony from its row", () => {
   });
 
   it("opens the log-out-everywhere confirm, carrying the actor's device count", async () => {
-    await renderPage({ sessions: [thisDevice, phone, session({ id: 3, current: false })] });
+    await renderPage({ sessions: [thisDevice, phone, session({ id: "session-tablet", current: false })] });
 
-    fireEvent.click(button("Log out all"));
+    fireEvent.click(screen.getByText("2 other devices"));
+    fireEvent.click(button("Log out everywhere"));
 
     expect(screen.getByRole("heading", { name: "Log out everywhere?" })).not.toBeNull();
     expect(dialog()?.textContent).toContain("2 other devices");
@@ -226,21 +226,52 @@ describe("a refusal from the server", () => {
   });
 });
 
+describe("changing a password", () => {
+  it("refreshes the device list after the server rotates the actor's sessions", async () => {
+    await renderPage({ sessions: [thisDevice, phone] });
+    await settle();
+    const callsBeforeSubmit = listSessions.mock.calls.length;
+
+    fireEvent.click(button("Change"));
+    fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "old-password" } });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "new-password" } });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "new-password" },
+    });
+    fireEvent.click(button("Update password"));
+    await settle();
+
+    expect(changePassword).toHaveBeenCalledWith("old-password", "new-password");
+    expect(listSessions.mock.calls.length).toBeGreaterThan(callsBeforeSubmit);
+  });
+});
+
 describe("logging out from the sessions row", () => {
   it("ends this session only, without a confirm", async () => {
     await renderPage();
 
-    fireEvent.click(button("Log out"));
+    fireEvent.click(button("Log out this device"));
     await settle();
 
     expect(logout).toHaveBeenCalledWith(false);
   });
 
+  it("announces that this device is logging out while the request is pending", async () => {
+    logout.mockImplementationOnce(() => new Promise<void>(() => {}));
+    await renderPage();
+
+    fireEvent.click(button("Log out this device"));
+    await settle();
+
+    expect(button("Logging out of this device").hasAttribute("disabled")).toBe(true);
+  });
+
   it("ends every session once the confirm is taken", async () => {
     await renderPage({ sessions: [thisDevice, phone] });
 
-    fireEvent.click(button("Log out all"));
+    fireEvent.click(screen.getByText("1 other device"));
     fireEvent.click(button("Log out everywhere"));
+    fireEvent.click(within(dialog() as HTMLElement).getByRole("button", { name: "Log out everywhere" }));
     await settle();
 
     expect(logout).toHaveBeenCalledWith(true);
@@ -248,30 +279,51 @@ describe("logging out from the sessions row", () => {
 });
 
 describe("the device list", () => {
-  it("names each signed-in device and marks the one being read on", async () => {
+  it("keeps the current device visible and reveals others on demand", async () => {
     await renderPage({ sessions: [thisDevice, phone] });
 
     expect(screen.getByText("Chrome on macOS")).not.toBeNull();
-    expect(screen.getByText("Safari on iPhone")).not.toBeNull();
-    // The current device says so instead of offering a sign-out, so exactly one
-    // Sign out button exists: the phone's.
     expect(screen.getByText("This device")).not.toBeNull();
-    expect(screen.getAllByRole("button", { name: "Sign out" })).toHaveLength(1);
+
+    const disclosure = screen.getByText("1 other device").closest("details") as HTMLDetailsElement;
+    expect(disclosure.open).toBe(false);
+
+    fireEvent.click(screen.getByText("1 other device"));
+
+    expect(disclosure.open).toBe(true);
+    expect(screen.getByText("Safari on iPhone")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Sign out of Safari on iPhone" })).not.toBeNull();
   });
 
   it("signs out the device whose row was taken, not another", async () => {
     await renderPage({ sessions: [thisDevice, phone] });
 
-    fireEvent.click(button("Sign out"));
+    fireEvent.click(screen.getByText("1 other device"));
+    fireEvent.click(button("Sign out of Safari on iPhone"));
     await settle();
 
     expect(revokeSession).toHaveBeenCalledWith(phone.id);
   });
 
+  it("holds every session action while one device is being signed out", async () => {
+    revokeSession.mockImplementationOnce(() => new Promise<void>(() => {}));
+    await renderPage({ sessions: [thisDevice, phone] });
+
+    fireEvent.click(screen.getByText("1 other device"));
+    fireEvent.click(button("Sign out of Safari on iPhone"));
+    await settle();
+
+    expect(button("Signing out of Safari on iPhone").hasAttribute("disabled")).toBe(true);
+    expect(button("Log out this device").hasAttribute("disabled")).toBe(true);
+    expect(button("Log out everywhere").hasAttribute("disabled")).toBe(true);
+    expect(revokeSession).toHaveBeenCalledOnce();
+  });
+
   it("carries the count of other devices into the log-out-everywhere confirm", async () => {
     await renderPage({ sessions: [thisDevice, phone] });
 
-    fireEvent.click(button("Log out all"));
+    fireEvent.click(screen.getByText("1 other device"));
+    fireEvent.click(button("Log out everywhere"));
 
     // One other device, so the confirm must not read "2 other devices" off a
     // list that includes the session doing the asking.

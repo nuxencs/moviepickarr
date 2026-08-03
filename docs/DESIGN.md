@@ -177,6 +177,12 @@ old shadcn primitives.
   to live in the parent because it drives the list (`Board`'s stash search) instead
   memoizes the row (`StashRow`), whose props are the movie straight out of the query
   cache plus primitives, so only rows entering or leaving the match set do any work.
+- **Signed-in devices use progressive disclosure.** Settings always shows the current
+  device and its local Log out action. Other devices collapse into one count row and
+  open into a flat, divided register only when the member chooses to review them. The
+  register uses no per-device cards. Each remote action includes the browser and
+  platform in its accessible name, and Log out everywhere remains a separate global
+  action inside the expanded management view.
 - **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
   quick-select, genre, actors, crew, added by, release year) in a single wrapping row under the
   stats header. The seg stays a seg (presets are mutually exclusive) but drops its

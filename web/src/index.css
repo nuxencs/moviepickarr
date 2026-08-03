@@ -1183,9 +1183,9 @@
      same poster sharp just below. The blur has to be far past soft-focus or the
      hero reads as a broken copy of the poster rather than as colour lifted off
      it. CSS blur samples transparent pixels beyond its source, so the source
-     extends three standard deviations past every clipped edge. */
+     extends at least three standard deviations past every clipped edge. */
   .moviemodal__hero__img--wash {
-    --wash-blur: 48px;
+    --wash-blur: 36px;
     --wash-overscan: 144px;
     inset: calc(0px - var(--wash-overscan));
     width: calc(100% + var(--wash-overscan) + var(--wash-overscan));

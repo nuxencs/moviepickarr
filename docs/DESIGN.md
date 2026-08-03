@@ -512,7 +512,7 @@ closes the movie record.
   never flashes the surface through (pure white in light mode) — then the real backdrop
   `<img>` crossfades in (`.moviemodal__hero__img` / `--loading` / `__shimmer`).
   A film with **no backdrop** stands its poster in there instead, as a **wash**:
-  `blur(48px)`, with its source box reaching three blur standard deviations past
+  `blur(36px)`, with its source box reaching at least three blur standard deviations past
   every edge (`--wash-overscan`). CSS blur samples transparent pixels beyond its
   source; the overscan keeps that boundary outside the hero, and
   `.moviemodal__hero` carries `overflow: hidden` to stop the enlarged layer painting

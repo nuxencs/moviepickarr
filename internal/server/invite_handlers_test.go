@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -70,6 +71,10 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 	_, adminCookie := e.adminSession(t)
 
 	memberID, token := e.createMember(t, adminCookie, "Newbie")
+	residualCookie, _, err := e.h.sessions.Mint(context.Background(), memberID, nil)
+	if err != nil {
+		t.Fatalf("mint residual placeholder session: %v", err)
+	}
 
 	// Claim validates as a fresh placeholder.
 	valid := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+token, "", nil)
@@ -104,6 +109,9 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 	if identity.ID != memberID || identity.Username == nil || *identity.Username != "newbie" || !identity.HasLocalLogin {
 		t.Fatalf("me = %+v, want id=%d username=newbie hasLocalLogin=true", identity, memberID)
 	}
+	if old := e.request(t, http.MethodGet, "/api/v1/auth/me", residualCookie, nil); old.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("residual session after onboarding claim = %d, want 401", old.StatusCode)
+	}
 
 	// The consumed invite now reads as the distinct already-set-up state.
 	used := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+token, "", nil)
@@ -135,25 +143,29 @@ func TestClaim_UsedInviteCannotBeRedeemedTwice(t *testing.T) {
 	}
 }
 
-// TestReissueInvite_RevokesTheOldLink proves regenerate: the old claim URL dies
-// (no-longer-valid) and the fresh one works, enforcing one-valid-invite-per-member.
-func TestReissueInvite_RevokesTheOldLink(t *testing.T) {
+// TestReplaceInvite_RevokesTheOldLink proves exact replacement: the old claim
+// URL dies and the fresh one works.
+func TestReplaceInvite_RevokesTheOldLink(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
 
-	memberID, oldToken := e.createMember(t, adminCookie, "Regen")
+	_, oldToken := e.createMember(t, adminCookie, "Regen")
+	rows := e.invitesOverview(t, adminCookie).Items
+	if len(rows) != 1 {
+		t.Fatalf("overview rows = %+v, want one", rows)
+	}
 
-	resp := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
+	resp := e.request(t, http.MethodPost, "/api/v1/invites/"+rows[0].ID+"/replacement", adminCookie, nil)
 	if resp.StatusCode != fiber.StatusCreated {
-		t.Fatalf("reissue status = %d, want 201", resp.StatusCode)
+		t.Fatalf("replacement status = %d, want 201", resp.StatusCode)
 	}
-	var reissued inviteResponse
-	if err := json.NewDecoder(resp.Body).Decode(&reissued); err != nil {
-		t.Fatalf("decode reissue: %v", err)
+	var replacement inviteResponse
+	if err := json.NewDecoder(resp.Body).Decode(&replacement); err != nil {
+		t.Fatalf("decode replacement: %v", err)
 	}
-	newToken := tokenFromClaimURL(t, reissued.ClaimURL)
+	newToken := tokenFromClaimURL(t, replacement.ClaimURL)
 	if newToken == oldToken {
-		t.Fatal("reissue returned the same token")
+		t.Fatal("replacement returned the same token")
 	}
 
 	old := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+oldToken, "", nil)
@@ -166,14 +178,19 @@ func TestReissueInvite_RevokesTheOldLink(t *testing.T) {
 	}
 }
 
-// TestRevokeInvite_InvalidatesThenIsNotFound proves revoke: the link dies, and a
-// second revoke with nothing valid is an honest 404.
-func TestRevokeInvite_InvalidatesThenIsNotFound(t *testing.T) {
+// TestRevokeInvite_InvalidatesThenConflicts proves revoke: the link dies, and a
+// second action on the stale generation conflicts.
+func TestRevokeInvite_InvalidatesThenConflicts(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
-	memberID, token := e.createMember(t, adminCookie, "Cancel")
+	_, token := e.createMember(t, adminCookie, "Cancel")
+	rows := e.invitesOverview(t, adminCookie).Items
+	if len(rows) != 1 {
+		t.Fatalf("overview rows = %+v, want one", rows)
+	}
+	path := "/api/v1/invites/" + rows[0].ID
 
-	revoke := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
+	revoke := e.request(t, http.MethodDelete, path, adminCookie, nil)
 	if revoke.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("revoke status = %d, want 204", revoke.StatusCode)
 	}
@@ -183,9 +200,9 @@ func TestRevokeInvite_InvalidatesThenIsNotFound(t *testing.T) {
 		t.Fatalf("revoked claim status = %d code = %q, want 404 invite_invalid", dead.StatusCode, problemCode(t, dead))
 	}
 
-	again := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
-	if again.StatusCode != fiber.StatusNotFound {
-		t.Fatalf("revoke-again status = %d, want 404", again.StatusCode)
+	again := e.request(t, http.MethodDelete, path, adminCookie, nil)
+	if again.StatusCode != fiber.StatusConflict {
+		t.Fatalf("revoke-again status = %d, want 409", again.StatusCode)
 	}
 }
 
@@ -200,8 +217,9 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 	e.seedLocalLogin(t, bobID, "bob", "the old password")
 	oldCookie := e.login(t, "bob", "the old password")
 
-	// Admin issues an invite for the already-credentialed Bob → a reset.
-	issue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(bobID)+"/invite", adminCookie, nil)
+	// Admin explicitly issues a password-reset invite for credentialed Bob.
+	issue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(bobID)+"/invite", adminCookie,
+		map[string]string{"purpose": "password_reset"})
 	if issue.StatusCode != fiber.StatusCreated {
 		t.Fatalf("issue status = %d, want 201", issue.StatusCode)
 	}
@@ -210,6 +228,13 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 		t.Fatalf("decode issue: %v", err)
 	}
 	token := tokenFromClaimURL(t, inv.ClaimURL)
+	overview := e.invitesOverview(t, adminCookie)
+	if len(overview.Items) != 1 {
+		t.Fatalf("overview after reset issue = %+v, want one manageable invite", overview.Items)
+	}
+	if row := overview.Items[0]; row.MemberID != bobID || row.Status != auth.InviteOpen || row.ID == "" {
+		t.Fatalf("reset overview row = %+v, want Bob/open/public handle", row)
+	}
 
 	valid := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+token, "", nil)
 	if cc := decodeClaim(t, valid); cc.Mode != "reset" || cc.DisplayName != "Bob" {
@@ -241,6 +266,35 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 		t.Fatalf("old password login = %d, want 401", badLogin.StatusCode)
 	}
 	_ = e.login(t, "bob", "a brand new password")
+	if rows := e.invitesOverview(t, adminCookie).Items; len(rows) != 0 {
+		t.Fatalf("overview after reset claim = %+v, want empty", rows)
+	}
+}
+
+func TestCreateInvite_DefaultPurposeRejectsCredentialedMember(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	bobID := e.seedMember(t, "Bob", "member")
+	e.seedLocalLogin(t, bobID, "bob", "a good long password")
+
+	issue := e.request(
+		t,
+		http.MethodPost,
+		"/api/v1/members/"+strconv.Itoa(bobID)+"/invite",
+		adminCookie,
+		nil,
+	)
+	code := problemCode(t, issue)
+	if issue.StatusCode != fiber.StatusConflict || code != "conflict" {
+		t.Fatalf(
+			"default invite for credentialed member = %d code %q, want 409 conflict",
+			issue.StatusCode,
+			code,
+		)
+	}
+	if rows := e.invitesOverview(t, adminCookie).Items; len(rows) != 0 {
+		t.Fatalf("overview after rejected onboarding invite = %+v, want empty", rows)
+	}
 }
 
 // TestClaim_ExpiredCollapsesToInvalid proves the time-derived validity: past the
@@ -302,13 +356,22 @@ func TestInviteRoutes_RequireAdmin(t *testing.T) {
 
 	target := e.seedMember(t, "Target", "member")
 
-	reissue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(target)+"/invite", memberCookie, nil)
-	if reissue.StatusCode != fiber.StatusForbidden || problemCode(t, reissue) != "admin_required" {
-		t.Fatalf("member reissue = %d code = %q, want 403 admin_required", reissue.StatusCode, problemCode(t, reissue))
+	createInvite := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(target)+"/invite", memberCookie, nil)
+	if createInvite.StatusCode != fiber.StatusForbidden || problemCode(t, createInvite) != "admin_required" {
+		t.Fatalf("member invite create = %d code = %q, want 403 admin_required", createInvite.StatusCode, problemCode(t, createInvite))
 	}
-	revoke := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(target)+"/invite", memberCookie, nil)
+	handle := "public-invite-handle-000000"
+	revoke := e.request(t, http.MethodDelete, "/api/v1/invites/"+handle, memberCookie, nil)
 	if revoke.StatusCode != fiber.StatusForbidden || problemCode(t, revoke) != "admin_required" {
 		t.Fatalf("member revoke = %d code = %q, want 403 admin_required", revoke.StatusCode, problemCode(t, revoke))
+	}
+	replace := e.request(t, http.MethodPost, "/api/v1/invites/"+handle+"/replacement", memberCookie, nil)
+	if replace.StatusCode != fiber.StatusForbidden || problemCode(t, replace) != "admin_required" {
+		t.Fatalf("member replace = %d code = %q, want 403 admin_required", replace.StatusCode, problemCode(t, replace))
+	}
+	dismiss := e.request(t, http.MethodPost, "/api/v1/invites/"+handle+"/dismiss", memberCookie, nil)
+	if dismiss.StatusCode != fiber.StatusForbidden || problemCode(t, dismiss) != "admin_required" {
+		t.Fatalf("member dismiss = %d code = %q, want 403 admin_required", dismiss.StatusCode, problemCode(t, dismiss))
 	}
 	create := e.request(t, http.MethodPost, "/api/v1/members", memberCookie, map[string]string{"name": "Nope"})
 	if create.StatusCode != fiber.StatusForbidden || problemCode(t, create) != "admin_required" {
@@ -316,16 +379,16 @@ func TestInviteRoutes_RequireAdmin(t *testing.T) {
 	}
 }
 
-func TestReissueInvite_MissingMemberIsNotFound(t *testing.T) {
+func TestCreateInvite_MissingMemberIsNotFound(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
 	resp := e.request(t, http.MethodPost, "/api/v1/members/99999/invite", adminCookie, nil)
 	if resp.StatusCode != fiber.StatusNotFound {
-		t.Fatalf("reissue missing member = %d, want 404", resp.StatusCode)
+		t.Fatalf("create invite for missing member = %d, want 404", resp.StatusCode)
 	}
 }
 
-func TestArchivedMemberInviteIsInvalidAndCannotBeReissued(t *testing.T) {
+func TestArchivedMemberInviteIsInvalidAndCannotBeCreated(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
 	memberID, token := e.createMember(t, adminCookie, "Archived")
@@ -339,9 +402,9 @@ func TestArchivedMemberInviteIsInvalidAndCannotBeReissued(t *testing.T) {
 		t.Fatalf("archived claim validation = %d, want 404", validate.StatusCode)
 	}
 
-	reissue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
-	if reissue.StatusCode != fiber.StatusNotFound {
-		t.Fatalf("archived invite reissue = %d, want 404", reissue.StatusCode)
+	issue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
+	if issue.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("archived invite create = %d, want 404", issue.StatusCode)
 	}
 }
 
@@ -390,24 +453,48 @@ func TestSelfServeLocalLogin_RequiresSession(t *testing.T) {
 	}
 }
 
+func TestAdminCredentialCreationRetiresCurrentInvite(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	memberID, token := e.createMember(t, adminCookie, "Ben")
+
+	set := e.request(
+		t,
+		http.MethodPut,
+		"/api/v1/members/"+strconv.Itoa(memberID)+"/local-login",
+		adminCookie,
+		map[string]string{"username": "ben", "password": "a good long password"},
+	)
+	if set.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("set local login = %d, want 204", set.StatusCode)
+	}
+	validate := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+token, "", nil)
+	if validate.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("old invite after credential creation = %d, want 404", validate.StatusCode)
+	}
+	if rows := e.invitesOverview(t, adminCookie).Items; len(rows) != 0 {
+		t.Fatalf("overview after credential creation = %+v, want empty", rows)
+	}
+}
+
 // invitesOverview reads GET /invites as the given actor, asserting 200.
-func (e *authTestEnv) invitesOverview(t *testing.T, cookie string) []inviteOverviewResponse {
+func (e *authTestEnv) invitesOverview(t *testing.T, cookie string) invitesOverviewResponse {
 	t.Helper()
 	resp := e.request(t, http.MethodGet, "/api/v1/invites", cookie, nil)
 	if resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("invites overview status = %d, want 200", resp.StatusCode)
 	}
-	var rows []inviteOverviewResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+	var overview invitesOverviewResponse
+	if err := json.NewDecoder(resp.Body).Decode(&overview); err != nil {
 		t.Fatalf("decode invites overview: %v", err)
 	}
-	return rows
+	return overview
 }
 
 // TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired is the surface's whole
-// contract in one walk: a member re-invited after their first link lapsed
-// appears once (the newest invite, open), a member never re-invited appears as
-// expired, and open leads expired. Both rows name the issuing admin.
+// contract in one walk: an expired generation replaced by its exact handle
+// appears once as open, an untouched generation remains expired, and open leads
+// expired. Both rows name the issuing admin.
 func TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -415,19 +502,32 @@ func TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired(t *testing.T) {
 	benID, _ := e.createMember(t, adminCookie, "Ben")
 	cleoID, _ := e.createMember(t, adminCookie, "Cleo")
 
-	// Past the 7-day TTL: both first links have lapsed, and neither was revoked
-	// (Issue only revokes valid invites), so both rows are still on the table.
+	// Past the 7-day TTL: both first links have lapsed.
 	e.clk.t = e.clk.t.Add(auth.InviteTTL + time.Hour)
 
-	// Cleo is re-invited; Ben is left waiting on a dead link.
-	reissue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(cleoID)+"/invite", adminCookie, nil)
-	if reissue.StatusCode != fiber.StatusCreated {
-		t.Fatalf("reissue status = %d, want 201", reissue.StatusCode)
+	before := e.invitesOverview(t, adminCookie)
+	var cleoInvite string
+	for _, row := range before.Items {
+		if row.MemberID == cleoID {
+			cleoInvite = row.ID
+		}
+	}
+	if cleoInvite == "" {
+		t.Fatal("Cleo's expired invite was missing")
+	}
+	// Replace Cleo's exact expired generation; Ben stays on the dead link.
+	replacement := e.request(t, http.MethodPost, "/api/v1/invites/"+cleoInvite+"/replacement", adminCookie, nil)
+	if replacement.StatusCode != fiber.StatusCreated {
+		t.Fatalf("replacement status = %d, want 201", replacement.StatusCode)
 	}
 
-	rows := e.invitesOverview(t, adminCookie)
+	overview := e.invitesOverview(t, adminCookie)
+	rows := overview.Items
 	if len(rows) != 2 {
 		t.Fatalf("rows = %+v, want 2 (one per member)", rows)
+	}
+	if overview.ServerNow != formatTime(&e.clk.t) {
+		t.Fatalf("serverNow = %q, want %q", overview.ServerNow, formatTime(&e.clk.t))
 	}
 	if rows[0].MemberID != cleoID || rows[0].Status != auth.InviteOpen {
 		t.Fatalf("first row = %+v, want Cleo open", rows[0])
@@ -448,6 +548,60 @@ func TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired(t *testing.T) {
 	}
 }
 
+func TestInvitesOverview_SubsecondClockMatchesWireClassification(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	_, _ = e.createMember(t, adminCookie, "Ben")
+	expiresAt := e.clk.t.Add(auth.InviteTTL)
+
+	tests := []struct {
+		name       string
+		now        time.Time
+		wantStatus string
+	}{
+		{name: "just before expiry", now: expiresAt.Add(-100 * time.Millisecond), wantStatus: auth.InviteOpen},
+		{name: "just after expiry", now: expiresAt.Add(100 * time.Millisecond), wantStatus: auth.InviteExpired},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e.clk.t = tt.now
+			overview := e.invitesOverview(t, adminCookie)
+			if len(overview.Items) != 1 {
+				t.Fatalf("items = %+v, want one", overview.Items)
+			}
+			row := overview.Items[0]
+			if row.Status != tt.wantStatus {
+				t.Fatalf("status = %q, want %q", row.Status, tt.wantStatus)
+			}
+
+			wireNow, err := time.Parse(time.RFC3339, overview.ServerNow)
+			if err != nil {
+				t.Fatalf("parse serverNow %q: %v", overview.ServerNow, err)
+			}
+			wireExpiry, err := time.Parse(time.RFC3339, row.ExpiresAt)
+			if err != nil {
+				t.Fatalf("parse expiresAt %q: %v", row.ExpiresAt, err)
+			}
+			wireStatus := auth.InviteExpired
+			if wireNow.Before(wireExpiry) {
+				wireStatus = auth.InviteOpen
+			}
+			if row.Status != wireStatus {
+				t.Fatalf(
+					"status %q disagrees with serialized serverNow/expiresAt (%s/%s => %q)",
+					row.Status,
+					overview.ServerNow,
+					row.ExpiresAt,
+					wireStatus,
+				)
+			}
+			if overview.ServerNow != formatTime(&tt.now) {
+				t.Fatalf("serverNow = %q, want whole-second %q", overview.ServerNow, formatTime(&tt.now))
+			}
+		})
+	}
+}
+
 // TestInvitesOverview_DropsMembersWhoCanLogIn is the self-clearing rule at the
 // HTTP seam: claiming the invite is what a member does, and the row goes with
 // it. No admin action is involved.
@@ -456,7 +610,7 @@ func TestInvitesOverview_DropsMembersWhoCanLogIn(t *testing.T) {
 	_, adminCookie := e.adminSession(t)
 	_, token := e.createMember(t, adminCookie, "Ben")
 
-	if rows := e.invitesOverview(t, adminCookie); len(rows) != 1 {
+	if rows := e.invitesOverview(t, adminCookie).Items; len(rows) != 1 {
 		t.Fatalf("rows before claim = %+v, want 1", rows)
 	}
 
@@ -466,49 +620,119 @@ func TestInvitesOverview_DropsMembersWhoCanLogIn(t *testing.T) {
 		t.Fatalf("password claim status = %d, want 204", claim.StatusCode)
 	}
 
-	if rows := e.invitesOverview(t, adminCookie); len(rows) != 0 {
+	if rows := e.invitesOverview(t, adminCookie).Items; len(rows) != 0 {
 		t.Fatalf("rows after claim = %+v, want none", rows)
 	}
 }
 
-// TestDismissInvite_ClearsTheRowThenIs404 covers Dismiss end to end: it reaches
-// a lapsed invite (which the member-scoped revoke cannot), takes it off the
-// surface, and refuses a repeat rather than reporting a second success.
-func TestDismissInvite_ClearsTheRowThenIs404(t *testing.T) {
+// TestDismissInvite_ClearsTheRowThenConflicts covers Dismiss end to end: it
+// retires an exact expired generation and refuses a repeat rather than
+// reporting a second success.
+func TestDismissInvite_ClearsTheRowThenConflicts(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
-	memberID, _ := e.createMember(t, adminCookie, "Ben")
+	_, _ = e.createMember(t, adminCookie, "Ben")
 	e.clk.t = e.clk.t.Add(auth.InviteTTL + time.Hour)
 
-	// The member-scoped revoke has nothing valid left to cancel, which is exactly
-	// why the expired row needs its own id.
-	stale := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(memberID)+"/invite", adminCookie, nil)
-	if stale.StatusCode != fiber.StatusNotFound {
-		t.Fatalf("member-scoped revoke of a lapsed invite = %d, want 404", stale.StatusCode)
-	}
-
-	rows := e.invitesOverview(t, adminCookie)
+	rows := e.invitesOverview(t, adminCookie).Items
 	if len(rows) != 1 {
 		t.Fatalf("rows = %+v, want 1", rows)
 	}
-	path := "/api/v1/invites/" + strconv.FormatInt(rows[0].ID, 10)
+	path := "/api/v1/invites/" + rows[0].ID + "/dismiss"
 
-	dismiss := e.request(t, http.MethodDelete, path, adminCookie, nil)
+	dismiss := e.request(t, http.MethodPost, path, adminCookie, nil)
 	if dismiss.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("dismiss status = %d, want 204", dismiss.StatusCode)
 	}
-	if left := e.invitesOverview(t, adminCookie); len(left) != 0 {
+	if left := e.invitesOverview(t, adminCookie).Items; len(left) != 0 {
 		t.Fatalf("rows after dismiss = %+v, want none", left)
 	}
 
-	again := e.request(t, http.MethodDelete, path, adminCookie, nil)
-	if again.StatusCode != fiber.StatusNotFound {
-		t.Fatalf("second dismiss status = %d, want 404", again.StatusCode)
+	again := e.request(t, http.MethodPost, path, adminCookie, nil)
+	if again.StatusCode != fiber.StatusConflict {
+		t.Fatalf("second dismiss status = %d, want 409", again.StatusCode)
 	}
 }
 
-// TestInvitesOverview_AdminOnly: the overview names every member still waiting
-// to set up a login and who invited them. Both routes are admin-gated.
+func TestInviteActions_UseExactGenerationAndState(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	_, _ = e.createMember(t, adminCookie, "Ben")
+
+	rows := e.invitesOverview(t, adminCookie).Items
+	if len(rows) != 1 {
+		t.Fatalf("rows = %+v, want one open invite", rows)
+	}
+	oldID := rows[0].ID
+
+	dismissOpen := e.request(t, http.MethodPost, "/api/v1/invites/"+oldID+"/dismiss", adminCookie, nil)
+	if dismissOpen.StatusCode != fiber.StatusConflict {
+		t.Fatalf("dismiss open = %d, want 409", dismissOpen.StatusCode)
+	}
+	replace := e.request(t, http.MethodPost, "/api/v1/invites/"+oldID+"/replacement", adminCookie, nil)
+	if replace.StatusCode != fiber.StatusCreated {
+		t.Fatalf("replace = %d, want 201", replace.StatusCode)
+	}
+	staleRevoke := e.request(t, http.MethodDelete, "/api/v1/invites/"+oldID, adminCookie, nil)
+	if staleRevoke.StatusCode != fiber.StatusConflict {
+		t.Fatalf("stale revoke = %d, want 409", staleRevoke.StatusCode)
+	}
+
+	current := e.invitesOverview(t, adminCookie).Items
+	if len(current) != 1 || current[0].ID == oldID {
+		t.Fatalf("current rows = %+v, want a different generation", current)
+	}
+	revoke := e.request(t, http.MethodDelete, "/api/v1/invites/"+current[0].ID, adminCookie, nil)
+	if revoke.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("current revoke = %d, want 204", revoke.StatusCode)
+	}
+
+	numeric := e.request(t, http.MethodDelete, "/api/v1/invites/1", adminCookie, nil)
+	if numeric.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("numeric invite id = %d, want 400", numeric.StatusCode)
+	}
+}
+
+func TestClaimPassword_ConcurrentRedemptionHasOneOwner(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+	_, token := e.createMember(t, adminCookie, "Ben")
+
+	type result struct {
+		claim auth.ClaimResult
+		err   error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for range 2 {
+		go func() {
+			<-start
+			claim, err := e.h.invites.ClaimPassword(
+				context.Background(), token, "ben", "a good long password",
+			)
+			results <- result{claim: claim, err: err}
+		}()
+	}
+	close(start)
+
+	successes, used := 0, 0
+	for range 2 {
+		res := <-results
+		switch {
+		case res.err == nil:
+			successes++
+		case errors.Is(res.err, auth.ErrInviteUsed):
+			used++
+		default:
+			t.Fatalf("claim error = %v, want nil or ErrInviteUsed", res.err)
+		}
+	}
+	if successes != 1 || used != 1 {
+		t.Fatalf("successes/used = %d/%d, want 1/1", successes, used)
+	}
+}
+
+// TestInvitesOverview_AdminOnly proves invite status and actions are admin-only.
 func TestInvitesOverview_AdminOnly(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -520,7 +744,7 @@ func TestInvitesOverview_AdminOnly(t *testing.T) {
 	if list.StatusCode != fiber.StatusForbidden {
 		t.Fatalf("member invites list = %d, want 403", list.StatusCode)
 	}
-	dismiss := e.request(t, http.MethodDelete, "/api/v1/invites/1", memberCookie, nil)
+	dismiss := e.request(t, http.MethodPost, "/api/v1/invites/public-invite-handle-000000/dismiss", memberCookie, nil)
 	if dismiss.StatusCode != fiber.StatusForbidden {
 		t.Fatalf("member dismiss = %d, want 403", dismiss.StatusCode)
 	}

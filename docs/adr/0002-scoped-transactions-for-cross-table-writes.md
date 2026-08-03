@@ -83,13 +83,18 @@ transaction. When a new login needs a password hash, that call returns a
 read-only probe result without changing either table. The seed hashes the
 password after the transaction releases the single writer, then calls the store
 again. The second transaction repeats the authoritative read, creates or
-promotes the active member, inserts the local login, and commits. An existing
-login is preserved. Ambiguous and archived matches remain write-free.
+promotes the active member, inserts the local login, retires any current invite,
+and commits. An existing login is preserved. Ambiguous and archived matches
+remain write-free.
 
 This completes the three corrupting partial-write paths tracked by issue #157.
 
-ADR 0001 still governs its two named invite and claim flows. Their accepted
-partial states do not become transactions under this decision.
+[ADR 0003](0003-atomic-credential-and-invite-transitions.md) applies this scoped
+transaction pattern to credential, invite, and member-onboarding transitions.
+It supersedes both decisions in [ADR
+0001](0001-non-transactional-credential-and-invite-writes.md), including the
+create-member-then-issue-invite sequence, and covers restored-member invite
+issuance as the same lifecycle invariant.
 
 ## Consequences
 
@@ -103,6 +108,10 @@ partial states do not become transactions under this decision.
   injection must prove rollback, not only returned errors.
 - A create operation that returns its inserted record keeps the response read
   inside the transaction when a failed read must also undo the insert.
+- Member create commits the user, any initial `next_up` assignment, its first
+  invite, and the response projection together. Restore commits authentication
+  cleanup, reactivation, its replacement invite, and the response member
+  projection together. The raw claim token never enters persistence.
 - A failed movie edit does not expose a new title, watched time, or identity
   without its derived-data cleanup and client invalidation. A successful
   identity change serves no metadata or credits from the prior film while it
@@ -114,8 +123,10 @@ partial states do not become transactions under this decision.
 - TMDB requests, credit mapping, and metadata JSON encoding happen before the
   enrichment transaction. The single writer is held only for local SQL work.
 - A failed break-glass login insert rolls back both a fresh admin row and an
-  adopted member's role promotion. Constraint errors still fail boot, but
-  leave the roster and credentials unchanged for the next retry.
+  adopted member's role promotion. A successful insert also retires an adopted
+  member's current invite, so the seed cannot leave a claim link able to reset
+  the new credential. Constraint errors still fail boot, but leave the roster
+  and credentials unchanged for the next retry.
 - Password hashing stays outside the seed transaction. Configured no-op boots
   do not hash again, and a new seed does not hold SQLite's single writer during
   the Argon2 work.

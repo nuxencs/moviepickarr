@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { expiryLabel, groupInvites, issuedLabel } from "@/components/moviepickarr/admin/invites";
+import {
+  expiryLabel,
+  inviteStatusAt,
+  issuedLabel,
+  nextInviteExpiryDelay,
+  serverAlignedNow,
+} from "@/components/moviepickarr/admin/invites";
 
 import type { InviteSummary } from "@/types/Response";
 
@@ -8,7 +14,7 @@ const now = Date.parse("2026-08-03T12:00:00Z");
 
 function invite(overrides: Partial<InviteSummary> = {}): InviteSummary {
   return {
-    id: 1,
+    id: "invite-public-1",
     memberId: 7,
     memberName: "Ben",
     status: "open",
@@ -37,13 +43,11 @@ describe("expiryLabel", () => {
     );
   });
 
-  it("trusts the server's word over its own clock", () => {
-    // The status is the server's, derived against its clock. A client whose
-    // clock is a few minutes behind must not narrate a row it was told is
-    // expired as if it were still live.
-    expect(expiryLabel(invite({ status: "expired", expiresAt: "2026-08-03T12:05:00Z" }), now)).toBe(
-      "expired just now",
-    );
+  it("uses the supplied server-aligned instant at the exact boundary", () => {
+    const row = invite({ status: "open", expiresAt: "2026-08-03T12:00:00Z" });
+    expect(inviteStatusAt(row, now - 1)).toBe("open");
+    expect(inviteStatusAt(row, now)).toBe("expired");
+    expect(expiryLabel(row, now)).toBe("expired just now");
   });
 });
 
@@ -57,17 +61,24 @@ describe("issuedLabel", () => {
   });
 });
 
-describe("groupInvites", () => {
-  it("splits the two groups and keeps the server's order inside each", () => {
-    const rows = [
-      invite({ id: 1, memberName: "Ben" }),
-      invite({ id: 2, memberName: "Cleo", status: "expired" }),
-      invite({ id: 3, memberName: "Dev" }),
-    ];
+describe("server clock", () => {
+  it("keeps client wall-clock skew out while preserving elapsed time", () => {
+    const receivedAt = Date.parse("2040-01-01T00:00:00Z");
+    expect(
+      serverAlignedNow("2026-08-03T12:00:00Z", receivedAt, receivedAt + 2_500),
+    ).toBe(now + 2_500);
+  });
 
-    const { open, expired } = groupInvites(rows);
-
-    expect(open.map((i) => i.memberName)).toEqual(["Ben", "Dev"]);
-    expect(expired.map((i) => i.memberName)).toEqual(["Cleo"]);
+  it("schedules the nearest open expiry only", () => {
+    expect(
+      nextInviteExpiryDelay(
+        [
+          invite({ expiresAt: "2026-08-03T12:00:05Z" }),
+          invite({ expiresAt: "2026-08-03T12:00:02Z" }),
+          invite({ expiresAt: "2026-08-03T11:00:00Z" }),
+        ],
+        now,
+      ),
+    ).toBe(2_000);
   });
 });

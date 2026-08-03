@@ -59,13 +59,14 @@ type LocalAccountRepo interface {
 	// UpdatePasswordAndClearLockout rewrites the password hash and clears the
 	// lockout (failed_attempts=0, locked_until=NULL): the admin-reset path.
 	UpdatePasswordAndClearLockout(ctx context.Context, userID int, passwordHash string, updatedAt time.Time) error
-	// RecordFailedAttempt persists the new failed-attempt count and lockout
-	// deadline after a wrong password (lockedUntil is nil below the threshold).
-	RecordFailedAttempt(ctx context.Context, userID, failedAttempts int, lockedUntil *time.Time, updatedAt time.Time) error
+	// RecordFailedAttempt atomically increments the failed-attempt count and sets
+	// the lockout deadline when the incremented count reaches lockThreshold. The
+	// write applies only while the verified credential hash is still current.
+	RecordFailedAttempt(ctx context.Context, userID int, expectedPasswordHash string, lockThreshold int, lockUntil, updatedAt time.Time) error
 	// RecordSuccessfulLogin resets the lockout counters and bumps last_login_at
-	// on a good login. When newPasswordHash is non-nil it also rewrites the hash
-	// (rehash-on-login when stored argon2id params drifted from the configured).
-	RecordSuccessfulLogin(ctx context.Context, userID int, newPasswordHash *string, lastLoginAt, updatedAt time.Time) error
+	// only while the verified hash is current. A non-nil newPasswordHash performs
+	// maintenance rehashing without overwriting a concurrent recovery.
+	RecordSuccessfulLogin(ctx context.Context, userID int, expectedPasswordHash string, newPasswordHash *string, lastLoginAt, updatedAt time.Time) error
 	// Delete removes a member's local login (admin credential removal).
 	Delete(ctx context.Context, userID int) error
 	// HasLinkedIdentity reports whether the member holds an oidc_identities row,

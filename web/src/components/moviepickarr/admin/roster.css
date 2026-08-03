@@ -103,18 +103,69 @@
   }
 }
 
-/* ---- Phone: the table sheds columns instead of scrolling sideways ----
+/* ---- Phone: the table becomes a compact member register ----
    Role, Movies and Last active hide, and their values fold into the identity
-   sub-line (@ada · 38 movies · now). What's left is who they are, whether they
-   can log in, and the actions kebab, which is what the roster is for on a
-   phone. Horizontal scroll inside a vertically scrolling page is the thing this
-   replaces. Keep the shed set in step with COLUMNS in RosterSection.tsx. */
+   sub-line (@ada · 38 movies · now). The remaining cells form two rows: member
+   and actions above, login state below. This keeps every action in the viewport
+   even when an invite status has long explanatory text. Keep the shed set in
+   step with COLUMNS in RosterSection.tsx. */
 @media (max-width: 640px) {
   .adm-table [data-shed] {
     display: none;
   }
-  .adm-table {
+  .adm-table:not(.adm-table--dim),
+  .adm-table:not(.adm-table--dim) tbody {
+    display: block;
+    width: 100%;
     min-width: 0;
+  }
+  .adm-table--dim {
+    min-width: 0;
+  }
+  .adm-table:not(.adm-table--dim) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .adm-table:not(.adm-table--dim) tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    grid-template-areas:
+      "member actions"
+      "login login";
+    gap: 7px 8px;
+    padding: 12px;
+    border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent);
+  }
+  .adm-table:not(.adm-table--dim) tbody tr:last-child {
+    border-bottom: none;
+  }
+  .adm-table:not(.adm-table--dim) tbody td {
+    padding: 0;
+    border-bottom: none;
+  }
+  .adm-table:not(.adm-table--dim) tbody td:first-child {
+    grid-area: member;
+  }
+  .adm-table:not(.adm-table--dim) tbody td:nth-child(3) {
+    grid-area: login;
+    margin-left: 49px;
+  }
+  .adm-table:not(.adm-table--dim) .adm-rowend {
+    grid-area: actions;
+    width: 40px;
+    align-self: start;
+  }
+  .adm-table:not(.adm-table--dim) .adm-state {
+    grid-column: 1 / -1;
+    padding: 32px 12px;
+    margin: 0;
   }
   .adm-id__extra {
     display: inline;
@@ -127,6 +178,16 @@
   .adm-table thead th,
   .adm-table tbody td {
     padding: 12px 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .adm-add {
+    flex-direction: column;
+  }
+  .adm-add .adm-field,
+  .adm-add .btn {
+    width: 100%;
   }
 }
 
@@ -233,8 +294,52 @@
   border-style: dashed;
   color: var(--ink-3);
 }
+.adm-chip--expired {
+  border-style: dashed;
+  color: var(--ink-3);
+  background: transparent;
+}
 .adm-chip--archived {
   opacity: 0.7;
+}
+
+.adm-login {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+}
+.adm-login__meta {
+  max-width: 260px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink-3);
+}
+.adm-login__invite {
+  max-width: 260px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink-3);
+}
+.adm-login__invite[data-expired="true"] {
+  font-style: italic;
+}
+
+.adm-inviteerror {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--ink-2);
+  background: color-mix(in oklab, var(--surface) 92%, var(--ink));
+  font-size: 13px;
+}
+.adm-inviteerror .btn {
+  min-height: 30px;
+  padding: 5px 9px;
 }
 
 /* ---------- inline note (reused in the invite ceremony) ---------- */
@@ -338,6 +443,11 @@
   padding: 11px 12px;
   overflow-x: auto;
   white-space: nowrap;
+  outline: none;
+}
+.adm-invite__url:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .adm-invite__copy {
   flex: none;

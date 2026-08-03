@@ -116,32 +116,35 @@ export interface RosterMember {
     lastSeenAt?: string;
 }
 
-// The one-time claim URL returned by member-create, invite reissue, and restore.
+// The one-time claim URL returned by member-create, invite changes, and restore.
 // It is shown once and never resent, so the surface reveals it in a copy-or-lose
 // ceremony rather than persisting it.
 export interface InviteResult {
     claimUrl: string;
 }
 
-// The two invite states the admin overview renders. Used and revoked invites
-// have no row: neither is actionable, and a revoked one is what Dismiss writes.
+// The two current-invite states the roster renders. Used and revoked invites
+// have no row because neither is actionable.
 export type InviteStatus = "open" | "expired";
 
-// One row of GET /invites: a member still waiting to set up a login, with their
-// newest outstanding invite. `status` is the server's word, derived per read
-// against its clock, so the surface never re-decides expiry locally. `issuedBy`
-// is absent when the invite has no recorded issuer (a seeded invite, or an admin
-// since deleted), and the line is dropped rather than inventing one. There is no
-// claim URL and there cannot be: only the token's hash is stored, so an existing
-// invite's link is gone for good and Regenerate is the only way to a new one.
+// One current generation from GET /invites. It may onboard a placeholder or
+// reset a credentialed member's password. `status` is derived against the
+// response's server clock. `issuedBy` is absent for a seeded invite or a deleted
+// issuer. The claim URL cannot be recovered because only its token hash is
+// stored; replacement is the only way to reveal another link.
 export interface InviteSummary {
-    id: number;
+    id: string;
     memberId: number;
     memberName: string;
     status: InviteStatus;
     expiresAt: string;
     issuedAt: string;
     issuedBy?: string;
+}
+
+export interface InvitesResponse {
+    serverNow: string;
+    items: InviteSummary[];
 }
 
 // Which of the two removal paths ran, so the surface can report "deleted" (gone,

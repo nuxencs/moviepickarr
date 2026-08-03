@@ -4,6 +4,7 @@ import { ChevronDownIcon, KeyRoundIcon, LinkIcon, LogOutIcon, MonitorSmartphoneI
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { APIClient, ApiError, oidcLinkPath } from "@/api/APIClient";
+import { reconcileInviteSurfaces } from "@/api/inviteCache";
 import { AuthConfigQueryOptions, MeQueryOptions, SessionsQueryOptions } from "@/api/queries";
 import { AuthKeys } from "@/api/query_keys";
 
@@ -62,6 +63,7 @@ export function AccountPage() {
     if (result.tone === "success") {
       toast.success(result.text);
       void queryClient.invalidateQueries({ queryKey: AuthKeys.me() });
+      void reconcileInviteSurfaces(queryClient);
     } else {
       toast.error(result.text);
     }
@@ -110,6 +112,7 @@ export function AccountPage() {
       toast.success("Password set. You can now log in with your username.");
     },
     onError: (err) => setDialogError(apiMessage(err, "Couldn't set your password.")),
+    onSettled: () => reconcileInviteSurfaces(queryClient),
   });
 
   const unlinkSelf = useMutation({

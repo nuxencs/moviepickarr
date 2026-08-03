@@ -9,8 +9,8 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteAdminSeedRepository backs the break-glass admin seed over the users +
-// local_accounts tables. SeedAdmin keeps its decision reads and writes on one
+// SqliteAdminSeedRepository backs the break-glass admin seed over users,
+// local_accounts, and invites. SeedAdmin keeps its decision reads and writes on one
 // writer transaction. CountAdmins remains a read-pool query for the no-seed
 // warning path.
 type SqliteAdminSeedRepository struct {
@@ -205,6 +205,9 @@ func adoptSeedAdmin(
 		if err := insertSeedLogin(ctx, tx, match.id, username, *passwordHash); err != nil {
 			return domain.AdminSeedResult{}, err
 		}
+		if err := retireSeedInvite(ctx, tx, match.id); err != nil {
+			return domain.AdminSeedResult{}, err
+		}
 		seeded.LoginCreated = true
 	}
 
@@ -237,6 +240,20 @@ func insertSeedLogin(
 	}
 	if affected == 0 {
 		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, userID)
+	}
+	return nil
+}
+
+// A break-glass login created for an existing placeholder is a credential write
+// like any other. Retire its current invite in the same transaction so an old
+// claim link cannot later reset the seeded admin's password.
+func retireSeedInvite(ctx context.Context, tx *sql.Tx, userID int) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE invites
+		SET revoked_at = unixepoch()
+		WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL
+	`, userID); err != nil {
+		return fmt.Errorf("retire current invite for seeded admin %d: %w", userID, err)
 	}
 	return nil
 }

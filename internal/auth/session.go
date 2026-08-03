@@ -29,7 +29,7 @@ const (
 // caller should turn into a 401: no cookie match, past the absolute cap, or
 // past the idle window. It deliberately does not distinguish the cases: the
 // client learns only that it must log in again.
-var ErrSessionInvalid = errors.New("session invalid")
+var ErrSessionInvalid = domain.ErrSessionInvalid
 
 // SessionManager is the deep module over the session store: it owns token
 // generation, the mint/validate/revoke lifecycle, and the two lifetime windows,
@@ -60,36 +60,44 @@ func NewSessionManager(repo domain.SessionRepo, opts ...Option) *SessionManager 
 	return m
 }
 
-// Mint is the one entry point every login path shares: it generates a fresh
-// opaque token, stores its hash with a 90-day absolute cap, and returns the raw
-// token (for the cookie) plus its expiry. Login always mints fresh and never
-// adopts an inbound cookie, so session fixation is impossible by construction.
+// Mint generates a fresh opaque token, stores its hash with a 90-day absolute
+// cap, and returns the raw token for the cookie. The local-password path uses
+// PrepareMint so the same fresh row can commit beside its credential guard.
 func (m *SessionManager) Mint(ctx context.Context, userID int, userAgent *string) (rawToken string, expiresAt time.Time, err error) {
-	tok, err := GenerateToken()
+	rawToken, session, err := m.PrepareMint(userID, userAgent)
 	if err != nil {
 		return "", time.Time{}, err
+	}
+	if err := m.repo.Create(ctx, session); err != nil {
+		return "", time.Time{}, err
+	}
+	return rawToken, session.ExpiresAt, nil
+}
+
+// PrepareMint generates a fresh token and session row without writing it. The
+// local-login path uses this to insert the session in the credential-CAS
+// transaction; other login paths call Mint.
+func (m *SessionManager) PrepareMint(userID int, userAgent *string) (rawToken string, session domain.Session, err error) {
+	tok, err := GenerateToken()
+	if err != nil {
+		return "", domain.Session{}, err
 	}
 	publicID, err := GeneratePublicID()
 	if err != nil {
-		return "", time.Time{}, err
+		return "", domain.Session{}, err
 	}
 
 	now := m.now()
-	expiresAt = now.Add(SessionAbsoluteTTL)
-
-	if err := m.repo.Create(ctx, domain.Session{
+	session = domain.Session{
 		PublicID:   publicID,
 		UserID:     userID,
 		TokenHash:  tok.Hash,
-		ExpiresAt:  expiresAt,
+		ExpiresAt:  now.Add(SessionAbsoluteTTL),
 		LastSeenAt: now,
 		UserAgent:  userAgent,
 		CreatedAt:  now,
-	}); err != nil {
-		return "", time.Time{}, err
 	}
-
-	return tok.Raw, expiresAt, nil
+	return tok.Raw, session, nil
 }
 
 // Authenticate turns a raw cookie token into a live actor. It hashes the token,

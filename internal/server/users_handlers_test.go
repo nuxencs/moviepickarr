@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"testing"
 
+	"moviepickarr/internal/domain"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -104,6 +106,46 @@ func TestHandleDeleteUser_ArchiveReportsOutcome(t *testing.T) {
 	}
 	if got.AddedByID != member.ID {
 		t.Fatalf("attribution lost: addedBy=%d, want %d", got.AddedByID, member.ID)
+	}
+}
+
+func TestHandleDeleteUser_RefusesLastActiveAdmin(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		authored bool
+	}{
+		{name: "hard delete", authored: false},
+		{name: "archive", authored: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			_, app, userRepo, movieRepo := setupEditMovieTest(t)
+			admin, err := userRepo.Create(ctx, "OnlyAdmin")
+			if err != nil {
+				t.Fatalf("create admin: %v", err)
+			}
+			if err := userRepo.SetRole(ctx, admin.ID, domain.RoleAdmin); err != nil {
+				t.Fatalf("promote admin: %v", err)
+			}
+			if tc.authored {
+				if _, err := movieRepo.Add(ctx, "Admin's movie", "pool", admin.ID); err != nil {
+					t.Fatalf("add admin movie: %v", err)
+				}
+			}
+
+			resp := doAs(t, app,
+				jsonReq(http.MethodDelete, fmt.Sprintf("/api/v1/members/%d", admin.ID), ``), admin.ID, "admin")
+			if resp.StatusCode != fiber.StatusConflict {
+				t.Fatalf("remove last admin: got %d, want 409", resp.StatusCode)
+			}
+			if !rosterHas(t, app, admin.ID) {
+				t.Fatal("last admin left active roster after refused removal")
+			}
+		})
 	}
 }
 

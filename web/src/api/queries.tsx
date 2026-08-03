@@ -75,7 +75,7 @@ export const RosterQueryOptions = () =>
   })
 
 /** The admin invites overview. Nothing pushes an invite change: a member
- *  claiming their link broadcasts nothing, and deliberately so — the SSE stream
+ *  claiming their link broadcasts nothing, and deliberately so. The SSE stream
  *  isn't role-filtered, so an `invite:claimed` event would tell every connected
  *  client who just set up their login. So this refetches on mount and on focus,
  *  which is when a stale row would mislead, plus on the admin's own mutations.

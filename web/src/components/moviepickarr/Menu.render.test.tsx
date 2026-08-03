@@ -76,4 +76,75 @@ describe("Menu", () => {
     flushFrame();
     expect(rectSpy).toHaveBeenCalledTimes(4);
   });
+
+  it("restores focus inside when a live action transition removes the focused item", () => {
+    const { rerender } = render(
+      <Menu
+        label="More actions"
+        actions={[
+          { label: "Replace link", onSelect: () => {} },
+          { label: "Revoke link", onSelect: () => {} },
+        ]}
+      />,
+    );
+    act(() => screen.getByRole("button", { name: "More actions" }).click());
+    act(() => screen.getByRole("menuitem", { name: "Revoke link" }).focus());
+
+    rerender(
+      <Menu
+        label="More actions"
+        actions={[
+          { label: "Create new link", onSelect: () => {} },
+          { label: "Dismiss link", onSelect: () => {} },
+        ]}
+      />,
+    );
+
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Create new link" }));
+  });
+
+  it("stays focusable but does not open when every action is disabled", () => {
+    render(
+      <Menu
+        label="More actions"
+        actions={[
+          { label: "Replace link", disabled: true, onSelect: () => {} },
+          { label: "Remove member", disabled: true, onSelect: () => {} },
+        ]}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "More actions" }) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.getAttribute("aria-disabled")).toBe("true");
+    act(() => trigger.focus());
+    act(() => trigger.click());
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("returns focus to a busy trigger and prevents it from reopening", () => {
+    const { rerender } = render(
+      <Menu
+        label="More actions"
+        actions={[{ label: "Replace link", onSelect: () => {} }]}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    act(() => trigger.click());
+    act(() => screen.getByRole("menuitem", { name: "Replace link" }).focus());
+
+    rerender(
+      <Menu
+        label="More actions"
+        actions={[{ label: "Replace link", onSelect: () => {} }]}
+        disabled
+      />,
+    );
+
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.getAttribute("aria-disabled")).toBe("true");
+    act(() => trigger.click());
+    expect(document.activeElement).toBe(trigger);
+  });
 });

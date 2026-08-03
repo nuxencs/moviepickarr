@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -118,23 +119,24 @@ func TestLocalAccountRepo_ArchivedCredentialIsInvisible(t *testing.T) {
 	mutations := []struct {
 		name string
 		run  func() error
+		want error
 	}{
 		{"change password", func() error {
 			return accounts.UpdatePasswordHash(ctx, alice.ID, "hash-2", now)
-		}},
+		}, sql.ErrNoRows},
 		{"admin reset", func() error {
 			return accounts.UpdatePasswordAndClearLockout(ctx, alice.ID, "hash-3", now)
-		}},
+		}, sql.ErrNoRows},
 		{"failed attempt", func() error {
-			return accounts.RecordFailedAttempt(ctx, alice.ID, 10, &lock, now)
-		}},
+			return accounts.RecordFailedAttempt(ctx, alice.ID, "hash-1", 10, lock, now)
+		}, domain.ErrInvalidCredentials},
 		{"successful login", func() error {
-			return accounts.RecordSuccessfulLogin(ctx, alice.ID, nil, now, now)
-		}},
+			return accounts.RecordSuccessfulLogin(ctx, alice.ID, "hash-1", nil, now, now)
+		}, domain.ErrInvalidCredentials},
 	}
 	for _, mutation := range mutations {
-		if err := mutation.run(); !errors.Is(err, sql.ErrNoRows) {
-			t.Fatalf("%s on archived credential err = %v, want sql.ErrNoRows", mutation.name, err)
+		if err := mutation.run(); !errors.Is(err, mutation.want) {
+			t.Fatalf("%s on archived credential err = %v, want %v", mutation.name, err, mutation.want)
 		}
 	}
 }
@@ -185,8 +187,10 @@ func TestLocalAccountRepo_RecordFailedAndSuccess(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	lockUntil := now.Add(15 * time.Minute)
 
-	if err := accounts.RecordFailedAttempt(ctx, alice.ID, 10, &lockUntil, now); err != nil {
-		t.Fatalf("record failure: %v", err)
+	for i := 1; i <= 10; i++ {
+		if err := accounts.RecordFailedAttempt(ctx, alice.ID, "h1", 10, lockUntil, now); err != nil {
+			t.Fatalf("record failure %d: %v", i, err)
+		}
 	}
 	got, _ := accounts.FindByUserID(ctx, alice.ID)
 	if got.FailedAttempts != 10 || got.LockedUntil == nil || !got.LockedUntil.Equal(lockUntil) {
@@ -195,7 +199,7 @@ func TestLocalAccountRepo_RecordFailedAndSuccess(t *testing.T) {
 
 	// A success with a rehash resets counters, sets last_login, and swaps the hash.
 	newHash := "h2"
-	if err := accounts.RecordSuccessfulLogin(ctx, alice.ID, &newHash, now, now); err != nil {
+	if err := accounts.RecordSuccessfulLogin(ctx, alice.ID, "h1", &newHash, now, now); err != nil {
 		t.Fatalf("record success: %v", err)
 	}
 	got, _ = accounts.FindByUserID(ctx, alice.ID)
@@ -207,12 +211,86 @@ func TestLocalAccountRepo_RecordFailedAndSuccess(t *testing.T) {
 	}
 
 	// A nil hash keeps the stored one.
-	if err := accounts.RecordSuccessfulLogin(ctx, alice.ID, nil, now, now); err != nil {
+	if err := accounts.RecordSuccessfulLogin(ctx, alice.ID, "h2", nil, now, now); err != nil {
 		t.Fatalf("record success no-rehash: %v", err)
 	}
 	got, _ = accounts.FindByUserID(ctx, alice.ID)
 	if got.PasswordHash != "h2" {
 		t.Fatalf("nil hash changed the stored hash to %q", got.PasswordHash)
+	}
+}
+
+func TestLocalAccountRepo_ConcurrentFailedAttemptsAreAtomic(t *testing.T) {
+	ctx, accounts, users, _ := setupLocalAccountRepo(t)
+	alice, _ := users.Create(ctx, "Alice")
+	if err := accounts.Create(ctx, alice.ID, "alice", "h1"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	const attempts = 16
+	now := time.Now().UTC().Truncate(time.Second)
+	lockUntil := now.Add(15 * time.Minute)
+	start := make(chan struct{})
+	errs := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for range attempts {
+		wg.Go(func() {
+			<-start
+			errs <- accounts.RecordFailedAttempt(
+				ctx,
+				alice.ID,
+				"h1",
+				10,
+				lockUntil,
+				now,
+			)
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("record concurrent failure: %v", err)
+		}
+	}
+
+	got, err := accounts.FindByUserID(ctx, alice.ID)
+	if err != nil {
+		t.Fatalf("find account: %v", err)
+	}
+	if got.FailedAttempts != attempts {
+		t.Fatalf("failed attempts = %d, want %d", got.FailedAttempts, attempts)
+	}
+	if got.LockedUntil == nil || !got.LockedUntil.Equal(lockUntil) {
+		t.Fatalf("locked until = %v, want %v", got.LockedUntil, lockUntil)
+	}
+}
+
+func TestLocalAccountRepo_LoginAccountingCannotCrossPasswordChange(t *testing.T) {
+	ctx, accounts, users, _ := setupLocalAccountRepo(t)
+	alice, _ := users.Create(ctx, "Alice")
+	if err := accounts.Create(ctx, alice.ID, "alice", "old-hash"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := accounts.UpdatePasswordAndClearLockout(ctx, alice.ID, "recovered-hash", now); err != nil {
+		t.Fatal(err)
+	}
+	lock := now.Add(time.Hour)
+	if err := accounts.RecordFailedAttempt(ctx, alice.ID, "old-hash", 10, lock, now); !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("stale failure accounting = %v, want ErrInvalidCredentials", err)
+	}
+	oldRehash := "old-password-rehash"
+	if err := accounts.RecordSuccessfulLogin(ctx, alice.ID, "old-hash", &oldRehash, now, now); !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("stale success accounting = %v, want ErrInvalidCredentials", err)
+	}
+	got, err := accounts.FindByUserID(ctx, alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PasswordHash != "recovered-hash" || got.FailedAttempts != 0 || got.LockedUntil != nil {
+		t.Fatalf("recovered credential changed by stale login: %+v", got)
 	}
 }
 
@@ -234,7 +312,7 @@ func TestLocalAccountRepo_UpdateAndDelete(t *testing.T) {
 
 	// Seed a lockout, then confirm the admin-reset update clears it.
 	lock := now.Add(time.Hour)
-	_ = accounts.RecordFailedAttempt(ctx, alice.ID, 5, &lock, now)
+	_ = accounts.RecordFailedAttempt(ctx, alice.ID, "h2", 1, lock, now)
 	if err := accounts.UpdatePasswordAndClearLockout(ctx, alice.ID, "h3", now); err != nil {
 		t.Fatalf("reset update: %v", err)
 	}

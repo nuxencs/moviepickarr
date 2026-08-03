@@ -192,9 +192,9 @@ func TestMigration009_ShapeAndConstraints(t *testing.T) {
 		`INSERT INTO sessions (public_id, token_hash, user_id, expires_at) VALUES ('session-2', 't1', 2, 200)`)
 
 	// invites: token_hash UNIQUE; created_by SET NULL when the issuer is deleted.
-	mustExec(`INSERT INTO invites (user_id, token_hash, expires_at, created_by) VALUES (2, 'i1', 100, 1)`)
+	mustExec(`INSERT INTO invites (public_id, user_id, token_hash, expires_at, created_by) VALUES ('invite-1-public-handle', 2, 'i1', 100, 1)`)
 	wantErr("duplicate invite token_hash rejected",
-		`INSERT INTO invites (user_id, token_hash, expires_at, created_by) VALUES (2, 'i1', 100, 1)`)
+		`INSERT INTO invites (public_id, user_id, token_hash, expires_at, created_by) VALUES ('invite-2-public-handle', 2, 'i1', 100, 1)`)
 
 	// Deleting the issuing admin (alice) nulls created_by but keeps the invite,
 	// and cascades away alice's own credential/identity rows.

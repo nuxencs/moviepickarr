@@ -101,9 +101,10 @@ func resolveMemberID(c *fiber.Ctx) (int, error) {
 	return 0, fmt.Errorf("%w: memberID path parameter is required", domain.ErrInvalidInput)
 }
 
-// handleLogin is the username/password login. On success it mints a fresh
-// session (never adopts an inbound cookie) and returns 204 with the cookie set;
-// the client hydrates via /me. Every credential failure is the uniform 401.
+// handleLogin verifies outside SQLite, then records success and inserts a fresh
+// session under an expected-password-hash guard. Recovery that commits during
+// verification therefore wins: an old password cannot mint a later session or
+// overwrite the recovered hash. Every credential failure is the uniform 401.
 func (h *handler) handleLogin(c *fiber.Ctx) error {
 	var body struct {
 		Username string `json:"username"`
@@ -113,7 +114,7 @@ func (h *handler) handleLogin(c *fiber.Ctx) error {
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "invalid request body")
 	}
 
-	memberID, err := h.localAuth.Login(c.UserContext(), body.Username, body.Password)
+	login, err := h.localAuth.PrepareLogin(c.UserContext(), body.Username, body.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			return writeInvalidCredentials(c)
@@ -123,9 +124,20 @@ func (h *handler) handleLogin(c *fiber.Ctx) error {
 		return h.writeInternal(c, err, "verifying local login failed")
 	}
 
-	if err := h.issueSession(c, memberID); err != nil {
-		return h.writeInternal(c, err, "minting session on login failed")
+	rawToken, session, err := h.sessions.PrepareMint(
+		login.UserID,
+		stringPtrOrNil(c.Get(fiber.HeaderUserAgent)),
+	)
+	if err != nil {
+		return h.writeInternal(c, err, "preparing session on login failed")
 	}
+	if err := h.invites.CompleteLocalLogin(c.UserContext(), login, session); err != nil {
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			return writeInvalidCredentials(c)
+		}
+		return h.writeInternal(c, err, "committing local login failed")
+	}
+	setSessionCookie(c, rawToken)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -209,10 +221,9 @@ func (h *handler) handleLogout(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// handleChangePassword verifies the actor's current password and rewrites it,
-// then closes the exposure: every other session is revoked and the current
-// token is rotated (revoke-all + fresh mint), so the rotation actually kicks
-// other devices without logging this one out.
+// handleChangePassword verifies and hashes outside SQLite, then atomically
+// rewrites the credential, revokes every old session, and retires any current
+// recovery link. A fresh session rotates this device's token after commit.
 func (h *handler) handleChangePassword(c *fiber.Ctx) error {
 	memberID, _ := c.Locals(localsMemberID).(int)
 
@@ -224,19 +235,27 @@ func (h *handler) handleChangePassword(c *fiber.Ctx) error {
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "invalid request body")
 	}
 
-	if err := h.localAuth.ChangePassword(c.UserContext(), memberID, body.CurrentPassword, body.NewPassword); err != nil {
+	change, err := h.localAuth.PreparePasswordChange(
+		c.UserContext(),
+		memberID,
+		body.CurrentPassword,
+		body.NewPassword,
+	)
+	if err != nil {
 		return h.writeAuthError(c, err)
 	}
-
-	// Revoke every session (including this one) then mint fresh for this device:
-	// the net state is exactly one live session with a new token, so other
-	// devices are closed and the current token is rotated.
-	if err := h.sessions.RevokeAll(c.UserContext(), memberID); err != nil {
-		return h.writeInternal(c, err, "revoking sessions on password change failed")
+	rawSession, session, err := h.sessions.PrepareMint(
+		memberID,
+		stringPtrOrNil(c.Get(fiber.HeaderUserAgent)),
+	)
+	if err != nil {
+		return h.writeInternal(c, err, "preparing rotated session on password change failed")
 	}
-	if err := h.issueSession(c, memberID); err != nil {
-		return h.writeInternal(c, err, "rotating session on password change failed")
+	change.Session = &session
+	if err := h.invites.ChangePassword(c.UserContext(), change); err != nil {
+		return h.writeAuthError(c, err)
 	}
+	setSessionCookie(c, rawSession)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -261,15 +280,9 @@ func (h *handler) handleSetLocalLogin(c *fiber.Ctx) error {
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "invalid request body")
 	}
 
-	res, err := h.localAuth.SetLocalLogin(c.UserContext(), targetID, body.Username, body.Password)
+	_, err = h.invites.SetLocalLogin(c.UserContext(), targetID, body.Username, body.Password)
 	if err != nil {
 		return writeError(c, err)
-	}
-
-	if res.WasReset {
-		if err := h.sessions.RevokeAll(c.UserContext(), targetID); err != nil {
-			return h.writeInternal(c, err, "revoking sessions on admin reset failed")
-		}
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
@@ -287,7 +300,7 @@ func (h *handler) handleDeleteLocalLogin(c *fiber.Ctx) error {
 	}
 	actorID, _ := c.Locals(localsMemberID).(int)
 
-	if err := h.localAuth.DeleteLocalLogin(c.UserContext(), targetID, actorID); err != nil {
+	if err := h.invites.DeleteLocalLogin(c.UserContext(), targetID, actorID); err != nil {
 		return writeError(c, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)

@@ -32,6 +32,8 @@ interface MenuProps {
   align?: "start" | "end";
   /** Extra class on the trigger button. */
   className?: string;
+  /** Prevent opening while the owning surface has an in-flight operation. */
+  disabled?: boolean;
 }
 
 type CloseReason = "select" | "escape" | "tab" | "outside" | "trigger";
@@ -55,12 +57,16 @@ const MARGIN = 8;
  * The other direction works too: a menu opened from inside a dialog is the topmost
  * surface, so Esc closes the menu and leaves the dialog behind it up (#220).
  */
-export function Menu({ actions, label, icon, align = "end", className }: MenuProps) {
+export function Menu({ actions, label, icon, align = "end", className, disabled = false }: MenuProps) {
   const [placement, setPlacement] = useState<Placement | null>(null);
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  const actionSignature = actions
+    .map((action) => `${action.label}:${action.disabled ? "disabled" : "enabled"}`)
+    .join("\u0000");
+  const triggerDisabled = disabled || actions.every((action) => action.disabled);
 
   const { open, closing, show, dismiss, isTopmost } = useDismissible({
     restoreFocusTo: triggerRef,
@@ -79,6 +85,10 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
     (reason: CloseReason) => dismiss({ restoreFocus: reason !== "outside" }),
     [dismiss],
   );
+
+  useEffect(() => {
+    if (triggerDisabled && open && !closing) dismiss();
+  }, [closing, dismiss, open, triggerDisabled]);
 
   const place = useCallback(() => {
     const trigger = triggerRef.current;
@@ -104,14 +114,23 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
     });
   }, [align]);
 
-  // Position the menu and focus its first item once mounted, before paint.
+  // Position the menu and keep focus inside when a live action transition
+  // replaces the focused item, such as an invite expiring while the menu is
+  // open. Leave an existing enabled item alone.
   useLayoutEffect(() => {
     if (!open || closing) return;
     place();
-    menuRef.current
-      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')
-      ?.focus();
-  }, [open, closing, place]);
+    const menu = menuRef.current;
+    const focused = document.activeElement;
+    if (
+      !menu?.contains(focused) ||
+      (focused instanceof HTMLButtonElement && focused.disabled)
+    ) {
+      menu
+        ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')
+        ?.focus();
+    }
+  }, [open, closing, place, actionSignature]);
 
   // Keep it anchored while scrolling/resizing; dismiss on Esc or outside click.
   useEffect(() => {
@@ -158,15 +177,15 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
 
   const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End", "Tab"].includes(e.key)) return;
-    const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [],
-    );
-    if (items.length === 0) return;
     if (e.key === "Tab") {
       e.preventDefault();
       requestClose("tab");
       return;
     }
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [],
+    );
+    if (items.length === 0) return;
     e.preventDefault();
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
     const next =
@@ -190,8 +209,20 @@ export function Menu({ actions, label, icon, align = "end", className }: MenuPro
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => (open && !closing ? requestClose("trigger") : openMenu())}
+        aria-disabled={triggerDisabled || undefined}
+        onClick={() => {
+          if (triggerDisabled) return;
+          if (open && !closing) {
+            requestClose("trigger");
+          } else {
+            openMenu();
+          }
+        }}
         onKeyDown={(e) => {
+          if (triggerDisabled) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") e.preventDefault();
+            return;
+          }
           if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
             e.preventDefault();
             openMenu();

@@ -27,13 +27,12 @@ type handler struct {
 	sessions  *auth.SessionManager
 	localAuth *auth.LocalAuth
 	invites   *auth.InviteManager
-	// OIDC relying-party surface. All four are set together (or none): oidcEnabled
-	// gates route registration and the claim-page OIDC option, so when the
-	// provider quartet is unset or discovery fails, oidc/oidcTx/linker stay nil and
-	// /oidc/* is never mounted.
+	// OIDC relying-party surface. These fields are set together (or not at all):
+	// oidcEnabled gates route registration and the claim-page OIDC option, so
+	// when provider configuration is incomplete or discovery fails, oidc and
+	// oidcTx stay nil and /oidc/* is never mounted.
 	oidc            *auth.RelyingParty
 	oidcTx          *auth.OIDCTxCodec
-	linker          *auth.IdentityLinker
 	oidcEnabled     bool
 	userService     *user.Service
 	movieService    *movie.Service

@@ -19,27 +19,53 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AuthKeys, MoviesKeys, UsersKeys } from "@/api/query_keys";
+import { ApiError } from "@/api/APIClient";
+import { AuthKeys, InvitesKeys, MoviesKeys, UsersKeys } from "@/api/query_keys";
 
 import { RosterSection } from "@/components/moviepickarr/admin/RosterSection";
 
-import type { MeResponse, RemoveResult, RosterMember } from "@/types/Response";
+import type {
+  InviteResult,
+  InviteSummary,
+  InvitesResponse,
+  MeResponse,
+  RemoveResult,
+  RosterMember,
+} from "@/types/Response";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { renderWithProviders } from "@/test/providers";
 
-
 const setLogin = vi.fn<(id: number, u: string, p: string) => Promise<void>>();
 const removeMember = vi.fn<(id: number) => Promise<RemoveResult>>();
+const listRoster = vi.fn<() => Promise<RosterMember[]>>();
+const listInvites = vi.fn<() => Promise<InvitesResponse>>();
+const createInvite = vi.fn<(id: number) => Promise<InviteResult>>();
+const createPasswordResetInvite = vi.fn<(id: number) => Promise<InviteResult>>();
+const replaceInvite = vi.fn<(id: string) => Promise<InviteResult>>();
+const revokeInvite = vi.fn<(id: string) => Promise<void>>();
+const dismissInvite = vi.fn<(id: string) => Promise<void>>();
 
 vi.mock("@/api/APIClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/APIClient")>();
   return {
     ...actual,
     APIClient: {
+      ...actual.APIClient,
       members: {
+        ...actual.APIClient.members,
+        roster: () => listRoster(),
         setLocalLogin: (id: number, u: string, p: string) => setLogin(id, u, p),
         remove: (id: number) => removeMember(id),
+        createInvite: (id: number) => createInvite(id),
+        createPasswordResetInvite: (id: number) => createPasswordResetInvite(id),
+      },
+      invites: {
+        ...actual.APIClient.invites,
+        list: () => listInvites(),
+        replace: (id: string) => replaceInvite(id),
+        revoke: (id: string) => revokeInvite(id),
+        dismiss: (id: string) => dismissInvite(id),
       },
     },
   };
@@ -60,6 +86,19 @@ function member(overrides: Partial<RosterMember> = {}): RosterMember {
   };
 }
 
+function invite(overrides: Partial<InviteSummary> = {}): InviteSummary {
+  return {
+    id: "invite-public-handle-1",
+    memberId: 7,
+    memberName: "Cleo",
+    status: "open",
+    expiresAt: "2026-08-04T12:00:00Z",
+    issuedAt: "2026-08-03T10:00:00Z",
+    issuedBy: "Ada",
+    ...overrides,
+  };
+}
+
 const admin: MeResponse = {
   id: 1,
   displayName: "Ada",
@@ -69,8 +108,26 @@ const admin: MeResponse = {
   hasLinkedIdentity: false,
 };
 
-async function renderSection(members: RosterMember[]) {
+async function renderSection(members: RosterMember[], items: InviteSummary[] = []) {
   let queryClient: QueryClient | undefined;
+  const overview = { serverNow: "2026-08-03T12:00:00Z", items };
+  listRoster.mockResolvedValue(members);
+  listInvites.mockResolvedValue(overview);
+  const view = await renderWithProviders(<RosterSection />, {
+    path: "/admin",
+    seed: (client) => {
+      queryClient = client;
+      client.setQueryData(AuthKeys.me(), admin);
+      client.setQueryData(UsersKeys.roster(), members);
+      client.setQueryData(InvitesKeys.list(), overview);
+    },
+  });
+  return { ...view, queryClient: queryClient! };
+}
+
+async function renderWithoutInviteData(members: RosterMember[]) {
+  let queryClient: QueryClient | undefined;
+  listRoster.mockResolvedValue(members);
   const view = await renderWithProviders(<RosterSection />, {
     path: "/admin",
     seed: (client) => {
@@ -78,6 +135,9 @@ async function renderSection(members: RosterMember[]) {
       client.setQueryData(AuthKeys.me(), admin);
       client.setQueryData(UsersKeys.roster(), members);
     },
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
   });
   return { ...view, queryClient: queryClient! };
 }
@@ -95,8 +155,14 @@ function dialog() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-03T12:00:00Z"));
   setLogin.mockResolvedValue(undefined);
   removeMember.mockResolvedValue({ outcome: "archived" });
+  createInvite.mockResolvedValue({ claimUrl: "/claim/created" });
+  createPasswordResetInvite.mockResolvedValue({ claimUrl: "/claim/reset" });
+  replaceInvite.mockResolvedValue({ claimUrl: "/claim/replaced" });
+  revokeInvite.mockResolvedValue(undefined);
+  dismissInvite.mockResolvedValue(undefined);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -122,6 +188,23 @@ describe("opening a ceremony from a member's row", () => {
     // RosterOverlays.render.test.tsx's; all that matters here is whose row won.
     expect(dialog().textContent).toContain("Remove Bea?");
     expect(dialog().textContent).not.toContain("Cleo");
+  });
+
+  it("does not offer removing the last active admin", async () => {
+    await renderSection([
+      member({ id: admin.id, name: "Ada", role: "admin" }),
+      member({ id: 8, name: "Bea", role: "member" }),
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Ada" }));
+
+    expect(
+      (
+        within(screen.getByRole("menu")).getByRole("menuitem", {
+          name: "Remove member",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it("carries the member into the set-login dialog, prefilled with their username", async () => {
@@ -157,6 +240,310 @@ describe("opening a ceremony from a member's row", () => {
     takeAction("Ada", "Unlink SSO");
 
     expect(dialog().textContent).toContain("Can't unlink SSO");
+  });
+});
+
+describe("invite state inside the roster", () => {
+  const placeholder = member({
+    username: undefined,
+    hasLocalLogin: false,
+    hasLinkedIdentity: false,
+    invitePending: true,
+  });
+
+  it("keeps invite status in the Login cell without a second page section", async () => {
+    await renderSection([placeholder], [invite()]);
+
+    expect(screen.getByText("Invite link open")).not.toBeNull();
+    expect(screen.getByText(/expires in 1 day/)).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Invites" })).toBeNull();
+  });
+
+  it("routes replacement through the immutable invite handle", async () => {
+    await renderSection([placeholder], [invite({ id: "invite-public-exact-1" })]);
+
+    takeAction("Cleo", "Create replacement link");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(replaceInvite).toHaveBeenCalledWith("invite-public-exact-1");
+    expect(within(dialog()).getByRole("heading").textContent).toContain("Invite link ready for Cleo");
+  });
+
+  it("keeps a password reset generation visible and manageable beside the login", async () => {
+    await renderSection(
+      [member({ invitePending: true })],
+      [invite({ id: "reset-public-exact-1" })],
+    );
+
+    expect(screen.getByText(/Password reset link open/)).not.toBeNull();
+    expect(screen.getByText("Password")).not.toBeNull();
+    takeAction("Cleo", "Create replacement reset link");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(replaceInvite).toHaveBeenCalledWith("reset-public-exact-1");
+  });
+
+  it("issues an explicit password reset link for a credentialed member", async () => {
+    await renderSection([member()], []);
+
+    takeAction("Cleo", "Create password reset link");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(createPasswordResetInvite).toHaveBeenCalledWith(7);
+    expect(within(dialog()).getByRole("heading").textContent).toContain(
+      "Password reset link ready for Cleo",
+    );
+    expect(within(dialog()).getByRole("textbox", { name: "Password reset link for Cleo" }))
+      .not.toBeNull();
+  });
+
+  it("offers only expired-generation actions after the server boundary", async () => {
+    await renderSection(
+      [{ ...placeholder, invitePending: false }],
+      [invite({ id: "invite-expired-exact-1", status: "expired", expiresAt: "2026-08-03T11:00:00Z" })],
+    );
+
+    expect(screen.getByText("Invite expired")).not.toBeNull();
+    takeAction("Cleo", "Dismiss expired invite");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(dismissInvite).toHaveBeenCalledWith("invite-expired-exact-1");
+  });
+
+  it("creates by member only when no current generation exists", async () => {
+    await renderSection([{ ...placeholder, invitePending: false }], []);
+
+    takeAction("Cleo", "Create invite link");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(createInvite).toHaveBeenCalledWith(7);
+  });
+
+  it("reconciles an unseen current link without offering a duplicate", async () => {
+    await renderSection([placeholder], []);
+
+    expect(screen.getByText("Invite status updating…")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Cleo" }));
+
+    expect(
+      within(screen.getByRole("menu")).queryByRole("menuitem", { name: "Create invite link" }),
+    ).toBeNull();
+  });
+
+  it("shows a neutral reset fallback when a credentialed roster row is ahead", async () => {
+    await renderSection([member({ invitePending: true })], []);
+
+    expect(screen.getByText("Password")).not.toBeNull();
+    expect(screen.getByText("Reset link status updating…")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Cleo" }));
+    expect(
+      within(screen.getByRole("menu")).queryByRole("menuitem", {
+        name: "Create password reset link",
+      }),
+    ).toBeNull();
+  });
+
+  it("bounds projection reconciliation to one refresh per mismatch", async () => {
+    const matched = member({ invitePending: false });
+    const { queryClient } = await renderSection([matched], []);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    listInvites.mockClear();
+    listRoster.mockClear();
+    listInvites.mockImplementationOnce(() => new Promise<InvitesResponse>(() => {}));
+    listRoster.mockImplementationOnce(() => new Promise<RosterMember[]>(() => {}));
+
+    act(() => {
+      queryClient.setQueryData(UsersKeys.roster(), [{ ...matched, invitePending: true }]);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByText("Reset link status updating…")).not.toBeNull();
+    expect(listInvites).toHaveBeenCalledTimes(1);
+    expect(listRoster).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      queryClient.setQueryData(UsersKeys.roster(), [{ ...matched, invitePending: true }]);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(listInvites).toHaveBeenCalledTimes(1);
+    expect(listRoster).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconciles again when the same member's mismatch changes generation and direction", async () => {
+    const matched = member({ invitePending: false });
+    const { queryClient } = await renderSection([matched], []);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    listInvites.mockImplementation(() => new Promise<InvitesResponse>(() => {}));
+    listRoster.mockImplementation(() => new Promise<RosterMember[]>(() => {}));
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
+    act(() => {
+      queryClient.setQueryData(UsersKeys.roster(), [{ ...matched, invitePending: true }]);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(invalidate).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      queryClient.setQueryData(InvitesKeys.list(), {
+        serverNow: "2026-08-03T12:00:00Z",
+        items: [invite({ id: "replacement-generation" })],
+      });
+      queryClient.setQueryData(UsersKeys.roster(), [{ ...matched, invitePending: false }]);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByText("Reset link status updating…")).not.toBeNull();
+    expect(invalidate).toHaveBeenCalledTimes(4);
+  });
+
+  it("shows the target's busy state while an invite command is unresolved", async () => {
+    let resolve!: (result: InviteResult) => void;
+    replaceInvite.mockImplementationOnce(
+      () => new Promise<InviteResult>((done) => { resolve = done; }),
+    );
+    await renderSection([placeholder], [invite()]);
+
+    takeAction("Cleo", "Create replacement link");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(screen.getByRole("status").textContent).toContain("Replacing link…");
+
+    const trigger = screen.getByRole("button", { name: "Actions for Cleo" }) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(trigger);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await act(async () => {
+      resolve({ claimUrl: "/claim/replaced" });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  });
+
+  it("ticks at expiry, reconciles both views, and keeps menu focus inside", async () => {
+    const expiring = invite({ expiresAt: "2026-08-03T12:00:02Z" });
+    await renderSection([placeholder], [expiring]);
+    listInvites.mockClear();
+    listRoster.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Cleo" }));
+    const revoke = within(screen.getByRole("menu")).getByRole("menuitem", {
+      name: "Revoke invite link",
+    });
+    revoke.focus();
+
+    listInvites.mockResolvedValueOnce({
+      serverNow: "2026-08-03T12:00:02Z",
+      items: [{ ...expiring, status: "expired" }],
+    });
+    listRoster.mockResolvedValueOnce([{ ...placeholder, invitePending: false }]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_025);
+    });
+
+    expect(screen.getByText("Invite expired")).not.toBeNull();
+    expect(listInvites).toHaveBeenCalledTimes(1);
+    expect(listRoster).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(
+      within(screen.getByRole("menu")).getByRole("menuitem", { name: "Create new invite link" }),
+    );
+  });
+
+  it("reconciles stale roster and invite caches after an exact-handle conflict", async () => {
+    replaceInvite.mockRejectedValueOnce(new ApiError(409, "invite generation is stale"));
+    await renderSection([placeholder], [invite()]);
+    listInvites.mockClear();
+    listRoster.mockClear();
+
+    takeAction("Cleo", "Create replacement link");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(listInvites).toHaveBeenCalledTimes(1);
+    expect(listRoster).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("invite overview failure", () => {
+  it("shows one retry row only when the roster has invite-dependent members", async () => {
+    listInvites.mockRejectedValue(new ApiError(503, "unavailable"));
+    await renderWithoutInviteData([
+      member({
+        username: undefined,
+        hasLocalLogin: false,
+        hasLinkedIdentity: false,
+        invitePending: true,
+      }),
+    ]);
+
+    expect(screen.getByRole("status").textContent).toContain("Couldn't load invite status.");
+    expect(screen.queryByText("Invite details unavailable")).toBeNull();
+    expect(screen.getByText("Invite link open")).not.toBeNull();
+  });
+
+  it("shows the retry row for a credentialed member who can hold reset links", async () => {
+    listInvites.mockRejectedValueOnce(new ApiError(503, "unavailable"));
+    await renderWithoutInviteData([member()]);
+
+    expect(screen.getByText("Couldn't load invite status.")).not.toBeNull();
+    expect(screen.getByText("Password")).not.toBeNull();
+  });
+
+  it("does not add an invite error above an SSO-only roster", async () => {
+    listInvites.mockRejectedValueOnce(new ApiError(503, "unavailable"));
+    await renderWithoutInviteData([
+      member({ username: undefined, hasLocalLogin: false, hasLinkedIdentity: true }),
+    ]);
+
+    expect(screen.queryByText("Couldn't load invite status.")).toBeNull();
+    expect(screen.getByText("SSO")).not.toBeNull();
+  });
+
+  it("warns on a failed background refresh and hides stale invite commands", async () => {
+    const reset = invite({ id: "reset-stale-handle" });
+    const { queryClient } = await renderSection([member({ invitePending: true })], [reset]);
+    await act(async () => {
+      await queryClient.cancelQueries({ queryKey: InvitesKeys.list() });
+    });
+    listInvites.mockRejectedValue(new ApiError(503, "unavailable"));
+
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: InvitesKeys.list() });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(queryClient.getQueryState(InvitesKeys.list())?.status).toBe("error");
+    expect(screen.getByText("Invite status may be out of date.")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Cleo" }));
+    expect(
+      within(screen.getByRole("menu")).queryByRole("menuitem", {
+        name: "Create replacement reset link",
+      }),
+    ).toBeNull();
+    expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Reset password" })).not.toBeNull();
   });
 });
 

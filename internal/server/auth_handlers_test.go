@@ -50,9 +50,13 @@ func setupAuthApp(t *testing.T) *authTestEnv {
 	clk := &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	h.sessions = auth.NewSessionManager(repository.NewSqliteSessionRepository(dbConn), auth.WithClock(clk.now))
 	h.localAuth = auth.NewLocalAuth(repository.NewSqliteLocalAccountRepository(dbConn), auth.WithLocalClock(clk.now))
-	// The invite manager reuses the fake-clock localAuth for the claim upsert and
-	// carries the same clock so invite expiry advances with the test.
-	h.invites = auth.NewInviteManager(repository.NewSqliteInviteRepository(dbConn), h.localAuth, auth.WithInviteClock(clk.now))
+	// The invite manager and scoped transition store share the fake clock so
+	// invite expiry and credential commits advance with the test.
+	h.invites = auth.NewInviteManager(
+		repository.NewSqliteInviteRepository(dbConn),
+		repository.NewSqliteAuthTransitionStore(dbConn),
+		auth.WithInviteClock(clk.now),
+	)
 
 	t.Cleanup(func() {
 		h.Close()
@@ -340,8 +344,26 @@ func TestLogin_Lockout(t *testing.T) {
 
 func TestChangePassword_RotatesAndRevokes(t *testing.T) {
 	e := setupAuthApp(t)
+	adminID := e.seedMember(t, "Admin", "admin")
+	e.seedLocalLogin(t, adminID, "admin", "admin password ok")
+	adminCookie := e.login(t, "admin", "admin password ok")
 	id := e.seedMember(t, "Dana", "member")
 	e.seedLocalLogin(t, id, "dana", "old password here")
+	issue := e.request(
+		t,
+		http.MethodPost,
+		"/api/v1/members/"+strconv.Itoa(id)+"/invite",
+		adminCookie,
+		map[string]string{"purpose": "password_reset"},
+	)
+	if issue.StatusCode != fiber.StatusCreated {
+		t.Fatalf("reset invite status = %d, want 201", issue.StatusCode)
+	}
+	var resetInvite inviteResponse
+	if err := json.NewDecoder(issue.Body).Decode(&resetInvite); err != nil {
+		t.Fatalf("decode reset invite: %v", err)
+	}
+	resetToken := tokenFromClaimURL(t, resetInvite.ClaimURL)
 
 	deviceA := e.login(t, "dana", "old password here")
 	deviceB := e.login(t, "dana", "old password here")
@@ -375,6 +397,9 @@ func TestChangePassword_RotatesAndRevokes(t *testing.T) {
 	bad := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "dana", "password": "old password here"})
 	if bad.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("old password login = %d, want 401", bad.StatusCode)
+	}
+	if claim := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+resetToken, "", nil); claim.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("reset invite after password change = %d, want 404", claim.StatusCode)
 	}
 }
 
@@ -552,6 +577,22 @@ func TestAdminDeleteLocalLogin(t *testing.T) {
 
 	target := e.seedMember(t, "Jack", "member")
 	e.seedLocalLogin(t, target, "jack", "jack password ok")
+	targetCookie := e.login(t, "jack", "jack password ok")
+	issue := e.request(
+		t,
+		http.MethodPost,
+		"/api/v1/members/"+strconv.Itoa(target)+"/invite",
+		adminCookie,
+		map[string]string{"purpose": "password_reset"},
+	)
+	if issue.StatusCode != fiber.StatusCreated {
+		t.Fatalf("reset invite status = %d, want 201", issue.StatusCode)
+	}
+	var resetInvite inviteResponse
+	if err := json.NewDecoder(issue.Body).Decode(&resetInvite); err != nil {
+		t.Fatalf("decode reset invite: %v", err)
+	}
+	resetToken := tokenFromClaimURL(t, resetInvite.ClaimURL)
 
 	// Delete another member's login → 204, then it's gone (login fails).
 	del := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(target)+"/local-login", adminCookie, nil)
@@ -561,6 +602,12 @@ func TestAdminDeleteLocalLogin(t *testing.T) {
 	gone := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "jack", "password": "jack password ok"})
 	if gone.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("deleted login = %d, want 401", gone.StatusCode)
+	}
+	if claim := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+resetToken, "", nil); claim.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("reset invite after password removal = %d, want 404", claim.StatusCode)
+	}
+	if old := e.request(t, http.MethodGet, "/api/v1/auth/me", targetCookie, nil); old.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("session after last password removal = %d, want 401", old.StatusCode)
 	}
 
 	// Deleting a member with no local login → 404.

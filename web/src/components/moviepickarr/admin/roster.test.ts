@@ -30,9 +30,9 @@ describe("loginChips", () => {
     expect(chips).toEqual([{ kind: "archived", label: "Archived" }]);
   });
 
-  it("shows invite-sent for a placeholder with a pending invite", () => {
+  it("shows an open-link fallback for a placeholder with a pending invite", () => {
     expect(loginChips(member({ invitePending: true }))).toEqual([
-      { kind: "pending", label: "Invite sent" },
+      { kind: "pending", label: "Invite link open" },
     ]);
   });
 
@@ -52,7 +52,7 @@ describe("loginChips", () => {
 describe("credLabel", () => {
   it("summarizes each state in one line", () => {
     expect(credLabel(member({ archived: true }))).toBe("Archived");
-    expect(credLabel(member({ invitePending: true }))).toBe("Invited");
+    expect(credLabel(member({ invitePending: true }))).toBe("Invite link open");
     expect(credLabel(member())).toBe("No login yet");
     expect(credLabel(member({ hasLocalLogin: true, hasLinkedIdentity: true }))).toBe("Password + SSO");
   });

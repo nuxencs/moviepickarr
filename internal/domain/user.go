@@ -76,8 +76,8 @@ type UserRepo interface {
 	// authored any movies (movies.added_by_id is ON DELETE RESTRICT). Zero
 	// authored movies hard-deletes the row (credentials/sessions/invites cascade,
 	// next_up nulls, name freed); one or more archives it (archived_at set,
-	// login rows stripped, row and attribution kept). A missing member returns
-	// ErrNotFound.
+	// login rows stripped, row and attribution kept). Removing the last active
+	// admin returns ErrConflict. A missing member returns ErrNotFound.
 	Remove(ctx context.Context, id int) (RemoveOutcome, error)
 	// Restore reactivates an archived member after re-stripping any residual
 	// credential, session, and invite rows. A member that is not archived (or

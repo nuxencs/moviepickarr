@@ -124,15 +124,18 @@ func (h *handler) handleOIDCLink(c *fiber.Ctx) error {
 	return h.beginOIDC(c, tx, oidcLinkRedirect)
 }
 
-// handleClaimOIDC starts the claim intent (unauthenticated): it validates the
-// invite up front (so a dead link doesn't send the member to the provider), then
-// stashes the invite token HASH in the tx and starts the flow. The callback
-// re-validates the invite, links, consumes, and mints.
+// handleClaimOIDC starts the onboarding claim intent (unauthenticated): it
+// validates the invite up front (so a dead or password-reset link doesn't send
+// the member to the provider), then stashes the invite token hash in the tx and
+// starts the flow. The callback re-validates the invite, links, consumes, and
+// mints.
 func (h *handler) handleClaimOIDC(c *fiber.Ctx) error {
 	token := c.Params("token")
-	if _, err := h.invites.Validate(c.UserContext(), token); err != nil {
+	claim, err := h.invites.Validate(c.UserContext(), token)
+	if err != nil || claim.IsReset {
 		// A no-longer-valid or already-used invite: bounce to the SPA claim page,
-		// which re-validates and shows the right terminal state.
+		// which re-validates and shows the right terminal state. Password-reset
+		// links also stay on that page because their only claim path is password.
 		return c.Redirect("/claim/"+token, fiber.StatusFound)
 	}
 
@@ -212,7 +215,15 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 // unlinked identity is rejected ephemerally: nothing is persisted and the
 // attempt is WARN-logged (iss/sub/email, never tokens).
 func (h *handler) dispatchOIDCLogin(c *fiber.Ctx, claims auth.OIDCClaims) error {
-	memberID, found, err := h.linker.Login(c.UserContext(), claims)
+	rawSession, session, err := h.sessions.PrepareMint(
+		0,
+		stringPtrOrNil(c.Get(fiber.HeaderUserAgent)),
+	)
+	if err != nil {
+		h.reqLog(c).Error().Err(err).Msg("preparing session on oidc login failed")
+		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
+	}
+	_, found, err := h.invites.CompleteOIDCLogin(c.UserContext(), claims, session)
 	if err != nil {
 		h.reqLog(c).Error().Err(err).
 			Str("issuer", claims.Issuer).
@@ -228,11 +239,7 @@ func (h *handler) dispatchOIDCLogin(c *fiber.Ctx, claims auth.OIDCClaims) error 
 			Msg("oidc login for an unlinked identity rejected")
 		return redirectError(c, oidcLoginRedirect, errOIDCUnlinked)
 	}
-	if err := h.issueSession(c, memberID); err != nil {
-		h.reqLog(c).Error().Err(err).Int("member_id", memberID).
-			Msg("minting session on oidc login failed")
-		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
-	}
+	setSessionCookie(c, rawSession)
 	return c.Redirect(oidcHomeRedirect, fiber.StatusFound)
 }
 
@@ -254,7 +261,10 @@ func (h *handler) dispatchOIDCLink(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OID
 		return redirectError(c, oidcLinkRedirect, errOIDCSessionExpired)
 	}
 
-	if err := h.linker.Link(c.UserContext(), tx.MemberID, claims); err != nil {
+	if err := h.invites.LinkOIDC(c.UserContext(), tx.MemberID, claims, as.TokenHash); err != nil {
+		if errors.Is(err, auth.ErrSessionInvalid) {
+			return redirectError(c, oidcLinkRedirect, errOIDCSessionExpired)
+		}
 		if errors.Is(err, domain.ErrConflict) {
 			return redirectError(c, oidcLinkRedirect, errOIDCLinkConflict)
 		}
@@ -268,48 +278,34 @@ func (h *handler) dispatchOIDCLink(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OID
 	return c.Redirect(oidcLinkRedirect+"?linked=1", fiber.StatusFound)
 }
 
-// dispatchOIDCClaim links the identity to the invite's member, then consumes the
-// invite and mints a session. It re-resolves the invite by the hash stashed in
+// dispatchOIDCClaim links the identity to the invite's member, consumes the
+// invite, and creates the session in one transaction. It re-resolves the invite by the hash stashed in
 // the tx (it may have expired or been used during the provider round trip). A
-// collision writes nothing and does NOT consume the invite; on success the
-// invite is consumed last (per ADR 0001), so a failure before that leaves it
-// usable.
+// collision writes nothing and does not consume the invite.
 func (h *handler) dispatchOIDCClaim(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OIDCClaims) error {
-	ic, err := h.invites.ResolveClaimByHash(c.UserContext(), tx.InviteTokenHash)
+	rawSession, session, err := h.sessions.PrepareMint(
+		0,
+		stringPtrOrNil(c.Get(fiber.HeaderUserAgent)),
+	)
 	if err != nil {
-		// The invite died between initiation and callback (expired, revoked, used).
-		h.reqLog(c).Warn().Err(err).Msg("oidc claim invite no longer valid at callback")
+		h.reqLog(c).Error().Err(err).Msg("preparing session on oidc claim failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
-
-	if err := h.linker.Link(c.UserContext(), ic.UserID, claims); err != nil {
+	_, err = h.invites.ClaimOIDCByHash(
+		c.UserContext(),
+		tx.InviteTokenHash,
+		claims,
+		session,
+	)
+	if err != nil {
 		if errors.Is(err, domain.ErrConflict) {
 			return redirectError(c, oidcLoginRedirect, errOIDCLinkConflict)
 		}
-		h.reqLog(c).Error().Err(err).
-			Int("member_id", ic.UserID).
-			Int64("invite_id", ic.ID).
-			Str("issuer", claims.Issuer).
-			Str("subject", claims.Subject).
-			Msg("oidc claim link failed")
+		h.reqLog(c).Warn().Err(err).Msg("oidc claim transition failed")
 		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
 	}
 
-	if err := h.issueSession(c, ic.UserID); err != nil {
-		h.reqLog(c).Error().Err(err).Int("member_id", ic.UserID).
-			Msg("minting session on oidc claim failed")
-		return redirectError(c, oidcLoginRedirect, errOIDCFailed)
-	}
-	// Consume last: if this fails the identity is linked and the session is up, so
-	// the member is in; the still-usable invite ages out or is regenerated.
-	if err := h.invites.Consume(c.UserContext(), ic.ID); err != nil {
-		// The member is already in; the invite just stays usable until it ages
-		// out, so this is an operator cleanup signal, not a failed request.
-		h.reqLog(c).Error().Err(err).
-			Int("member_id", ic.UserID).
-			Int64("invite_id", ic.ID).
-			Msg("consuming invite on oidc claim failed")
-	}
+	setSessionCookie(c, rawSession)
 	return c.Redirect(oidcHomeRedirect, fiber.StatusFound)
 }
 
@@ -318,7 +314,7 @@ func (h *handler) dispatchOIDCClaim(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OI
 // 409 when the identity is the member's only remaining credential.
 func (h *handler) handleUnlinkSelf(c *fiber.Ctx) error {
 	actor := actorMemberID(c)
-	if err := h.linker.Unlink(c.UserContext(), actor, actor); err != nil {
+	if err := h.invites.UnlinkOIDC(c.UserContext(), actor, actor); err != nil {
 		return writeError(c, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
@@ -336,7 +332,7 @@ func (h *handler) handleUnlinkMember(c *fiber.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
-	if err := h.linker.Unlink(c.UserContext(), targetID, actorMemberID(c)); err != nil {
+	if err := h.invites.UnlinkOIDC(c.UserContext(), targetID, actorMemberID(c)); err != nil {
 		return writeError(c, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)

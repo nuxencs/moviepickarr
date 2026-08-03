@@ -15,7 +15,6 @@ import (
 
 	"moviepickarr/internal/auth"
 	"moviepickarr/internal/db"
-	"moviepickarr/internal/domain"
 	"moviepickarr/internal/logger"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextup"
@@ -320,18 +319,21 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		posterWall = newPosterWallCache(tmdbCli.DiscoverPopularPosters, posterWallRefreshInterval, posterLog)
 	}
 
-	// localAuth is shared: the invite manager reuses its SetLocalLogin for the
-	// password-claim upsert, so both hold the same instance. The local-account
-	// repo is hoisted so the OIDC linker can read it for the unlink guard.
+	// The local-account repo backs LocalAuth reads and password verification.
+	// InviteManager gets the scoped store that commits credential and invite
+	// transitions together.
 	localAccountRepo := repository.NewSqliteLocalAccountRepository(pool)
 	localAuth := auth.NewLocalAuth(localAccountRepo)
 
 	h := &handler{
-		broker:      broker,
-		log:         rootLog.With().Str("component", "http").Logger(),
-		sessions:    auth.NewSessionManager(repository.NewSqliteSessionRepository(pool)),
-		localAuth:   localAuth,
-		invites:     auth.NewInviteManager(repository.NewSqliteInviteRepository(pool), localAuth),
+		broker:    broker,
+		log:       rootLog.With().Str("component", "http").Logger(),
+		sessions:  auth.NewSessionManager(repository.NewSqliteSessionRepository(pool)),
+		localAuth: localAuth,
+		invites: auth.NewInviteManager(
+			repository.NewSqliteInviteRepository(pool),
+			repository.NewSqliteAuthTransitionStore(pool),
+		),
 		userService: user.NewService(userRepo, nextUpRepo),
 		movieService: movie.NewService(movieRepo, movie.DrawConfig{
 			OnRevealed: revealBroadcaster(broker),
@@ -360,17 +362,16 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	// hides the option) rather than failing boot, so the app still serves local
 	// login.
 	if oidcCfg, enabled := auth.OIDCConfigFromEnv(); enabled {
-		wireOIDC(h, oidcCfg, repository.NewSqliteOIDCIdentityRepository(pool), localAccountRepo, rootLog)
+		wireOIDC(h, oidcCfg, rootLog)
 	}
 
 	return h
 }
 
-// wireOIDC builds the relying party (running discovery once), the tx-cookie AEAD
-// codec, and the identity linker, attaching them to the handler and flipping
-// oidcEnabled. Any failure (bad tx secret, unreachable provider) is logged and
-// leaves OIDC off, so a misconfigured provider never takes the whole app down.
-func wireOIDC(h *handler, cfg auth.OIDCConfig, identities domain.OIDCIdentityRepo, local domain.LocalAccountRepo, log zerolog.Logger) {
+// wireOIDC builds the relying party (running discovery once) and tx-cookie AEAD
+// codec, attaching them to the handler and flipping oidcEnabled. Any failure
+// leaves OIDC off, so a bad provider never takes the whole app down.
+func wireOIDC(h *handler, cfg auth.OIDCConfig, log zerolog.Logger) {
 	txCodec, err := auth.NewOIDCTxCodec(os.Getenv("MPA_OIDC_TX_SECRET"))
 	if err != nil {
 		log.Error().Err(err).Msg("oidc tx codec init failed, SSO stays disabled")
@@ -389,7 +390,6 @@ func wireOIDC(h *handler, cfg auth.OIDCConfig, identities domain.OIDCIdentityRep
 
 	h.oidc = rp
 	h.oidcTx = txCodec
-	h.linker = auth.NewIdentityLinker(identities, local)
 	h.oidcEnabled = true
 	log.Info().Str("issuer", cfg.Issuer).Msg("oidc relying-party enabled")
 }
@@ -459,15 +459,13 @@ func registerRoutes(app *fiber.App, h *handler) {
 	v1.Post("/auth/local-login", h.handleSelfServeLocalLogin)
 	v1.Put("/members/:memberID/local-login", h.handleSetLocalLogin)
 	v1.Delete("/members/:memberID/local-login", h.handleDeleteLocalLogin)
-	// Invite issuance/revocation (admin-gated inside the handlers). POST /members
-	// itself (create + first invite) lives in registerV1Routes with the roster.
-	v1.Post("/members/:memberID/invite", h.handleReissueInvite)
-	v1.Delete("/members/:memberID/invite", h.handleRevokeInvite)
-	// The admin invites overview and its per-row dismiss. Invite-addressed, not
-	// member-addressed: the member-scoped revoke above reaches only currently
-	// valid invites, so a lapsed row needs its own id to clear.
+	// Invite creation is member-addressed only when no generation exists. Every
+	// action on an existing generation is a compare-and-swap on its public id.
+	v1.Post("/members/:memberID/invite", h.handleCreateInvite)
 	v1.Get("/invites", h.handleListInvites)
-	v1.Delete("/invites/:inviteID", h.handleDismissInvite)
+	v1.Post("/invites/:inviteID/replacement", h.handleReplaceInvite)
+	v1.Delete("/invites/:inviteID", h.handleRevokeInvite)
+	v1.Post("/invites/:inviteID/dismiss", h.handleDismissInvite)
 
 	// Authed OIDC surface: link (start the link intent for the session member) and
 	// unlink (self + admin), mounted only when a provider is configured. When off,

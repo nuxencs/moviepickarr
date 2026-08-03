@@ -177,9 +177,9 @@ func (d *SqliteUserRepository) Create(ctx context.Context, name string) (*domain
 }
 
 // Remove deletes or archives a member as one action, chosen inside a single
-// write transaction by whether they authored any movies. The whole decision runs
-// under one tx so the movie count and the delete/archive it drives can't race a
-// concurrent movie add against the ON DELETE RESTRICT constraint.
+// write transaction by whether they authored any movies. The whole decision,
+// including the last-admin guard, runs under one tx so neither the movie count
+// nor the active-admin count can race the delete/archive they drive.
 func (d *SqliteUserRepository) Remove(ctx context.Context, id int) (domain.RemoveOutcome, error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
@@ -189,12 +189,27 @@ func (d *SqliteUserRepository) Remove(ctx context.Context, id int) (domain.Remov
 
 	// Existence is the movies-join's problem otherwise, so check it up front: a
 	// missing member is a 404, not a silent no-op.
-	var exists int
-	if err := tx.QueryRowContext(ctx, "SELECT 1 FROM users WHERE id = ?", id).Scan(&exists); err != nil {
+	var role string
+	var archivedAt sql.NullInt64
+	if err := tx.QueryRowContext(ctx,
+		"SELECT role, archived_at FROM users WHERE id = ?", id,
+	).Scan(&role, &archivedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", fmt.Errorf("%w: user id %d", domain.ErrNotFound, id)
 		}
 		return "", err
+	}
+	if role == domain.RoleAdmin && !archivedAt.Valid {
+		var admins int
+		if err := tx.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM users WHERE role = ? AND archived_at IS NULL",
+			domain.RoleAdmin,
+		).Scan(&admins); err != nil {
+			return "", err
+		}
+		if admins <= 1 {
+			return "", fmt.Errorf("%w: cannot remove the last admin", domain.ErrConflict)
+		}
 	}
 
 	var authored int
@@ -384,7 +399,8 @@ func (d *SqliteUserRepository) SetRole(ctx context.Context, id int, role string)
 	if role == domain.RoleMember {
 		var admins int
 		if err := tx.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM users WHERE role = 'admin' AND archived_at IS NULL",
+			"SELECT COUNT(*) FROM users WHERE role = ? AND archived_at IS NULL",
+			domain.RoleAdmin,
 		).Scan(&admins); err != nil {
 			return err
 		}

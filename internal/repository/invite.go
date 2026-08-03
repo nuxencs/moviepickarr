@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteInviteRepository is the invite/claim store over the 009 invites table,
-// joined to users + local_accounts for the claim-page context. Reads route to
+// SqliteInviteRepository is the invite/claim store over the current invites
+// schema, joined to users + local_accounts for claim context. Reads route to
 // the read pool and mutations to the write pool, matching the single-writer
 // discipline the other repositories follow.
 type SqliteInviteRepository struct {
@@ -22,20 +23,100 @@ func NewSqliteInviteRepository(pool *db.Pool) *SqliteInviteRepository {
 	return &SqliteInviteRepository{pool: pool}
 }
 
-func (d *SqliteInviteRepository) Create(ctx context.Context, userID int, tokenHash string, expiresAt time.Time, createdBy *int) error {
-	// created_at defaults to unixepoch() in the schema; expires_at carries the
-	// injected clock so expiry is testable. created_by is nullable so the invite
-	// outlives the issuing admin (the column is ON DELETE SET NULL).
-	query := `
-		INSERT INTO invites (user_id, token_hash, expires_at, created_by)
-		SELECT ?, ?, ?, ?
+func (d *SqliteInviteRepository) Create(
+	ctx context.Context,
+	userID int,
+	publicID, tokenHash string,
+	expiresAt, createdAt time.Time,
+	createdBy *int,
+	passwordReset ...bool,
+) error {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var hasLocal, hasIdentity int
+	err = tx.QueryRowContext(ctx, `
+		SELECT
+			EXISTS (SELECT 1 FROM local_accounts la WHERE la.user_id = u.id),
+			EXISTS (SELECT 1 FROM oidc_identities oi WHERE oi.user_id = u.id)
+		FROM users u
+		WHERE u.id = ? AND u.archived_at IS NULL
+	`, userID).Scan(&hasLocal, &hasIdentity)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, userID)
+	}
+	if err != nil {
+		return err
+	}
+	isPasswordReset := len(passwordReset) > 0 && passwordReset[0]
+	if isPasswordReset && hasLocal == 0 {
+		return fmt.Errorf("%w: member %d has no local login to reset", domain.ErrConflict, userID)
+	}
+	if !isPasswordReset && (hasLocal == 1 || hasIdentity == 1) {
+		return fmt.Errorf("%w: member %d already has a login credential", domain.ErrConflict, userID)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO invites (public_id, user_id, token_hash, expires_at, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, publicID, userID, tokenHash, db.ToUnix(expiresAt), createdBy, db.ToUnix(createdAt))
+	if err != nil {
+		if db.IsUniqueViolation(err) {
+			return fmt.Errorf("%w: member %d already has a current invite", domain.ErrConflict, userID)
+		}
+		if db.IsForeignKeyViolation(err) {
+			return fmt.Errorf("%w: member %d", domain.ErrNotFound, userID)
+		}
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReplaceCurrent changes generations in one writer transaction. The update is
+// a compare-and-swap on the immutable public handle; a second click or another
+// tab replacing first matches nothing. The insert happens before commit, so any
+// constraint/store failure rolls the retirement back.
+func (d *SqliteInviteRepository) ReplaceCurrent(
+	ctx context.Context,
+	currentPublicID, replacementPublicID, tokenHash string,
+	expiresAt, createdAt time.Time,
+	createdBy *int,
+) error {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var userID int
+	err = tx.QueryRowContext(ctx, `
+		UPDATE invites
+		SET revoked_at = ?
+		WHERE public_id = ?
+			AND used_at IS NULL
+			AND revoked_at IS NULL
+		RETURNING user_id
+	`, db.ToUnix(createdAt), currentPublicID).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: invite generation is stale", domain.ErrConflict)
+	}
+	if err != nil {
+		return err
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO invites (public_id, user_id, token_hash, expires_at, created_by, created_at)
+		SELECT ?, ?, ?, ?, ?, ?
 		FROM users
 		WHERE id = ? AND archived_at IS NULL
-	`
-	res, err := d.pool.Write.ExecContext(ctx, query, userID, tokenHash, db.ToUnix(expiresAt), createdBy, userID)
+	`, replacementPublicID, userID, tokenHash, db.ToUnix(expiresAt), createdBy, db.ToUnix(createdAt), userID)
 	if err != nil {
-		// A created_by FK miss still comes through the driver. A missing or
-		// archived target selects no row and is mapped below.
+		if db.IsUniqueViolation(err) {
+			return fmt.Errorf("%w: replacement invite collides with current state", domain.ErrConflict)
+		}
 		if db.IsForeignKeyViolation(err) {
 			return fmt.Errorf("%w: member %d", domain.ErrNotFound, userID)
 		}
@@ -45,28 +126,51 @@ func (d *SqliteInviteRepository) Create(ctx context.Context, userID int, tokenHa
 	if err != nil {
 		return err
 	}
-	if affected == 0 {
+	if affected != 1 {
 		return fmt.Errorf("%w: active member %d", domain.ErrNotFound, userID)
 	}
-	return nil
+	return tx.Commit()
 }
 
-func (d *SqliteInviteRepository) RevokeValidByUserID(ctx context.Context, userID int, now, revokedAt time.Time) (int64, error) {
-	// The WHERE mirrors the validity predicate exactly (unused, unrevoked, not
-	// expired), so this revokes precisely the one invite the app treats as live.
+func (d *SqliteInviteRepository) RevokeOpen(ctx context.Context, publicID string, now, revokedAt time.Time) error {
+	return d.retireExact(ctx, publicID, now, revokedAt, "expires_at > ?", "open")
+}
+
+func (d *SqliteInviteRepository) DismissExpired(ctx context.Context, publicID string, now, revokedAt time.Time) error {
+	return d.retireExact(ctx, publicID, now, revokedAt, "expires_at <= ?", "expired")
+}
+
+func (d *SqliteInviteRepository) retireExact(
+	ctx context.Context,
+	publicID string,
+	now, retiredAt time.Time,
+	statePredicate, stateName string,
+) error {
 	query := `
 		UPDATE invites
 		SET revoked_at = ?
-		WHERE user_id = ?
+		WHERE public_id = ?
 			AND used_at IS NULL
 			AND revoked_at IS NULL
-			AND expires_at > ?
-	`
-	res, err := d.pool.Write.ExecContext(ctx, query, db.ToUnix(revokedAt), userID, db.ToUnix(now))
+			AND ` + statePredicate
+	res, err := d.pool.Write.ExecContext(
+		ctx,
+		query,
+		db.ToUnix(retiredAt),
+		publicID,
+		db.ToUnix(now),
+	)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	return res.RowsAffected()
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: invite is stale or not %s", domain.ErrConflict, stateName)
+	}
+	return nil
 }
 
 func (d *SqliteInviteRepository) FindContextByTokenHash(ctx context.Context, tokenHash string) (*domain.InviteContext, error) {
@@ -110,33 +214,14 @@ func (d *SqliteInviteRepository) FindContextByTokenHash(ctx context.Context, tok
 	return ic, nil
 }
 
-func (d *SqliteInviteRepository) ListOutstanding(ctx context.Context) ([]domain.InviteOverview, error) {
-	// "Outstanding" is unused and unrevoked, for an active member who still has
-	// no way in. Expiry is deliberately absent from the predicate: a lapsed
-	// invite is the Expired group, and dropping it here would leave the surface
-	// with nothing to dismiss.
-	//
-	// The two NOT EXISTS are the self-clearing rule. Issue never revokes an
-	// already-expired invite, so a member who set a password or signed in with
-	// SSO in the meantime would otherwise keep a dead row on the admin's screen
-	// forever.
-	//
-	// The id subquery is the one-row-per-member rule. Because Issue only revokes
-	// *valid* invites, a member re-invited after each lapse leaves an unrevoked
-	// row behind each time; without this they'd appear once per attempt. Newest
-	// is by created_at with the row id breaking ties, since created_at is only
-	// second-precise and two invites can share a second.
-	//
-	// It deliberately ranks over ALL of the member's invites, spent ones
-	// included, and lets the outer unused/unrevoked filter reject the winner.
-	// Ranking over only the outstanding rows would make an older lapsed invite
-	// resurface the moment the newest was revoked: an admin revoking Ben's open
-	// invite would watch Ben reappear under Expired, from a link that has been
-	// dead for weeks. The member's latest invite is the only one that describes
-	// where they stand.
+func (d *SqliteInviteRepository) ListCurrent(ctx context.Context) ([]domain.InviteOverview, error) {
+	// The partial unique index guarantees one unused, unrevoked generation per
+	// member. Expiry is deliberately absent: an expired generation still needs a
+	// roster action. Credentialed members stay present when an explicit password
+	// reset invite exists, so its public handle remains manageable.
 	query := `
 		SELECT
-			i.id,
+			i.public_id,
 			i.user_id,
 			u.name,
 			i.expires_at,
@@ -147,15 +232,6 @@ func (d *SqliteInviteRepository) ListOutstanding(ctx context.Context) ([]domain.
 		LEFT JOIN users issuer ON issuer.id = i.created_by
 		WHERE i.used_at IS NULL
 			AND i.revoked_at IS NULL
-			AND NOT EXISTS (SELECT 1 FROM local_accounts la WHERE la.user_id = i.user_id)
-			AND NOT EXISTS (SELECT 1 FROM oidc_identities oi WHERE oi.user_id = i.user_id)
-			AND i.id = (
-				SELECT i2.id
-				FROM invites i2
-				WHERE i2.user_id = i.user_id
-				ORDER BY i2.created_at DESC, i2.id DESC
-				LIMIT 1
-			)
 	`
 
 	rows, err := d.pool.Read.QueryContext(ctx, query)
@@ -169,7 +245,7 @@ func (d *SqliteInviteRepository) ListOutstanding(ctx context.Context) ([]domain.
 		var o domain.InviteOverview
 		var expiresAt, createdAt int64
 		var issuedBy sql.NullString
-		if err := rows.Scan(&o.ID, &o.UserID, &o.MemberName, &expiresAt, &createdAt, &issuedBy); err != nil {
+		if err := rows.Scan(&o.PublicID, &o.UserID, &o.MemberName, &expiresAt, &createdAt, &issuedBy); err != nil {
 			return nil, err
 		}
 		o.ExpiresAt = db.FromUnix(expiresAt)
@@ -181,39 +257,4 @@ func (d *SqliteInviteRepository) ListOutstanding(ctx context.Context) ([]domain.
 		overviews = append(overviews, o)
 	}
 	return overviews, rows.Err()
-}
-
-func (d *SqliteInviteRepository) RevokeByID(ctx context.Context, id int64, revokedAt time.Time) (int64, error) {
-	// No expiry predicate: this is precisely the revoke that reaches a lapsed
-	// invite, which RevokeValidByUserID cannot. The used_at/revoked_at guards
-	// keep it to rows that are still outstanding, so dismissing twice affects
-	// nothing and a claimed invite keeps its history.
-	query := `
-		UPDATE invites
-		SET revoked_at = ?
-		WHERE id = ?
-			AND used_at IS NULL
-			AND revoked_at IS NULL
-	`
-	res, err := d.pool.Write.ExecContext(ctx, query, db.ToUnix(revokedAt), id)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
-}
-
-func (d *SqliteInviteRepository) MarkUsed(ctx context.Context, id int64, usedAt time.Time) error {
-	res, err := d.pool.Write.ExecContext(ctx,
-		"UPDATE invites SET used_at = ? WHERE id = ?", db.ToUnix(usedAt), id)
-	if err != nil {
-		return err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
 }

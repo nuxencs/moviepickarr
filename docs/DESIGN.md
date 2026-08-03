@@ -512,9 +512,11 @@ closes the movie record.
   never flashes the surface through (pure white in light mode) — then the real backdrop
   `<img>` crossfades in (`.moviemodal__hero__img` / `--loading` / `__shimmer`).
   A film with **no backdrop** stands its poster in there instead, as a **wash**:
-  `blur(48px)` at `scale(1.15)` (`--wash`, and the scale is why `.moviemodal__hero`
-  carries `overflow: hidden`: the enlarged layer would otherwise paint down over the
-  rail, since `.modal__scroll` clips at the surface and not at the hero), with a deeper scrim
+  `blur(48px)`, with its source box reaching three blur standard deviations past
+  every edge (`--wash-overscan`). CSS blur samples transparent pixels beyond its
+  source; the overscan keeps that boundary outside the hero, and
+  `.moviemodal__hero` carries `overflow: hidden` to stop the enlarged layer painting
+  down over the rail (`.modal__scroll` clips at the surface, not at the hero). A deeper scrim
   (`.moviemodal__hero--wash::after`) to answer how much brighter a blurred poster
   reads than a photograph. The blur is deliberately far past soft-focus, because the
   rail shows that same poster sharp a few pixels below and anything less reads as the

@@ -6,14 +6,32 @@ const css = readFileSync(new URL("../../index.css", import.meta.url), "utf8");
 const heroStart = css.indexOf(".moviemodal__hero {");
 const heroEnd = css.indexOf(".moviemodal__body {", heroStart);
 const heroCSS = css.slice(heroStart, heroEnd);
+const washRule = heroCSS.match(/\.moviemodal__hero__img--wash\s*\{([^}]*)\}/)?.[1] ?? "";
+
+function customPx(name: string): number {
+  const value = washRule.match(new RegExp(`${name}:\\s*(\\d+)px`))?.[1];
+  expect(value).toBeDefined();
+  return Number(value);
+}
 
 describe("the movie-modal hero contract", () => {
-  // The wash is scaled up so blur(48px) doesn't feather to transparent at the
-  // box edges, which puts ~7.5% of the layer outside the hero. `.modal__scroll`
-  // clips at the surface, not at the hero, so without this the overspill paints
-  // down over the rail and the title. The two rules only work as a pair.
-  it("clips the hero, because the wash layer is scaled past it", () => {
+  // CSS blur samples transparency beyond its source. Keep the hero clip three
+  // standard deviations inside that boundary, where its contribution is
+  // negligible, and grow both axes symmetrically to put the source there.
+  it("clips a wash whose source reaches beyond the blur kernel", () => {
+    const blur = customPx("--wash-blur");
+    const overscan = customPx("--wash-overscan");
+
     expect(heroCSS).toContain("overflow: hidden");
-    expect(heroCSS).toContain(".moviemodal__hero__img--wash { filter: blur(48px); transform: scale(1.15); }");
+    expect(overscan).toBeGreaterThanOrEqual(blur * 3);
+    expect(washRule).toContain("inset: calc(0px - var(--wash-overscan))");
+    expect(washRule).toContain(
+      "width: calc(100% + var(--wash-overscan) + var(--wash-overscan))",
+    );
+    expect(washRule).toContain("max-width: none");
+    expect(washRule).toContain(
+      "height: calc(100% + var(--wash-overscan) + var(--wash-overscan))",
+    );
+    expect(washRule).toContain("filter: blur(var(--wash-blur))");
   });
 });

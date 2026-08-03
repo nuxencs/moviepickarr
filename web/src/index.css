@@ -1170,7 +1170,7 @@
      backdrop, then a rail of poster + links out beside the reading column, then the
      cast strip. The width is what makes the rest work: the overview stops running
      narrow next to the poster and the cast strip shows nine cards before it scrolls. */
-  /* Clipped because the wash layer is scaled past the box (see `--wash` below) and
+  /* Clipped because the wash source reaches past the box (see `--wash` below) and
      nothing else would catch it: `.modal__scroll` clips at the surface, not here,
      so the overspill would paint down over the rail and the title. */
   .moviemodal__hero { position: relative; height: clamp(260px, 38cqi, 420px); isolation: isolate; overflow: hidden; background-size: cover; background-position: center; }
@@ -1182,9 +1182,17 @@
   /* Films with no backdrop stand their poster in here, and the rail shows that
      same poster sharp just below. The blur has to be far past soft-focus or the
      hero reads as a broken copy of the poster rather than as colour lifted off
-     it; the scale is what keeps blur(48px) from feathering to transparent at
-     the box edges, since the filter samples past them. */
-  .moviemodal__hero__img--wash { filter: blur(48px); transform: scale(1.15); }
+     it. CSS blur samples transparent pixels beyond its source, so the source
+     extends three standard deviations past every clipped edge. */
+  .moviemodal__hero__img--wash {
+    --wash-blur: 48px;
+    --wash-overscan: 144px;
+    inset: calc(0px - var(--wash-overscan));
+    width: calc(100% + var(--wash-overscan) + var(--wash-overscan));
+    max-width: none;
+    height: calc(100% + var(--wash-overscan) + var(--wash-overscan));
+    filter: blur(var(--wash-blur));
+  }
   .moviemodal__hero__shimmer {
     position: absolute; inset: 0; z-index: 2; pointer-events: none;
     background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.08) 50%, transparent 75%);

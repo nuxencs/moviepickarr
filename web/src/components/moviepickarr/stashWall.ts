@@ -1,4 +1,4 @@
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 
 /**
  * The find-a-film path on an untitled wall, and the arithmetic behind moving
@@ -18,7 +18,7 @@ import type { Movie } from "@/types/Response";
 const TERM_CAP = 32;
 
 /** The stash narrowed to what the term matches, by title, anywhere, any case. */
-export function filterStash(stash: Movie[], filter: string): Movie[] {
+export function filterStash(stash: MovieTile[], filter: string): MovieTile[] {
   const q = filter.trim().toLowerCase();
   // The same array back when there is no term: the wall is memoized per tile,
   // and a fresh array on every keystroke would be a new list identity for a

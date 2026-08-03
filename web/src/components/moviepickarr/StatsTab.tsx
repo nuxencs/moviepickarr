@@ -41,7 +41,7 @@ import {
 } from "@/components/moviepickarr/statsSearch";
 
 import type {
-  Movie,
+  MovieTile,
   StatsHourCount,
   StatsNamedCount,
   StatsPersonCount,
@@ -199,7 +199,7 @@ export function StatsTab() {
   // movies, so the films-in-filter-view rail renders posters without a second
   // fetch and its count can never drift from the "In window" KPI.
   const watchedById = useMemo(() => {
-    const map = new Map<number, Movie>();
+    const map = new Map<number, MovieTile>();
     for (const movie of watched ?? []) map.set(movie.movieID, movie);
     return map;
   }, [watched]);
@@ -207,7 +207,7 @@ export function StatsTab() {
     () =>
       (stats?.matchedMovieIDs ?? [])
         .map((id) => watchedById.get(id))
-        .filter((m): m is Movie => m !== undefined),
+        .filter((m): m is MovieTile => m !== undefined),
     [stats, watchedById],
   );
   // Render the open modal from the live list so an SSE refetch flows into it.
@@ -470,16 +470,16 @@ function MatchedMoviesRail({
   filtered,
   onSelect,
 }: {
-  movies: Movie[];
+  movies: MovieTile[];
   count: number;
   filtered: boolean;
-  onSelect: (movie: Movie) => void;
+  onSelect: (movie: MovieTile) => void;
 }) {
   // FLIP the matched-films rail: films present in both windows glide to their new
   // spot (the 30d prefix of a 1y set has a zero delta and stays put), new films
   // pop in, dropped films fade out then the rail tightens. Keyed by id; item data
   // resolves live so an SSE refetch flows in without re-animating.
-  const { containerRef, entries, itemProps } = useFlipRail<Movie>(movies, (m) => String(m.movieID));
+  const { containerRef, entries, itemProps } = useFlipRail<MovieTile>(movies, (m) => String(m.movieID));
   return (
     // Flush under the KPI strip (which already closes with a bottom rule) — the
     // rail is the expansion of the "In window" count, not a separate section.

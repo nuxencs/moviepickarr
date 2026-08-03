@@ -130,8 +130,17 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	for _, title := range []string{"Heat", "Casino", "Goodfellas"} {
-		if _, err := movieRepo.Add(ctx, title, "pool", user.ID); err != nil {
+		movieRecord, err := movieRepo.Add(ctx, title, "pool", user.ID)
+		if err != nil {
 			t.Fatalf("seed pool: %v", err)
+		}
+		poster, backdrop := "/poster.jpg", "/winner-backdrop.jpg"
+		if err := h.movieMetadata.UpsertMetadata(ctx, domain.MovieMetadata{
+			MovieID:      movieRecord.ID,
+			PosterPath:   &poster,
+			BackdropPath: &backdrop,
+		}); err != nil {
+			t.Fatalf("seed draw metadata: %v", err)
 		}
 	}
 
@@ -149,12 +158,14 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	}
 
 	var body struct {
-		MovieID    int    `json:"movieID"`
-		DrawnAt    string `json:"drawnAt"`
-		RevealAt   string `json:"revealAt"`
-		Candidates []struct {
-			MovieID    int    `json:"movieID"`
-			PosterPath string `json:"posterPath"`
+		MovieID      int    `json:"movieID"`
+		DrawnAt      string `json:"drawnAt"`
+		RevealAt     string `json:"revealAt"`
+		BackdropPath string `json:"backdropPath"`
+		Candidates   []struct {
+			MovieID      int    `json:"movieID"`
+			PosterPath   string `json:"posterPath"`
+			BackdropPath string `json:"backdropPath"`
 		} `json:"candidates"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -176,8 +187,14 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	if len(body.Candidates) != 3 {
 		t.Fatalf("expected 3 reel candidates (the pre-draw pool), got %d", len(body.Candidates))
 	}
+	if body.BackdropPath != "/winner-backdrop.jpg" {
+		t.Fatalf("winner backdropPath = %q, want full winner artwork", body.BackdropPath)
+	}
 	winnerInCandidates := false
 	for _, c := range body.Candidates {
+		if c.BackdropPath != "" {
+			t.Fatalf("lean candidate %d shipped backdropPath %q", c.MovieID, c.BackdropPath)
+		}
 		if c.MovieID == body.MovieID {
 			winnerInCandidates = true
 		}
@@ -201,6 +218,9 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 		}
 		if len(pp.Candidates) != 3 {
 			t.Fatalf("broadcast candidates = %d, want 3", len(pp.Candidates))
+		}
+		if pp.BackdropPath != "/winner-backdrop.jpg" {
+			t.Fatalf("broadcast winner backdropPath = %q, want full winner artwork", pp.BackdropPath)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("no movie:drawn broadcast received")

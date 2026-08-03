@@ -35,9 +35,9 @@ type userResponse struct {
 
 // leanMovieTile is the list/tile class: identity + the tile-level enriched
 // fields the grids render (poster, rating, release date, runtime, genres).
-// The watched list ships hundreds of these, so the heavy modal-only fields
-// (backdrop, tagline, overview, credits) are structurally absent: the modal
-// lazy-loads the fullMovie from GET /movies/:id when it opens.
+// Pool, watched and member-board collections ship these, so the heavy
+// modal-only fields (backdrop, tagline, overview, credits) are structurally
+// absent: the modal lazy-loads the fullMovie from GET /movies/:id when it opens.
 type leanMovieTile struct {
 	ID              int    `json:"movieID"`
 	Title           string `json:"title"`
@@ -68,7 +68,8 @@ type leanMovieTile struct {
 
 // fullMovie is the detail class: everything on the tile plus the draw
 // coordination fields, the modal-only metadata, and the credits. Served by
-// the current/pool/detail/board paths; JSON-flattened via the embedding.
+// detail, current, mutation and movie-event paths; JSON-flattened via the
+// embedding.
 type fullMovie struct {
 	leanMovieTile
 
@@ -230,14 +231,6 @@ func toLeanTiles(movies []*domain.Movie, meta metaByID) []leanMovieTile {
 	result := make([]leanMovieTile, 0, len(movies))
 	for i := range movies {
 		result = append(result, toLeanTile(movies[i], meta[movies[i].ID]))
-	}
-	return result
-}
-
-func toFullMovies(movies []*domain.Movie, meta metaByID, credits creditsByID) []fullMovie {
-	result := make([]fullMovie, 0, len(movies))
-	for i := range movies {
-		result = append(result, toFullMovie(movies[i], meta[movies[i].ID], credits[movies[i].ID]))
 	}
 	return result
 }

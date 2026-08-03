@@ -67,10 +67,11 @@ export function createDrawStore(deps: DrawStoreDeps): DrawStore {
         void deps.postReveal().catch(() => {});
         break;
       case "decode": {
-        const done = () => send({ type: "DECODE_DONE", drawnAt: command.drawnAt });
+        const done = (decodedBackdropPath: string | null) =>
+          send({ type: "DECODE_DONE", drawnAt: command.drawnAt, decodedBackdropPath });
         const pending = command.backdropPath ? deps.decodeBackdrop(command.backdropPath) : null;
-        if (pending) pending.then(done, done);
-        else done();
+        if (pending) pending.then(() => done(command.backdropPath), () => done(null));
+        else done(null);
         break;
       }
       case "invalidatePool":

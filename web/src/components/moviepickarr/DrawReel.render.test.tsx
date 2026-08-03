@@ -14,14 +14,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SpinDescriptor } from "@/components/moviepickarr/drawMachine";
 import { DrawReel } from "@/components/moviepickarr/DrawReel";
 
-import type { Movie } from "@/types/Response";
+import type { MovieDetail, MovieTile } from "@/types/Response";
 
 const NOW = 1_000_000;
 const SPIN_MS = 6500;
 /** The server reveals 16.5s after the draw: 6.5s of scroll, then the confirm. */
 const DEADLINE_MS = 16_500;
 
-function movie(id: number): Movie {
+function movie(id: number): MovieTile {
   return {
     movieID: id,
     title: `Movie ${id}`,
@@ -29,13 +29,13 @@ function movie(id: number): Movie {
     addedAt: "2026-07-17T20:00:00Z",
     addedByID: 1,
     addedByName: "ana",
-  } as Movie;
+  };
 }
 
 function spin(overrides: Partial<SpinDescriptor> = {}): SpinDescriptor {
   return {
     drawnAt: "2026-07-17T20:00:00Z",
-    winnerId: 1,
+    winner: { ...movie(1), status: "pool" } satisfies MovieDetail,
     candidates: [movie(1), movie(2), movie(3)],
     durationMs: SPIN_MS,
     startedAtMs: NOW,

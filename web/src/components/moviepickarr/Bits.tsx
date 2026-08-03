@@ -12,7 +12,7 @@ import {
 } from "@/components/moviepickarr/lib";
 import { statsSearchDefaults } from "@/components/moviepickarr/statsSearch";
 
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 
 /**
  * Square, hue-derived initials avatar. Hue defaults to a hash of the name.
@@ -105,7 +105,7 @@ export function MetaChips({
   links = [],
   replace = false,
 }: {
-  movie: Movie;
+  movie: MovieTile;
   links?: { label: string; href: string }[];
   /**
    * Navigate over the current history entry instead of stacking on it. The

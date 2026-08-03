@@ -1,6 +1,6 @@
 import { MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
-import type { Movie, Settings } from "@/types/Response";
+import type { MovieDetail, Settings } from "@/types/Response";
 import type { SSEEvent, SSEEventType } from "@/types/SSEEvent";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -40,7 +40,7 @@ export function applyImmediateLifecycleState(
   if (event.type === "movie:revealed") {
     const movieID = (event.data as { movieID?: unknown } | undefined)?.movieID;
     if (typeof movieID === "number") {
-      queryClient.setQueryData<Movie>(MoviesKeys.detail(movieID), (movie) =>
+      queryClient.setQueryData<MovieDetail>(MoviesKeys.detail(movieID), (movie) =>
         movie ? { ...movie, status: "current" } : movie,
       );
     }
@@ -48,9 +48,9 @@ export function applyImmediateLifecycleState(
   }
 
   if (event.type === "movie:watched") {
-    const watched = event.data as Movie | undefined;
+    const watched = event.data as MovieDetail | undefined;
     if (typeof watched?.movieID === "number") {
-      queryClient.setQueryData<Movie>(MoviesKeys.detail(watched.movieID), (movie) =>
+      queryClient.setQueryData<MovieDetail>(MoviesKeys.detail(watched.movieID), (movie) =>
         movie ? { ...movie, ...watched } : movie,
       );
     }

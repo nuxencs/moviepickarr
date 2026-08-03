@@ -1,7 +1,7 @@
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { useCallback, useRef, useState } from "react";
 
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 import type { AnyRouter } from "@tanstack/react-router";
 
 /**
@@ -63,11 +63,11 @@ export function clearMovieModalHistory(router: AnyRouter) {
 export function useMovieModal() {
   const router = useRouter();
   const token = useLocation({ select: (location) => location.state.movieModal });
-  const [selected, setSelected] = useState<Movie | null>(null);
+  const [selected, setSelected] = useState<MovieTile | null>(null);
   const openedRef = useRef<string | null>(null);
 
   const open = useCallback(
-    (movie: Movie) => {
+    (movie: MovieTile) => {
       const opened = entryToken();
       openedRef.current = opened;
       setSelected(movie);

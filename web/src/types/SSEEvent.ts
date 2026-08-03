@@ -1,4 +1,4 @@
-import { Movie, Settings, User } from "@/types/Response";
+import { MovieDetail, MovieDrawPayload, Settings, User } from "@/types/Response";
 
 export type SSEEventType =
   | "user:created"
@@ -48,7 +48,7 @@ export interface UserDeletedEvent extends SSEEvent<{ userID: number }> {
   type: "user:deleted";
 }
 
-export interface MovieAddedEvent extends SSEEvent<Movie> {
+export interface MovieAddedEvent extends SSEEvent<MovieDetail> {
   type: "movie:added";
 }
 
@@ -60,7 +60,7 @@ export interface MovieMovedEvent extends SSEEvent<{ userID: number; movieID: num
   type: "movie:moved";
 }
 
-export interface MovieDrawnEvent extends SSEEvent<Movie> {
+export interface MovieDrawnEvent extends SSEEvent<MovieDrawPayload> {
   type: "movie:drawn";
 }
 
@@ -70,11 +70,11 @@ export interface MovieRevealedEvent extends SSEEvent<{ movieID: number; drawnAt:
   type: "movie:revealed";
 }
 
-export interface MovieWatchedEvent extends SSEEvent<Movie> {
+export interface MovieWatchedEvent extends SSEEvent<MovieDetail> {
   type: "movie:watched";
 }
 
-export interface MovieUpdatedEvent extends SSEEvent<Movie> {
+export interface MovieUpdatedEvent extends SSEEvent<MovieDetail> {
   type: "movie:updated";
 }
 

@@ -22,7 +22,7 @@ import { AuthKeys, MoviesKeys, SettingsKeys } from "@/api/query_keys";
 import { drawStore } from "@/components/moviepickarr/drawStore";
 import { Hero } from "@/components/moviepickarr/Hero";
 
-import type { MeResponse, Movie } from "@/types/Response";
+import type { MeResponse, MovieDetail, MovieTile } from "@/types/Response";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { renderWithProviders } from "@/test/providers";
@@ -36,13 +36,14 @@ vi.mock("@/api/APIClient", () => ({
   ApiError: class ApiError extends Error {},
 }));
 
-const drawn: Movie = {
+const drawn: MovieDetail = {
   movieID: 42,
   title: "Apocalypse Now",
   link: "",
   addedAt: "2026-07-22T10:00:00Z",
   addedByID: 7,
   addedByName: "Ada",
+  status: "current",
   drawnAt: "2026-07-28T20:00:00Z",
 };
 
@@ -108,7 +109,7 @@ function session(id: number): MeResponse {
 }
 
 /** The banner on the Movies page with a draw already up. */
-async function renderHero(movie: Movie = drawn, strict = false) {
+async function renderHero(movie: MovieDetail = drawn, strict = false) {
   let queryClient: QueryClient | undefined;
   if (strict) configure({ reactStrictMode: true });
   const view = await renderWithProviders(<Hero />, {
@@ -270,20 +271,32 @@ describe("the hero's artwork handoff", () => {
     expect(painted(url)).toBe(false);
   });
 
-  it("decodes the full backdrop after a lean reel candidate lands", async () => {
+  it("keeps the reel up until the full winner backdrop decodes", async () => {
     const images = controlImageDecodes();
     const url = backdrop("/winner.jpg");
-    const winner: Movie = {
+    const winner: MovieDetail = {
       ...drawn,
       movieID: 142,
       title: "Paris, Texas",
       drawnAt: "2026-08-01T12:34:56Z",
       backdropPath: "/winner.jpg",
     };
-    const leanWinner = { ...winner, drawnAt: undefined, backdropPath: undefined };
+    const leanWinner: MovieTile = {
+      movieID: winner.movieID,
+      title: winner.title,
+      link: winner.link,
+      addedAt: winner.addedAt,
+      addedByID: winner.addedByID,
+      addedByName: winner.addedByName,
+    };
+    const decoy: MovieTile = {
+      ...leanWinner,
+      movieID: 143,
+      title: "The Passenger",
+    };
     const reelDraw = {
       ...winner,
-      candidates: [leanWinner, { ...drawn, movieID: 143, title: "The Passenger" }],
+      candidates: [leanWinner, decoy],
     };
 
     drawStore.send({ type: "DRAWN", movie: reelDraw });
@@ -296,8 +309,99 @@ describe("the hero's artwork handoff", () => {
     });
 
     await images.requested(url);
-    expect(screen.getByRole("heading", { name: "Paris, Texas" })).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "Drawing a random movie" })).not.toBeNull();
     expect(painted(url)).toBe(false);
+    await images.resolve(url);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Paris, Texas" })).not.toBeNull());
+    await waitFor(() => expect(painted(url)).toBe(true));
+    expect(images.count(url)).toBe(1);
+  });
+
+  it("decodes again when current artwork changed during the reel", async () => {
+    const images = controlImageDecodes();
+    const drawnUrl = backdrop("/drawn-winner.jpg");
+    const currentUrl = backdrop("/refreshed-winner.jpg");
+    const drawnAt = "2026-08-01T13:34:56Z";
+    const winner: MovieDetail = {
+      ...drawn,
+      movieID: 242,
+      title: "Wings of Desire",
+      drawnAt,
+      backdropPath: "/drawn-winner.jpg",
+    };
+    const currentWinner = { ...winner, backdropPath: "/refreshed-winner.jpg" };
+    const leanWinner: MovieTile = {
+      movieID: winner.movieID,
+      title: winner.title,
+      link: winner.link,
+      addedAt: winner.addedAt,
+      addedByID: winner.addedByID,
+      addedByName: winner.addedByName,
+    };
+
+    drawStore.send({
+      type: "DRAWN",
+      movie: {
+        ...winner,
+        candidates: [leanWinner, { ...leanWinner, movieID: 243, title: "Until the End of the World" }],
+      },
+    });
+    await renderHero(currentWinner);
+
+    act(() => {
+      drawStore.send({ type: "SCROLL_DONE" });
+      drawStore.send({ type: "CONFIRM", source: "remote" });
+    });
+
+    await images.resolve(drawnUrl);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Wings of Desire" })).not.toBeNull());
+    expect(painted(drawnUrl)).toBe(false);
+    await images.requested(currentUrl);
+    expect(images.count(drawnUrl)).toBe(1);
+    expect(images.count(currentUrl)).toBe(1);
+    await images.resolve(currentUrl);
+    await waitFor(() => expect(painted(currentUrl)).toBe(true));
+  });
+
+  it("retries through Hero when the reel backdrop decode fails", async () => {
+    const images = controlImageDecodes();
+    const url = backdrop("/retry-winner.jpg");
+    const winner: MovieDetail = {
+      ...drawn,
+      movieID: 342,
+      title: "A Matter of Life and Death",
+      drawnAt: "2026-08-01T14:34:56Z",
+      backdropPath: "/retry-winner.jpg",
+    };
+    const leanWinner: MovieTile = {
+      movieID: winner.movieID,
+      title: winner.title,
+      link: winner.link,
+      addedAt: winner.addedAt,
+      addedByID: winner.addedByID,
+      addedByName: winner.addedByName,
+    };
+
+    drawStore.send({
+      type: "DRAWN",
+      movie: {
+        ...winner,
+        candidates: [leanWinner, { ...leanWinner, movieID: 343, title: "Black Narcissus" }],
+      },
+    });
+    await renderHero(winner);
+
+    act(() => {
+      drawStore.send({ type: "SCROLL_DONE" });
+      drawStore.send({ type: "CONFIRM", source: "remote" });
+    });
+
+    await images.reject(url);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "A Matter of Life and Death" })).not.toBeNull(),
+    );
+    expect(painted(url)).toBe(false);
+    await waitFor(() => expect(images.count(url)).toBe(2));
     await images.resolve(url);
     await waitFor(() => expect(painted(url)).toBe(true));
   });

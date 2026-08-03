@@ -5,7 +5,7 @@ import { AuthKeys, MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
 import { MoviesTab } from "@/components/moviepickarr/MoviesTab";
 
-import type { MeResponse, Movie } from "@/types/Response";
+import type { MeResponse, MovieTile } from "@/types/Response";
 
 import { renderWithProviders } from "@/test/providers";
 
@@ -22,7 +22,7 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-const poolMovie: Movie = {
+const poolMovie: MovieTile = {
   movieID: 1,
   title: "Pool Film",
   link: "",
@@ -33,7 +33,7 @@ const poolMovie: Movie = {
   voteAverage: 8.1,
 };
 
-const watchedMovie: Movie = {
+const watchedMovie: MovieTile = {
   ...poolMovie,
   movieID: 2,
   title: "Watched Film",

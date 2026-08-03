@@ -37,7 +37,7 @@ import { Skeleton } from "@/components/moviepickarr/Skeletons";
 import { columnCount, filterStash, landingCell, missLine, nextCell } from "@/components/moviepickarr/stashWall";
 import { toast } from "@/components/ui/toast-api";
 
-import type { Movie, MoveTarget, User } from "@/types/Response";
+import type { MovieTile, MoveTarget, User } from "@/types/Response";
 import type { RefObject } from "react";
 
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
@@ -503,7 +503,7 @@ function RailRow({
   isLocked: boolean;
   drawInFlight: boolean;
   poolStateKnown: boolean;
-  onOpen: (movie: Movie) => void;
+  onOpen: (movie: MovieTile) => void;
   /** The page's register of stash links by member, so returning from the mobile
    *  push can put focus back on the control it left from (#236). */
   stashLinks: RefObject<Map<number, HTMLAnchorElement>>;
@@ -656,7 +656,7 @@ function PosterButton({
   tabIndex,
   onOpen,
 }: {
-  movie: Movie;
+  movie: MovieTile;
   posterSizes: string;
   /** Whether to fetch the art. False in a drawer nobody has opened (see RailRow). */
   showArt?: boolean;
@@ -667,7 +667,7 @@ function PosterButton({
   /** -1 on every wall poster but the one holding the roving index. Left off in
    *  the pool, where three slots are three ordinary tab stops. */
   tabIndex?: number;
-  onOpen: (movie: Movie) => void;
+  onOpen: (movie: MovieTile) => void;
 }) {
   return (
     <button
@@ -789,7 +789,7 @@ function PoolSlots({
   rowLinkRef,
   requestMove,
 }: {
-  pool: Movie[];
+  pool: MovieTile[];
   /** Whether this drawer has been open. The slots are always drawn — they are
    *  what holds every drawer to the same height — but the art inside a drawer
    *  nobody has opened is not fetched (see RailRow). */
@@ -798,7 +798,7 @@ function PoolSlots({
   isLocked: boolean;
   drawInFlight: boolean;
   poolStateKnown: boolean;
-  onOpen: (movie: Movie) => void;
+  onOpen: (movie: MovieTile) => void;
   /** The member's own row, where focus goes when the last film leaves the pool. */
   rowLinkRef: RefObject<HTMLAnchorElement | null>;
   requestMove: RequestMove;
@@ -965,7 +965,7 @@ function StashPane({
    *  and refusalOf is the one place that decides so. */
   drawInFlight: boolean;
   onOpenSearch: () => void;
-  onOpen: (movie: Movie) => void;
+  onOpen: (movie: MovieTile) => void;
   /** Raised on the way out when focus was inside this pane, and read on the way
    *  in: the pane is keyed on the member, so a switch is an unmount. */
   lostFocus: RefObject<boolean>;
@@ -1367,7 +1367,7 @@ const StashTile = memo(function StashTile({
   onOpen,
   onPromote,
 }: {
-  movie: Movie;
+  movie: MovieTile;
   /** This tile's index in the wall, which counts the add tile as a cell. */
   cell: number;
   /** Whether this tile holds the wall's tab stop (see StashPane). */
@@ -1377,7 +1377,7 @@ const StashTile = memo(function StashTile({
   drawInFlight: boolean;
   poolStateKnown: boolean;
   isOwnBoard: boolean;
-  onOpen: (movie: Movie) => void;
+  onOpen: (movie: MovieTile) => void;
   /** Stable pane callback into the board-owned request registry. */
   onPromote: (movieID: number, cell: number) => void;
 }) {

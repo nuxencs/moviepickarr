@@ -3,7 +3,7 @@
    poster/backdrop art, deterministic hues, formatting.
    ============================================================ */
 
-import type { Movie } from "@/types/Response";
+import type { MovieTile } from "@/types/Response";
 
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
@@ -211,7 +211,7 @@ export function tmdbPersonUrl(personId: number): string {
   return `https://www.themoviedb.org/person/${personId}`;
 }
 
-export function externalLinks(movie: Pick<Movie, "tmdbId" | "imdbId">): { label: string; href: string }[] {
+export function externalLinks(movie: Pick<MovieTile, "tmdbId" | "imdbId">): { label: string; href: string }[] {
   const links: { label: string; href: string }[] = [];
   if (movie.imdbId) links.push({ label: "IMDb", href: `https://www.imdb.com/title/${movie.imdbId}/` });
   if (movie.tmdbId) links.push({ label: "TMDB", href: `https://www.themoviedb.org/movie/${movie.tmdbId}` });

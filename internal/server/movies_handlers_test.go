@@ -85,6 +85,72 @@ func setupEditMovieTestWithDB(t *testing.T) (*handler, *fiber.App, *repository.S
 	return h, app, repository.NewSqliteUserRepository(dbConn), repository.NewSqliteMoviesRepository(dbConn), dbConn
 }
 
+func TestHandleGetPooledMovies_ShipsLeanTiles(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
+	metaRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
+	creditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
+
+	user, err := userRepo.Create(ctx, "Alice")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	pooled, err := movieRepo.Add(ctx, "The Matrix", "pool", user.ID)
+	if err != nil {
+		t.Fatalf("create pooled movie: %v", err)
+	}
+
+	poster, backdrop := "/poster.jpg", "/backdrop.jpg"
+	if err := metaRepo.UpsertMetadata(ctx, domain.MovieMetadata{
+		MovieID:      pooled.ID,
+		PosterPath:   &poster,
+		BackdropPath: &backdrop,
+		Runtime:      136,
+		VoteAverage:  8.2,
+		Tagline:      "Free your mind.",
+		Overview:     "A hacker learns the truth.",
+	}); err != nil {
+		t.Fatalf("seed metadata: %v", err)
+	}
+	if err := creditsRepo.ReplaceCredits(ctx, pooled.ID, []domain.MovieCredit{{
+		MovieID: pooled.ID,
+		Person:  domain.Person{ID: 9340, Name: "Lana Wachowski"},
+		Kind:    domain.CreditKindCrew,
+		Job:     "Director",
+	}}); err != nil {
+		t.Fatalf("seed credits: %v", err)
+	}
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/movies/pool", nil), -1)
+	if err != nil {
+		t.Fatalf("get pooled movies: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("get pooled movies status = %d, want %d", resp.StatusCode, fiber.StatusOK)
+	}
+
+	var payload []map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode pooled movies: %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("pooled movie count = %d, want 1", len(payload))
+	}
+	for _, key := range []string{"movieID", "title", "posterPath", "runtime", "voteAverage"} {
+		if _, ok := payload[0][key]; !ok {
+			t.Errorf("pooled tile missing %q: %v", key, payload[0])
+		}
+	}
+	for _, key := range []string{"status", "backdropPath", "tagline", "overview", "cast", "crew"} {
+		if _, ok := payload[0][key]; ok {
+			t.Errorf("pooled tile includes detail field %q: %v", key, payload[0])
+		}
+	}
+}
+
 func TestHandleEditMovie_RejectsWatchedAtForNonWatchedMovie(t *testing.T) {
 	t.Parallel()
 

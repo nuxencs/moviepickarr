@@ -8,7 +8,7 @@ import {
 } from "@/api/poolStateCache";
 import { SettingsKeys } from "@/api/query_keys";
 
-import type { Movie } from "@/types/Response";
+import type { MovieDetail } from "@/types/Response";
 
 describe("setCachedDrawInProgress", () => {
   it("patches the server draw gate without changing the round lock", () => {
@@ -48,12 +48,16 @@ describe("drawInProgressForEvent", () => {
 });
 
 describe("applyImmediateLifecycleState", () => {
-  const movie = {
+  const movie: MovieDetail = {
     movieID: 42,
     title: "Alien",
+    link: "",
+    addedAt: "2026-07-01T20:00:00Z",
+    addedByID: 1,
+    addedByName: "ana",
     status: "pool",
     overview: "In space.",
-  } as Movie;
+  };
 
   it("keeps a drawn gate when a later lock event carries a stale pre-draw snapshot", () => {
     const client = new QueryClient();
@@ -136,7 +140,7 @@ describe("applyImmediateLifecycleState", () => {
       poolLocked: false,
       drawInProgress: false,
     });
-    expect(client.getQueryData<Movie>(["movies", "detail", 42])?.status).toBe("current");
+    expect(client.getQueryData<MovieDetail>(["movies", "detail", 42])?.status).toBe("current");
   });
 
   it("merges a watched payload into an enriched cached detail", () => {
@@ -151,14 +155,13 @@ describe("applyImmediateLifecycleState", () => {
       seq: 2,
       type: "movie:watched",
       data: {
-        movieID: 42,
-        title: "Alien",
+        ...movie,
         status: "watched",
         watchedAt: "2026-07-29T20:00:00Z",
-      } as Movie,
+      } satisfies MovieDetail,
     });
 
-    const detail = client.getQueryData<Movie>(["movies", "detail", 42]);
+    const detail = client.getQueryData<MovieDetail>(["movies", "detail", 42]);
     expect(detail?.status).toBe("watched");
     expect(detail?.overview).toBe("In space.");
     expect(client.getQueryData<{ drawInProgress: boolean }>(SettingsKeys.poolLock())?.drawInProgress).toBe(false);

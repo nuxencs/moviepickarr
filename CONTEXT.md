@@ -183,6 +183,17 @@ its adder and is never cascaded away.
 **Watched library**:
 The browsable, searchable grid/list of all watched movies on the Movies tab.
 
+### Integrations
+
+**Integration**:
+An external service connected to moviepickarr to extend what the app can do.
+TMDB is an integration; each integration owns its admin-managed settings.
+
+**Integration run**:
+One execution of an integration operation, started by a schedule, an admin, app
+startup, or an application event such as adding a movie. It has a recorded
+outcome and may cover one or many subjects.
+
 ### TMDB
 
 **Enrichment**:

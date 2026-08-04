@@ -121,19 +121,46 @@ func (d *SqliteLocalAccountRepository) UpdatePasswordAndClearLockout(ctx context
 	return d.execExpectingRow(ctx, query, passwordHash, db.ToUnix(updatedAt), userID)
 }
 
-func (d *SqliteLocalAccountRepository) RecordFailedAttempt(ctx context.Context, userID, failedAttempts int, lockedUntil *time.Time, updatedAt time.Time) error {
+func (d *SqliteLocalAccountRepository) RecordFailedAttempt(
+	ctx context.Context,
+	userID int,
+	expectedPasswordHash string,
+	lockThreshold int,
+	lockUntil time.Time,
+	updatedAt time.Time,
+) error {
 	query := `
 		UPDATE local_accounts
-		SET failed_attempts = ?, locked_until = ?, updated_at = ?
+		SET failed_attempts = failed_attempts + 1,
+			locked_until = CASE
+				WHEN failed_attempts + 1 >= ? THEN ?
+				ELSE NULL
+			END,
+			updated_at = ?
 		WHERE user_id = ?
+			AND password_hash = ?
 			AND EXISTS (
 				SELECT 1 FROM users u
 				WHERE u.id = local_accounts.user_id AND u.archived_at IS NULL
 			)`
-	return d.execExpectingRow(ctx, query, failedAttempts, db.ToUnixPtr(lockedUntil), db.ToUnix(updatedAt), userID)
+	return d.execCredentialCAS(
+		ctx,
+		query,
+		lockThreshold,
+		db.ToUnix(lockUntil),
+		db.ToUnix(updatedAt),
+		userID,
+		expectedPasswordHash,
+	)
 }
 
-func (d *SqliteLocalAccountRepository) RecordSuccessfulLogin(ctx context.Context, userID int, newPasswordHash *string, lastLoginAt, updatedAt time.Time) error {
+func (d *SqliteLocalAccountRepository) RecordSuccessfulLogin(
+	ctx context.Context,
+	userID int,
+	expectedPasswordHash string,
+	newPasswordHash *string,
+	lastLoginAt, updatedAt time.Time,
+) error {
 	// A nil newPasswordHash means "keep the stored hash": COALESCE leaves it
 	// untouched, so the common no-rehash login is one statement, same as a
 	// rehash-on-login.
@@ -145,12 +172,40 @@ func (d *SqliteLocalAccountRepository) RecordSuccessfulLogin(ctx context.Context
 			last_login_at = ?,
 			updated_at = ?
 		WHERE user_id = ?
+			AND password_hash = ?
 			AND EXISTS (
 				SELECT 1 FROM users u
 				WHERE u.id = local_accounts.user_id AND u.archived_at IS NULL
 			)
 	`
-	return d.execExpectingRow(ctx, query, newPasswordHash, db.ToUnix(lastLoginAt), db.ToUnix(updatedAt), userID)
+	return d.execCredentialCAS(
+		ctx,
+		query,
+		newPasswordHash,
+		db.ToUnix(lastLoginAt),
+		db.ToUnix(updatedAt),
+		userID,
+		expectedPasswordHash,
+	)
+}
+
+func (d *SqliteLocalAccountRepository) execCredentialCAS(
+	ctx context.Context,
+	query string,
+	args ...any,
+) error {
+	res, err := d.pool.Write.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return domain.ErrInvalidCredentials
+	}
+	return nil
 }
 
 func (d *SqliteLocalAccountRepository) Delete(ctx context.Context, userID int) error {

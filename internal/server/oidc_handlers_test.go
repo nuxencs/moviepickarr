@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -40,7 +41,7 @@ type oidcTestEnv struct {
 // setupOIDCApp builds a handler over a temp DB with the fake provider wired in
 // before registerRoutes, so the /oidc/* routes are mounted and the real route
 // chain (csrfGuard → unauth OIDC → requireSession → authed OIDC) is exercised.
-// The tx codec and linker share the same fake clock as sessions/invites so tx
+// The tx codec and auth stores share the same fake clock as sessions/invites so
 // expiry and last-login timestamps advance deterministically.
 func setupOIDCApp(t *testing.T) *oidcTestEnv {
 	t.Helper()
@@ -60,7 +61,11 @@ func setupOIDCApp(t *testing.T) *oidcTestEnv {
 	h.sessions = auth.NewSessionManager(repository.NewSqliteSessionRepository(dbConn), auth.WithClock(clk.now))
 	localAccounts := repository.NewSqliteLocalAccountRepository(dbConn)
 	h.localAuth = auth.NewLocalAuth(localAccounts, auth.WithLocalClock(clk.now))
-	h.invites = auth.NewInviteManager(repository.NewSqliteInviteRepository(dbConn), h.localAuth, auth.WithInviteClock(clk.now))
+	h.invites = auth.NewInviteManager(
+		repository.NewSqliteInviteRepository(dbConn),
+		repository.NewSqliteAuthTransitionStore(dbConn),
+		auth.WithInviteClock(clk.now),
+	)
 
 	idp := newFakeIdP(t)
 	identities := repository.NewSqliteOIDCIdentityRepository(dbConn)
@@ -79,7 +84,6 @@ func setupOIDCApp(t *testing.T) *oidcTestEnv {
 	}
 	h.oidc = rp
 	h.oidcTx = txCodec
-	h.linker = auth.NewIdentityLinker(identities, localAccounts, auth.WithLinkerClock(clk.now))
 	h.oidcEnabled = true
 
 	t.Cleanup(func() {
@@ -429,6 +433,40 @@ func TestOIDC_ClaimLinksConsumesMints(t *testing.T) {
 	}
 }
 
+func TestOIDC_PasswordResetClaimDoesNotOfferOrStartSSO(t *testing.T) {
+	e := setupOIDCApp(t)
+	admin := e.seedMember(t, "Admin", "admin")
+	member := e.seedMember(t, "Inez", "member")
+	e.seedLocalLogin(t, member, "inez", "inez password here")
+	raw, err := e.h.invites.IssuePasswordReset(context.Background(), member, admin)
+	if err != nil {
+		t.Fatalf("issue password reset invite: %v", err)
+	}
+
+	validate := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+raw, "", nil)
+	if validate.StatusCode != fiber.StatusOK {
+		t.Fatalf("validate password reset claim = %d, want 200", validate.StatusCode)
+	}
+	var claim claimResponse
+	if err := json.NewDecoder(validate.Body).Decode(&claim); err != nil {
+		t.Fatalf("decode password reset claim: %v", err)
+	}
+	if claim.Mode != "reset" || claim.Options.OIDC {
+		t.Fatalf("password reset claim = %+v, want reset with OIDC off", claim)
+	}
+
+	start := e.getWithCookies(t, "/api/v1/auth/claim/"+raw+"/oidc")
+	if start.StatusCode != fiber.StatusFound || start.Header.Get("Location") != "/claim/"+raw {
+		t.Fatalf("reset OIDC start = %d %q, want claim-page redirect", start.StatusCode, start.Header.Get("Location"))
+	}
+	if tx := findCookie(start, oidcTxCookieName); tx != nil && tx.Value != "" {
+		t.Fatal("password reset OIDC start minted a transaction cookie")
+	}
+	if n := e.countIdentities(t); n != 0 {
+		t.Fatalf("password reset OIDC start linked %d identities, want 0", n)
+	}
+}
+
 func TestOIDC_ClaimConflictDoesNotConsume(t *testing.T) {
 	e := setupOIDCApp(t)
 	admin := e.seedMember(t, "Admin", "admin")
@@ -482,12 +520,19 @@ func TestOIDC_UnlinkSelfLastCredentialGuard(t *testing.T) {
 
 	// Add a local login, and now the unlink succeeds.
 	e.seedLocalLogin(t, member, "zoe", "zoe password here")
+	resetToken, err := e.h.invites.IssuePasswordReset(context.Background(), member, member)
+	if err != nil {
+		t.Fatalf("issue reset invite: %v", err)
+	}
 	ok := e.request(t, http.MethodDelete, "/api/v1/auth/linked-identity", raw, nil)
 	if ok.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("unlink with fallback = %d, want 204", ok.StatusCode)
 	}
 	if n := e.countIdentities(t); n != 0 {
 		t.Fatalf("after unlink identities = %d, want 0", n)
+	}
+	if _, err := e.h.invites.Validate(context.Background(), resetToken); !errors.Is(err, auth.ErrInviteInvalid) {
+		t.Fatalf("reset invite after unlink = %v, want ErrInviteInvalid", err)
 	}
 }
 
@@ -499,6 +544,10 @@ func TestOIDC_UnlinkAdminAndForbidden(t *testing.T) {
 
 	target := e.seedMember(t, "Ivy", "member")
 	e.linkIdentity(t, target, "ivy-sub", "ivy@example.com")
+	targetCookie, _, err := e.h.sessions.Mint(context.Background(), target, nil)
+	if err != nil {
+		t.Fatalf("mint target session: %v", err)
+	}
 
 	// Admin removes another member's identity even though it's their last
 	// credential (they fall back to a placeholder): 204.
@@ -508,6 +557,9 @@ func TestOIDC_UnlinkAdminAndForbidden(t *testing.T) {
 	}
 	if n := e.countIdentities(t); n != 0 {
 		t.Fatalf("after admin unlink identities = %d, want 0", n)
+	}
+	if old := e.request(t, http.MethodGet, "/api/v1/auth/me", targetCookie, nil); old.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("session after last identity removal = %d, want 401", old.StatusCode)
 	}
 
 	// A non-admin is forbidden.

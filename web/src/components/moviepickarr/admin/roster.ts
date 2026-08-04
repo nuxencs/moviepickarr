@@ -28,7 +28,7 @@ export function loginChips(m: RosterMember): LoginChip[] {
   }
   if (isPlaceholder(m)) {
     return m.invitePending
-      ? [{ kind: "pending", label: "Invite sent" }]
+      ? [{ kind: "pending", label: "Invite link open" }]
       : [{ kind: "empty", label: "No login yet" }];
   }
   const chips: LoginChip[] = [];
@@ -40,7 +40,7 @@ export function loginChips(m: RosterMember): LoginChip[] {
 /** A one-line summary of a member's login state, for the dense archived rows. */
 export function credLabel(m: RosterMember): string {
   if (m.archived) return "Archived";
-  if (isPlaceholder(m)) return m.invitePending ? "Invited" : "No login yet";
+  if (isPlaceholder(m)) return m.invitePending ? "Invite link open" : "No login yet";
   if (m.hasLocalLogin && m.hasLinkedIdentity) return "Password + SSO";
   if (m.hasLocalLogin) return "Password";
   return "SSO";

@@ -43,18 +43,19 @@ const (
 // account all return this so status, body, and (via the dummy verify) timing
 // stay indistinguishable. It also backs the current-password mismatch on a
 // password change ("generic 401").
-var ErrInvalidCredentials = errors.New("invalid credentials")
+var ErrInvalidCredentials = domain.ErrInvalidCredentials
 
 // ErrNoLocalLogin is returned by ChangePassword when the member has no local
 // login to change (the change-not-create rule): the caller maps it to 409.
-var ErrNoLocalLogin = errors.New("no local login")
+var ErrNoLocalLogin = domain.ErrNoLocalLogin
 
 // LocalAuth is the deep module over the username/password login path: it owns
 // credential verification, the timing-equalization dummy verify, the
 // self-healing lockout, rehash-on-login, and the admin set/remove operations,
 // so every HTTP handler shares one implementation of "what a local login
-// means". Session minting and cookie handling stay in the HTTP layer; this
-// module never touches an http.Request or a session.
+// means". Session token preparation and cookie handling stay in the HTTP layer;
+// the auth transition store inserts local-login sessions. This module never
+// touches an http.Request or a session.
 type LocalAuth struct {
 	repo domain.LocalAccountRepo
 	// now is the injectable clock every lockout decision reads, so tests advance
@@ -89,16 +90,41 @@ func WithLocalClock(clock func() time.Time) LocalAuthOption {
 // threshold; a correct password resets the counters, bumps last_login_at, and
 // rehashes when the stored argon2id params have drifted.
 func (a *LocalAuth) Login(ctx context.Context, username, password string) (int, error) {
+	login, err := a.PrepareLogin(ctx, username, password)
+	if err != nil {
+		return 0, err
+	}
+	now := a.now()
+	if err := a.repo.RecordSuccessfulLogin(
+		ctx,
+		login.UserID,
+		login.ExpectedPasswordHash,
+		login.NewPasswordHash,
+		now,
+		now,
+	); err != nil {
+		return 0, err
+	}
+	return login.UserID, nil
+}
+
+// PrepareLogin verifies a password and returns the expected credential hash
+// plus an optional maintenance rehash. Production commits login success and
+// session creation together through AuthTransitionStore.
+func (a *LocalAuth) PrepareLogin(
+	ctx context.Context,
+	username, password string,
+) (domain.VerifiedLocalLogin, error) {
 	username = strings.TrimSpace(username)
 	if username == "" || password == "" {
-		return 0, ErrInvalidCredentials
+		return domain.VerifiedLocalLogin{}, ErrInvalidCredentials
 	}
 	// DoS guard: an oversized password would make argon2id grind arbitrarily, so
 	// cap it before any hashing. Skipping the dummy verify here is deliberate:
 	// timing equalization defends username enumeration, and an oversized body is
 	// not an enumeration probe.
 	if len(password) > MaxPasswordLen {
-		return 0, ErrInvalidCredentials
+		return domain.VerifiedLocalLogin{}, ErrInvalidCredentials
 	}
 
 	acct, err := a.repo.FindByUsername(ctx, username)
@@ -106,10 +132,10 @@ func (a *LocalAuth) Login(ctx context.Context, username, password string) (int, 
 		// Unknown username (or a member with no local login): no row to verify,
 		// so spend the same argon2id cost on a throwaway hash.
 		DummyVerify(password)
-		return 0, ErrInvalidCredentials
+		return domain.VerifiedLocalLogin{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return 0, err
+		return domain.VerifiedLocalLogin{}, err
 	}
 
 	now := a.now()
@@ -119,83 +145,96 @@ func (a *LocalAuth) Login(ctx context.Context, username, password string) (int, 
 	// lock (silent lockout, even for the correct password).
 	if acct.LockedUntil != nil && now.Before(*acct.LockedUntil) {
 		DummyVerify(password)
-		return 0, ErrInvalidCredentials
+		return domain.VerifiedLocalLogin{}, ErrInvalidCredentials
 	}
 
 	match, needsRehash, err := VerifyPassword(password, acct.PasswordHash)
 	if err != nil || !match {
-		return 0, a.recordFailure(ctx, acct, now)
+		return domain.VerifiedLocalLogin{}, a.recordFailure(ctx, acct, now)
 	}
 
-	if err := a.recordSuccess(ctx, acct, password, needsRehash, now); err != nil {
-		return 0, err
-	}
-	return acct.UserID, nil
-}
-
-// recordFailure persists a wrong-password attempt: bump the consecutive-failure
-// count and, at the threshold, set the lockout deadline. The counter is only
-// cleared on success, so a failure past the threshold re-arms the lock.
-func (a *LocalAuth) recordFailure(ctx context.Context, acct *domain.LocalAccount, now time.Time) error {
-	failed := acct.FailedAttempts + 1
-	var lockedUntil *time.Time
-	if failed >= maxFailedAttempts {
-		t := now.Add(lockoutDuration)
-		lockedUntil = &t
-	}
-	if err := a.repo.RecordFailedAttempt(ctx, acct.UserID, failed, lockedUntil, now); err != nil {
-		return err
-	}
-	return ErrInvalidCredentials
-}
-
-// recordSuccess resets the lockout counters, bumps last_login_at, and rehashes
-// the stored password when its argon2id params have drifted from the configured
-// set. A failed rehash is non-fatal: the login still succeeds on the old hash,
-// and the next login retries the upgrade.
-func (a *LocalAuth) recordSuccess(ctx context.Context, acct *domain.LocalAccount, password string, needsRehash bool, now time.Time) error {
 	var newHash *string
 	if needsRehash {
 		if h, err := HashPassword(password); err == nil {
 			newHash = &h
 		}
 	}
-	return a.repo.RecordSuccessfulLogin(ctx, acct.UserID, newHash, now, now)
+	return domain.VerifiedLocalLogin{
+		UserID:               acct.UserID,
+		ExpectedPasswordHash: acct.PasswordHash,
+		NewPasswordHash:      newHash,
+	}, nil
 }
 
-// ChangePassword verifies a member's current password and rewrites it. A wrong
-// current password returns ErrInvalidCredentials (the generic 401); a member
-// with no local login returns ErrNoLocalLogin (409). It does not touch
-// sessions: revoking other devices and rotating the current token are the
-// caller's concern, since only the HTTP layer holds the session cookie.
-func (a *LocalAuth) ChangePassword(ctx context.Context, userID int, current, next string) error {
-	acct, err := a.repo.FindByUserID(ctx, userID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNoLocalLogin
+// recordFailure persists a wrong-password attempt. The repository increments
+// and tests the count in one statement, so parallel verifies cannot overwrite
+// each other's attempts. The counter is only cleared on success, so a failure
+// past the threshold re-arms the lock.
+func (a *LocalAuth) recordFailure(ctx context.Context, acct *domain.LocalAccount, now time.Time) error {
+	if err := a.repo.RecordFailedAttempt(
+		ctx,
+		acct.UserID,
+		acct.PasswordHash,
+		maxFailedAttempts,
+		now.Add(lockoutDuration),
+		now,
+	); err != nil {
+		return err
 	}
+	return ErrInvalidCredentials
+}
+
+// ChangePassword keeps the repository-local implementation used by unit tests
+// and callers that do not own cross-table auth state. Production HTTP flows use
+// PreparePasswordChange plus AuthTransitionStore so the credential, sessions,
+// and any current reset invite change in one commit.
+func (a *LocalAuth) ChangePassword(ctx context.Context, userID int, current, next string) error {
+	change, err := a.PreparePasswordChange(ctx, userID, current, next)
 	if err != nil {
 		return err
+	}
+	return a.repo.UpdatePasswordHash(ctx, userID, change.PasswordHash, a.now())
+}
+
+// PreparePasswordChange verifies the current password and hashes its
+// replacement outside SQLite's writer. The returned expected hash lets the
+// transaction reject a credential that changed after verification.
+func (a *LocalAuth) PreparePasswordChange(
+	ctx context.Context,
+	userID int,
+	current, next string,
+) (domain.VerifiedPasswordChange, error) {
+	acct, err := a.repo.FindByUserID(ctx, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.VerifiedPasswordChange{}, ErrNoLocalLogin
+	}
+	if err != nil {
+		return domain.VerifiedPasswordChange{}, err
 	}
 
 	// Cap the submitted current password before verifying (the same argon2id DoS
 	// guard the login path applies), then fold every current-password miss into
 	// the uniform invalid-credentials error.
 	if len(current) > MaxPasswordLen {
-		return ErrInvalidCredentials
+		return domain.VerifiedPasswordChange{}, ErrInvalidCredentials
 	}
 	match, _, err := VerifyPassword(current, acct.PasswordHash)
 	if err != nil || !match {
-		return ErrInvalidCredentials
+		return domain.VerifiedPasswordChange{}, ErrInvalidCredentials
 	}
 
 	if err := validatePassword(next); err != nil {
-		return err
+		return domain.VerifiedPasswordChange{}, err
 	}
 	hash, err := HashPassword(next)
 	if err != nil {
-		return err
+		return domain.VerifiedPasswordChange{}, err
 	}
-	return a.repo.UpdatePasswordHash(ctx, userID, hash, a.now())
+	return domain.VerifiedPasswordChange{
+		UserID:               userID,
+		ExpectedPasswordHash: acct.PasswordHash,
+		PasswordHash:         hash,
+	}, nil
 }
 
 // SetLocalLoginResult reports which branch an admin PUT took so the caller can

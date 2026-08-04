@@ -21,8 +21,7 @@ type fakeLocalRepo struct {
 	identities map[int]*domain.MemberIdentity
 	failNext   error // if set, the next mutating call returns it
 
-	lastFailed   int
-	lastLocked   *time.Time
+	failureCalls int
 	successHash  *string
 	successCalls int
 }
@@ -84,24 +83,33 @@ func (f *fakeLocalRepo) UpdatePasswordAndClearLockout(_ context.Context, userID 
 	return nil
 }
 
-func (f *fakeLocalRepo) RecordFailedAttempt(_ context.Context, userID, failedAttempts int, lockedUntil *time.Time, _ time.Time) error {
-	f.lastFailed = failedAttempts
-	f.lastLocked = lockedUntil
+func (f *fakeLocalRepo) RecordFailedAttempt(_ context.Context, userID int, expectedPasswordHash string, lockThreshold int, lockUntil, _ time.Time) error {
+	f.failureCalls++
 	a, ok := f.byID[userID]
 	if !ok {
 		return sql.ErrNoRows
 	}
-	a.FailedAttempts = failedAttempts
-	a.LockedUntil = lockedUntil
+	if a.PasswordHash != expectedPasswordHash {
+		return domain.ErrInvalidCredentials
+	}
+	a.FailedAttempts++
+	if a.FailedAttempts >= lockThreshold {
+		a.LockedUntil = &lockUntil
+	} else {
+		a.LockedUntil = nil
+	}
 	return nil
 }
 
-func (f *fakeLocalRepo) RecordSuccessfulLogin(_ context.Context, userID int, newPasswordHash *string, lastLoginAt, _ time.Time) error {
+func (f *fakeLocalRepo) RecordSuccessfulLogin(_ context.Context, userID int, expectedPasswordHash string, newPasswordHash *string, lastLoginAt, _ time.Time) error {
 	f.successCalls++
 	f.successHash = newPasswordHash
 	a, ok := f.byID[userID]
 	if !ok {
 		return sql.ErrNoRows
+	}
+	if a.PasswordHash != expectedPasswordHash {
+		return domain.ErrInvalidCredentials
 	}
 	a.FailedAttempts = 0
 	a.LockedUntil = nil
@@ -274,7 +282,7 @@ func TestLogin_OversizedPasswordRejected(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
 	// The DoS guard short-circuits before any bookkeeping.
-	if repo.lastFailed != 0 {
+	if repo.failureCalls != 0 {
 		t.Fatal("oversized password touched the lockout counter")
 	}
 }

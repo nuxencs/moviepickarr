@@ -20,6 +20,16 @@ export const UsersKeys = {
     roster: () => [...UsersKeys.all, "roster"] as const,
 }
 
+// The admin invites overview. Its own root rather than a branch of "users": the
+// rows are invites, not members, and issuing or revoking one has to stale both
+// this and the roster (whose invitePending chip reads the same fact), which a
+// shared prefix would hide behind one invalidation that looks like it covers
+// everything.
+export const InvitesKeys = {
+    all: ["invites"] as const,
+    list: () => [...InvitesKeys.all, "list"] as const,
+}
+
 export const MoviesKeys = {
     all: ["movies"] as const,
     listpool: () => [...MoviesKeys.all, "listpool"] as const,

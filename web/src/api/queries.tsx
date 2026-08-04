@@ -1,7 +1,7 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 
 import { APIClient } from "@/api/APIClient";
-import { AuthKeys, MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+import { AuthKeys, InvitesKeys, MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
 import type { StatsFilters } from "@/components/moviepickarr/statsSearch";
 
@@ -71,6 +71,21 @@ export const RosterQueryOptions = () =>
   queryOptions({
     queryKey: UsersKeys.roster(),
     queryFn: () => APIClient.members.roster(),
+    retry: false,
+  })
+
+/** The admin invites overview. Nothing pushes an invite change: a member
+ *  claiming their link broadcasts nothing, and deliberately so. The SSE stream
+ *  isn't role-filtered, so an `invite:claimed` event would tell every connected
+ *  client who just set up their login. So this refetches on mount and on focus,
+ *  which is when a stale row would mislead, plus on the admin's own mutations.
+ *  A 403 is the "Admins only" answer, not a failure to retry. */
+export const InvitesQueryOptions = () =>
+  queryOptions({
+    queryKey: InvitesKeys.list(),
+    queryFn: () => APIClient.invites.list(),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     retry: false,
   })
 

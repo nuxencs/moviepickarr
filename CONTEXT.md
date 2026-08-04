@@ -60,11 +60,39 @@ Binding a member to an SSO identity.
 
 **Invite**:
 A single-use, expiring link an admin sends so a member can set up their login.
+An explicit password-reset invite can instead recover an existing local login.
+It ends in one of four states: open, used (claimed), revoked, or expired. Each
+issuance is one immutable generation. Exactly one unused, unrevoked generation
+can be current for a member, even after it expires, and admin actions address
+that generation through a random public handle. Open and expired generations
+remain visible in the roster's Login cell, including password-reset invites for
+credentialed members, because an admin can still replace, revoke, or dismiss
+them. Only the link's hash is stored, so an issued link can never be shown a
+second time by anyone.
 _Avoid_: registration, signup
 
+**Open**:
+An invite that has been issued, not yet claimed, not revoked, and not past its
+expiry. The one state whose link still works.
+_Avoid_: active, pending, valid
+
+**Expired**:
+An invite whose window lapsed before anyone claimed it. Its link is dead, but
+the admin may still need to create a replacement, which is why it stays on
+screen.
+_Avoid_: stale, lapsed (as a noun)
+
+**Dismiss**:
+An admin clearing an expired invite from the roster's Login cell. Implemented
+as a revoke, so the invite is genuinely gone rather than hidden: there is no
+dismissed-but-alive state.
+_Avoid_: hide, archive, ignore
+
 **Claim**:
-A member redeeming an invite to set a password and/or link SSO, turning a
-placeholder into a login-capable member.
+A member redeeming an invite to set a password and/or link SSO. An onboarding
+claim turns a placeholder into a login-capable member. A password-reset claim
+replaces an existing password, ends the member's existing sessions, and cannot
+be exchanged for a new SSO link.
 
 **Placeholder**:
 A roster member with no login credential yet: visible on the roster and usable
@@ -76,8 +104,8 @@ A removed member who authored movies: their `users` row survives with
 `archived_at` set so watch-history attribution holds, but their credentials,
 sessions, and invites are stripped and every authentication lookup treats them
 as absent. Restore strips any residual authentication rows again, clears
-`archived_at`, and re-issues a claim link. A member who authored nothing is
-hard-deleted instead, not archived.
+`archived_at`, and inserts a fresh claim invite in the same transaction. A
+member who authored nothing is hard-deleted instead, not archived.
 _Avoid_: deleted user, disabled user
 
 **Session**:

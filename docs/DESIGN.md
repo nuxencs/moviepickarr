@@ -183,6 +183,13 @@ old shadcn primitives.
   register uses no per-device cards. Each remote action includes the browser and
   platform in its accessible name, and Log out everywhere remains a separate global
   action inside the expanded management view.
+- Admin invite state stays with the member. There is no separate invite section above
+  the roster. The Login cell quietly shows an open or expired generation beside the
+  member's credentials, including a password-reset link for a credentialed member.
+  Replacement, revoke, and dismiss actions live in that row's menu. The one-time URL
+  takes focus only after an admin creates or replaces a link, when it must be copied
+  and delivered. Loading or failed invite metadata must not turn every roster row into
+  a repeated status card.
 - **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
   quick-select, genre, actors, crew, added by, release year) in a single wrapping row under the
   stats header. The seg stays a seg (presets are mutually exclusive) but drops its
@@ -857,7 +864,7 @@ actually has movies.
 ## 10. Iconography (lucide)
 
 - `PlusIcon` = "add / open the add flow": the Members wall's add tile, the Add button on
-  a search result, the admin roster's "Add & invite". The add tile is drawn on your own board only and the
+  a search result, the admin roster's "Add & create link". The add tile is drawn on your own board only and the
   server takes the adder from the session, so the name in its label (`Add to Felix's
   stash`) is always your own — adding to another member's stash is not a thing the UI can
   express, and an example that reads as one is describing a pre-auth app.

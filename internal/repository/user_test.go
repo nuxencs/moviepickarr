@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,7 +79,7 @@ func (e *userRemoveEnv) seedLogin(t *testing.T, userID int, username string) {
 	}); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
-	if err := e.invites.Create(e.ctx, userID, "invite-"+username, now.Add(24*time.Hour), nil); err != nil {
+	if err := e.invites.Create(e.ctx, userID, "public-"+username+"-000000000000", "invite-"+username, now.Add(24*time.Hour), now, nil, true); err != nil {
 		t.Fatalf("seed invite: %v", err)
 	}
 }
@@ -112,7 +113,7 @@ func (e *userRemoveEnv) seedResidualAuthRows(t *testing.T, userID int, suffix st
 		{"INSERT INTO local_accounts (user_id, username, password_hash) VALUES (?, ?, 'hash')", []any{userID, "login-" + suffix}},
 		{"INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (?, 'https://idp.test', ?)", []any{userID, "subject-" + suffix}},
 		{"INSERT INTO sessions (public_id, user_id, token_hash, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)", []any{"public-" + suffix, userID, "session-" + suffix, db.ToUnix(now.Add(time.Hour)), db.ToUnix(now)}},
-		{"INSERT INTO invites (user_id, token_hash, expires_at) VALUES (?, ?, ?)", []any{userID, "invite-" + suffix, db.ToUnix(now.Add(time.Hour))}},
+		{"INSERT INTO invites (public_id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)", []any{"invite-public-" + suffix, userID, "invite-" + suffix, db.ToUnix(now.Add(time.Hour))}},
 	}
 	for _, stmt := range stmts {
 		if _, err := e.pool.Write.ExecContext(e.ctx, stmt.query, stmt.args...); err != nil {
@@ -233,6 +234,103 @@ func TestUserRepo_Remove_NotFound(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	if _, err := e.users.Remove(e.ctx, 4242); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("remove missing member: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestUserRepo_Remove_RefusesLastActiveAdmin(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		authored bool
+	}{
+		{name: "hard delete", authored: false},
+		{name: "archive", authored: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupUserRemoveEnv(t)
+			root, err := e.users.Create(e.ctx, "Root")
+			if err != nil {
+				t.Fatalf("create root: %v", err)
+			}
+			if err := e.users.SetRole(e.ctx, root.ID, domain.RoleAdmin); err != nil {
+				t.Fatalf("promote root: %v", err)
+			}
+			e.seedLogin(t, root.ID, "root-"+tc.name)
+			if tc.authored {
+				if _, err := e.movies.Add(e.ctx, "Root's movie", "pool", root.ID); err != nil {
+					t.Fatalf("add root movie: %v", err)
+				}
+			}
+
+			if _, err := e.users.Remove(e.ctx, root.ID); !errors.Is(err, domain.ErrConflict) {
+				t.Fatalf("remove last admin: got %v, want ErrConflict", err)
+			}
+
+			row := rosterByID(t, mustRoster(t, e))[root.ID]
+			if row == nil || row.Archived || row.Role != domain.RoleAdmin {
+				t.Fatalf("last admin changed after refusal: %+v", row)
+			}
+			for _, table := range []string{"local_accounts", "oidc_identities", "sessions", "invites"} {
+				if got := e.countRow(t, "SELECT COUNT(*) FROM "+table+" WHERE user_id = ?", root.ID); got != 1 {
+					t.Fatalf("refused removal left %d %s rows, want 1", got, table)
+				}
+			}
+		})
+	}
+}
+
+func TestUserRepo_Remove_ConcurrentAdminsPreservesOne(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	admins := make([]*domain.User, 2)
+	for i, name := range []string{"Alice", "Ben"} {
+		member, err := e.users.Create(e.ctx, name)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		if err := e.users.SetRole(e.ctx, member.ID, domain.RoleAdmin); err != nil {
+			t.Fatalf("promote %s: %v", name, err)
+		}
+		admins[i] = member
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, len(admins))
+	var wg sync.WaitGroup
+	for i := range admins {
+		wg.Add(1)
+		go func(memberID int) {
+			defer wg.Done()
+			<-start
+			_, err := e.users.Remove(e.ctx, memberID)
+			errs <- err
+		}(admins[i].ID)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var removed, refused int
+	for err := range errs {
+		switch {
+		case err == nil:
+			removed++
+		case errors.Is(err, domain.ErrConflict):
+			refused++
+		default:
+			t.Fatalf("concurrent remove returned unexpected error: %v", err)
+		}
+	}
+	if removed != 1 || refused != 1 {
+		t.Fatalf("concurrent removals: removed=%d refused=%d, want 1 and 1", removed, refused)
+	}
+
+	var activeAdmins int
+	if err := e.pool.Read.QueryRowContext(e.ctx,
+		"SELECT COUNT(*) FROM users WHERE role = 'admin' AND archived_at IS NULL",
+	).Scan(&activeAdmins); err != nil {
+		t.Fatalf("count active admins: %v", err)
+	}
+	if activeAdmins != 1 {
+		t.Fatalf("active admins after concurrent removals = %d, want 1", activeAdmins)
 	}
 }
 
@@ -430,7 +528,7 @@ func TestUserRepo_Roster_DerivesLoginState(t *testing.T) {
 		t.Fatalf("create jamie: %v", err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := e.invites.Create(e.ctx, jamie.ID, "invite-jamie", now.Add(24*time.Hour), nil); err != nil {
+	if err := e.invites.Create(e.ctx, jamie.ID, "public-jamie-000000000000", "invite-jamie", now.Add(24*time.Hour), now, nil); err != nil {
 		t.Fatalf("seed jamie invite: %v", err)
 	}
 	// Fully credentialed member with authored movies (so a remove would archive).

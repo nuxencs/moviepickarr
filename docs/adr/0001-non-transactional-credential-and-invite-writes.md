@@ -1,10 +1,13 @@
 # ADR 0001: Non-transactional credential and invite writes
 
-Status: accepted (2026-07-19)
+Status: superseded by ADR 0003 (2026-08-03)
 
-ADR 0002 later adopted scoped transactions for cross-table writes whose partial
-state breaks a domain invariant. The two recoverable flows named here remain
-non-transactional.
+[ADR 0002](0002-scoped-transactions-for-cross-table-writes.md) later adopted
+scoped transactions for cross-table writes whose partial state breaks a domain
+invariant. [ADR 0003](0003-atomic-credential-and-invite-transitions.md) applies
+that seam to credential and invite transitions, superseding this record's
+password-claim and create-then-issue decisions. It also applies the same rule to
+member restore plus invite issuance.
 
 ## Context
 
@@ -42,5 +45,8 @@ last, and rely on the resulting states being benign:
   owns sessions so the service modules never touch a session.
 - The failure states above are recoverable, not corrupting: no partial write
   leaves a member unable to log in or an invite stuck in a broken state.
-- ADR 0002's scoped unit-of-work seam does not reopen these two flows. Revisit
-  them only if their accepted residual states stop being valid.
+- [ADR 0003](0003-atomic-credential-and-invite-transitions.md) reopens both
+  flows. The scoped stores now commit claim transitions together and bind
+  member create or restore to invite issuance. A failed create can no longer
+  leave a member or `next_up` change without the only claim URL, and a failed
+  restore cannot reopen a member without its replacement invite.

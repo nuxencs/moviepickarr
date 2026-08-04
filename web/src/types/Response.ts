@@ -116,11 +116,35 @@ export interface RosterMember {
     lastSeenAt?: string;
 }
 
-// The one-time claim URL returned by member-create, invite reissue, and restore.
+// The one-time claim URL returned by member-create, invite changes, and restore.
 // It is shown once and never resent, so the surface reveals it in a copy-or-lose
 // ceremony rather than persisting it.
 export interface InviteResult {
     claimUrl: string;
+}
+
+// The two current-invite states the roster renders. Used and revoked invites
+// have no row because neither is actionable.
+export type InviteStatus = "open" | "expired";
+
+// One current generation from GET /invites. It may onboard a placeholder or
+// reset a credentialed member's password. `status` is derived against the
+// response's server clock. `issuedBy` is absent for a seeded invite or a deleted
+// issuer. The claim URL cannot be recovered because only its token hash is
+// stored; replacement is the only way to reveal another link.
+export interface InviteSummary {
+    id: string;
+    memberId: number;
+    memberName: string;
+    status: InviteStatus;
+    expiresAt: string;
+    issuedAt: string;
+    issuedBy?: string;
+}
+
+export interface InvitesResponse {
+    serverNow: string;
+    items: InviteSummary[];
 }
 
 // Which of the two removal paths ran, so the surface can report "deleted" (gone,

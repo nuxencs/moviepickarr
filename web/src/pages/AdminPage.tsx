@@ -4,9 +4,8 @@ import { Shell } from "@/components/moviepickarr/AppShell";
 /**
  * Route component for /admin. Lazy-loaded (see StatsPage for the why).
  *
- * The admin surface is a page of sections, the way Movies is (In the Pool,
- * Watched). Today it holds one: the roster. Pool locks and integrations become
- * siblings here, each its own `.sec-head` section.
+ * Invite state stays in each member's Login cell instead of repeating members
+ * in a second page-level section.
  */
 export function AdminPage() {
   return (

@@ -384,10 +384,10 @@
     cursor: pointer; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   }
   .iconbtn svg { width: 16px; height: 16px; }
-  .iconbtn:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
-  .iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .iconbtn:active:not(:disabled) { transform: scale(0.92); }
-  .iconbtn--danger:hover:not(:disabled) { background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger); border-color: color-mix(in oklab, var(--danger) 42%, transparent); }
+  .iconbtn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
+  .iconbtn:disabled, .iconbtn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+  .iconbtn:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(0.92); }
+  .iconbtn--danger:hover:not(:disabled):not([aria-disabled="true"]) { background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger); border-color: color-mix(in oklab, var(--danger) 42%, transparent); }
 
   /* ---- Section heading ---- */
   .sec-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }

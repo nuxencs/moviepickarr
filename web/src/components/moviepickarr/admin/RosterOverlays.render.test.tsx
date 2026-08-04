@@ -190,29 +190,47 @@ describe("InviteReveal", () => {
     Reflect.deleteProperty(navigator, "clipboard");
   });
 
-  function renderReveal(writeText = vi.fn(() => Promise.resolve())) {
+  function renderReveal(
+    writeText = vi.fn(() => Promise.resolve()),
+    purpose: "invite" | "password-reset" = "invite",
+  ) {
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText },
       configurable: true,
     });
     const onClose = vi.fn();
-    render(<InviteReveal name="Cleo" claimUrl="/claim/tok3n" onClose={onClose} />);
+    render(
+      <InviteReveal
+        name="Cleo"
+        claimUrl="/claim/tok3n"
+        purpose={purpose}
+        onClose={onClose}
+      />,
+    );
     return { writeText, onClose };
   }
 
   it("shows the link as an absolute URL, ready to send", () => {
     renderReveal();
 
-    expect(screen.getByRole("dialog").textContent).toContain(
-      `${window.location.origin}/claim/tok3n`,
-    );
+    expect((screen.getByRole("textbox", { name: "Invite link for Cleo" }) as HTMLInputElement).value)
+      .toBe(`${window.location.origin}/claim/tok3n`);
+  });
+
+  it("names a recovery URL as a password reset link", () => {
+    renderReveal(undefined, "password-reset");
+
+    expect(screen.getByRole("heading", { name: "Password reset link ready for Cleo" }))
+      .not.toBeNull();
+    expect(screen.getByRole("textbox", { name: "Password reset link for Cleo" }))
+      .not.toBeNull();
   });
 
   it("copies the absolute link, not the relative path", async () => {
     const { writeText } = renderReveal();
 
     await act(async () => {
-      fireEvent.click(button("Copy"));
+      fireEvent.click(button("Copy link"));
     });
 
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/claim/tok3n`);
@@ -222,20 +240,20 @@ describe("InviteReveal", () => {
     renderReveal();
 
     await act(async () => {
-      fireEvent.click(button("Copy"));
+      fireEvent.click(button("Copy link"));
     });
 
     expect(button("Copied")).not.toBeNull();
   });
 
-  it("stays on Copy when the clipboard refuses, instead of claiming a copy that never happened", async () => {
+  it("stays on Copy link when the clipboard refuses, instead of claiming a copy that never happened", async () => {
     renderReveal(vi.fn(() => Promise.reject(new Error("denied"))));
 
     await act(async () => {
-      fireEvent.click(button("Copy"));
+      fireEvent.click(button("Copy link"));
     });
 
-    expect(button("Copy")).not.toBeNull();
+    expect(button("Copy link")).not.toBeNull();
   });
 });
 

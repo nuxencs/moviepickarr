@@ -15,9 +15,12 @@
   authored no movies is hard-deleted (credentials/sessions/invites cascade,
   `next_up` nulls, name freed); a member who authored movies is archived
   (`archived_at` set, login rows stripped, row and attribution kept). `POST
-  /members/:memberID/restore` re-strips any residual authentication rows and
-  clears `archived_at` in one transaction, then re-issues a fresh claim link,
-  returning the roster row plus the one-time `claimUrl`. The membership reads
+  /members/:memberID/restore` re-strips any residual authentication rows,
+  clears `archived_at`, and inserts a fresh invite in one transaction. `POST
+  /members` likewise commits the member, an initial `next_up` assignment when
+  no active holder resolves, and its first invite together. Both prepare the
+  raw token outside the transaction, store only its hash, and return the member
+  projection plus the one-time `claimUrl` after commit. The membership reads
   filter `archived_at IS NULL` (`UserRepo.List` backs the roster and the
   rotation candidate list;
   `FindByID` gates the per-member pool/stash reads; the `next_up` join drops a
@@ -56,6 +59,8 @@
   this device, `{"all":true}` ends every session; always clears the cookie and
   `204`), and the admin `PUT`/`DELETE
   /members/:memberID/local-login` upsert/remove (gated by an inline admin check).
+  The admin upsert writes the credential, retires any current invite, and, on a
+  reset, revokes the member's sessions through the scoped auth transition store.
   It also holds the shared authz guards used across handlers: `requireAdmin`
   (403 `admin_required`) and `requireNextUpOrAdmin` (403 `not_next_up`).
   `/auth/login` is registered ahead of
@@ -73,19 +78,29 @@
   `useragent.go` derives the row's device label ("Safari on iPhone") from the
   stored user agent: display copy only, matched against two short ordered token
   lists, no dependency. The app neither captures nor returns network addresses.
-- `internal/server/invite_handlers.go`: the invite/claim onboarding endpoints.
-  Admin issuance `POST /members/:memberID/invite` (re-issue/regenerate, revokes
-  the old link) and `DELETE /members/:memberID/invite` (revoke, `404` when
-  nothing valid); `POST /members` (in `users_handlers.go`) issues the first
-  invite and returns the one-time `claimUrl` in the response only, never over
-  SSE. The unauthenticated claim pair `GET /auth/claim/:token` (returns
-  displayName + placeholder-vs-reset mode + options, or the two distinct
-  `invite_invalid` 404 / `invite_used` 410 states) and `POST
-  /auth/claim/:token/password` (placeholder sets username+password, reset sets
-  password-only + revokes all sessions; both consume the invite once and mint a
-  session → `204` + cookie) sit ahead of `requireSession`. `POST
-  /auth/local-login` is the authed self-serve completeness path (first
-  username+password for a member with no local login, `409` if one exists).
+- `internal/server/invite_handlers.go`: invite issuance, exact-generation admin
+  actions, and unauthenticated claim endpoints. `POST
+  /members/:memberID/invite` creates the first current generation. Its default
+  onboarding purpose requires a credential-less member;
+  `{"purpose":"password_reset"}` explicitly creates recovery for a member with
+  a local login. Existing generations use an immutable public handle: `POST
+  /invites/:inviteID/replacement` replaces that exact generation, `DELETE
+  /invites/:inviteID` revokes it only while open, and `POST
+  /invites/:inviteID/dismiss` retires it only after expiry. A stale or
+  wrong-state handle returns `409` without touching a replacement. `POST
+  /members` (in `users_handlers.go`) atomically creates the placeholder, claims
+  an unresolved initial `next_up` slot, and issues the first invite. It returns
+  the one-time `claimUrl` only in its direct response, never over SSE. The
+  unauthenticated `GET /auth/claim/:token` returns display name, mode, and
+  credential options, or `invite_invalid` 404 / `invite_used` 410. OIDC is an
+  onboarding option only; password-reset claims stay password-only. `POST
+  /auth/claim/:token/password` commits the credential, recovery-session
+  revocation, exact invite use, and new session together. `POST
+  /auth/local-login` creates a signed-in member's first local credential and
+  retires any current invite. `GET /invites` returns `{serverNow, items}` for all
+  current onboarding and password-reset generations. Each item carries its
+  public handle and a server-derived `open` or `expired` state. No list response
+  contains a claim URL because only the token hash is stored.
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
   `fullMovie` (detail payload: embeds `leanMovieTile` plus the film's client-visible
@@ -124,35 +139,46 @@
   `Sweep`. Lifetimes are
   hardcoded (30-day idle, 90-day absolute); an injectable clock makes expiry
   testable without sleeps. `local.go` is the `LocalAuth` deep module over the
-  local-login flow: `Login` (timing-equalized via `DummyVerify`, self-healing
-  10-strike/15-min lockout, rehash-on-login, `last_login_at` bump),
-  `ChangePassword`, the admin `SetLocalLogin`/`DeleteLocalLogin` (username 3–32
-  `[a-zA-Z0-9._-]`, NOCASE collision → `ErrConflict`, self-last-credential
-  guard), and the `/me` `Identity` projection. Password bounds (min 8, max 128,
-  the max a DoS guard) and the uniform `ErrInvalidCredentials`/`ErrNoLocalLogin`
-  sentinels live here; it shares the injectable clock with `SessionManager`.
-  `SetFirstLocalLogin` (self-serve first credential, `ErrConflict` if one
-  already exists) also lives on `LocalAuth`. `invite.go` is the `InviteManager`
-  deep module over the invite/claim flow: `Issue` (revoke-then-insert, enforcing
-  one valid invite per member, 7-day `InviteTTL`), `Revoke`, `Validate`
-  (time-derived state machine → `ClaimContext` or the `ErrInviteInvalid` /
-  `ErrInviteUsed` sentinels), and `ClaimPassword` (reuses `LocalAuth.SetLocalLogin`
-  for the placeholder/reset upsert, then consumes the invite). It shares the same
-  injectable clock so invite expiry is testable without sleeps; session mint and
-  cookie handling stay in the HTTP layer. `oidc.go` is the `RelyingParty` deep
-  module over the go-oidc/oauth2 protocol: `OIDCConfigFromEnv` (presence-derived
+  local-login flow: `Login` (timing-equalized via `DummyVerify`, atomic
+  per-attempt counting for the self-healing 10-strike/15-min lockout,
+  rehash-on-login, `last_login_at` bump),
+  password verification and hashing for `ChangePassword`, repository-local
+  `DeleteLocalLogin`, and the `/me` `Identity` projection.
+  Repository-local `SetLocalLogin` and `SetFirstLocalLogin` operations remain,
+  but production credential creation and reset enter through `InviteManager`
+  so an invite cannot change in a separate commit. Username rules (3–32
+  `[a-zA-Z0-9._-]`), NOCASE collision mapping, password bounds (min 8, max 128),
+  self-last-credential guards, and the uniform
+  `ErrInvalidCredentials`/`ErrNoLocalLogin` sentinels live here. It shares the
+  injectable clock with `SessionManager`. `invite.go` is the `InviteManager`
+  deep module over issuance, exact-generation actions, claim validation, and
+  atomic credential transitions. `Issue` creates a first onboarding generation;
+  `IssuePasswordReset` creates an explicit recovery generation; `Replace`,
+  `Revoke`, and `Dismiss` target one immutable public handle. `Validate` runs the
+  time-derived claim state machine. `ClaimPassword` hashes outside SQLite, then
+  asks the scoped auth store to write the credential, revoke recovery sessions,
+  and consume the exact token in one transaction. `ClaimOIDCByHash` applies the
+  equivalent identity-link transition. `SetLocalLogin`, `SetFirstLocalLogin`,
+  `ChangePassword`, `DeleteLocalLogin`, and `LinkOIDC` retire any current invite
+  in the transaction that adds, changes, or removes the credential.
+  `CompleteLocalLogin` inserts a verified login's session under an expected
+  password hash, and `UnlinkOIDC` retires a reset invite before removing a claim
+  option. `Overview` returns all current onboarding and reset
+  generations with one `serverNow` sample, tags them `InviteOpen` or
+  `InviteExpired`, and orders the most urgent first. It shares the injectable
+  clock so invite expiry is testable without sleeps; the HTTP layer prepares
+  session tokens and sets cookies around the transaction. `oidc.go` is the
+  `RelyingParty` deep module over the go-oidc/oauth2 protocol:
+  `OIDCConfigFromEnv` (presence-derived
   enablement from the `MPA_OIDC_*` quartet), one-time discovery in
   `NewRelyingParty`, `AuthCodeURL` (state + nonce + S256 PKCE), and `Exchange`
   (code exchange, ID-token verify, nonce compare → `OIDCClaims`). `oidc_tx.go` is
   the `OIDCTxCodec` that seals/opens the `mpa_oidc_tx` cookie with AES-256-GCM
   (ephemeral key by default, `MPA_OIDC_TX_SECRET` override, ~10-min TTL, uniform
-  `ErrTxInvalid` on tamper/expiry) plus the S256 PKCE helper. `oidc_link.go` is
-  the `IdentityLinker` over `oidc_identities`: `Login` (match `(issuer, subject)`,
-  refresh snapshots), `Link` (the collision matrix on both UNIQUEs, shared by the
-  link and claim intents, idempotent for the same member), and `Unlink` (self
-  last-credential guard → `ErrConflict`). All three OIDC modules take
-  already-verified inputs and never touch an `http.Request` or a session; the RP
-  runs off no clock, the tx codec and linker share the injectable one.
+  `ErrTxInvalid` on tamper/expiry) plus the S256 PKCE helper. Persistence of
+  verified OIDC claims, session creation, linking, and unlinking lives in the
+  scoped auth transition store described below. The provider modules never
+  touch an `http.Request` or session row.
 - `internal/movie`: owns the whole draw/reveal lifecycle, including the
   server-authoritative auto-reveal. `DrawRandom` picks a pooled movie and returns
   one `DrawResult`: a detached selected movie, the exact pre-draw candidate
@@ -232,13 +258,37 @@
 - `internal/repository/session.go`: `sessions` repository (active-gated create / find-by-token-hash joined to the active member's live role / touch-last-seen / per-token, per-member, revoke-others and owner-scoped public-handle deletes, the last returning the deleted token hash / live-sessions-for-member list, newest activity first / expiry sweep).
 - `internal/repository/local_account.go`: `local_accounts` repository (active-member find by NOCASE username / by user id, active-gated create and password/login-state writes, unique→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete) plus the active-gated `oidc_identities` presence read and `/me` member-identity join.
 - `internal/repository/oidc_identity.go`: `oidc_identities` repository (active-member issuer/subject and user-id reads, active-gated insert and login-snapshot update, collision→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete).
-- `internal/repository/invite.go`: `invites` repository (active-gated create and claim-context read, missing-or-archived→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, mark-used). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`).
+- `internal/repository/invite.go`: `invites` repository for issuance,
+  exact-generation admin actions, claim-context reads, and the current-invite
+  overview. Each generation has an immutable random `public_id`; a partial
+  unique index permits one unused, unrevoked generation per member, including
+  after expiry. First issuance checks its purpose and active credential state on
+  one writer transaction. Replacement retires the addressed generation and
+  inserts its successor in one transaction. Revoke and dismiss are
+  compare-and-swap updates on the public handle plus the required open or
+  expired state. `ListCurrent` keeps credentialed members when an explicit
+  password-reset generation exists, so its handle never disappears from admin
+  management.
+- `internal/repository/auth_transition.go`: `AuthTransitionStore` implementation
+  for credential-plus-invite writer transactions. Password and OIDC claims
+  re-read the token hash authoritatively inside the transaction, write the
+  credential, replace existing sessions, and consume that exact invite. An OIDC
+  claim rejects a generation that targets an existing local login, so a reset
+  link cannot become a second credential path. Direct local-login and OIDC-link operations retire any
+  current invite in the credential transaction. Verified password changes use
+  the prior hash as a compare-and-swap condition, revoke old sessions, and
+  retire reset links. Password removal retires reset links under the same
+  self-last-credential guard. Normal password login records success and creates
+  the session under the verified hash; OIDC unlink applies its guard, deletion,
+  and reset-link retirement together. Password hashing and provider exchange
+  remain outside SQLite's writer. See ADR 0003.
 - `internal/repository/admin_seed.go`: boot-only break-glass seed store. Its
   `SeedAdmin` operation resolves name matches, archive state, role, and
   local-login presence on one writer transaction. A hash-needed probe writes
   nothing; the retry commits member creation or promotion with the login.
-  Existing passwords are preserved, archived matches are rejected, and admin
-  counts are active-only. See ADR 0002.
+  Creating a login also retires any current invite in that transaction. Existing
+  passwords are preserved, archived matches are rejected, and admin counts are
+  active-only. See ADR 0002 and ADR 0003.
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
 
 ### SQLite connections, timestamps, and movie identity
@@ -324,8 +374,10 @@ always the session member, never a path id: member-scoped routes carry no
   stats / settings reads, `/tmdb/search`). `PUT`/`DELETE /movies/:movieID` and
   `/move` are **adder-only** (403 `not_adder`, no admin override). Draw / reveal /
   watch are **next-up-or-admin** (403 `not_next_up`). Member
-  create/delete/restore, pool-lock, local-login admin actions, and invite
-  issuance/revocation (`POST`/`DELETE /members/:memberID/invite`) are
+  create/delete/restore, pool-lock, local-login admin actions, invite creation
+  (`POST /members/:memberID/invite`), exact-generation replacement/revoke/dismiss
+  (`POST /invites/:inviteID/replacement`, `DELETE /invites/:inviteID`, `POST
+  /invites/:inviteID/dismiss`), and the invites overview (`GET /invites`) are
   **admin-only** (403 `admin_required`). The claim endpoints (`GET`/`POST /auth/claim/:token...`) and
   `POST /auth/login` are unauthenticated (no session yet); `POST
   /auth/local-login` is any-authenticated self-serve.

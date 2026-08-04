@@ -237,6 +237,9 @@ func TestArchivedMemberIsNotReAdoptedOnRestart(t *testing.T) {
 	if _, err := movies.Add(ctx, "Arrival", "pool", adminID); err != nil {
 		t.Fatalf("add authored movie: %v", err)
 	}
+	// Member removal now preserves at least one active admin. A second admin
+	// keeps this fixture focused on whether the archived seed target is adopted.
+	createMember(t, pool, "Backup Admin", "admin")
 	users := repository.NewSqliteUserRepository(pool)
 	if _, err := users.Remove(ctx, adminID); err != nil {
 		t.Fatalf("archive seeded admin: %v", err)
@@ -416,9 +419,13 @@ func TestArchivedAdminDoesNotSuppressNoActiveAdminWarning(t *testing.T) {
 	if _, err := movies.Add(ctx, "Heat", "pool", adminID); err != nil {
 		t.Fatalf("add authored movie: %v", err)
 	}
-	users := repository.NewSqliteUserRepository(pool)
-	if _, err := users.Remove(ctx, adminID); err != nil {
-		t.Fatalf("archive admin: %v", err)
+	// The public removal path refuses to create a zero-admin roster. Seed the
+	// legacy/manual-database state directly so this test can still cover the
+	// startup warning that reports operator-visible bad state.
+	if _, err := pool.Write.ExecContext(ctx,
+		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", adminID,
+	); err != nil {
+		t.Fatalf("archive admin fixture: %v", err)
 	}
 
 	var logs bytes.Buffer

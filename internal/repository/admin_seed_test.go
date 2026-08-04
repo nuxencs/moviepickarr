@@ -76,3 +76,43 @@ func TestSeedAdminProbeDoesNotMutate(t *testing.T) {
 		})
 	}
 }
+
+func TestSeedAdminCreatingLoginRetiresCurrentInvite(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	member, err := e.users.Create(e.ctx, "Ada")
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if _, err := e.pool.Write.ExecContext(e.ctx, `
+		INSERT INTO invites (public_id, user_id, token_hash, expires_at)
+		VALUES ('seed-invite-public-handle', ?, 'seed-invite-token', unixepoch() + 3600)
+	`, member.ID); err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+
+	passwordHash := "stored-password-hash"
+	result, err := NewSqliteAdminSeedRepository(e.pool).SeedAdmin(
+		e.ctx,
+		"Ada",
+		"ada",
+		&passwordHash,
+	)
+	if err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	if !result.LoginCreated || !result.Promoted {
+		t.Fatalf("seed result = %+v, want login creation and promotion", result)
+	}
+
+	var currentInvites int
+	if err := e.pool.Read.QueryRowContext(e.ctx, `
+		SELECT COUNT(*)
+		FROM invites
+		WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL
+	`, member.ID).Scan(&currentInvites); err != nil {
+		t.Fatalf("count current invites: %v", err)
+	}
+	if currentInvites != 0 {
+		t.Fatalf("current invites after seed = %d, want 0", currentInvites)
+	}
+}

@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
 
 // Carries the HTTP status alongside the human-readable message so callers can
 // branch on it (the login page shows the uniform banner only for a 401, and
@@ -274,12 +274,15 @@ export const APIClient = {
         // Promote/demote. 409 when it would demote the last admin.
         setRole: (memberID: number, role: "member" | "admin") =>
             appClient.Patch<void>(`api/v1/members/${memberID}/role`, { body: { role } }),
-        // (Re)issue a claim link: revokes any current valid invite, returns a fresh
-        // one-time URL. Serves both first-invite-after-expiry and regenerate.
-        reissueInvite: (memberID: number) =>
+        // Create the first current invite generation. Existing generations are
+        // replaced through their immutable handle below.
+        createInvite: (memberID: number) =>
             appClient.Post<InviteResult>(`api/v1/members/${memberID}/invite`),
-        revokeInvite: (memberID: number) =>
-            appClient.Delete(`api/v1/members/${memberID}/invite`),
+        // Issue a recovery link for a member who already has a local login.
+        createPasswordResetInvite: (memberID: number) =>
+            appClient.Post<InviteResult>(`api/v1/members/${memberID}/invite`, {
+                body: { purpose: "password_reset" },
+            }),
         // Set (create) or reset an existing local login. Reset revokes the member's
         // other sessions server-side.
         setLocalLogin: (memberID: number, username: string, password: string) =>
@@ -298,6 +301,19 @@ export const APIClient = {
         // Reactivate an archived member and re-issue their claim link in one step.
         restore: (memberID: number) =>
             appClient.Post<InviteResult>(`api/v1/members/${memberID}/restore`),
+    },
+    // Existing invite generations are addressed only by immutable public id,
+    // so a stale tab cannot mutate a replacement generation for the member.
+    invites: {
+        list: () => appClient.Get<InvitesResponse>("api/v1/invites"),
+        replace: (inviteID: string) =>
+            appClient.Post<InviteResult>(
+                `api/v1/invites/${encodeRFC3986URIComponent(inviteID)}/replacement`,
+            ),
+        revoke: (inviteID: string) =>
+            appClient.Delete(`api/v1/invites/${encodeRFC3986URIComponent(inviteID)}`),
+        dismiss: (inviteID: string) =>
+            appClient.Post(`api/v1/invites/${encodeRFC3986URIComponent(inviteID)}/dismiss`),
     },
     // The Members board and its self-service movie actions. Reads hit /members
     // (the board's per-member pool + stash tiles); mutations hit /movies. Movie

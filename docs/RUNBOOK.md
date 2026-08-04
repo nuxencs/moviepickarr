@@ -72,11 +72,14 @@ So the deploy is a hard cutover, in this order:
    exists and no seed is configured.
 3. Loosen the gate (above) so the login and callback routes are reachable.
 4. The break-glass admin logs in with the seeded username/password.
-5. Invite the rest. From the admin roster, use "Add & invite" for new members, or
-   regenerate an invite for each existing placeholder. Each invite is a
-   single-use claim link shown exactly once, with no resend, so deliver it
-   out-of-band immediately (a lost link means regenerate). Members redeem it to
-   set a password and/or link SSO.
+5. Invite the rest. From the admin roster, use "Add & create link" for new
+   members. For an existing placeholder, open the row menu and create an invite
+   link. Each link is single-use and shown exactly once, with no resend, so
+   deliver it out-of-band immediately. If a link is lost, use the same row menu
+   to create a replacement. Open and expired state stays in the member's Login
+   cell until the link is claimed, revoked, replaced, or dismissed. Onboarding
+   links can set a password or link SSO. Password-reset links replace the
+   password only.
 
 The break-glass seed is idempotent and never overwrites an existing password, so
 it is safe to leave the env vars set while the named member remains active.

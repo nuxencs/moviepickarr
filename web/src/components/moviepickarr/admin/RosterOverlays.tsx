@@ -80,26 +80,34 @@ export function CredChips({ member }: { member: RosterMember }) {
 export function InviteReveal({
   name,
   claimUrl,
+  purpose,
   onClose,
 }: {
   name: string;
   claimUrl: string;
+  purpose: "invite" | "password-reset";
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [copying, setCopying] = useState(false);
   const absolute = `${window.location.origin}${claimUrl}`;
+  const linkLabel = purpose === "password-reset" ? "Password reset link" : "Invite link";
 
   const copy = async () => {
+    if (copying) return;
+    setCopying(true);
     try {
       await navigator.clipboard.writeText(absolute);
       setCopied(true);
     } catch {
       toast.error("Couldn't copy. Select the link and copy it manually.");
+    } finally {
+      setCopying(false);
     }
   };
 
   return (
-    <Modal label={`Invite ready for ${name}`} onClose={onClose} className="modal--form">
+    <Modal label={`${linkLabel} ready for ${name}`} onClose={onClose} className="modal--form">
       {(close) => (
         <div className="adm-sheet adm-invite">
           <div className="adm-invite__head">
@@ -107,31 +115,39 @@ export function InviteReveal({
               <CheckCircle2Icon />
             </span>
             <div>
-              <h3 className="adm-modal__title">Invite ready for {name}</h3>
+              <h3 className="adm-modal__title">{linkLabel} ready for {name}</h3>
               <p className="adm-modal__sub">
-                Send this link to {name} so they can set a password or link SSO.
+                Copy this link and share it privately with {name}.
               </p>
             </div>
           </div>
 
           <div className="adm-invite__urlrow">
-            <code className="adm-invite__url">{absolute}</code>
+            <input
+              className="adm-invite__url"
+              value={absolute}
+              readOnly
+              aria-label={`${linkLabel} for ${name}`}
+              onFocus={(event) => event.currentTarget.select()}
+            />
             <button
               type="button"
               className="btn btn--accent adm-invite__copy"
               data-copied={copied}
               onClick={copy}
+              disabled={copying}
+              aria-live="polite"
             >
               <CopyIcon />
-              {copied ? "Copied" : "Copy"}
+              {copying ? "Copying…" : copied ? "Copied" : "Copy link"}
             </button>
           </div>
 
           <div className="adm-note" data-tone="warn">
             <TriangleAlertIcon />
             <span>
-              Copy it now. This is the only time it's shown, and there's no resend. If
-              it's lost, regenerate a fresh link (which invalidates this one).
+              This link is shown once. If it is lost, create a replacement link, which
+              invalidates this one.
             </span>
           </div>
 

@@ -100,17 +100,12 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
-	createdUser, err := h.userService.Create(ctx, name)
+	// Onboarding is one lifecycle write: the placeholder, initial next-up
+	// assignment, and first invite commit together. The raw claim token is kept
+	// outside persistence and returned only by this direct response.
+	createdUser, rawToken, err := h.invites.CreateMemberWithInvite(ctx, name, actorMemberID(c))
 	if err != nil {
 		return writeError(c, err)
-	}
-
-	// Onboarding is one step: create the placeholder, then issue its first claim
-	// link. The invite targets the fresh member (a placeholder → claim), issued by
-	// the acting admin.
-	rawToken, err := h.invites.Issue(ctx, createdUser.ID, actorMemberID(c))
-	if err != nil {
-		return h.writeInternal(c, err, "issuing first invite on member create failed")
 	}
 
 	// Stats list every roster member (zero rows included), so a new member
@@ -192,20 +187,20 @@ func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
-	if err := h.userService.Restore(ctx, memberID); err != nil {
+	restoredUser, rawToken, err := h.invites.RestoreMemberWithInvite(ctx, memberID, actorMemberID(c))
+	if err != nil {
 		return writeError(c, err)
 	}
 
-	rawToken, err := h.invites.Issue(ctx, memberID, actorMemberID(c))
-	if err != nil {
-		return h.writeInternal(c, err, "issuing invite on member restore failed")
-	}
-
-	// The member is active again, so rebuild their roster row (name + any pool/
-	// stash movies that were hidden while archived) and put them back on the board.
-	payload, err := h.userRosterRow(c, memberID)
-	if err != nil {
-		return h.writeInternal(c, err, "loading restored member roster row failed")
+	// Build the response from the member projection read before the lifecycle
+	// commit. SSE consumers use user:created as an invalidation and refetch the
+	// member's movie rows, so no fallible read can lose this one-time claim URL.
+	payload := userResponse{
+		ID:          restoredUser.ID,
+		Name:        restoredUser.Name,
+		CurrentPool: map[string]leanMovieTile{},
+		Stash:       map[string]leanMovieTile{},
+		CreatedAt:   formatTime(restoredUser.CreatedAt),
 	}
 
 	h.invalidateStatsCache()
@@ -218,46 +213,4 @@ func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
 		userResponse: payload,
 		ClaimURL:     claimURL(rawToken),
 	})
-}
-
-// userRosterRow builds one member's roster row: identity plus their pool and
-// stash tiles, the same lean shape handleGetUsers ships per member. Used by the
-// restore path to rehydrate a member whose movies were hidden while archived.
-func (h *handler) userRosterRow(c *fiber.Ctx, memberID int) (userResponse, error) {
-	ctx := c.UserContext()
-	u, err := h.userService.Get(ctx, memberID)
-	if err != nil {
-		return userResponse{}, err
-	}
-
-	pooled, err := h.movieService.PooledByUserID(ctx, memberID)
-	if err != nil {
-		return userResponse{}, err
-	}
-	stashed, err := h.movieService.StashedByUserID(ctx, memberID)
-	if err != nil {
-		return userResponse{}, err
-	}
-
-	own := make([]*domain.Movie, 0, len(pooled)+len(stashed))
-	own = append(own, pooled...)
-	own = append(own, stashed...)
-	meta := h.metaFor(c, own)
-
-	pool := make(map[string]leanMovieTile, len(pooled))
-	for i := range pooled {
-		pool[strconv.Itoa(pooled[i].ID)] = toLeanTile(pooled[i], meta[pooled[i].ID])
-	}
-	stash := make(map[string]leanMovieTile, len(stashed))
-	for i := range stashed {
-		stash[strconv.Itoa(stashed[i].ID)] = toLeanTile(stashed[i], meta[stashed[i].ID])
-	}
-
-	return userResponse{
-		ID:          u.ID,
-		Name:        u.Name,
-		CurrentPool: pool,
-		Stash:       stash,
-		CreatedAt:   formatTime(u.CreatedAt),
-	}, nil
 }

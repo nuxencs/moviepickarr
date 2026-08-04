@@ -140,10 +140,17 @@ export interface MeResponse {
     role: "member" | "admin";
     hasLocalLogin: boolean;
     hasLinkedIdentity: boolean;
-    // How many OTHER devices the actor is signed in on (this session excluded),
-    // counting only live sessions. Drives the account page's log-out-everywhere
-    // copy so the count is concrete before the member ends every session.
-    otherSessions: number;
+}
+
+// One live session from GET /auth/sessions: the member's own devices, never
+// anyone else's. `id` is an immutable public handle, never the store row id.
+// `device` is derived server-side from the stored user agent
+// ("Safari on iPhone"); `current` marks the session making the request.
+export interface SessionSummary {
+    id: string;
+    device: string;
+    lastSeenAt: string;
+    current: boolean;
 }
 
 // Public auth capabilities the unauthenticated login page reads to decide what

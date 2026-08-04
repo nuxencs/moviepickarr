@@ -4,7 +4,6 @@ import {
   credLabel,
   loginChips,
   removeOutcome,
-  timeAgo,
   unlinkWouldStrand,
 } from "@/components/moviepickarr/admin/roster";
 
@@ -74,21 +73,5 @@ describe("unlinkWouldStrand", () => {
     expect(unlinkWouldStrand(ssoOnly, false)).toBe(false);
     // A password fallback means unlinking your SSO doesn't strand you.
     expect(unlinkWouldStrand(member({ hasLinkedIdentity: true, hasLocalLogin: true }), true)).toBe(false);
-  });
-});
-
-describe("timeAgo", () => {
-  const now = Date.parse("2026-07-19T12:00:00Z");
-
-  it("returns an empty string for a missing or unparseable timestamp", () => {
-    expect(timeAgo(undefined, now)).toBe("");
-    expect(timeAgo("not-a-date", now)).toBe("");
-  });
-
-  it("says now under a minute, then the largest whole unit", () => {
-    expect(timeAgo("2026-07-19T11:59:30Z", now)).toBe("now");
-    expect(timeAgo("2026-07-19T11:58:00Z", now)).toBe("2 minutes ago");
-    expect(timeAgo("2026-07-19T09:00:00Z", now)).toBe("3 hours ago");
-    expect(timeAgo("2026-07-16T12:00:00Z", now)).toBe("3 days ago");
   });
 });

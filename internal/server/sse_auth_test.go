@@ -89,7 +89,7 @@ func TestSSE_RevokedMidStreamDropsOnHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create member: %v", err)
 	}
-	rawToken, _, err := h.sessions.Mint(ctx, member.ID, nil, nil)
+	rawToken, _, err := h.sessions.Mint(ctx, member.ID, nil)
 	if err != nil {
 		t.Fatalf("mint session: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestSSE_RevalidationDatabaseFailureLogsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create member: %v", err)
 	}
-	rawToken, _, err := h.sessions.Mint(ctx, member.ID, nil, nil)
+	rawToken, _, err := h.sessions.Mint(ctx, member.ID, nil)
 	if err != nil {
 		t.Fatalf("mint session: %v", err)
 	}

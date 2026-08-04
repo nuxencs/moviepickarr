@@ -68,7 +68,6 @@ function actor(overrides: Partial<MeResponse> = {}): MeResponse {
     role: "member",
     hasLocalLogin: true,
     hasLinkedIdentity: false,
-    otherSessions: 0,
     ...overrides,
   };
 }

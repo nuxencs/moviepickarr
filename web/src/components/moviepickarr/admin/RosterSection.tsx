@@ -17,7 +17,7 @@ import { APIClient, ApiError } from "@/api/APIClient";
 import { MeQueryOptions, RosterQueryOptions } from "@/api/queries";
 import { MoviesKeys, UsersKeys } from "@/api/query_keys";
 
-import { credLabel, isPlaceholder, timeAgo, unlinkWouldStrand } from "@/components/moviepickarr/admin/roster";
+import { credLabel, isPlaceholder, unlinkWouldStrand } from "@/components/moviepickarr/admin/roster";
 import {
   CredChips,
   ForbiddenState,
@@ -33,6 +33,8 @@ import { toast } from "@/components/ui/toast-api";
 
 
 import type { RosterMember } from "@/types/Response";
+
+import { timeAgo } from "@/lib/time";
 
 import "@/components/moviepickarr/admin/roster.css";
 

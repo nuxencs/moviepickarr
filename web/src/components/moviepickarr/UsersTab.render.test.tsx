@@ -103,7 +103,6 @@ function session(id: number): MeResponse {
     role: "member",
     hasLocalLogin: true,
     hasLinkedIdentity: false,
-    otherSessions: 0,
   };
 }
 

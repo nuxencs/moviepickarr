@@ -123,11 +123,15 @@ Source: [`sqlite3/sqlite3.go`, `config.go`, `go.mod`](https://github.com/gofiber
 
 ## 3. What the hand-rolled store looks like
 
-Small surface, fits the existing repository pattern:
+Small surface, fits the existing repository pattern. This updated sketch keeps
+the cookie credential hash separate from the non-secret handle used by the
+device-management API:
 
 ```sql
 CREATE TABLE sessions (
-    id            TEXT PRIMARY KEY,   -- hash of the opaque token, see below
+    id            INTEGER PRIMARY KEY, -- internal only
+    public_id     TEXT NOT NULL UNIQUE, -- immutable revoke handle
+    token_hash    TEXT NOT NULL UNIQUE, -- hash of the opaque cookie token
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at    INTEGER NOT NULL,   -- unix epoch, absolute-cap anchor
     last_seen_at  INTEGER NOT NULL,   -- idle-timeout anchor
@@ -143,9 +147,10 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
   row, reject if missing or `expires_at < now`, stash the user in
   `c.Locals`. Bump `last_seen_at` lazily (e.g. only when older than a few
   minutes) to keep writes off the hot path.
-- Revocation: `DELETE WHERE id = ?` (logout), `DELETE WHERE user_id = ?`
-  (role change, password reset), and member deletion cascades. All instant,
-  all one statement, all through the existing write connection.
+- Revocation: `DELETE WHERE token_hash = ?` (logout), owner-scoped `DELETE
+  WHERE public_id = ? AND user_id = ?` (one device), `DELETE WHERE user_id = ?`
+  (all devices), and member deletion cascades. All instant, all one statement,
+  all through the existing write connection.
 - Expiry: enforce both idle and absolute at read time; a periodic sweep
   (`DELETE WHERE expires_at < now`) can piggyback on any existing
   housekeeping. OWASP suggests 15-30 min idle for low-risk apps; for a

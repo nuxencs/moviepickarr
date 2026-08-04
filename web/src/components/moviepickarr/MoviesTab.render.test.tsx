@@ -48,7 +48,6 @@ const me: MeResponse = {
   role: "admin",
   hasLocalLogin: true,
   hasLinkedIdentity: false,
-  otherSessions: 0,
 };
 
 async function renderTab() {

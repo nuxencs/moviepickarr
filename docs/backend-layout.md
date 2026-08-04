@@ -50,8 +50,7 @@
 - `internal/server/auth_handlers.go`: the local username/password endpoints.
   `POST /auth/login` (uniform `401 {"error":"invalid credentials"}` on every
   credential miss, `204` + minted cookie on success), `GET /auth/me` (identity +
-  presence-derived `hasLocalLogin`/`hasLinkedIdentity` + `otherSessions`, the
-  count of the actor's other live devices for the account page), `POST
+  presence-derived `hasLocalLogin`/`hasLinkedIdentity`), `POST
   /auth/password` (verify current, then revoke-all + fresh mint to revoke other
   devices and rotate the current token), `POST /auth/logout` (empty/`{}` ends
   this device, `{"all":true}` ends every session; always clears the cookie and
@@ -63,6 +62,17 @@
   `requireSession` so it stays reachable without a session; it is still behind
   `csrfGuard`. Local credentials attached to an archived row are treated like
   an unknown username and return the same timing-equalized 401.
+- `internal/server/session_handlers.go`: the member's own device list.
+  `GET /auth/sessions` (live sessions, most recently active first, the caller's
+  flagged `current`) and `DELETE /auth/sessions/:sessionID` (sign one device out;
+  the path carries an immutable random public handle, and the delete is scoped
+  to the session member, so another member's handle is a `404`; ending the
+  caller's own session clears the cookie). The internal integer row id never
+  crosses the API boundary. Both routes read the member off the session, so
+  neither takes a member id and neither can reach anyone else's sessions.
+  `useragent.go` derives the row's device label ("Safari on iPhone") from the
+  stored user agent: display copy only, matched against two short ordered token
+  lists, no dependency. The app neither captures nor returns network addresses.
 - `internal/server/invite_handlers.go`: the invite/claim onboarding endpoints.
   Admin issuance `POST /members/:memberID/invite` (re-issue/regenerate, revokes
   the old link) and `DELETE /members/:memberID/invite` (revoke, `404` when
@@ -108,8 +118,9 @@
   `session.go` is the `SessionManager` deep module over the session store:
   `Mint` (fresh token, 90-day absolute cap, fixation-safe), `Authenticate`
   (validate both windows, slide `last_seen_at` only when >1h stale, read role
-  live), `RevokeCurrent`/`RevokeAll`/`RevokeOthers`, `CountOtherSessions` (live
-  sessions besides the current, for the account page's other-device count), and
+  live), `RevokeCurrent`/`RevokeAll`/`RevokeOthers`, `RevokeByPublicID` (one of the
+  member's own sessions, reporting whether it was the caller's so the cookie is
+  cleared), `List` (the member's live sessions with the caller's flagged), and
   `Sweep`. Lifetimes are
   hardcoded (30-day idle, 90-day absolute); an injectable clock makes expiry
   testable without sleeps. `local.go` is the `LocalAuth` deep module over the
@@ -218,7 +229,7 @@
 - `internal/repository/movie_enrichment.go`: guarded, transaction-bound
   identity + metadata + credits enrichment write.
 - `internal/repository/movie_credits.go`: `people` + `movie_credits` repository (transactional replace / batch-get-by-ids).
-- `internal/repository/session.go`: `sessions` repository (active-gated create / find-by-token-hash joined to the active member's live role / touch-last-seen / per-token, per-member, and revoke-others deletes / expiry sweep).
+- `internal/repository/session.go`: `sessions` repository (active-gated create / find-by-token-hash joined to the active member's live role / touch-last-seen / per-token, per-member, revoke-others and owner-scoped public-handle deletes, the last returning the deleted token hash / live-sessions-for-member list, newest activity first / expiry sweep).
 - `internal/repository/local_account.go`: `local_accounts` repository (active-member find by NOCASE username / by user id, active-gated create and password/login-state writes, unique→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete) plus the active-gated `oidc_identities` presence read and `/me` member-identity join.
 - `internal/repository/oidc_identity.go`: `oidc_identities` repository (active-member issuer/subject and user-id reads, active-gated insert and login-snapshot update, collision→`ErrConflict`, missing-or-archived→`ErrNotFound`, delete).
 - `internal/repository/invite.go`: `invites` repository (active-gated create and claim-context read, missing-or-archived→`ErrNotFound`, revoke-valid-by-user returning the affected count for one-valid-invite enforcement, mark-used). Validity is time-derived in SQL (`used_at IS NULL AND revoked_at IS NULL AND expires_at > now`).

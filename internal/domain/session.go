@@ -11,12 +11,12 @@ import (
 // 90-day cap set at mint; LastSeenAt drives the 30-day idle slide.
 type Session struct {
 	ID         int64
+	PublicID   string
 	UserID     int
 	TokenHash  string
 	ExpiresAt  time.Time
 	LastSeenAt time.Time
 	UserAgent  *string
-	IP         *string
 	CreatedAt  time.Time
 }
 
@@ -51,12 +51,20 @@ type SessionRepo interface {
 	// whose token hash is keepTokenHash (password-change: drop others, keep
 	// current). Returns the number of rows removed.
 	DeleteOthersByUserID(ctx context.Context, userID int, keepTokenHash string) (int64, error)
+	// DeleteByPublicIDForUser revokes one session by its immutable public handle,
+	// scoped to its owner. The user_id predicate is the authorization, so a
+	// guessed handle belonging to someone else removes nothing. It returns the
+	// deleted row's token hash (empty when nothing matched), so the caller can
+	// tell "revoked another device" from "revoked the one I'm holding" without a
+	// second read racing the delete.
+	DeleteByPublicIDForUser(ctx context.Context, publicID string, userID int) (deletedTokenHash string, err error)
 	// DeleteExpired sweeps rows past their absolute cap (expires_at <= now) or
 	// their idle window (last_seen_at <= idleCutoff). Returns rows removed.
 	DeleteExpired(ctx context.Context, now, idleCutoff time.Time) (int64, error)
-	// CountOthersByUserID counts the member's other live sessions: every row
-	// except keepTokenHash that is still inside both windows (expires_at > now
-	// and last_seen_at > idleCutoff). Drives the "other devices" number the
-	// account page shows before a log-out-everywhere.
-	CountOthersByUserID(ctx context.Context, userID int, keepTokenHash string, now, idleCutoff time.Time) (int, error)
+	// ListLiveByUserID returns the member's sessions that are still inside both
+	// windows (expires_at > now and last_seen_at > idleCutoff), newest activity
+	// first. It backs the member's own device list, so it lists live rows only:
+	// a session that would no longer authenticate is not a device you are
+	// signed in on.
+	ListLiveByUserID(ctx context.Context, userID int, now, idleCutoff time.Time) ([]Session, error)
 }

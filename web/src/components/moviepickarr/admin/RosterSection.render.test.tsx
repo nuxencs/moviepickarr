@@ -67,7 +67,6 @@ const admin: MeResponse = {
   role: "admin",
   hasLocalLogin: true,
   hasLinkedIdentity: false,
-  otherSessions: 0,
 };
 
 async function renderSection(members: RosterMember[]) {

@@ -153,10 +153,6 @@ type meResponse struct {
 	Role              string  `json:"role"`
 	HasLocalLogin     bool    `json:"hasLocalLogin"`
 	HasLinkedIdentity bool    `json:"hasLinkedIdentity"`
-	// OtherSessions is how many other devices the actor is signed in on, so the
-	// account page can show the count before a log-out-everywhere. It excludes
-	// this session and counts only live rows.
-	OtherSessions int `json:"otherSessions"`
 }
 
 // handleMe returns the current session actor's identity plus its
@@ -170,17 +166,6 @@ func (h *handler) handleMe(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// The other-device count is best-effort: a failed count must not break the
-	// identity read the whole app depends on, so it falls back to 0 (the account
-	// page then just reads "no other devices" until the next /me succeeds).
-	others, err := h.sessions.CountOtherSessions(c.UserContext(), memberID, c.Cookies(sessionCookieName))
-	if err != nil {
-		// Best-effort by design (see above), so it degrades rather than fails:
-		// warn, not error.
-		h.reqLog(c).Warn().Err(err).Msg("counting other sessions failed, reporting zero")
-		others = 0
-	}
-
 	return c.Status(fiber.StatusOK).JSON(meResponse{
 		ID:                id.ID,
 		DisplayName:       id.DisplayName,
@@ -188,7 +173,6 @@ func (h *handler) handleMe(c *fiber.Ctx) error {
 		Role:              id.Role,
 		HasLocalLogin:     id.HasLocalLogin,
 		HasLinkedIdentity: id.HasLinkedIdentity,
-		OtherSessions:     others,
 	})
 }
 

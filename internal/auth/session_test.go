@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -79,14 +81,32 @@ func (f *fakeSessionRepo) DeleteOthersByUserID(_ context.Context, userID int, ke
 	return n, nil
 }
 
-func (f *fakeSessionRepo) CountOthersByUserID(_ context.Context, userID int, keep string, now, idleCutoff time.Time) (int, error) {
-	var n int
+func (f *fakeSessionRepo) DeleteByPublicIDForUser(_ context.Context, publicID string, userID int) (string, error) {
 	for h, as := range f.rows {
-		if as.UserID == userID && h != keep && as.ExpiresAt.After(now) && as.LastSeenAt.After(idleCutoff) {
-			n++
+		if as.PublicID == publicID && as.UserID == userID {
+			delete(f.rows, h)
+			return h, nil
 		}
 	}
-	return n, nil
+	return "", nil
+}
+
+func (f *fakeSessionRepo) ListLiveByUserID(_ context.Context, userID int, now, idleCutoff time.Time) ([]domain.Session, error) {
+	var live []domain.Session
+	for _, as := range f.rows {
+		if as.UserID == userID && as.ExpiresAt.After(now) && as.LastSeenAt.After(idleCutoff) {
+			live = append(live, as.Session)
+		}
+	}
+	// The real store orders by last activity; sort here so assertions on the
+	// list don't ride on map iteration order.
+	slices.SortFunc(live, func(a, b domain.Session) int {
+		if c := b.LastSeenAt.Compare(a.LastSeenAt); c != 0 {
+			return c
+		}
+		return cmp.Compare(b.ID, a.ID)
+	})
+	return live, nil
 }
 
 func (f *fakeSessionRepo) DeleteExpired(_ context.Context, now, idleCutoff time.Time) (int64, error) {
@@ -107,7 +127,7 @@ func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
 func mintFor(t *testing.T, m *SessionManager, userID int) string {
 	t.Helper()
-	raw, _, err := m.Mint(context.Background(), userID, nil, nil)
+	raw, _, err := m.Mint(context.Background(), userID, nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -120,7 +140,7 @@ func TestMint_StoresHashNotRawAndSetsAbsoluteCap(t *testing.T) {
 	clk := &fakeClock{t: base}
 	m := NewSessionManager(repo, WithClock(clk.now))
 
-	raw, expiresAt, err := m.Mint(context.Background(), 7, nil, nil)
+	raw, expiresAt, err := m.Mint(context.Background(), 7, nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -136,6 +156,9 @@ func TestMint_StoresHashNotRawAndSetsAbsoluteCap(t *testing.T) {
 	}
 	if stored.UserID != 7 {
 		t.Fatalf("stored user id = %d, want 7", stored.UserID)
+	}
+	if stored.PublicID == "" {
+		t.Fatal("stored public id is empty")
 	}
 	if want := base.Add(SessionAbsoluteTTL); !expiresAt.Equal(want) {
 		t.Fatalf("expiresAt = %v, want %v", expiresAt, want)
@@ -357,5 +380,130 @@ func TestSweep_UsesIdleCutoff(t *testing.T) {
 	}
 	if _, ok := repo.rows[HashToken(raw)]; ok {
 		t.Fatal("idle-expired session survived the sweep")
+	}
+}
+
+func TestList_LiveOnlyWithCurrentFlagged(t *testing.T) {
+	repo := newFakeSessionRepo()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clk := &fakeClock{t: base}
+	m := NewSessionManager(repo, WithClock(clk.now))
+	ctx := context.Background()
+
+	// An old device, then a fresh one an hour later, so last activity orders them.
+	old := mintFor(t, m, 1)
+	clk.advance(time.Hour)
+	current := mintFor(t, m, 1)
+	stranger := mintFor(t, m, 2)
+
+	views, err := m.List(ctx, 1, current)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(views) != 2 {
+		t.Fatalf("list returned %d sessions, want 2", len(views))
+	}
+	if !views[0].Current {
+		t.Error("newest session is the caller's, want current flagged")
+	}
+	if views[1].Current {
+		t.Error("older session flagged current")
+	}
+	if views[0].TokenHash != HashToken(current) || views[1].TokenHash != HashToken(old) {
+		t.Error("sessions not ordered by last activity, newest first")
+	}
+	for _, v := range views {
+		if v.TokenHash == HashToken(stranger) {
+			t.Fatal("list leaked another member's session")
+		}
+	}
+
+	// Past the idle window every row stops authenticating, so none is a device
+	// you are signed in on any more.
+	clk.advance(SessionIdleTTL + time.Hour)
+	views, err = m.List(ctx, 1, current)
+	if err != nil {
+		t.Fatalf("list after idle: %v", err)
+	}
+	if len(views) != 0 {
+		t.Fatalf("list returned %d idle-expired sessions, want 0", len(views))
+	}
+}
+
+func TestList_NoCurrentTokenFlagsNothing(t *testing.T) {
+	repo := newFakeSessionRepo()
+	clk := &fakeClock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	m := NewSessionManager(repo, WithClock(clk.now))
+	mintFor(t, m, 1)
+
+	views, err := m.List(context.Background(), 1, "")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(views) != 1 || views[0].Current {
+		t.Fatalf("empty current token flagged a session as current")
+	}
+}
+
+func TestRevokeByPublicID_ScopedToOwner(t *testing.T) {
+	repo := newFakeSessionRepo()
+	clk := &fakeClock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	m := NewSessionManager(repo, WithClock(clk.now))
+	ctx := context.Background()
+
+	current := mintFor(t, m, 1)
+	other := mintFor(t, m, 1)
+	stranger := mintFor(t, m, 2)
+
+	views, err := m.List(ctx, 1, current)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	var otherID, currentID string
+	for _, v := range views {
+		if v.TokenHash == HashToken(other) {
+			otherID = v.PublicID
+		}
+		if v.Current {
+			currentID = v.PublicID
+		}
+	}
+
+	// Revoking another of your own devices leaves this one signed in.
+	wasCurrent, err := m.RevokeByPublicID(ctx, 1, otherID, current)
+	if err != nil {
+		t.Fatalf("revoke own other session: %v", err)
+	}
+	if wasCurrent {
+		t.Error("revoking another device reported the current one")
+	}
+	if _, ok := repo.rows[HashToken(other)]; ok {
+		t.Error("revoked session survived")
+	}
+	if _, ok := repo.rows[HashToken(current)]; !ok {
+		t.Error("revoking another device closed the current one")
+	}
+
+	// Someone else's session handle matches nothing: not refused, unreachable.
+	strangerID := repo.rows[HashToken(stranger)].PublicID
+	if _, err := m.RevokeByPublicID(ctx, 1, strangerID, current); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("revoking another member's session = %v, want ErrNotFound", err)
+	}
+	if _, ok := repo.rows[HashToken(stranger)]; !ok {
+		t.Fatal("revoked another member's session")
+	}
+
+	// A row that is already gone reports not-found rather than a silent success.
+	if _, err := m.RevokeByPublicID(ctx, 1, otherID, current); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("revoking a gone session = %v, want ErrNotFound", err)
+	}
+
+	// Ending the device you're holding says so, so the caller clears the cookie.
+	wasCurrent, err = m.RevokeByPublicID(ctx, 1, currentID, current)
+	if err != nil {
+		t.Fatalf("revoke current session: %v", err)
+	}
+	if !wasCurrent {
+		t.Error("revoking the current session did not report it as current")
 	}
 }

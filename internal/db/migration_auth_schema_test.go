@@ -187,9 +187,9 @@ func TestMigration009_ShapeAndConstraints(t *testing.T) {
 		`INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (2, 'https://idp', 'sub-a')`)
 
 	// sessions: token_hash UNIQUE; ON DELETE CASCADE clears a member's sessions.
-	mustExec(`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('t1', 2, 100)`)
+	mustExec(`INSERT INTO sessions (public_id, token_hash, user_id, expires_at) VALUES ('session-1', 't1', 2, 100)`)
 	wantErr("duplicate session token_hash rejected",
-		`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('t1', 2, 200)`)
+		`INSERT INTO sessions (public_id, token_hash, user_id, expires_at) VALUES ('session-2', 't1', 2, 200)`)
 
 	// invites: token_hash UNIQUE; created_by SET NULL when the issuer is deleted.
 	mustExec(`INSERT INTO invites (user_id, token_hash, expires_at, created_by) VALUES (2, 'i1', 100, 1)`)

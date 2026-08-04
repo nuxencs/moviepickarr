@@ -352,7 +352,7 @@ func TestSelfServeLocalLogin_SetsFirstCredential(t *testing.T) {
 	// A member with a session but no local login (the OIDC-first shape): mint a
 	// session straight from the manager, no credential involved.
 	memberID := e.seedMember(t, "Ess Es Oh", "member")
-	rawToken, _, err := e.h.sessions.Mint(context.Background(), memberID, nil, nil)
+	rawToken, _, err := e.h.sessions.Mint(context.Background(), memberID, nil)
 	if err != nil {
 		t.Fatalf("mint session: %v", err)
 	}

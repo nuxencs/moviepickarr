@@ -81,6 +81,28 @@ func TestGenerateToken_Unique(t *testing.T) {
 	}
 }
 
+func TestGeneratePublicID_ShapeAndUniqueness(t *testing.T) {
+	const n = 1000
+	seen := make(map[string]struct{}, n)
+	for i := range n {
+		id, err := GeneratePublicID()
+		if err != nil {
+			t.Fatalf("GeneratePublicID #%d: %v", i, err)
+		}
+		raw, err := base64.RawURLEncoding.DecodeString(id)
+		if err != nil {
+			t.Fatalf("public id #%d is not base64url-unpadded: %v", i, err)
+		}
+		if len(raw) != publicIDBytes {
+			t.Fatalf("public id #%d decoded to %d bytes, want %d", i, len(raw), publicIDBytes)
+		}
+		if _, duplicate := seen[id]; duplicate {
+			t.Fatalf("duplicate public id at iteration %d", i)
+		}
+		seen[id] = struct{}{}
+	}
+}
+
 func TestHashToken_Deterministic(t *testing.T) {
 	const raw = "some-fixed-token-value"
 	first := HashToken(raw)

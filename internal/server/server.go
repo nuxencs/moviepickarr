@@ -449,6 +449,11 @@ func registerRoutes(app *fiber.App, h *handler) {
 	// Session logout: empty/{} ends this device, {"all":true} ends every session
 	// for the member. Always clears the cookie, 204, idempotent.
 	v1.Post("/auth/logout", h.handleLogout)
+	// The member's own device list and per-device sign-out. Self-only by
+	// construction: both read the member id off the session, so there is no
+	// target id to authorize and no path to anyone else's sessions.
+	v1.Get("/auth/sessions", h.handleListSessions)
+	v1.Delete("/auth/sessions/:sessionID", h.handleRevokeSession)
 	// Self-serve credential completeness: an authed member with no local login
 	// sets a first username + password (the session is the proof).
 	v1.Post("/auth/local-login", h.handleSelfServeLocalLogin)

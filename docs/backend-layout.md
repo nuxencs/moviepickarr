@@ -31,6 +31,23 @@
   `users` row instead of deleting it).
 - `internal/server/movies_handlers.go`: movies bounded context handlers.
 - `internal/server/settings_handlers.go`: settings bounded context handlers.
+- `internal/server/integration_handlers.go`: admin-only typed integration reads,
+  atomic TMDB saves, draft connection tests, source metadata, and status.
+- `internal/server/integration_action_handlers.go`: admin-only TMDB manual run
+  and cooperative cancellation commands.
+- `internal/server/integration_run_handlers.go`: filtered, keyset-paginated run
+  history. The cursor is the newest-first `(started_at, id)` boundary.
+- `internal/server/tmdb_runtime_gateway.go`: revision-scoped TMDB clients shared
+  by search, poster discovery, and enrichment. New work acquires the current
+  immutable runtime snapshot; in-flight work keeps its prior snapshot.
+- `internal/server/tmdb_run_controller.go`: the one library-wide run owner.
+  It selects subjects, coalesces durable progress, bounds failure samples, and
+  checks cancellation between subjects.
+- `internal/server/tmdb_run_scheduler.go`: one replaceable timer for scheduled
+  stale refreshes. Configuration revisions invalidate old callbacks; shutdown
+  waits for an active tick.
+- `internal/server/tmdb_single_movie_run.go`: run-ledger wrapper for actual
+  per-movie enrichment work.
 - `internal/server/stats_handlers.go`: stats bounded context handlers.
 - `internal/server/stats_filters.go`: the stats filter value (`statsFilters`) plus its
   parse / cache-key / matcher / echo logic (genre, actor/crew ids, release year/decade,
@@ -40,7 +57,7 @@
 - `internal/server/events_handlers.go`: SSE/events bounded context handlers.
 - `internal/server/errors.go`: centralized domain-to-HTTP error mapping.
 - `internal/server/tmdb.go`: TMDB API client adapter (search, reverse lookup + details with rate-limit/retry, and `DiscoverPopularPosters` on `/discover/movie` for the poster wall).
-- `internal/server/poster_wall.go`: the public poster-wall cache + endpoint. An in-memory `[]string` of up to 20 poster paths (popularity order, null posters dropped), warmed once in a background goroutine on boot and refreshed every 7 days, keeping the last good list on a failed warm. Nil when no `TMDB_API_KEY` (mirrors the `enrichRunner` guard); `GET /auth/poster-wall` then serves `[]`. The route sits ahead of `requireSession` beside `/auth/config`, carries no secrets, and rides the `csrfGuard` safe-method exemption.
+- `internal/server/poster_wall.go`: the public poster-wall cache + endpoint. An in-memory `[]string` of up to 20 poster paths (popularity order, null posters dropped), warmed once in a background goroutine on boot and refreshed every 7 days, keeping the last good list on a failed warm. Its runtime-backed fetch returns no posters while TMDB is unavailable and refreshes after a usable configuration is saved. `GET /auth/poster-wall` sits ahead of `requireSession` beside `/auth/config`, carries no secrets, and rides the `csrfGuard` safe-method exemption.
 - `internal/server/enrichment.go`: TMDB enrichment use case (`EnrichOne`: stored TMDB id → details, or stored IMDb id → reverse lookup → details, then guarded upsert).
 - `internal/server/enrich_worker.go`: background enrichment worker (queue, rate limiter, backfill/refresh drain, config).
 - `internal/server/events.go`: SSE broker.
@@ -245,6 +262,18 @@
   Full reference: [`LOGGING.md`](LOGGING.md).
 
 ## Infrastructure
+
+- `internal/integration`: revisioned integration configuration contracts, the
+  environment-over-admin-over-default resolver, source and fallback metadata,
+  write-only secret metadata, AES-GCM secret store, file-backed instance key
+  source, and the shared run ledger model.
+- `internal/integration/tmdb`: typed TMDB defaults, environment parsing,
+  validation, warning thresholds, service commands, and the atomic runtime.
+- `internal/repository/integration_config.go`: compare-and-swap settings saves,
+  encrypted credential bytes, state, and schedule timestamps.
+- `internal/repository/integration_run.go`: run lifecycle, bounded failure
+  samples, retention, and keyset history queries. Retention runs at startup and
+  daily while the process remains alive.
 
 - `internal/repository/sqlite.go`: SQLite repository implementations. Its
   `WatchCurrentAndAdvanceNextUp` store operation runs the conditional current
@@ -470,27 +499,32 @@ writing or publishing. A matching result persists the resolved ids and all
 derived rows atomically, so the costly `/find` runs at most once per stable
 identity and a credit failure cannot leave new metadata beside old credits.
 
-A single background worker (`enrichRunner`) drives it: a startup backfill of
-un-enriched rows, fire-and-forget enqueue when a movie is added or its link is
-edited, and a periodic "drain" that re-enriches rows older than the TTL. TMDB
-backlog scans skip rows with neither external id because no remote lookup can
-resolve them. Assigning either id makes the row eligible on the next scan.
-TMDB requests are paced by a min-interval rate limiter and retried (429 `Retry-After`,
+The per-movie worker (`enrichRunner`) owns fire-and-forget enqueue when a movie
+is added or its link is edited. The TMDB run controller owns startup, scheduled,
+and manual library scans, including durable progress and cancellation. Backlog
+scans skip rows with neither external id because no remote lookup can resolve
+them. Assigning either id makes the row eligible on the next scan. TMDB requests
+share a revision-scoped client and rate limiter across search, artwork, and
+enrichment. Calls are retried (429 `Retry-After`,
 exponential backoff + jitter on 5xx/network). Successful upserts are coalesced
 into a single `movies:enriched-batch` SSE event per burst (debounced, with a hard
-ceiling) rather than one event per movie — a backfill of many rows used to trigger
+ceiling) rather than one event per movie. A backfill of many rows used to trigger
 one invalidate-refetch wave per movie. An edit enqueue received while that movie
 is actively processing records one coalesced rerun; queued duplicates remain
 deduped. Superseded and deleted attempts are skipped without publishing, and
-only the final successful attempt enters the event batch. Enrichment is skipped
-entirely when `TMDB_API_KEY` is unset.
+only the final successful attempt enters the event batch. New work is rejected
+while TMDB is disabled, missing a credential, or suspended after authentication
+failure. Cached data remains available.
 
-Env knobs (all optional; sensible defaults): `TMDB_ENRICH_MIN_INTERVAL_MS`
+TMDB settings may be saved in Admin. These environment variables remain
+authoritative deployment overrides: `TMDB_ENABLED`, `TMDB_API_KEY`,
+`TMDB_ENRICH_MIN_INTERVAL_MS`
 (250), `TMDB_ENRICH_MAX_RETRIES` (4), `TMDB_ENRICH_BACKOFF_MS` (500),
-`TMDB_ENRICH_QUEUE_SIZE` (256), `TMDB_ENRICH_BATCH_LIMIT` (200),
-`TMDB_ENRICH_BATCH_DEBOUNCE_MS` (500), `TMDB_ENRICH_BATCH_MAX_WAIT_MS` (2000),
+`TMDB_ENRICH_BATCH_LIMIT` (200),
 `TMDB_ENRICH_CAST_LIMIT` (15, `0` = full cast),
 `TMDB_ENRICH_REFRESH_INTERVAL` (`1h`, `0` disables), `TMDB_ENRICH_TTL` (`720h`).
+`TMDB_ENRICH_QUEUE_SIZE` (256), `TMDB_ENRICH_BATCH_DEBOUNCE_MS` (500), and
+`TMDB_ENRICH_BATCH_MAX_WAIT_MS` (2000) remain environment-only worker controls.
 
 ## Stats
 

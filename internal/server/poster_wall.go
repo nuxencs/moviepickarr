@@ -39,12 +39,23 @@ type posterWallCache struct {
 	current []string
 
 	cancel   context.CancelFunc
+	trigger  chan struct{}
 	wg       sync.WaitGroup
 	stopOnce sync.Once
 }
 
 func newPosterWallCache(fetch posterFetch, refresh time.Duration, log zerolog.Logger) *posterWallCache {
-	return &posterWallCache{fetch: fetch, refresh: refresh, log: log}
+	return &posterWallCache{fetch: fetch, refresh: refresh, log: log, trigger: make(chan struct{}, 1)}
+}
+
+func (c *posterWallCache) Refresh() {
+	if c == nil {
+		return
+	}
+	select {
+	case c.trigger <- struct{}{}:
+	default:
+	}
 }
 
 // list returns a copy of the cached poster paths, never nil, so the endpoint
@@ -101,6 +112,8 @@ func (c *posterWallCache) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-c.trigger:
+			c.warm(ctx)
 		case <-ticker.C:
 			c.warm(ctx)
 		}

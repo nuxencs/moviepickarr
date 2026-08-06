@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"moviepickarr/internal/domain"
+	"moviepickarr/internal/integration"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -215,7 +216,7 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 	// Publish the committed edit before background work can publish its
 	// movies:enriched-batch follow-up.
 	if identityChanged && h.enrichRunner != nil {
-		h.enrichRunner.Enqueue(movieID)
+		h.enrichRunner.EnqueueWithTrigger(movieID, integration.RunTriggerMovieUpdated)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(payload)

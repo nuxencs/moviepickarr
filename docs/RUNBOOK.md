@@ -83,3 +83,23 @@ So the deploy is a hard cutover, in this order:
 
 The break-glass seed is idempotent and never overwrites an existing password, so
 it is safe to leave the env vars set while the named member remains active.
+
+## Integration credential key recovery
+
+Admin-managed integration credentials are encrypted with the instance key at
+`MPA_INTEGRATION_KEY_FILE`, or `<DB_FILE>.integration.key` when the variable is
+unset. Back up that file with SQLite. A database backup without its matching key
+does not contain a usable Admin-managed TMDB credential.
+
+If the key is missing or wrong, moviepickarr still starts. TMDB reports
+`Credential unavailable`; cached movie data and core movie-night behavior keep
+working. Recovery options:
+
+1. Stop moviepickarr and restore the matching key file with owner-only `0600`
+   permissions, then restart.
+2. If the key cannot be restored, open Admin > Integrations > TMDB and replace
+   the API key. The retained ciphertext is replaced only after the new key
+   passes the save flow.
+
+Do not delete the database row or cached metadata. Clearing a credential is an
+Admin action and does not purge movie data.

@@ -1,6 +1,6 @@
 # Admin-managed integrations
 
-Status: planned (2026-08-04)
+Status: implemented (2026-08-04)
 
 ## Goal
 
@@ -16,16 +16,39 @@ credentials, or the OIDC redirect URL.
 
 Admin uses internal pages rather than dashboard cards:
 
-- `/admin/members`: existing roster, and the target of `/admin`.
-- `/admin/integrations`: a persistent list of integrations.
+- `/admin/roster`: existing roster, and the target of `/admin`.
+- `/admin/integrations`: selects TMDB while it is the only integration.
 - `/admin/integrations/tmdb`: TMDB status, configuration, actions, and latest
   run.
 - `/admin/runs`: run history across all integrations.
 
-The integrations index stays in place even while TMDB is the only entry. Rows
-show the integration name, current state, and latest activity. The TMDB page
-uses the existing section and divider vocabulary. It does not introduce cards.
-The run-history link opens `/admin/runs` with the TMDB filter applied.
+Admin uses one nested index for Roster, Integrations, and Runs. TMDB appears
+inside the active Integrations branch, so integrations do not add a second rail
+or repeat an integration heading. At widths of 901px and up, the index stays on
+the left and every selected Admin page scrolls independently on the right. Below
+901px, the index becomes horizontal and the document owns vertical scrolling.
+The persistent content inset stays identical across routes, so a pending outlet
+cannot move the page being replaced. The shared scroller resets only when the
+new leaf route commits, so a pending destination cannot move the outgoing page.
+`/admin/integrations/tmdb` remains a shareable deep link.
+
+One vertical indicator slides between Roster, Integrations, and Runs with the
+same duration and easing as the primary tabs. It keeps the standard 22px line on
+Roster and Runs, then grows across the full Integrations branch while TMDB is
+visible. The child slot derives from the same row step, including coarse-pointer
+targets, so the line and branch share one geometry. TMDB uses a weighted,
+gold-tinted label without a selected fill or marker. The shell has no repeated
+Admin heading. The detail uses section dividers rather than cards. Its
+run-history link opens
+`/admin/runs` with the TMDB filter applied.
+
+Each desktop destination uses the full row as its pointer target and shares the
+same background hover treatment. Below 901px, the current leaf has a gold bottom
+marker, including TMDB inside the Integrations branch.
+
+Route changes keep one current-page marker and announce the newly selected
+section. Touch-sized desktop rows update the indicator's step from the same CSS
+row variable, so the line stays centered without measuring link geometry.
 
 Only admins may read or change integration configuration, test connections,
 start or cancel runs, and read run history.
@@ -97,8 +120,11 @@ See [ADR 0004](adr/0004-typed-integration-modules.md).
 
 ## TMDB settings
 
-Human labels lead. The environment variable appears underneath as secondary
-monospace text, along with the default and active source.
+Human labels lead in a compact settings ledger. The active source stays visible.
+Help, the environment variable, and the built-in default live behind the row's
+info control so values configured once do not carry permanent explanatory copy.
+The help surface is portalled above the Admin scroller and clamped to the
+viewport. Opening it never changes the setting row's height.
 
 ### Standard
 
@@ -177,17 +203,22 @@ behavior instead of suspending the integration.
 
 ## TMDB status and actions
 
-The TMDB page shows:
+The TMDB page keeps the current connection state and last successful refresh in
+its compact summary. Routine activity lives under an `Activity details`
+disclosure:
 
 - State: `Disabled`, `Connected`, `Could not verify`, `Error`, or `Credential
   unavailable`
-- Last checked and next scheduled check
+- Last library scan, last connection test, and next scheduled scan
 - Last successful refresh
 - Current or latest run with progress and counts
 - `Test connection`
 - `Refresh stale now`
 - `Re-enrich all`, with confirmation
 - `Cancel run` while a library-wide run is active
+
+Active runs, configuration warnings, errors, and recovery reasons remain
+visible without opening the disclosure.
 
 Only one library-wide integration run may execute at a time. Scheduled and
 manual runs do not overlap. Per-movie enrichment for newly added movies may
@@ -222,13 +253,48 @@ Statuses are `Running`, `Completed`, `Completed with errors`, `Failed`,
 to retry failed subjects; missing or stale movies return in the next refresh.
 
 Keep 12 months of history with a safety cap of 10,000 runs per integration. The
-shared history table is newest-first and filters by integration, operation,
-status, and trigger. The ledger does not schedule work, replay jobs, store raw
+shared history page is a newest-first register of finished results, filtered by
+integration, operation, and result. Active progress stays on the owning
+integration page. Each lean result row opens a details modal with timing,
+trigger, complete counts, and any failure summary or subjects. Internal run IDs
+and configuration revisions remain in the ledger and API, but are not shown in
+the Admin interface. The integration catalog supplies operation IDs and labels
+for the shared Type filter; unknown valid identifiers still receive readable
+fallback labels. The ledger does not schedule work, replay jobs, store raw
 remote traffic, or accept arbitrary non-integration jobs.
+
+Retention runs at startup and once per day while the process remains up.
 
 See [ADR 0006](adr/0006-integration-run-ledger.md).
 
-## Build slices
+## Admin API
+
+All endpoints require an authenticated admin session. Errors use the existing
+`application/problem+json` response shape. Settings responses never include a
+credential value.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/integrations` | List integrations with state, latest activity, and run-operation labels. |
+| `GET` | `/api/v1/integrations/tmdb` | Read effective TMDB settings, sources, timestamps, warnings, and the latest run. |
+| `PUT` | `/api/v1/integrations/tmdb` | Validate and atomically save a revisioned settings draft. |
+| `POST` | `/api/v1/integrations/tmdb/test` | Test the unsaved draft without creating a run. |
+| `POST` | `/api/v1/integrations/tmdb/runs` | Start a stale refresh or confirmed full re-enrichment. |
+| `GET` | `/api/v1/integration-runs` | Read newest-first, filtered finished results with keyset pagination. |
+| `DELETE` | `/api/v1/integration-runs/:runID` | Request cooperative cancellation of the active library run. |
+
+Run-history pages contain at most 50 finished results by default and 100 when
+explicitly requested. The cursor is the last row's start time and ID. This keeps
+query and render cost bounded as the ledger approaches its retention cap.
+
+Shared TMDB pacing admits at most 32 pending interactive requests. Excess
+searches fail with the generic temporary-unavailable response. The bounded
+library worker has reserved admission, so a member search burst cannot turn a
+refresh into a string of queue-full failures. Run progress is persisted every
+10 subjects or 2 seconds, and successful movie updates use the existing
+debounced browser invalidation batch.
+
+## Implementation map
 
 1. Add typed effective-configuration resolution, revisioned persistence, and
    encrypted secret storage.

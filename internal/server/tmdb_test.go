@@ -3,12 +3,20 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
 
 func testClient(srvURL string) *tmdbClient {
 	return &tmdbClient{
@@ -18,6 +26,35 @@ func testClient(srvURL string) *tmdbClient {
 		maxRetries:  1,
 		backoffBase: time.Millisecond,
 		// no limiter: tests should not be paced
+	}
+}
+
+func TestSearch_UsesTheConfiguredClientPath(t *testing.T) {
+	t.Parallel()
+	client := &tmdbClient{
+		apiKey:  "test-key",
+		baseURL: "https://tmdb.test/api",
+		http: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.URL.Host != "tmdb.test" || request.URL.Path != "/api/search/movie" {
+				t.Fatalf("request URL = %s", request.URL)
+			}
+			if request.URL.Query().Get("query") != "Hot Fuzz" {
+				t.Fatalf("query = %q", request.URL.Query().Get("query"))
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"results":[{"id":4638,"title":"Hot Fuzz"}]}`)),
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+
+	movies, err := client.Search(context.Background(), "Hot Fuzz")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(movies) != 1 || movies[0].ID != 4638 {
+		t.Fatalf("movies = %+v", movies)
 	}
 }
 
@@ -158,6 +195,53 @@ func TestDoRequest_ServerErrorIsTransient(t *testing.T) {
 	}
 }
 
+func TestDoRequest_ZeroBackoffRetriesImmediately(t *testing.T) {
+	var calls int
+	client := &tmdbClient{
+		apiKey:      "test-key",
+		baseURL:     "https://tmdb.test/api",
+		maxRetries:  1,
+		backoffBase: 0,
+		http: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			status := http.StatusServiceUnavailable
+			body := ""
+			if calls == 2 {
+				status = http.StatusOK
+				body = `{"id":1}`
+			}
+			return &http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	result, err := client.MovieDetails(ctx, 1)
+	if err != nil {
+		t.Fatalf("movie details: %v", err)
+	}
+	if result.ID != 1 || calls != 2 {
+		t.Fatalf("result id = %d, calls = %d, want id 1 after one retry", result.ID, calls)
+	}
+}
+
+func TestRetryBackoffDuration_CapsExponentialAndJitter(t *testing.T) {
+	const maximum = 30 * time.Second
+	for range 100 {
+		got := retryBackoffDuration(0, 20*time.Second)
+		if got < 20*time.Second || got > maximum {
+			t.Fatalf("first retry backoff = %s, want 20s through 30s", got)
+		}
+	}
+	if got := retryBackoffDuration(10, 20*time.Second); got != maximum {
+		t.Fatalf("saturated retry backoff = %s, want 30s", got)
+	}
+}
+
 func TestDoRequest_OtherClientErrorIsPermanent(t *testing.T) {
 	t.Parallel()
 	var calls int
@@ -178,6 +262,23 @@ func TestDoRequest_OtherClientErrorIsPermanent(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("expected exactly 1 call (no retry on 401), got %d", calls)
+	}
+}
+
+func TestDoRequest_ClassifiesRejectedCredentials(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+
+			_, err := testClient(srv.URL).MovieDetails(context.Background(), 1)
+			if !errors.Is(err, errTMDBAuthentication) {
+				t.Fatalf("error = %v, want rejected-credential classification", err)
+			}
+		})
 	}
 }
 

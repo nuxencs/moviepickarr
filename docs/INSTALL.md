@@ -5,7 +5,7 @@ database are all embedded, so there is nothing else to set up.
 
 ## Requirements
 
-- A TMDB API key, free at
+- An optional TMDB API key, free at
   [themoviedb.org](https://www.themoviedb.org/settings/api) under Settings,
   API. The key is optional: without it the app still works, but movies show
   placeholder posters and the metadata stats stay empty.
@@ -13,8 +13,8 @@ database are all embedded, so there is nothing else to set up.
 
 ## Docker
 
-The repo contains a ready [`docker-compose.yml`](../docker-compose.yml). Enter
-your TMDB key there, then:
+The repo contains a ready [`docker-compose.yml`](../docker-compose.yml). Start
+it, then configure TMDB from Admin > Integrations if you want metadata:
 
 ```bash
 docker compose up -d
@@ -29,10 +29,7 @@ container restarts and updates.
 # 1. Build the web UI and the server into a single binary
 make build
 
-# 2. Add your TMDB key (optional)
-echo "TMDB_API_KEY=your_key_here" > .env
-
-# 3. Run it
+# 2. Run it
 ./bin/moviepickarr
 ```
 
@@ -43,12 +40,17 @@ promote up to 3 per member into the pool, and draw.
 
 ## Configuration
 
-Everything except the TMDB key has a sensible default. Set these as
-environment variables, or in a `.env` file next to the binary:
+TMDB can be configured from Admin > Integrations without a restart. The same
+typed settings remain available as environment variables for deployment-owned
+overrides. An environment value wins over its Admin value and makes that field
+read-only in the app. Set environment variables directly, or place them in a
+`.env` file next to the binary:
 
 | Variable | What it does | Default |
 | --- | --- | --- |
 | `TMDB_API_KEY` | Enables posters, cast and metadata stats | unset (enrichment off) |
+| `TMDB_ENABLED` | Enables or disables TMDB while retaining its credential and cache | enabled when a key exists |
+| `MPA_INTEGRATION_KEY_FILE` | AES-GCM instance key file for Admin-managed credentials | `<DB_FILE>.integration.key` |
 | `MPA_ADMIN_NAME` | Break-glass admin: display name to create or adopt | unset (seed skipped) |
 | `MPA_ADMIN_USERNAME` | Break-glass admin: login username | unset (seed skipped) |
 | `MPA_ADMIN_PASSWORD` | Break-glass admin: login password | unset (seed skipped) |
@@ -68,6 +70,24 @@ environment variables, or in a `.env` file next to the binary:
 See [`.env.example`](../.env.example) for the full list. Logging is documented
 in [`LOGGING.md`](LOGGING.md), and the remaining enrichment-worker settings in
 [`backend-layout.md`](backend-layout.md).
+
+### Admin-managed TMDB
+
+Open Admin > Integrations > TMDB to set the API key, test the current draft,
+and save all settings atomically. The API key is write-only. Once saved, the UI
+shows only whether it is configured and which source is active.
+
+Admin-managed credentials are stored in SQLite as AES-GCM ciphertext. The
+separate instance key defaults to `<DB_FILE>.integration.key`; the Docker volume
+in the sample Compose file keeps it beside the database. Back up both files.
+Set `MPA_INTEGRATION_KEY_FILE` to a mounted secret path when the deployment owns
+the key. See [`RUNBOOK.md`](RUNBOOK.md#integration-credential-key-recovery) for
+recovery behavior.
+
+The Admin TMDB page also exposes connection status, scheduled and manual
+refreshes, cancellation, and run history. `TMDB_ENRICH_QUEUE_SIZE`,
+`TMDB_ENRICH_BATCH_DEBOUNCE_MS`, and `TMDB_ENRICH_BATCH_MAX_WAIT_MS` remain
+environment-only worker controls.
 
 ### Break-glass admin
 

@@ -151,7 +151,7 @@ func BuildPlan(films []Film, now time.Time) (Plan, error) {
 
 	// Stash: each login member's private backlog.
 	for _, memberIdx := range loginMemberIndices {
-		for k := 0; k < stashPerMember; k++ {
+		for k := range stashPerMember {
 			f := take()
 			movies = append(movies, Movie{
 				Title:      f.Title,

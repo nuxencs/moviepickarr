@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -10,6 +11,8 @@ import (
 
 	"moviepickarr/internal/auth"
 	"moviepickarr/internal/domain"
+	"moviepickarr/internal/integration"
+	integrationtmdb "moviepickarr/internal/integration/tmdb"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextup"
 	"moviepickarr/internal/settings"
@@ -20,6 +23,17 @@ import (
 )
 
 var imdbIDRegex = regexp.MustCompile(`(?i)tt\d{7,8}`)
+
+type tmdbSearcher interface {
+	Search(context.Context, string) ([]tmdbMovie, error)
+}
+
+type tmdbScheduleLifecycle interface {
+	Start() error
+	Reconfigure() error
+	AuthenticationRejected(int64) error
+	Close()
+}
 
 type handler struct {
 	broker    *eventBroker
@@ -45,11 +59,17 @@ type handler struct {
 	// poolStateMu orders pool-lock changes with every admitted pool membership
 	// mutation and its synchronous event. A successful lock response therefore
 	// cannot be followed by a move or delete that observed the prior lock value.
-	poolStateMu   sync.Mutex
-	movieMetadata domain.MovieMetadataRepo
-	movieCredits  domain.MovieCreditsRepo
-	tmdb          *tmdbClient
-	enrichRunner  *enrichRunner
+	poolStateMu        sync.Mutex
+	movieMetadata      domain.MovieMetadataRepo
+	movieCredits       domain.MovieCreditsRepo
+	tmdb               tmdbSearcher
+	enrichRunner       *enrichRunner
+	tmdbIntegration    *integrationtmdb.Service
+	integrationConfigs integration.ConfigStore
+	integrationRuns    integration.RunLedger
+	runRetention       *integrationRunRetention
+	tmdbRuns           *tmdbRunController
+	tmdbScheduler      tmdbScheduleLifecycle
 	// posterWall backs the public GET /auth/poster-wall endpoint. Like
 	// enrichRunner it is nil when no TMDB key is set, and the handler then serves
 	// an empty array.
@@ -84,6 +104,15 @@ func (h *handler) Close() {
 	}
 	if h.movieService != nil {
 		h.movieService.Close()
+	}
+	if h.runRetention != nil {
+		h.runRetention.Close()
+	}
+	if h.tmdbScheduler != nil {
+		h.tmdbScheduler.Close()
+	}
+	if h.tmdbRuns != nil {
+		h.tmdbRuns.Close()
 	}
 	if h.broker != nil {
 		h.broker.Close()

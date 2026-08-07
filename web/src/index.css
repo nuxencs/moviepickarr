@@ -387,6 +387,7 @@
   .iconbtn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
   .iconbtn:disabled, .iconbtn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
   .iconbtn:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(0.92); }
+  .iconbtn--danger { color: var(--danger); }
   .iconbtn--danger:hover:not(:disabled):not([aria-disabled="true"]) { background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger); border-color: color-mix(in oklab, var(--danger) 42%, transparent); }
 
   /* ---- Section heading ---- */

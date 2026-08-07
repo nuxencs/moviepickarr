@@ -161,7 +161,7 @@ export function RadarrPresetDialog({
                   {missingTagIDs.length > 0 ? (
                     <p className="field-error">
                       {missingTagIDs.length} saved tag{missingTagIDs.length === 1 ? " is" : "s are"} no longer available.{" "}
-                      <button type="button" className="radarr-inline-action" onClick={() => setTagIDs((current) => current.filter((id) => !missingTagIDs.includes(id)))}>
+                      <button type="button" className="radarr-inline-action radarr-inline-action--danger" onClick={() => setTagIDs((current) => current.filter((id) => !missingTagIDs.includes(id)))}>
                         Remove {missingTagIDs.length === 1 ? "it" : "them"}
                       </button>
                     </p>

@@ -234,8 +234,9 @@ quality profile, tags, minimum availability, and Acquisition mode.
 _Avoid_: route preset, Radarr preset
 
 **Target review**:
-The final Admin confirmation of an Acquisition target before moviepickarr
-creates or adopts Radarr state.
+The final Admin confirmation of an Acquisition target before moviepickarr adds
+a movie that does not already exist in the selected Radarr instance. An exact
+existing movie is adopted during preset selection without this confirmation.
 _Avoid_: preset preview
 
 **Acquisition target**:

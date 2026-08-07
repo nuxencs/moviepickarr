@@ -29,15 +29,18 @@ stored IMDb ID through the selected Radarr instance. Do not use title and year
 as an automatic identity fallback. If the applicable exact path fails, an Admin
 may explicitly select a TMDB result from a Radarr title-and-year search for this
 Acquisition without changing the movie. Discovery of an existing Radarr movie
-for review is read-only. Lock the target only after the Admin confirms adoption
-or Radarr accepts a new movie. Moviepickarr cannot retarget it after that remote
-state exists. If the locked movie later has a different identity, require an
-Admin to restore the exact Radarr movie or abandon the Acquisition.
+is read-only. When preset selection finds an exact existing movie, adopt it and
+lock the target without another Admin confirmation. Otherwise lock the target
+only after Radarr accepts a new movie. Moviepickarr cannot retarget it after
+that remote state exists. If the locked movie later has a different identity,
+require an Admin to restore the exact Radarr movie or abandon the Acquisition.
 
 If the movie already exists in the selected instance, reuse it without changing
 its monitoring, root folder, quality profile, tags, or minimum availability.
-Observe an existing queue item rather than starting competing work. Acquisition
-covers the initial grab and does not maintain later releases.
+Complete immediately when it has a file. Observe an existing queue item rather
+than starting competing work. With neither, continue with the selected Manual
+or Automatic mode. Acquisition covers the initial grab and does not maintain
+later releases.
 
 Claim each add and manual grab before the remote request. An ambiguous unlocked
 add remains unlocked. An explicit `Check Radarr add` action reads Radarr and

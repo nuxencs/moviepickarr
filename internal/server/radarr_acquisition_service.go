@@ -24,6 +24,13 @@ type radarrAbandonmentReview struct {
 	Activity    string
 }
 
+type radarrTargetPreviewObservation struct {
+	acquisition repository.RadarrAcquisition
+	remote      *integrationradarr.Movie
+	catalog     integrationradarr.Catalog
+	trusted     bool
+}
+
 func (s *radarrService) listAcquisitions(
 	ctx context.Context,
 	query string,
@@ -63,13 +70,14 @@ func (s *radarrService) selectPreset(
 	if err != nil {
 		return repository.RadarrAcquisition{}, err
 	}
-	return s.previewAcquisitionTarget(ctx, acquisition)
+	return s.previewAndAdoptExistingAcquisitionTarget(ctx, acquisition, actorID)
 }
 
 func (s *radarrService) selectAcquisitionIdentity(
 	ctx context.Context,
 	id int64,
 	tmdbID int,
+	actorID int,
 ) (repository.RadarrAcquisition, error) {
 	if tmdbID <= 0 {
 		return repository.RadarrAcquisition{}, invalidRadarrField("tmdbId", "Select a valid TMDB movie.")
@@ -113,7 +121,7 @@ func (s *radarrService) selectAcquisitionIdentity(
 	if acquisition.TargetInstanceID == nil {
 		return acquisition, nil
 	}
-	return s.previewAcquisitionTarget(ctx, acquisition)
+	return s.previewAndAdoptExistingAcquisitionTarget(ctx, acquisition, actorID)
 }
 
 func (s *radarrService) searchAcquisitionIdentity(
@@ -148,62 +156,106 @@ func (s *radarrService) searchAcquisitionIdentity(
 	return candidates, nil
 }
 
-func (s *radarrService) previewAcquisitionTarget(
+func (s *radarrService) previewAndAdoptExistingAcquisitionTarget(
 	ctx context.Context,
 	acquisition repository.RadarrAcquisition,
+	actorID int,
 ) (repository.RadarrAcquisition, error) {
+	observation, err := s.previewAcquisitionTargetObservation(ctx, acquisition)
+	if err != nil || !observation.trusted || observation.remote == nil {
+		return observation.acquisition, err
+	}
+
+	// An exact movie that already exists in Radarr has no target decision left
+	// for an Admin to confirm. Adopt it without changing Radarr. The normal lock
+	// path completes an existing file, observes an active queue, or starts the
+	// selected acquisition mode.
+	now := s.now().UTC()
+	claimed, err := s.repo.BeginAcquisitionMutation(
+		ctx, observation.acquisition.ID, observation.acquisition.Revision, "adding", now,
+	)
+	if errors.Is(err, integration.ErrStaleRevision) || errors.Is(err, domain.ErrConflict) {
+		return s.repo.GetVisibleAcquisition(ctx, observation.acquisition.ID)
+	}
+	if err != nil {
+		return repository.RadarrAcquisition{}, err
+	}
+	return s.lockRemoteMovie(
+		ctx, claimed, *observation.remote, true, observation.catalog, actorID,
+	)
+}
+
+func (s *radarrService) previewAcquisitionTargetObservation(
+	ctx context.Context,
+	acquisition repository.RadarrAcquisition,
+) (radarrTargetPreviewObservation, error) {
 	instance, client, err := s.acquisitionClient(ctx, acquisition)
 	if err != nil {
-		return s.actionForClientFailure(ctx, acquisition, err)
+		updated, updateErr := s.actionForClientFailure(ctx, acquisition, err)
+		return radarrTargetPreviewObservation{acquisition: updated}, updateErr
 	}
 	catalog, err := s.catalogFor(ctx, instance)
 	if err != nil {
-		return s.actionForClientFailure(ctx, acquisition, err)
+		updated, updateErr := s.actionForClientFailure(ctx, acquisition, err)
+		return radarrTargetPreviewObservation{acquisition: updated}, updateErr
 	}
 	if err := validateAcquisitionTargetSnapshot(acquisition, catalog); err != nil {
-		return s.transitionAdminRemoteObservation(ctx, acquisition, repository.RadarrAcquisitionTransition{
+		updated, updateErr := s.transitionAdminRemoteObservation(ctx, acquisition, repository.RadarrAcquisitionTransition{
 			Status: "action_needed", ActionReason: "configuration_invalid",
 			FailureSummary: "The selected target no longer matches its Radarr instance.",
 			QueueStatus:    "none", At: s.now().UTC(),
 		})
+		return radarrTargetPreviewObservation{acquisition: updated}, updateErr
 	}
 	acquisition, tmdbID, err := s.resolveAcquisitionIdentity(ctx, acquisition, client)
 	if err != nil {
 		if errors.Is(err, integrationradarr.ErrNotFound) || errors.Is(err, errRadarrIdentityMismatch) || errors.Is(err, errRadarrIdentityRequired) {
-			return s.transitionAdminRemoteObservation(ctx, acquisition, repository.RadarrAcquisitionTransition{
+			updated, updateErr := s.transitionAdminRemoteObservation(ctx, acquisition, repository.RadarrAcquisitionTransition{
 				Status: "action_needed", ActionReason: "identity_required",
 				FailureSummary: "Radarr could not resolve the movie's exact identity.",
 				QueueStatus:    "none", At: s.now().UTC(),
 			})
+			return radarrTargetPreviewObservation{acquisition: updated}, updateErr
 		}
-		return s.actionForClientFailure(ctx, acquisition, err)
+		updated, updateErr := s.actionForClientFailure(ctx, acquisition, err)
+		return radarrTargetPreviewObservation{acquisition: updated}, updateErr
 	}
 	remote, err := client.FindMovieByTMDB(ctx, tmdbID)
 	if err != nil {
 		s.recordInstanceFailure(ctx, instance, err)
-		return s.actionForClientFailure(ctx, acquisition, err)
+		updated, updateErr := s.actionForClientFailure(ctx, acquisition, err)
+		return radarrTargetPreviewObservation{acquisition: updated}, updateErr
 	}
 	s.recordInstanceSuccess(ctx, instance)
 	effective := repository.RadarrEffectiveConfiguration{}
 	if remote != nil {
 		effective = effectiveConfiguration(*remote, catalog)
 	}
-	return s.recordAcquisitionTargetPreview(ctx, acquisition, remote != nil, effective)
+	updated, trusted, err := s.recordTrustedAcquisitionTargetPreview(
+		ctx, acquisition, remote != nil, effective,
+	)
+	return radarrTargetPreviewObservation{
+		acquisition: updated,
+		remote:      remote,
+		catalog:     catalog,
+		trusted:     trusted,
+	}, err
 }
 
-func (s *radarrService) recordAcquisitionTargetPreview(
+func (s *radarrService) recordTrustedAcquisitionTargetPreview(
 	ctx context.Context,
 	acquisition repository.RadarrAcquisition,
 	existing bool,
 	effective repository.RadarrEffectiveConfiguration,
-) (repository.RadarrAcquisition, error) {
+) (repository.RadarrAcquisition, bool, error) {
 	updated, err := s.repo.RecordAcquisitionTargetPreview(
 		ctx, acquisition.ID, acquisition.Revision, existing, effective, s.now().UTC(),
 	)
 	if errors.Is(err, integration.ErrStaleRevision) {
-		return s.repo.GetVisibleAcquisition(ctx, acquisition.ID)
+		current, currentErr := s.repo.GetVisibleAcquisition(ctx, acquisition.ID)
+		return current, false, currentErr
 	}
-	return updated, err
+	return updated, err == nil, err
 }
 
 func (s *radarrService) confirmAcquisitionTarget(
@@ -270,10 +322,19 @@ func (s *radarrService) confirmAcquisitionTarget(
 	}
 	if foundExisting != acquisition.TargetPreviewExisting ||
 		(foundExisting && !sameEffectiveConfiguration(previewEffective, acquisition.EffectiveConfiguration)) {
-		if _, err := s.recordAcquisitionTargetPreview(ctx, acquisition, foundExisting, previewEffective); err != nil {
+		updated, trusted, err := s.recordTrustedAcquisitionTargetPreview(
+			ctx, acquisition, foundExisting, previewEffective,
+		)
+		if err != nil {
 			return repository.RadarrAcquisition{}, err
 		}
-		return repository.RadarrAcquisition{}, domain.ErrConflict
+		if !foundExisting || !trusted {
+			if !trusted {
+				return updated, nil
+			}
+			return repository.RadarrAcquisition{}, domain.ErrConflict
+		}
+		acquisition = updated
 	}
 	now := s.now().UTC()
 	acquisition, err = s.repo.BeginAcquisitionMutation(ctx, acquisition.ID, acquisition.Revision, "adding", now)
@@ -639,7 +700,7 @@ func (s *radarrService) retryAcquisition(
 		if acquisition.TargetInstanceID == nil {
 			return repository.RadarrAcquisition{}, domain.ErrConflict
 		}
-		return s.previewAcquisitionTarget(ctx, acquisition)
+		return s.previewAndAdoptExistingAcquisitionTarget(ctx, acquisition, actorID)
 	}
 	if acquisition.MutationState == "searching" {
 		return s.recoverAutomaticSearch(ctx, acquisition)

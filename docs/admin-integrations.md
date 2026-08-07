@@ -295,13 +295,14 @@ IMDb ID through Radarr and verifies the returned match. It does not use title
 and year as an automatic fallback. When exact identity cannot resolve, an Admin
 can search Radarr and select a TMDB result for this Acquisition only.
 
-Target review is the final read-only check before any Radarr mutation. It shows
-the Acquisition identity and the complete selected target. If the movie already
-exists in that instance, it also shows the effective configuration that Radarr
-will keep. The Admin can change the preset until confirmation. Confirmation
-adopts the existing movie or adds a new one and then locks the target. A locked
-Acquisition cannot move to another instance. If Radarr later removes the movie,
-an explicit retry can recreate it only from the same snapshot.
+Preset selection performs an exact, read-only Radarr check. If the movie already
+exists in that instance, moviepickarr adopts it immediately, preserves its
+effective configuration, and locks the target without another Admin prompt. If
+the movie does not exist, Target review shows the Acquisition identity and the
+complete selected target. The Admin can change the preset until confirmation.
+Confirmation adds the new movie and locks the target. A locked Acquisition
+cannot move to another instance. If Radarr later removes the movie, an explicit
+retry can recreate it only from the same snapshot.
 
 An add response can be ambiguous after Radarr accepts the request. The
 Acquisition stays unlocked with its durable add claim. The contextual `Check
@@ -310,11 +311,12 @@ movie is adopted and locks the target. Proven absence clears the claim and
 returns the target to review. Only a later confirmation can send a new add.
 
 Existing Radarr movies keep their root folder, quality profile, tags, minimum
-availability, and monitoring. `hasFile` completes the Acquisition immediately.
-An active queue item is observed instead of replaced. With no file or queue,
-Manual mode offers Interactive search and Automatic mode asks Radarr to run one
-search. The selected target must report `hasFile`; a copy in another Radarr
-instance does not count.
+availability, and monitoring. They are adopted during preset selection without
+confirmation. `hasFile` completes the Acquisition immediately. An active queue
+item is observed instead of replaced. With no file or queue, Manual mode offers
+Interactive search and Automatic mode asks Radarr to run one search. The
+selected target must report `hasFile`; a copy in another Radarr instance does
+not count.
 
 For a new movie, Manual mode adds it unmonitored with search disabled. An Admin
 starts Interactive search in moviepickarr and chooses one matched release. An

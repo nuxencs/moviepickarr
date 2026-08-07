@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusIcon } from "lucide-react";
+import { ArchiveIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 
 import { IntegrationKeys, IntegrationProblem } from "@/api/integrations";
@@ -13,7 +13,7 @@ import {
   type RadarrPreset,
 } from "@/api/radarr";
 
-import { humanize, timestampLabel } from "@/components/moviepickarr/admin/radarr";
+import { humanize } from "@/components/moviepickarr/admin/radarr";
 import { RadarrInstanceDialog } from "@/components/moviepickarr/admin/RadarrInstanceDialog";
 import { RadarrPresetDialog } from "@/components/moviepickarr/admin/RadarrPresetDialog";
 import { Modal } from "@/components/moviepickarr/Modal";
@@ -94,8 +94,7 @@ export function AdminRadarrSetupPage() {
   const error = instances.error ?? presets.error;
 
   return (
-    <section className="radarr-page" aria-labelledby="radarr-setup-title">
-      <div className="sec-head radarr-page__head"><div className="sec-title"><h2 id="radarr-setup-title">Setup</h2></div></div>
+    <section className="radarr-page radarr-page--setup" aria-label="Radarr setup">
       {instances.isPending || presets.isPending ? (
         <div className="adm-state" role="status">Loading Radarr setup…</div>
       ) : error ? (
@@ -106,41 +105,75 @@ export function AdminRadarrSetupPage() {
         </div>
       ) : (
         <>
-          <section className="radarr-section" aria-labelledby="radarr-instances-title">
-            <div className="radarr-section__head radarr-section__head--controls">
-              <div><h3 id="radarr-instances-title">Instances</h3><p>Each connection represents a media variant or collection boundary.</p></div>
+          <div className="radarr-page__toolbar" aria-label="Setup actions">
+            <p>Presets inherit their connection from the instance above them.</p>
+            <div>
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDialog({ kind: "instance" })}><PlusIcon aria-hidden="true" />Add instance</button>
-            </div>
-            {activeInstances.length > 0 ? (
-              <ul className="radarr-setup-list" aria-label="Radarr instances">
-                {activeInstances.map((instance) => (
-                  <li key={instance.id}>
-                    <span className="radarr-setup-list__identity"><strong>{instance.name}</strong><span>{instance.url ?? "URL stored securely"}</span></span>
-                    <span className="radarr-setup-list__state" data-state={instance.state}><strong>{humanize(instance.state ?? "unknown")}</strong><span>{instance.reason ?? (instance.lastTestedAt ? `Tested ${timestampLabel(instance.lastTestedAt)}` : instance.state ? "Connection verified on save" : "Connection state unavailable")}</span></span>
-                    <span className="radarr-setup-list__actions"><button type="button" className="btn btn--ghost btn--sm" aria-label={`Edit ${instance.name}`} onClick={() => setDialog({ kind: "instance", value: instance })}>Edit</button><button type="button" className="btn btn--ghost btn--sm" aria-label={`Archive ${instance.name}`} onClick={() => setDialog({ kind: "archive-instance", value: instance })}>Archive</button></span>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="radarr-empty">No Radarr instances are configured.</p>}
-          </section>
-
-          <section className="radarr-section" aria-labelledby="radarr-presets-title">
-            <div className="radarr-section__head radarr-section__head--controls">
-              <div><h3 id="radarr-presets-title">Acquisition presets</h3><p>Bundle one verified instance, target settings, and acquisition mode.</p></div>
               <button type="button" className="btn btn--ghost btn--sm" disabled={activeInstances.length === 0} onClick={() => setDialog({ kind: "preset" })}><PlusIcon aria-hidden="true" />Add preset</button>
             </div>
-            {activePresets.length > 0 ? (
-              <ul className="radarr-setup-list" aria-label="Radarr acquisition presets">
-                {activePresets.map((preset) => (
-                  <li key={preset.id}>
-                    <span className="radarr-setup-list__identity"><strong>{preset.name}</strong><span>{preset.instanceName ?? activeInstances.find((instance) => String(instance.id) === String(preset.instanceId))?.name ?? "Unknown instance"}</span></span>
-                    <span className="radarr-setup-list__state" data-state={preset.valid === false ? "error" : "connected"}><strong>{preset.valid === false ? "Invalid" : humanize(preset.mode)}</strong><span>{preset.invalidReason ?? `${preset.qualityProfileName ?? `Profile ${preset.qualityProfileId}`} · ${preset.rootFolderPath}`}</span></span>
-                    <span className="radarr-setup-list__actions"><button type="button" className="btn btn--ghost btn--sm" aria-label={`Edit ${preset.name}`} onClick={() => setDialog({ kind: "preset", value: preset })}>Edit</button><button type="button" className="btn btn--ghost btn--sm" aria-label={`Archive ${preset.name}`} onClick={() => setDialog({ kind: "archive-preset", value: preset })}>Archive</button></span>
+          </div>
+
+          {activeInstances.length > 0 ? (
+            <div className="radarr-setup-tree" aria-label="Radarr instances and acquisition presets">
+              {activeInstances.map((instance) => {
+                const instancePresets = activePresets.filter(
+                  (preset) => String(preset.instanceId) === String(instance.id),
+                );
+                return (
+                  <section key={instance.id} className="radarr-setup-tree__group" aria-labelledby={`radarr-instance-${instance.id}`}>
+                    <div className="radarr-setup-tree__instance">
+                      <span className="radarr-setup-list__identity">
+                        <strong id={`radarr-instance-${instance.id}`}>{instance.name}</strong>
+                        <span>{instance.url ?? "URL stored securely"}</span>
+                      </span>
+                      <span className="radarr-setup-list__state" data-state={instance.state}>
+                        <strong>{humanize(instance.state ?? "unknown")}</strong>
+                        <span>{instance.reason ?? (instance.state ? "Connection verified on save" : "Connection state unavailable")}</span>
+                      </span>
+                      <span className="radarr-setup-list__actions">
+                        <button type="button" className="iconbtn" title={`Edit ${instance.name}`} aria-label={`Edit ${instance.name}`} onClick={() => setDialog({ kind: "instance", value: instance })}><PencilIcon aria-hidden="true" /></button>
+                        <button type="button" className="iconbtn iconbtn--danger" title={`Archive ${instance.name}`} aria-label={`Archive ${instance.name}`} onClick={() => setDialog({ kind: "archive-instance", value: instance })}><ArchiveIcon aria-hidden="true" /></button>
+                      </span>
+                    </div>
+                    <ul className="radarr-setup-tree__presets" aria-label={`${instance.name} presets`}>
+                      {instancePresets.map((preset) => (
+                        <li key={preset.id} className="radarr-setup-tree__preset">
+                          <span className="radarr-setup-list__identity"><strong>{preset.name}</strong><span>{humanize(preset.mode)}</span></span>
+                          <span className="radarr-setup-list__state" data-state={preset.valid === false ? "error" : "connected"}>
+                            <strong>{preset.valid === false ? "Invalid" : preset.qualityProfileName ?? `Profile ${preset.qualityProfileId}`}</strong>
+                            <span>{preset.invalidReason ?? preset.rootFolderPath}</span>
+                          </span>
+                          <span className="radarr-setup-list__actions">
+                            <button type="button" className="iconbtn" title={`Edit ${preset.name}`} aria-label={`Edit ${preset.name}`} onClick={() => setDialog({ kind: "preset", value: preset })}><PencilIcon aria-hidden="true" /></button>
+                            <button type="button" className="iconbtn iconbtn--danger" title={`Archive ${preset.name}`} aria-label={`Archive ${preset.name}`} onClick={() => setDialog({ kind: "archive-preset", value: preset })}><ArchiveIcon aria-hidden="true" /></button>
+                          </span>
+                        </li>
+                      ))}
+                      {instancePresets.length === 0 ? <li className="radarr-setup-tree__empty">No presets</li> : null}
+                    </ul>
+                  </section>
+                );
+              })}
+            </div>
+          ) : <p className="radarr-empty">No Radarr instances are configured.</p>}
+
+          {activePresets.some((preset) => !activeInstances.some((instance) => String(instance.id) === String(preset.instanceId))) ? (
+            <section className="radarr-setup-tree__group radarr-setup-tree__group--orphaned" aria-labelledby="radarr-unlinked-presets">
+              <div className="radarr-setup-tree__instance"><span className="radarr-setup-list__identity"><strong id="radarr-unlinked-presets">Unlinked presets</strong><span>The original instance is unavailable.</span></span></div>
+              <ul className="radarr-setup-tree__presets">
+                {activePresets.filter((preset) => !activeInstances.some((instance) => String(instance.id) === String(preset.instanceId))).map((preset) => (
+                  <li key={preset.id} className="radarr-setup-tree__preset">
+                    <span className="radarr-setup-list__identity"><strong>{preset.name}</strong><span>{humanize(preset.mode)}</span></span>
+                    <span className="radarr-setup-list__state" data-state="error"><strong>Invalid</strong><span>{preset.invalidReason ?? "Instance unavailable"}</span></span>
+                    <span className="radarr-setup-list__actions">
+                      <button type="button" className="iconbtn" title={`Edit ${preset.name}`} aria-label={`Edit ${preset.name}`} onClick={() => setDialog({ kind: "preset", value: preset })}><PencilIcon aria-hidden="true" /></button>
+                      <button type="button" className="iconbtn iconbtn--danger" title={`Archive ${preset.name}`} aria-label={`Archive ${preset.name}`} onClick={() => setDialog({ kind: "archive-preset", value: preset })}><ArchiveIcon aria-hidden="true" /></button>
+                    </span>
                   </li>
                 ))}
               </ul>
-            ) : <p className="radarr-empty">{activeInstances.length > 0 ? "No acquisition presets are configured." : "Add a verified instance before creating a preset."}</p>}
-          </section>
+            </section>
+          ) : null}
 
           {archivedInstances.length + archivedPresets.length > 0 ? (
             <details className="radarr-archived">

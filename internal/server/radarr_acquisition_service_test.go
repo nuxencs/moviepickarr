@@ -481,7 +481,7 @@ func (e *radarrAcquisitionServiceTestEnv) selectPresetWithoutPreview(t *testing.
 	return acquisition
 }
 
-func TestConfirmAcquisitionRequiresFreshSuccessfulTargetReview(t *testing.T) {
+func TestConfirmAcquisitionRequiresPreviewAndAutoAdoptsChangedExistingTarget(t *testing.T) {
 	client := newFakeRadarrClient()
 	remote := integrationradarr.Movie{
 		ID: 41, TMDBID: 949, Title: "Heat", RootFolderPath: "/existing/movies",
@@ -499,35 +499,26 @@ func TestConfirmAcquisitionRequiresFreshSuccessfulTargetReview(t *testing.T) {
 		t.Fatalf("confirm without Target review sent %d adds", len(client.addRequests))
 	}
 
-	previewed, err := env.service.previewAcquisitionTarget(env.ctx, selected)
+	observation, err := env.service.previewAcquisitionTargetObservation(env.ctx, selected)
 	if err != nil {
 		t.Fatalf("preview Acquisition target: %v", err)
 	}
+	previewed := observation.acquisition
 	if previewed.TargetPreviewedAt == nil || previewed.EffectiveConfiguration.RootFolderPath != "/existing/movies" {
 		t.Fatalf("Target review = %+v", previewed)
 	}
 	remote.RootFolderPath = "/existing/changed"
 	client.findMovie = &remote
-	if _, err := env.service.confirmAcquisitionTarget(env.ctx, env.acquisitionID, env.actorID); !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("confirm after Radarr configuration changed = %v, want conflict", err)
-	}
-	refreshed, err := env.repo.GetVisibleAcquisition(env.ctx, env.acquisitionID)
-	if err != nil {
-		t.Fatalf("read refreshed Target review: %v", err)
-	}
-	if refreshed.TargetLocked() || refreshed.EffectiveConfiguration.RootFolderPath != "/existing/changed" {
-		t.Fatalf("refreshed Target review = %+v", refreshed)
-	}
-	if len(client.addRequests) != 0 {
-		t.Fatalf("configuration refresh sent %d adds", len(client.addRequests))
-	}
-
 	confirmed, err := env.service.confirmAcquisitionTarget(env.ctx, env.acquisitionID, env.actorID)
 	if err != nil {
-		t.Fatalf("confirm refreshed Target review: %v", err)
+		t.Fatalf("adopt changed Existing target: %v", err)
 	}
-	if !confirmed.TargetLocked() || !confirmed.AdoptedExisting {
-		t.Fatalf("confirmed Acquisition = %+v", confirmed)
+	if !confirmed.TargetLocked() || !confirmed.AdoptedExisting ||
+		confirmed.EffectiveConfiguration.RootFolderPath != "/existing/changed" {
+		t.Fatalf("adopted changed Existing target = %+v", confirmed)
+	}
+	if len(client.addRequests) != 0 {
+		t.Fatalf("Existing adoption sent %d adds", len(client.addRequests))
 	}
 }
 
@@ -666,6 +657,31 @@ func TestRetryUnlockedAcquisitionOnlyRefreshesTargetReview(t *testing.T) {
 	}
 }
 
+func TestRetryUnlockedAcquisitionAutoAdoptsExactExistingMovie(t *testing.T) {
+	client := newFakeRadarrClient()
+	remote := integrationradarr.Movie{
+		ID: 170, TMDBID: 949, Title: "Heat", Monitored: false,
+		RootFolderPath: "/existing/movies", QualityProfileID: 91, TagIDs: []int{92},
+		MinimumAvailability: integrationradarr.AvailabilityAnnounced,
+	}
+	client.findMovie = &remote
+	env := setupRadarrAcquisitionServiceTest(t, "manual", client)
+	env.selectPresetWithoutPreview(t)
+
+	acquisition, err := env.service.retryAcquisition(env.ctx, env.acquisitionID, env.actorID)
+	if err != nil {
+		t.Fatalf("retry Existing unlocked Acquisition: %v", err)
+	}
+	if acquisition.Status != "needs_release" || !acquisition.AdoptedExisting ||
+		acquisition.RadarrMovieID == nil || *acquisition.RadarrMovieID != 170 {
+		t.Fatalf("retried Existing Acquisition = %+v", acquisition)
+	}
+	if len(client.addRequests) != 0 || len(client.monitorRequests) != 0 {
+		t.Fatalf("retried Existing movie was changed: adds=%v monitor=%v",
+			client.addRequests, client.monitorRequests)
+	}
+}
+
 func TestExistingRadarrMovieWithFileCompletesWithoutChangingConfiguration(t *testing.T) {
 	client := newFakeRadarrClient()
 	remote := integrationradarr.Movie{
@@ -675,12 +691,8 @@ func TestExistingRadarrMovieWithFileCompletesWithoutChangingConfiguration(t *tes
 	}
 	client.findMovie = &remote
 	env := setupRadarrAcquisitionServiceTest(t, "manual", client)
-	env.selectPreset(t)
+	acquisition := env.selectPreset(t)
 
-	acquisition, err := env.service.confirmAcquisitionTarget(env.ctx, env.acquisitionID, env.actorID)
-	if err != nil {
-		t.Fatalf("confirm Existing Radarr movie: %v", err)
-	}
 	if acquisition.Status != "downloaded" || !acquisition.AdoptedExisting || acquisition.RadarrMovieID == nil || *acquisition.RadarrMovieID != 42 {
 		t.Fatalf("completed Existing Acquisition = %+v", acquisition)
 	}
@@ -696,6 +708,99 @@ func TestExistingRadarrMovieWithFileCompletesWithoutChangingConfiguration(t *tes
 	if len(client.addRequests) != 0 || len(client.monitorRequests) != 0 || len(client.automaticSearches) != 0 || len(client.queueCalls) != 0 {
 		t.Fatalf("Existing completed movie was mutated: adds=%d monitor=%d search=%d queue=%d",
 			len(client.addRequests), len(client.monitorRequests), len(client.automaticSearches), len(client.queueCalls))
+	}
+}
+
+func TestExistingRadarrMovieDiscoveredDuringConfirmAutoAdopts(t *testing.T) {
+	client := newFakeRadarrClient()
+	env := setupRadarrAcquisitionServiceTest(t, "manual", client)
+	previewed := env.selectPreset(t)
+	if previewed.TargetLocked() || previewed.TargetPreviewExisting {
+		t.Fatalf("initial missing-movie preview = %+v", previewed)
+	}
+	remote := integrationradarr.Movie{
+		ID: 168, TMDBID: 949, Title: "Heat", HasFile: true, Monitored: true,
+		RootFolderPath: "/existing/movies", QualityProfileID: 91, TagIDs: []int{92},
+		MinimumAvailability: integrationradarr.AvailabilityAnnounced,
+	}
+	client.findMovie = &remote
+
+	acquisition, err := env.service.confirmAcquisitionTarget(
+		env.ctx, env.acquisitionID, env.actorID,
+	)
+	if err != nil {
+		t.Fatalf("adopt movie discovered during confirmation: %v", err)
+	}
+	if acquisition.Status != "downloaded" || !acquisition.AdoptedExisting ||
+		acquisition.RadarrMovieID == nil || *acquisition.RadarrMovieID != 168 {
+		t.Fatalf("adopted Existing Acquisition = %+v", acquisition)
+	}
+	if len(client.addRequests) != 0 {
+		t.Fatalf("Existing movie triggered add: %+v", client.addRequests)
+	}
+}
+
+func TestExistingRadarrMovieAutoAdoptsAfterIdentitySelection(t *testing.T) {
+	client := newFakeRadarrClient()
+	client.lookupMovie = integrationradarr.MovieCandidate{TMDBID: 949, Title: "Heat"}
+	remote := integrationradarr.Movie{
+		ID: 169, TMDBID: 949, Title: "Heat", HasFile: true, Monitored: true,
+		RootFolderPath: "/existing/movies", QualityProfileID: 91, TagIDs: []int{92},
+		MinimumAvailability: integrationradarr.AvailabilityAnnounced,
+	}
+	client.findMovie = &remote
+	env := setupRadarrAcquisitionServiceTest(t, "manual", client)
+	if _, err := env.pool.Write.ExecContext(
+		env.ctx, "UPDATE radarr_acquisitions SET tmdb_id = NULL WHERE id = ?", env.acquisitionID,
+	); err != nil {
+		t.Fatalf("clear Acquisition identity: %v", err)
+	}
+	selected := env.selectPreset(t)
+	if selected.ActionReason != "identity_required" || selected.TargetLocked() {
+		t.Fatalf("identity-required Acquisition = %+v", selected)
+	}
+
+	acquisition, err := env.service.selectAcquisitionIdentity(
+		env.ctx, env.acquisitionID, 949, env.actorID,
+	)
+	if err != nil {
+		t.Fatalf("select Existing movie identity: %v", err)
+	}
+	if acquisition.Status != "downloaded" || !acquisition.AdoptedExisting ||
+		acquisition.RadarrMovieID == nil || *acquisition.RadarrMovieID != 169 ||
+		acquisition.TargetLockedBy == nil || *acquisition.TargetLockedBy != env.actorID {
+		t.Fatalf("identity-selected Existing Acquisition = %+v", acquisition)
+	}
+	if len(client.addRequests) != 0 {
+		t.Fatalf("identity-selected Existing movie triggered add: %+v", client.addRequests)
+	}
+}
+
+func TestExistingRadarrMovieWithoutFileAutoAdoptsAndFollowsAutomaticMode(t *testing.T) {
+	client := newFakeRadarrClient()
+	remote := integrationradarr.Movie{
+		ID: 167, TMDBID: 949, Title: "Heat", Monitored: false,
+		RootFolderPath: "/existing/movies", QualityProfileID: 91, TagIDs: []int{92},
+		MinimumAvailability: integrationradarr.AvailabilityAnnounced,
+	}
+	client.findMovie = &remote
+	client.movies[167] = remote
+	env := setupRadarrAcquisitionServiceTest(t, "automatic", client)
+
+	acquisition := env.selectPreset(t)
+
+	if acquisition.Status != "waiting_for_radarr" || !acquisition.AdoptedExisting ||
+		acquisition.RadarrMovieID == nil || *acquisition.RadarrMovieID != 167 ||
+		acquisition.AutomaticSearchCommandID == nil || *acquisition.AutomaticSearchCommandID != 700 {
+		t.Fatalf("adopted Existing Automatic Acquisition = %+v", acquisition)
+	}
+	if acquisition.EffectiveConfiguration.Monitored {
+		t.Fatalf("Existing movie monitoring changed: %+v", acquisition.EffectiveConfiguration)
+	}
+	if len(client.addRequests) != 0 || len(client.monitorRequests) != 0 ||
+		len(client.automaticSearches) != 1 || client.automaticSearches[0] != 167 {
+		t.Fatalf("Existing Automatic work: adds=%v monitor=%v searches=%v",
+			client.addRequests, client.monitorRequests, client.automaticSearches)
 	}
 }
 
@@ -1474,12 +1579,8 @@ func TestExistingActiveQueueIsObservedWithoutCompetingAutomaticSearch(t *testing
 		ID: 6, MovieID: 47, Title: "Heat.1995.1080p", Status: "downloading", TrackedDownloadState: "downloading",
 	}}
 	env := setupRadarrAcquisitionServiceTest(t, "automatic", client)
-	env.selectPreset(t)
+	acquisition := env.selectPreset(t)
 
-	acquisition, err := env.service.confirmAcquisitionTarget(env.ctx, env.acquisitionID, env.actorID)
-	if err != nil {
-		t.Fatalf("confirm Existing queued Acquisition: %v", err)
-	}
 	if acquisition.Status != "downloading" || acquisition.QueueStatus != "downloading" || !acquisition.AdoptedExisting {
 		t.Fatalf("observed queue state = %+v", acquisition)
 	}
@@ -1843,7 +1944,7 @@ func TestRetryRecoversAmbiguousAutomaticRecreationAndStartsSearchInSameRequest(t
 	}
 }
 
-func TestAmbiguousExistingConfirmationPreservesAdoptionAndNeverMonitors(t *testing.T) {
+func TestExistingManualMovieAutoAdoptsAndNeverChangesMonitoring(t *testing.T) {
 	client := newFakeRadarrClient()
 	remote := integrationradarr.Movie{
 		ID: 50, TMDBID: 949, Title: "Heat", Monitored: false,
@@ -1856,30 +1957,12 @@ func TestAmbiguousExistingConfirmationPreservesAdoptionAndNeverMonitors(t *testi
 		ID: "existing-release", Title: "Heat.1995.1080p", Quality: integrationradarr.Quality{Name: "Bluray-1080p"}, Approved: true,
 	}}
 	env := setupRadarrAcquisitionServiceTest(t, "manual", client)
-	previewed := env.selectPreset(t)
-	if !previewed.TargetPreviewExisting {
-		t.Fatalf("Target review did not record Existing movie: %+v", previewed)
-	}
-	claimed, err := env.repo.BeginAcquisitionMutation(
-		env.ctx, env.acquisitionID, previewed.Revision, "adding", env.now,
-	)
-	if err != nil {
-		t.Fatalf("simulate ambiguous confirmation claim: %v", err)
-	}
-	if claimed.MutationState != "adding" || !claimed.TargetPreviewExisting || claimed.NextCheckAt == nil ||
-		claimed.NextCheckAt.After(env.service.now()) {
-		t.Fatalf("ambiguous confirmation state = %+v", claimed)
-	}
-
-	adopted, err := env.service.confirmAcquisitionTarget(env.ctx, env.acquisitionID, env.actorID)
-	if err != nil {
-		t.Fatalf("recover ambiguous Existing confirmation: %v", err)
-	}
+	adopted := env.selectPreset(t)
 	if !adopted.AdoptedExisting || !adopted.TargetLocked() || adopted.RadarrMovieID == nil || *adopted.RadarrMovieID != 50 {
 		t.Fatalf("recovered Existing Acquisition = %+v", adopted)
 	}
 	if len(client.addRequests) != 0 || len(client.monitorRequests) != 0 {
-		t.Fatalf("ambiguous Existing recovery mutated Radarr: adds=%v monitor=%v", client.addRequests, client.monitorRequests)
+		t.Fatalf("Existing adoption mutated Radarr: adds=%v monitor=%v", client.addRequests, client.monitorRequests)
 	}
 
 	if _, err := env.service.searchReleases(env.ctx, env.acquisitionID); err != nil {
@@ -2307,7 +2390,7 @@ func TestSlowerPresetPreviewCannotOverwriteNewerTarget(t *testing.T) {
 		{
 			name: "older preview succeeds",
 			remote: &integrationradarr.Movie{
-				ID: 70, TMDBID: 949, Title: "Heat", Monitored: true,
+				ID: 70, TMDBID: 949, Title: "Heat", HasFile: true, Monitored: true,
 				RootFolderPath: "/existing/movies", QualityProfileID: 91, TagIDs: []int{92},
 				MinimumAvailability: integrationradarr.AvailabilityAnnounced,
 			},
@@ -2393,7 +2476,8 @@ func TestSlowerPresetPreviewCannotOverwriteNewerTarget(t *testing.T) {
 			if stored.Revision != newer.Revision || stored.PresetID == nil || *stored.PresetID != secondaryPreset.ID ||
 				stored.TargetInstanceID == nil || *stored.TargetInstanceID != secondaryInstance.ID ||
 				stored.TargetPreviewExisting || stored.EffectiveConfiguration.RootFolderPath != "" ||
-				stored.Status != "waiting_for_radarr" || stored.ActionReason != "" {
+				stored.Status != "waiting_for_radarr" || stored.ActionReason != "" || stored.TargetLocked() ||
+				stored.RadarrMovieID != nil {
 				t.Fatalf("older preview overwrote newer target: newer=%+v stored=%+v", newer, stored)
 			}
 		})

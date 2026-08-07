@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { IntegrationProblem } from "@/api/integrations";
@@ -15,6 +16,7 @@ import {
 
 import { humanize, isRadarrStaleRevision, radarrIssueMap } from "@/components/moviepickarr/admin/radarr";
 import { Modal } from "@/components/moviepickarr/Modal";
+import { toast } from "@/components/ui/toast-api";
 
 export function RadarrWebhookDialog({
   destination,
@@ -32,8 +34,6 @@ export function RadarrWebhookDialog({
   const [reasons, setReasons] = useState<string[]>(destination?.reasons ?? [...RADARR_ACTION_REASONS]);
   const [roleMention, setRoleMention] = useState(destination?.roleMention ?? "");
   const [verified, setVerified] = useState(destination?.verified ?? false);
-  const [enabled, setEnabled] = useState(destination?.enabled ?? false);
-  const [testMessage, setTestMessage] = useState("");
   const hasPersistedEndpoint = Boolean(destination && !url.trim());
   const normalizedRoleMention = format === "discord" ? roleMention.trim() : "";
   const payloadChanged = Boolean(destination && (
@@ -46,7 +46,7 @@ export function RadarrWebhookDialog({
     name: name.trim(),
     format,
     url: url.trim() || undefined,
-    enabled: hasPersistedEndpoint && enabled && effectiveVerified,
+    enabled: Boolean(destination?.enabled && hasPersistedEndpoint && effectiveVerified),
     reasons,
     roleMention: normalizedRoleMention || undefined,
     revision: destination?.revision,
@@ -58,21 +58,22 @@ export function RadarrWebhookDialog({
     onSuccess: (result) => {
       const passed = result.verified !== false;
       setVerified(hasPersistedEndpoint && passed);
-      setTestMessage(
-        passed
-          ? hasPersistedEndpoint
-            ? "Test delivered successfully. You can enable this destination."
-            : "Draft test delivered successfully. Save it disabled, then test the saved destination to enable it."
-          : "reason" in result && result.reason
-            ? result.reason
-            : "The test delivery failed.",
-      );
-      if (!hasPersistedEndpoint || !passed) setEnabled(false);
+      const message = passed
+        ? hasPersistedEndpoint
+          ? "Test delivered successfully. You can enable it from the destination list."
+          : "Draft test delivered successfully. Save it disabled, then test the saved destination to enable it."
+        : "reason" in result && result.reason
+          ? result.reason
+          : "The test delivery failed.";
+      if (passed) toast.success(message);
+      else toast.error(message);
+      if (hasPersistedEndpoint) {
+        void queryClient.invalidateQueries({ queryKey: RadarrKeys.webhooks() });
+      }
     },
     onError: (error) => {
       setVerified(false);
-      setEnabled(false);
-      setTestMessage(error instanceof IntegrationProblem ? error.message : "The test delivery failed.");
+      toast.error(error instanceof IntegrationProblem ? error.message : "The test delivery failed.");
     },
   });
   const save = useMutation({
@@ -97,8 +98,6 @@ export function RadarrWebhookDialog({
   const title = destination ? "Edit webhook destination" : "Add webhook destination";
   const resetVerification = () => {
     setVerified(false);
-    setEnabled(false);
-    setTestMessage("");
   };
 
   return (
@@ -121,7 +120,7 @@ export function RadarrWebhookDialog({
             </label>
             <label className="fieldgroup">
               <span>Format</span>
-              <span className="field" data-invalid={issues.format ? true : undefined}><select value={format} aria-invalid={issues.format ? true : undefined} aria-describedby={issues.format ? "radarr-webhook-format-error" : undefined} onChange={(event) => setFormat(event.target.value as "generic" | "discord")}><option value="discord">Discord embed</option><option value="generic">Generic JSON</option></select></span>
+              <span className="field" data-invalid={issues.format ? true : undefined}><select value={format} aria-invalid={issues.format ? true : undefined} aria-describedby={issues.format ? "radarr-webhook-format-error" : undefined} onChange={(event) => setFormat(event.target.value as "generic" | "discord")}><option value="discord">Discord</option><option value="generic">Generic JSON</option></select></span>
               {issues.format ? <span id="radarr-webhook-format-error" className="field-error">{issues.format}</span> : null}
             </label>
             <label className="fieldgroup">
@@ -137,7 +136,7 @@ export function RadarrWebhookDialog({
                   onChange={(event) => { setURL(event.target.value); resetVerification(); }}
                 />
               </span>
-              {destination && !url ? <small>The saved URL is write-only and remains unchanged.</small> : null}
+              {destination && !url ? <small>{testNeedsReplacementURL ? "Enter a replacement URL to test these changes before saving." : "The saved URL is write-only and remains unchanged."}</small> : null}
               {issues.url ? <span id="radarr-webhook-url-error" className="field-error">{issues.url}</span> : null}
             </label>
             {format === "discord" ? (
@@ -164,24 +163,6 @@ export function RadarrWebhookDialog({
               </div>
               {issues.reasons || reasons.length === 0 ? <span id="radarr-webhook-reasons-error" className="field-error">{issues.reasons ?? "Choose at least one actionable reason."}</span> : null}
             </fieldset>
-            <div className="radarr-webhook-verification" data-verified={effectiveVerified}>
-              <div>
-                <strong>{testNeedsReplacementURL ? "Save before testing" : effectiveVerified ? "Verified" : hasPersistedEndpoint ? "Test required" : "Save before enabling"}</strong>
-                <span>{testNeedsReplacementURL
-                  ? "Save these payload changes first, or enter a replacement URL for a diagnostic draft test."
-                  : testMessage || (effectiveVerified
-                  ? "This saved endpoint accepted a test payload."
-                  : hasPersistedEndpoint
-                    ? "A successful test is required before enabling delivery."
-                    : "A draft test is diagnostic. Save this destination disabled before verification.")}</span>
-              </div>
-              <button type="button" className="btn btn--ghost btn--sm" disabled={busy || !valid || testNeedsReplacementURL} onClick={() => test.mutate()}>{test.isPending ? "Sending…" : "Send test"}</button>
-            </div>
-            <label className="int-toggle radarr-webhook-enabled">
-              <input type="checkbox" checked={enabled && effectiveVerified} disabled={!effectiveVerified} aria-invalid={issues.enabled ? true : undefined} aria-describedby={issues.enabled ? "radarr-webhook-enabled-error" : undefined} onChange={(event) => setEnabled(event.target.checked)} />
-              <span>Enable destination</span>
-            </label>
-            {issues.enabled ? <span id="radarr-webhook-enabled-error" className="field-error">{issues.enabled}</span> : null}
             {feedback ? (
               <div className="radarr-feedback" role="alert">
                 <span>{feedback}</span>
@@ -202,7 +183,14 @@ export function RadarrWebhookDialog({
           </div>
           <footer className="radarr-modal__foot">
             <button type="button" className="btn btn--ghost" disabled={busy} onClick={close}>Cancel</button>
-            <button type="submit" className="btn btn--accent" disabled={!valid || busy}>{save.isPending ? "Saving…" : "Save destination"}</button>
+            <button type="button" className="btn btn--ghost" disabled={busy || !valid || testNeedsReplacementURL} onClick={() => test.mutate()}>
+              {test.isPending ? <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" /> : null}
+              {test.isPending ? "Testing…" : "Test"}
+            </button>
+            <button type="submit" className="btn btn--accent" disabled={!valid || busy}>
+              {save.isPending ? <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" /> : null}
+              {save.isPending ? "Saving…" : "Save"}
+            </button>
           </footer>
         </form>
       )}

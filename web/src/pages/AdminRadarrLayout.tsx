@@ -10,32 +10,40 @@ export function AdminRadarrLayout() {
 
   return (
     <div className="admin-section radarr-workspace mg-rise">
-      <nav className="radarr-workspace__nav" aria-label="Radarr sections">
+      <header className="radarr-workspace__header">
         <Link
           to="/admin/integrations/radarr"
-          activeOptions={{ exact: true }}
-          data-active={acquisitions}
-          aria-current={acquisitions ? "page" : undefined}
+          className="radarr-workspace__brand"
         >
-          Acquisitions
+          Radarr
         </Link>
-        <Link
-          to="/admin/integrations/radarr/setup"
-          activeOptions={{ exact: true }}
-          data-active={setup}
-          aria-current={setup ? "page" : undefined}
-        >
-          Setup
-        </Link>
-        <Link
-          to="/admin/integrations/radarr/webhooks"
-          activeOptions={{ exact: true }}
-          data-active={webhooks}
-          aria-current={webhooks ? "page" : undefined}
-        >
-          Webhooks
-        </Link>
-      </nav>
+        <nav className="radarr-workspace__nav" aria-label="Radarr sections">
+          <Link
+            to="/admin/integrations/radarr"
+            activeOptions={{ exact: true }}
+            data-active={acquisitions}
+            aria-current={acquisitions ? "page" : undefined}
+          >
+            Acquisitions
+          </Link>
+          <Link
+            to="/admin/integrations/radarr/setup"
+            activeOptions={{ exact: true }}
+            data-active={setup}
+            aria-current={setup ? "page" : undefined}
+          >
+            Setup
+          </Link>
+          <Link
+            to="/admin/integrations/radarr/webhooks"
+            activeOptions={{ exact: true }}
+            data-active={webhooks}
+            aria-current={webhooks ? "page" : undefined}
+          >
+            Webhooks
+          </Link>
+        </nav>
+      </header>
       <Outlet />
     </div>
   );

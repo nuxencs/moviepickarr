@@ -60,7 +60,7 @@ beforeEach(() => {
 });
 
 describe("Radarr acquisition register", () => {
-  it("separates current attention from searchable history", async () => {
+  it("separates action, progress, and searchable history without a duplicate page heading", async () => {
     api.listRadarrAcquisitions.mockResolvedValue([
       {
         id: 19,
@@ -69,6 +69,13 @@ describe("Radarr acquisition register", () => {
         status: "needs_release",
         actionReason: "release_required",
         target: { presetName: "Movies 1080p" },
+      },
+      {
+        id: 21,
+        title: "Dune",
+        year: 2021,
+        status: "downloading",
+        target: { presetName: "Movies 4K" },
       },
       {
         id: 20,
@@ -82,8 +89,12 @@ describe("Radarr acquisition register", () => {
 
     const active = await screen.findByRole("list", { name: "Active Radarr acquisitions" });
     expect(within(active).getByRole("link", { name: /Arrival/ })).toBeTruthy();
-    expect(screen.getByText("1 active")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Action required" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "In progress" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Acquisitions" })).toBeNull();
+    expect(within(screen.getByRole("list", { name: "Radarr acquisitions in progress" })).getByText("Dune")).toBeTruthy();
 
+    fireEvent.click(screen.getByText("History"));
     const history = screen.getByRole("list", { name: "Radarr acquisition history" });
     expect(within(history).getByText("Heat")).toBeTruthy();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search acquisition history" }), {

@@ -351,7 +351,9 @@ func (h *handler) handleSelectRadarrIdentity(c *fiber.Ctx) error {
 	if err := c.BodyParser(&request); err != nil {
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "invalid request body")
 	}
-	acquisition, err := service.selectAcquisitionIdentity(c.UserContext(), id, request.TMDBID)
+	acquisition, err := service.selectAcquisitionIdentity(
+		c.UserContext(), id, request.TMDBID, actorMemberID(c),
+	)
 	return h.writeRadarrAcquisitionResult(c, acquisition, err, "selecting Radarr movie identity failed")
 }
 

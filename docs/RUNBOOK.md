@@ -165,10 +165,12 @@ unknown, the claim remains active and Retry does not send another search.
 Inspect Radarr, start work there if needed, or abandon the Acquisition after
 you acknowledge that current activity is unavailable.
 
-Target review is a read-only check. If it finds an existing Radarr movie,
-confirming the target adopts it without changing its root folder, quality
-profile, tags, minimum availability, or monitoring. If an active queue item
-exists, moviepickarr observes it instead of starting competing work.
+Preset selection includes a read-only exact-movie check. If it finds an existing
+Radarr movie, moviepickarr adopts it without another confirmation and without
+changing its root folder, quality profile, tags, minimum availability, or
+monitoring. A file completes the Acquisition. If an active queue item exists,
+moviepickarr observes it instead of starting competing work. Otherwise it
+continues with the selected Manual or Automatic mode.
 
 Abandon only when no file is expected. Every unresolved Acquisition can be
 abandoned, including one with an in-progress local mutation. An unlocked idle

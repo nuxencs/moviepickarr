@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowLeftIcon, SearchIcon } from "lucide-react";
+import { ArrowLeftIcon, BanIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { IntegrationProblem } from "@/api/integrations";
@@ -27,7 +27,6 @@ import {
   radarrStatusLabel,
   tagLabel,
   targetName,
-  timestampLabel,
 } from "@/components/moviepickarr/admin/radarr";
 import { RadarrReleasePicker } from "@/components/moviepickarr/admin/RadarrReleasePicker";
 import { RadarrTargetReviewModal } from "@/components/moviepickarr/admin/RadarrTargetReviewModal";
@@ -142,6 +141,21 @@ function TargetFacts({ acquisition }: { acquisition: RadarrAcquisition }) {
       ) : null}
     </dl>
   );
+}
+
+function TargetSummary({ acquisition }: { acquisition: RadarrAcquisition }) {
+  const target = acquisition.target ?? acquisition.preset;
+  const effective = acquisition.effectiveConfig;
+  const quality = acquisitionUsesExisting(acquisition)
+    ? effective?.qualityProfileName ?? target?.qualityProfileName
+    : target?.qualityProfileName;
+  const parts = [
+    targetName(target),
+    target?.instanceName,
+    quality,
+    target?.mode ? humanize(target.mode) : undefined,
+  ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+  return <p className="radarr-target-summary">{parts.join(" · ")}</p>;
 }
 
 function AbandonModal({ acquisition, onClose }: { acquisition: RadarrAcquisition; onClose: () => void }) {
@@ -271,7 +285,8 @@ export function AdminRadarrAcquisitionPage() {
       queryClient.setQueryData(RadarrKeys.acquisition(acquisitionID), next);
       void queryClient.invalidateQueries({ queryKey: RadarrKeys.acquisitions() });
       setFeedback("");
-      setReview(acquisitionPreviewReady(next));
+      const nextLocked = next.targetLocked ?? Boolean(next.radarrMovieId);
+      setReview(!nextLocked && acquisitionPreviewReady(next));
     },
     onError: (error) => setFeedback(mutationMessage(error, "The preset could not be selected.")),
   });
@@ -328,7 +343,9 @@ export function AdminRadarrAcquisitionPage() {
     : checkingAdd ? "Check Radarr add"
       : checkingGrab ? "Check Radarr status"
         : "Retry Radarr action";
-  const milestones = Object.entries(item.milestones ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  const recordVisible = (typeof item.manualAttemptCount === "number" && (item.manualAttemptCount > 0 || !open)) ||
+    Boolean(item.abandonmentReason) ||
+    Boolean(item.latestFailure && item.status !== "action_needed");
 
   return (
     <article className="radarr-page radarr-detail" aria-labelledby="radarr-acquisition-title">
@@ -341,29 +358,35 @@ export function AdminRadarrAcquisitionPage() {
           <h2 id="radarr-acquisition-title">{acquisitionTitle(item)}</h2>
           <p>{item.year ?? item.identity?.year ?? "Year unavailable"}</p>
         </div>
-        <span className="radarr-status" data-status={item.status}>{radarrStatusLabel(item.status)}</span>
+        <div className="radarr-detail__hero-actions">
+          <span className="radarr-status" data-status={item.status}>{radarrStatusLabel(item.status)}</span>
+          {open ? (
+            <button type="button" className="iconbtn iconbtn--danger" title="Abandon acquisition" aria-label="Abandon acquisition" onClick={() => setAbandon(true)}>
+              <BanIcon aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
       </header>
       {reason ? <p className="radarr-detail__reason">{reason}</p> : null}
       {actionFailure ? <p className="radarr-feedback" role="alert">{actionFailure}</p> : null}
       {feedback ? <p className="radarr-feedback" role="alert">{feedback}</p> : null}
+      {target ? <TargetSummary acquisition={item} /> : null}
 
       {checkingAdd && open ? (
-        <section className="radarr-detail__section" aria-labelledby="radarr-target-title">
-          <div className="radarr-detail__section-head">
-            <div>
-              <h3 id="radarr-target-title">Target</h3>
-              <p>Radarr may have accepted this movie. Check the add result before changing the target.</p>
-            </div>
+        <section className="radarr-current-action" aria-labelledby="radarr-check-add-title">
+          <div>
+            <h3 id="radarr-check-add-title">Confirm the Radarr add</h3>
+            <p>Radarr may have accepted this movie. Check the result before changing the target.</p>
           </div>
-          <TargetFacts acquisition={item} />
+          <button type="button" className="iconbtn" title={retryLabel} aria-label={retryLabel} disabled={retry.isPending} onClick={() => retry.mutate()}>
+            <RefreshCwIcon className={retry.isPending ? "animate-spin mg-spin" : undefined} aria-hidden="true" />
+          </button>
         </section>
       ) : !locked && open ? (
-        <section className="radarr-detail__section" aria-labelledby="radarr-target-title">
-          <div className="radarr-detail__section-head">
-            <div>
-              <h3 id="radarr-target-title">Choose target</h3>
-              <p>The target can change until Radarr adds or adopts the movie.</p>
-            </div>
+        <section className="radarr-current-action radarr-current-action--form" aria-labelledby="radarr-target-title">
+          <div>
+            <h3 id="radarr-target-title">Choose target</h3>
+            <p>The target can change until Radarr adds or adopts the movie.</p>
           </div>
           {validPresets.length > 0 ? (
             <form
@@ -392,44 +415,51 @@ export function AdminRadarrAcquisitionPage() {
             <p className="radarr-empty">No valid presets are available. <Link to="/admin/integrations/radarr/setup">Create a preset</Link>.</p>
           )}
         </section>
-      ) : target ? (
-        <section className="radarr-detail__section" aria-labelledby="radarr-target-title">
-          <div className="radarr-detail__section-head"><div><h3 id="radarr-target-title">Target</h3><p>{locked ? "Locked after Radarr accepted the movie." : "Ready for review."}</p></div></div>
-          <TargetFacts acquisition={item} />
-        </section>
       ) : null}
 
       {item.actionReason === "identity_required"
         ? locked ? <LockedIdentityRecovery acquisition={item} /> : <IdentityResolver acquisition={item} />
         : null}
 
+      {canSearchRelease ? (
+        <section className="radarr-current-action" aria-labelledby="radarr-release-action-title">
+          <div>
+            <h3 id="radarr-release-action-title">File required</h3>
+            <p>The movie exists in Radarr, but the selected target does not report a file.</p>
+          </div>
+          <button type="button" className="btn btn--accent" onClick={() => setReleasePicker(true)}><SearchIcon aria-hidden="true" />Search releases</button>
+        </section>
+      ) : null}
+
+      {!checkingAdd && canRetryLockedAction ? (
+        <section className="radarr-current-action" aria-label="Retry Radarr action">
+          <div><h3>Radarr needs another check</h3><p>Retry the last Radarr action after the issue is resolved.</p></div>
+          <button type="button" className="iconbtn" title={retryLabel} aria-label={retryLabel} disabled={retry.isPending} onClick={() => retry.mutate()}>
+            <RefreshCwIcon className={retry.isPending ? "animate-spin mg-spin" : undefined} aria-hidden="true" />
+          </button>
+        </section>
+      ) : null}
+
+      {target ? (
+        <details className="radarr-detail__activity">
+          <summary><span>Target details</span><span>{targetName(target)}</span></summary>
+          <TargetFacts acquisition={item} />
+        </details>
+      ) : null}
+
       {item.latestRelease ? (
-        <section className="radarr-detail__section" aria-labelledby="radarr-release-title">
-          <div className="radarr-detail__section-head"><div><h3 id="radarr-release-title">Latest selected release</h3><p>Moviepickarr keeps only the latest sanitized summary.</p></div></div>
+        <details className="radarr-detail__activity">
+          <summary><span>Selected release</span><span>{item.latestRelease.quality ?? "Unknown quality"}</span></summary>
           <dl className="radarr-detail__facts">
             <div><dt>Release</dt><dd>{item.latestRelease.title ?? "Not available"}</dd></div>
             <div><dt>Quality</dt><dd>{item.latestRelease.quality ?? "Not available"}</dd></div>
           </dl>
-        </section>
-      ) : null}
-
-      {milestones.length > 0 ? (
-        <details className="radarr-detail__activity">
-          <summary>Milestones</summary>
-          <dl className="radarr-detail__facts">
-            {milestones.map(([name, value]) => <div key={name}><dt>{humanize(name)}</dt><dd><time dateTime={value}>{timestampLabel(value)}</time></dd></div>)}
-          </dl>
         </details>
       ) : null}
 
-      {(typeof item.manualAttemptCount === "number" && (item.manualAttemptCount > 0 || !open)) || item.abandonmentReason || (item.latestFailure && item.status !== "action_needed") ? (
-        <section className="radarr-detail__section" aria-labelledby="radarr-record-title">
-          <div className="radarr-detail__section-head">
-            <div>
-              <h3 id="radarr-record-title">Acquisition record</h3>
-              <p>This compact workflow record stays attached to the movie.</p>
-            </div>
-          </div>
+      {recordVisible ? (
+        <details className="radarr-detail__activity">
+          <summary><span>Acquisition record</span><span>{item.manualAttemptCount ?? 0} attempts</span></summary>
           <dl className="radarr-detail__facts">
             {typeof item.manualAttemptCount === "number" ? (
               <div><dt>Manual release attempts</dt><dd>{item.manualAttemptCount}</dd></div>
@@ -441,17 +471,7 @@ export function AdminRadarrAcquisitionPage() {
               <div><dt>Latest recorded failure</dt><dd>{item.latestFailure}</dd></div>
             ) : null}
           </dl>
-        </section>
-      ) : null}
-
-      {open ? (
-        <div className="radarr-detail__actions">
-          {canSearchRelease ? <button type="button" className="btn btn--accent" onClick={() => setReleasePicker(true)}>Choose release</button> : null}
-          {checkingAdd || canRetryLockedAction ? (
-            <button type="button" className="btn btn--ghost" disabled={retry.isPending} onClick={() => retry.mutate()}>{retryLabel}</button>
-          ) : null}
-          <button type="button" className="btn btn--ghost" onClick={() => setAbandon(true)}>Abandon acquisition</button>
-        </div>
+        </details>
       ) : null}
 
       {review ? <RadarrTargetReviewModal acquisition={item} onClose={() => setReview(false)} /> : null}

@@ -101,8 +101,8 @@ describe("Radarr acquisition target safety", () => {
     });
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Target" })).toBeTruthy();
-    expect(screen.getByText("Radarr 1080p")).toBeTruthy();
+    expect(await screen.findByText("Target details")).toBeTruthy();
+    expect(screen.getByText(/Movies 1080p · Radarr 1080p/)).toBeTruthy();
     expect(screen.queryByRole("combobox", { name: "Acquisition preset" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Check Radarr add" }));
@@ -181,6 +181,85 @@ describe("Radarr acquisition target safety", () => {
     expect(screen.queryByRole("button", { name: "Retry Radarr action" })).toBeNull();
   });
 
+  it("uses an existing no-file movie without opening target review", async () => {
+    const selected = {
+      id: 42,
+      title: "Arrival",
+      status: "needs_release",
+      actionReason: "release_required",
+      targetLocked: true,
+      radarrMovieId: 12,
+      adoptedExisting: true,
+      activeQueue: false,
+      target: {
+        presetId: 7,
+        presetName: "Movies 1080p",
+        instanceName: "Radarr 1080p",
+        rootFolderPath: "/movies",
+        qualityProfileName: "HD-1080p",
+        minimumAvailability: "released",
+        mode: "manual",
+      },
+    };
+    api.selectPreset.mockResolvedValue(selected);
+    api.getAcquisition.mockResolvedValueOnce({
+      id: 42,
+      title: "Arrival",
+      status: "needs_preset",
+      targetLocked: false,
+    }).mockResolvedValue(selected);
+    renderPage();
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "Acquisition preset" }), {
+      target: { value: "7" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review target" }));
+
+    await waitFor(() => expect(api.selectPreset).toHaveBeenCalledWith("42", 7));
+    expect(await screen.findByRole("button", { name: "Search releases" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Review acquisition target" })).toBeNull();
+  });
+
+  it("shows no Admin action after an existing file completes the acquisition", async () => {
+    const selected = {
+      id: 42,
+      title: "Arrival",
+      status: "downloaded",
+      targetLocked: true,
+      radarrMovieId: 12,
+      adoptedExisting: true,
+      hasFile: true,
+      target: {
+        presetId: 7,
+        presetName: "Movies 1080p",
+        instanceName: "Radarr 1080p",
+        rootFolderPath: "/movies",
+        qualityProfileName: "HD-1080p",
+        minimumAvailability: "released",
+        mode: "manual",
+      },
+    };
+    api.selectPreset.mockResolvedValue(selected);
+    api.getAcquisition.mockResolvedValueOnce({
+      id: 42,
+      title: "Arrival",
+      status: "needs_preset",
+      targetLocked: false,
+    }).mockResolvedValue(selected);
+    renderPage();
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "Acquisition preset" }), {
+      target: { value: "7" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review target" }));
+
+    await waitFor(() => expect(api.selectPreset).toHaveBeenCalledWith("42", 7));
+    expect(await screen.findByText("Downloaded")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Search releases" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Abandon acquisition" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Review acquisition target" })).toBeNull();
+  });
+
   it("shows a reason label and one distinct failure for an action-needed acquisition", async () => {
     api.getAcquisition.mockResolvedValue({
       id: 42,
@@ -201,6 +280,8 @@ describe("Radarr acquisition target safety", () => {
     expect(screen.getByRole("alert").textContent).toBe(
       "Radarr could not complete the requested check.",
     );
+    expect(screen.getByRole("button", { name: "Abandon acquisition" }).classList.contains("iconbtn--danger")).toBe(true);
+    expect(screen.queryByText("Milestones")).toBeNull();
   });
 
   it("refreshes live Radarr work before showing the abandonment warning", async () => {

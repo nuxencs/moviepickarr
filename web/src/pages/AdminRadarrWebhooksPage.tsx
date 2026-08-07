@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusIcon } from "lucide-react";
+import { ArchiveIcon, Loader2Icon, PencilIcon, PlusIcon, SendIcon } from "lucide-react";
 import { useState } from "react";
 
 import { IntegrationProblem } from "@/api/integrations";
@@ -8,10 +8,11 @@ import {
   listRadarrWebhooks,
   RadarrKeys,
   testRadarrWebhook,
+  updateRadarrWebhook,
   type RadarrWebhook,
 } from "@/api/radarr";
 
-import { humanize, timestampLabel } from "@/components/moviepickarr/admin/radarr";
+import { humanize } from "@/components/moviepickarr/admin/radarr";
 import { RadarrWebhookDialog } from "@/components/moviepickarr/admin/RadarrWebhookDialog";
 import { Modal } from "@/components/moviepickarr/Modal";
 
@@ -27,11 +28,36 @@ export function AdminRadarrWebhooksPage() {
   const [feedback, setFeedback] = useState("");
   const test = useMutation({
     mutationFn: testRadarrWebhook,
-    onSuccess: () => {
-      setFeedback("Test delivered successfully.");
+    onSuccess: (tested) => {
+      setFeedback(`Test delivered to ${tested.name}.`);
+      queryClient.setQueryData<RadarrWebhook[]>(RadarrKeys.webhooks(), (current) =>
+        current?.map((item) => item.id === tested.id ? tested : item),
+      );
       void queryClient.invalidateQueries({ queryKey: RadarrKeys.webhooks() });
     },
     onError: (error) => setFeedback(error instanceof IntegrationProblem ? error.message : "The test delivery failed."),
+  });
+  const toggle = useMutation({
+    mutationFn: (destination: RadarrWebhook) => updateRadarrWebhook(destination.id, {
+      name: destination.name,
+      format: destination.format,
+      enabled: !destination.enabled,
+      reasons: destination.reasons,
+      roleMention: destination.roleMention,
+      revision: destination.revision,
+    }),
+    onSuccess: (updated) => {
+      setFeedback(`${updated.name} ${updated.enabled ? "enabled" : "disabled"}.`);
+      queryClient.setQueryData<RadarrWebhook[]>(RadarrKeys.webhooks(), (current) =>
+        current?.map((item) => item.id === updated.id ? updated : item),
+      );
+    },
+    onError: (error) => setFeedback(
+      error instanceof IntegrationProblem ? error.message : "The destination could not be updated.",
+    ),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: RadarrKeys.webhooks() });
+    },
   });
   const archive = useMutation({
     mutationFn: archiveRadarrWebhook,
@@ -47,8 +73,7 @@ export function AdminRadarrWebhooksPage() {
     : "";
 
   return (
-    <section className="radarr-page" aria-labelledby="radarr-webhooks-title">
-      <div className="sec-head radarr-page__head"><div className="sec-title"><h2 id="radarr-webhooks-title">Webhooks</h2></div></div>
+    <section className="radarr-page radarr-page--webhooks" aria-label="Radarr webhooks">
       {destinations.isPending ? (
         <div className="adm-state" role="status">Loading webhook destinations…</div>
       ) : destinations.isError ? (
@@ -58,28 +83,66 @@ export function AdminRadarrWebhooksPage() {
             : "Webhook destinations could not be loaded."}
         </div>
       ) : (
-        <section className="radarr-section" aria-labelledby="radarr-destinations-title">
-          <div className="radarr-section__head radarr-section__head--controls">
-            <div><h3 id="radarr-destinations-title">Destinations</h3><p>Send Discord embeds or generic JSON only when an Admin can act in Moviepickarr.</p></div>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing("new")}><PlusIcon aria-hidden="true" />Add destination</button>
+        <>
+          <div className="radarr-page__toolbar">
+            <p>Send Discord or generic JSON only when an Admin can act in Moviepickarr.</p>
+            <div><button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing("new")}><PlusIcon aria-hidden="true" />Add destination</button></div>
           </div>
           {feedback ? <p className="radarr-action-feedback" role="status">{feedback}</p> : null}
           {active.length > 0 ? (
-            <ul className="radarr-setup-list" aria-label="Radarr webhook destinations">
+            <ul className="radarr-setup-list radarr-setup-list--webhooks" aria-label="Radarr webhook destinations">
               {active.map((destination) => {
                 const unhealthy = destination.health && !["healthy", "connected"].includes(destination.health);
+                const testing = test.isPending && test.variables === destination.id;
+                const toggling = toggle.isPending && toggle.variables?.id === destination.id;
+                const enableBlocked = !destination.verified && !destination.enabled;
+                const enableTooltipID = `radarr-webhook-enable-tooltip-${destination.id}`;
                 return (
                   <li key={destination.id}>
-                    <span className="radarr-setup-list__identity"><strong>{destination.name}</strong><span>{destination.format === "discord" ? "Discord embed" : "Generic JSON"} · {destination.enabled ? "Enabled" : "Disabled"}</span></span>
-                    <span className="radarr-setup-list__state" data-state={unhealthy ? "error" : destination.verified ? "connected" : "unverified"}><strong>{unhealthy ? "Delivery warning" : destination.verified ? "Verified" : "Test required"}</strong><span>{destination.healthReason ?? (destination.lastTestedAt ? `Tested ${timestampLabel(destination.lastTestedAt)}` : `${destination.reasons.length} reason filter${destination.reasons.length === 1 ? "" : "s"}`)}</span></span>
-                    <span className="radarr-setup-list__actions"><button type="button" className="btn btn--ghost btn--sm" aria-label={`Test ${destination.name}`} disabled={test.isPending} onClick={() => { setFeedback(""); test.mutate(destination.id); }}>{test.isPending ? "Testing…" : "Test"}</button><button type="button" className="btn btn--ghost btn--sm" aria-label={`Edit ${destination.name}`} onClick={() => setEditing(destination)}>Edit</button><button type="button" className="btn btn--ghost btn--sm" aria-label={`Archive ${destination.name}`} onClick={() => setArchiving(destination)}>Archive</button></span>
+                    <label
+                      className="radarr-webhook-switch"
+                      data-blocked={enableBlocked ? true : undefined}
+                      data-pending={toggling ? true : undefined}
+                      tabIndex={enableBlocked ? 0 : undefined}
+                      aria-label={enableBlocked ? `Enable ${destination.name}` : undefined}
+                      aria-disabled={enableBlocked ? true : undefined}
+                      aria-describedby={enableBlocked ? enableTooltipID : undefined}
+                    >
+                      <span className="vis-hidden">{destination.enabled ? "Disable" : "Enable"} {destination.name}</span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={destination.enabled}
+                        disabled={toggling || testing || enableBlocked}
+                        aria-describedby={enableBlocked ? enableTooltipID : undefined}
+                        onChange={() => {
+                          setFeedback("");
+                          toggle.mutate(destination);
+                        }}
+                      />
+                      {toggling ? <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" /> : null}
+                      {enableBlocked ? <span id={enableTooltipID} className="radarr-webhook-switch__tooltip" role="tooltip">Test this destination before enabling it.</span> : null}
+                    </label>
+                    <span className="radarr-setup-list__identity" data-state={unhealthy ? "error" : undefined}>
+                      <strong>{destination.name}</strong>
+                      <span>{unhealthy
+                        ? `Delivery warning: ${destination.healthReason ?? "Review the last delivery."}`
+                        : `${destination.format === "discord" ? "Discord" : "Generic JSON"} · ${destination.reasons.length} reason filter${destination.reasons.length === 1 ? "" : "s"}`}</span>
+                    </span>
+                    <span className="radarr-setup-list__actions">
+                      <button type="button" className="iconbtn" aria-label={`Test ${destination.name}`} title={`Test ${destination.name}`} aria-busy={testing} disabled={test.isPending || toggle.isPending} onClick={() => { setFeedback(""); test.mutate(destination.id); }}>
+                        {testing ? <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" /> : <SendIcon aria-hidden="true" />}
+                      </button>
+                      <button type="button" className="iconbtn" aria-label={`Edit ${destination.name}`} title={`Edit ${destination.name}`} disabled={toggling || testing} onClick={() => setEditing(destination)}><PencilIcon aria-hidden="true" /></button>
+                      <button type="button" className="iconbtn iconbtn--danger" aria-label={`Archive ${destination.name}`} title={`Archive ${destination.name}`} disabled={toggling || testing} onClick={() => setArchiving(destination)}><ArchiveIcon aria-hidden="true" /></button>
+                    </span>
                   </li>
                 );
               })}
             </ul>
           ) : <p className="radarr-empty">No webhook destinations are configured.</p>}
           {archived.length > 0 ? <details className="radarr-archived"><summary>Archived destinations · {archived.length}</summary><ul>{archived.map((item) => <li key={item.id}><strong>{item.name}</strong><span>{humanize(item.format)}</span></li>)}</ul></details> : null}
-        </section>
+        </>
       )}
 
       {editing ? <RadarrWebhookDialog destination={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void queryClient.invalidateQueries({ queryKey: RadarrKeys.webhooks() }); }} /> : null}

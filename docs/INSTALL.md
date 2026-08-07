@@ -121,12 +121,13 @@ The modes control only the initial grab:
 - Automatic adds a new movie monitored and asks Radarr to search immediately.
 
 Only the drawn winner gets an Acquisition. The record is created with the draw
-and remains concealed until Reveal. After Reveal, an Admin selects one preset,
-reviews the exact target, and confirms it. This review does not add or change a
-Radarr movie. If the movie already exists in that instance, the review shows
-its effective settings and confirmation preserves them. If that movie already
-has a file, the Acquisition completes immediately. Otherwise moviepickarr
-observes its queue or starts the selected mode.
+and remains concealed until Reveal. After Reveal, an Admin selects one preset.
+If the exact movie already exists in that instance, moviepickarr adopts it and
+locks the target without another prompt. It preserves the movie's effective
+settings. If the movie has a file, the Acquisition completes immediately.
+Otherwise moviepickarr observes its queue or starts the selected mode. If the
+movie does not exist, the Admin reviews and confirms the exact target before
+moviepickarr adds it.
 
 The Admin and Radarr navigation show a persistent attention count until the
 selected instance reports a file or an Admin abandons the Acquisition with a

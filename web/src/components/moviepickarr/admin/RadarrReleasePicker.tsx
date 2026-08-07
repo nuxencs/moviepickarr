@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { SearchIcon, XIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { DownloadIcon, Loader2Icon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { IntegrationProblem } from "@/api/integrations";
 import {
@@ -15,6 +15,19 @@ import { formatBytes } from "@/components/moviepickarr/admin/radarr";
 import { Modal } from "@/components/moviepickarr/Modal";
 
 type ReleaseSort = "score" | "quality" | "age" | "size" | "peers" | "indexer";
+
+function ageLabel(hours?: number) {
+  if (hours === undefined || !Number.isFinite(hours) || hours < 0) return "Age unknown";
+  if (hours < 1) return "Less than 1 hr";
+  if (hours < 24) {
+    const rounded = Math.max(1, Math.floor(hours));
+    return `${rounded} hr`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 365) return `${days} day${days === 1 ? "" : "s"}`;
+  const years = Math.floor((days / 365) * 10) / 10;
+  return `${years.toFixed(years % 1 === 0 ? 0 : 1)} year${years === 1 ? "" : "s"}`;
+}
 
 function unique(values: Array<string | undefined>) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
@@ -32,34 +45,47 @@ function sortedReleases(releases: RadarrRelease[], sort: ReleaseSort) {
 
 function ReleaseRow({
   busy,
+  grabbing,
   onGrab,
   release,
 }: {
   busy: boolean;
+  grabbing: boolean;
   onGrab: (release: RadarrRelease) => void;
   release: RadarrRelease;
 }) {
+  const lowPeers = typeof release.peers === "number" && Number.isFinite(release.peers) && release.peers >= 0 && release.peers <= 5
+    ? release.peers
+    : undefined;
+  const actionLabel = release.rejected
+    ? `Review ${release.title} before download`
+    : `Download ${release.title}`;
+
   return (
     <li className="radarr-release">
       <div className="radarr-release__title">
         <strong>{release.title}</strong>
-        <span>{release.indexer ?? "Unknown indexer"}</span>
+        <span className="radarr-release__meta">
+          <span>{release.indexer ?? "Unknown indexer"}</span>
+          {release.protocol ? <span>{release.protocol}</span> : null}
+          {lowPeers !== undefined ? <span className="radarr-release__peer-warning">{lowPeers} peer{lowPeers === 1 ? "" : "s"}</span> : null}
+        </span>
       </div>
       <dl className="radarr-release__facts">
         <div><dt>Quality</dt><dd>{release.quality ?? "Unknown"}</dd></div>
         <div><dt>Score</dt><dd>{release.customFormatScore ?? 0}</dd></div>
         <div><dt>Size</dt><dd>{formatBytes(release.size)}</dd></div>
-        <div><dt>Age</dt><dd>{release.ageHours === undefined ? "Unknown" : `${Math.round(release.ageHours)} hr`}</dd></div>
-        <div><dt>Peers</dt><dd>{release.peers ?? "Unknown"}</dd></div>
-        <div><dt>Protocol</dt><dd>{release.protocol ?? "Unknown"}</dd></div>
+        <div><dt>Age</dt><dd>{ageLabel(release.ageHours)}</dd></div>
       </dl>
       <button
         type="button"
-        className="btn btn--ghost btn--sm"
+        className="iconbtn radarr-release__download"
         disabled={busy || release.grabAllowed === false}
+        aria-label={actionLabel}
+        title={actionLabel}
         onClick={() => onGrab(release)}
       >
-        {release.rejected ? "Review release" : "Grab release"}
+        {grabbing ? <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" /> : <DownloadIcon aria-hidden="true" />}
       </button>
     </li>
   );
@@ -73,6 +99,7 @@ export function RadarrReleasePicker({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const initialSearchStarted = useRef(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<ReleaseSort>("score");
   const [quality, setQuality] = useState("");
@@ -99,12 +126,23 @@ export function RadarrReleasePicker({
   };
   const search = useMutation({
     mutationFn: () => searchRadarrReleases(acquisition.id),
+    onMutate: () => setFeedback(""),
     onSuccess: () => setFeedback(""),
     onError: (error) => setFeedback(
       error instanceof IntegrationProblem ? error.message : "Radarr release search failed.",
     ),
     onSettled: refreshAcquisition,
   });
+  const { mutate: runSearch } = search;
+  useEffect(() => {
+    if (!available || initialSearchStarted.current) return;
+    const timer = window.setTimeout(() => {
+      if (initialSearchStarted.current) return;
+      initialSearchStarted.current = true;
+      runSearch();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [available, runSearch]);
   const grab = useMutation({
     mutationFn: ({ release, allowRejected }: { release: RadarrRelease; allowRejected: boolean }) =>
       grabRadarrRelease(acquisition.id, release.id, allowRejected),
@@ -156,7 +194,7 @@ export function RadarrReleasePicker({
         label="Choose a Radarr release"
         className="modal--radarr-releases"
         capped
-        dismissible={!busy}
+        dismissible={!grab.isPending}
         onClose={onClose}
       >
         {(close) => (
@@ -166,20 +204,25 @@ export function RadarrReleasePicker({
                 <h3>Choose a release</h3>
                 <p>{acquisition.title || acquisition.identity?.title || "Current acquisition"}</p>
               </div>
-              <button type="button" className="iconbtn" aria-label="Close" disabled={busy} onClick={close}>
-                <XIcon aria-hidden="true" />
-              </button>
+              <div className="radarr-modal__head-actions">
+                <button
+                  type="button"
+                  className="iconbtn"
+                  aria-label={search.isPending ? "Searching releases" : "Search releases again"}
+                  title={search.isPending ? "Searching releases" : "Search releases again"}
+                  disabled={busy}
+                  onClick={() => runSearch()}
+                >
+                  {search.isPending ? <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" /> : <RefreshCwIcon aria-hidden="true" />}
+                </button>
+                <button type="button" className="iconbtn" aria-label="Close" disabled={grab.isPending} onClick={close}>
+                  <XIcon aria-hidden="true" />
+                </button>
+              </div>
             </header>
             <div className="modal__scroll radarr-modal__scroll">
-              <div className="radarr-release-search">
-                <button type="button" className="btn btn--accent" disabled={busy} onClick={() => search.mutate()}>
-                  <SearchIcon aria-hidden="true" />
-                  {search.isPending ? "Searching…" : releases.length > 0 ? "Search again" : "Search Radarr"}
-                </button>
-                {releases.length > 0 ? (
-                  <span>{visible.length} matched release{visible.length === 1 ? "" : "s"}</span>
-                ) : null}
-              </div>
+              {search.isPending ? <p className="radarr-release-summary" role="status">Searching Radarr…</p> : null}
+              {!search.isPending && releases.length > 0 ? <p className="radarr-release-summary">{visible.length} matched release{visible.length === 1 ? "" : "s"}</p> : null}
               {releases.length > 0 ? (
                 <div className="radarr-release-filters" aria-label="Release filters">
                   <label className="field radarr-release-filters__search">
@@ -202,14 +245,14 @@ export function RadarrReleasePicker({
               ) : null}
               {approved.length > 0 ? (
                 <ul className="radarr-release-list" aria-label="Approved releases">
-                  {approved.map((release) => <ReleaseRow key={release.id} release={release} busy={busy} onGrab={startGrab} />)}
+                  {approved.map((release) => <ReleaseRow key={release.id} release={release} busy={busy} grabbing={grab.isPending && grab.variables?.release.id === release.id} onGrab={startGrab} />)}
                 </ul>
               ) : null}
               {rejected.length > 0 ? (
                 <details className="radarr-rejected">
                   <summary>{rejected.length} rejected release{rejected.length === 1 ? "" : "s"}</summary>
                   <ul className="radarr-release-list" aria-label="Rejected releases">
-                    {rejected.map((release) => <ReleaseRow key={release.id} release={release} busy={busy} onGrab={startGrab} />)}
+                    {rejected.map((release) => <ReleaseRow key={release.id} release={release} busy={busy} grabbing={grab.isPending && grab.variables?.release.id === release.id} onGrab={startGrab} />)}
                   </ul>
                 </details>
               ) : null}

@@ -13,11 +13,9 @@ import {
 import {
   acquisitionIsOpen,
   acquisitionTitle,
-  acquisitionUpdatedAt,
   radarrReasonLabel,
   radarrStatusLabel,
   targetName,
-  timestampLabel,
 } from "@/components/moviepickarr/admin/radarr";
 
 function AcquisitionRow({ acquisition }: { acquisition: RadarrAcquisition }) {
@@ -26,7 +24,10 @@ function AcquisitionRow({ acquisition }: { acquisition: RadarrAcquisition }) {
     : acquisition.status === "needs_preset" || acquisition.status === "needs_release"
       ? radarrReasonLabel(acquisition.actionReason)
       : undefined;
-  const updated = acquisitionUpdatedAt(acquisition);
+  const target = acquisition.target ?? acquisition.preset;
+  const targetSummary = [targetName(target), target?.instanceName]
+    .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+    .join(" · ");
   return (
     <li className="radarr-register__item">
       <Link
@@ -40,11 +41,10 @@ function AcquisitionRow({ acquisition }: { acquisition: RadarrAcquisition }) {
         </span>
         <span className="radarr-acquisition-row__state">
           <strong data-status={acquisition.status}>{radarrStatusLabel(acquisition.status)}</strong>
-          <span>{reason ?? targetName(acquisition.target ?? acquisition.preset)}</span>
+          <span>{reason ?? (acquisitionIsOpen(acquisition) ? "No Admin action required" : "Acquisition closed")}</span>
         </span>
         <span className="radarr-acquisition-row__target">
-          <span>{targetName(acquisition.target ?? acquisition.preset)}</span>
-          {updated ? <time dateTime={updated}>{timestampLabel(updated)}</time> : null}
+          <span>{targetSummary || "Target not selected"}</span>
         </span>
         <ChevronRightIcon aria-hidden="true" />
         <span className="vis-hidden">View acquisition details</span>
@@ -67,6 +67,8 @@ export function AdminRadarrAcquisitionsPage() {
   const [historySearch, setHistorySearch] = useState("");
   const deferredSearch = useDeferredValue(historySearch.trim().toLocaleLowerCase());
   const active = acquisitions.data?.filter(acquisitionIsOpen) ?? [];
+  const actionRequired = active.filter((item) => ["needs_preset", "needs_release", "action_needed"].includes(item.status));
+  const inProgress = active.filter((item) => !actionRequired.includes(item));
   const history = useMemo(
     () =>
       (acquisitions.data?.filter((item) => !acquisitionIsOpen(item)) ?? []).filter((item) => {
@@ -86,16 +88,7 @@ export function AdminRadarrAcquisitionsPage() {
   );
 
   return (
-    <section className="radarr-page" aria-labelledby="radarr-acquisitions-title">
-      <div className="sec-head radarr-page__head">
-        <div className="sec-title">
-          <h2 id="radarr-acquisitions-title">Acquisitions</h2>
-          {acquisitions.data ? (
-            <span className="sec-count">{active.length} active</span>
-          ) : null}
-        </div>
-      </div>
-
+    <section className="radarr-page radarr-page--acquisitions" aria-label="Radarr acquisitions">
       {acquisitions.isPending ? (
         <div className="adm-state" role="status">Loading Radarr acquisitions…</div>
       ) : acquisitions.isError ? (
@@ -106,31 +99,39 @@ export function AdminRadarrAcquisitionsPage() {
         </div>
       ) : (
         <>
-          <section className="radarr-section" aria-labelledby="radarr-active-title">
+          <section className="radarr-queue-group" aria-labelledby="radarr-action-required-title">
             <div className="radarr-section__head">
-              <div>
-                <h3 id="radarr-active-title">Needs attention</h3>
-                <p>Every revealed draw stays here until Radarr imports a file or an Admin abandons it.</p>
-              </div>
-              <span className="radarr-section__count">{active.length}</span>
+              <h3 id="radarr-action-required-title">Action required</h3>
+              <span className="radarr-section__count">{actionRequired.length}</span>
             </div>
-            {active.length > 0 ? (
+            {actionRequired.length > 0 ? (
               <ul className="radarr-register" aria-label="Active Radarr acquisitions">
-                {active.map((acquisition) => (
+                {actionRequired.map((acquisition) => (
                   <AcquisitionRow key={acquisition.id} acquisition={acquisition} />
                 ))}
               </ul>
             ) : (
-              <p className="radarr-empty">No acquisitions need attention.</p>
+              <p className="radarr-empty">No acquisitions need Admin action.</p>
             )}
           </section>
 
-          <section className="radarr-section" aria-labelledby="radarr-history-title">
-            <div className="radarr-section__head radarr-section__head--controls">
-              <div>
-                <h3 id="radarr-history-title">History</h3>
-                <p>Downloaded and abandoned acquisitions remain with the movie.</p>
+          {inProgress.length > 0 ? (
+            <section className="radarr-queue-group" aria-labelledby="radarr-in-progress-title">
+              <div className="radarr-section__head">
+                <h3 id="radarr-in-progress-title">In progress</h3>
+                <span className="radarr-section__count">{inProgress.length}</span>
               </div>
+              <ul className="radarr-register" aria-label="Radarr acquisitions in progress">
+                {inProgress.map((acquisition) => (
+                  <AcquisitionRow key={acquisition.id} acquisition={acquisition} />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          <details className="radarr-acquisition-history">
+            <summary><span>History</span><span>{history.length}</span></summary>
+            <div className="radarr-acquisition-history__tools">
               <label className="field radarr-search">
                 <SearchIcon aria-hidden="true" />
                 <span className="vis-hidden">Search acquisition history</span>
@@ -153,7 +154,7 @@ export function AdminRadarrAcquisitionsPage() {
                 {deferredSearch ? "No acquisition history matches this search." : "No acquisition history yet."}
               </p>
             )}
-          </section>
+          </details>
         </>
       )}
     </section>

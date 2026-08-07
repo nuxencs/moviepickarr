@@ -579,18 +579,22 @@ profile, tags, minimum availability, and mode into the Acquisition. Selection
 also performs a read-only Target review. The review resolves stored TMDB ID
 first or verifies an IMDb-to-TMDB result through Radarr. Only an explicit Admin
 identity search can use title and year. It records an Acquisition-only TMDB
-override without changing `movies`.
+override without changing `movies`. A successful exact lookup that finds an
+existing movie adopts it immediately and locks the target. It completes a movie
+with a file, observes an active queue, or continues with the selected mode. It
+does not change the existing movie's configuration.
 
-Confirmation repeats the live catalog and exact-movie checks, then compares
-them with the preview. A changed preview returns a conflict and requires another
-review. The mutation uses an explicit `adding` marker so a timeout can be
-reconciled before any repeated add. Initial add and locked recreation claims use
-a 30-second lease and revision comparison. A concurrent request cannot send a
-second add while the lease is active. An expired lease must be reclaimed before
-recovery continues. For an unlocked ambiguous add, the retry endpoint is the
-contextual `Check Radarr add` action. It performs the exact TMDB read only. It
-adopts a found movie or clears the claim after proven absence. It cannot send a
-new add. A found movie is adopted with all remote configuration preserved.
+When no exact movie exists, confirmation repeats the live catalog and
+exact-movie checks, then compares them with the preview. A changed preview
+returns a conflict and requires another review. The mutation uses an explicit
+`adding` marker so a timeout can be reconciled before any repeated add. Initial
+add and locked recreation claims use a 30-second lease and revision comparison.
+A concurrent request cannot send a second add while the lease is active. An
+expired lease must be reclaimed before recovery continues. For an unlocked
+ambiguous add, the retry endpoint is the contextual `Check Radarr add` action.
+It performs the exact TMDB read only. It adopts a found movie or clears the claim
+after proven absence. It cannot send a new add. A found movie is adopted with
+all remote configuration preserved.
 
 A new Manual movie is added unmonitored with search off. A new Automatic movie
 is added monitored, then gets an explicit Radarr movie-search command. Before

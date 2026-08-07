@@ -206,7 +206,15 @@ old shadcn primitives.
   the next lazy route resolves. The shared scroller resets from the committed leaf
   route, not the pending location, so the painted outgoing page remains still. Below
   901px, the index becomes horizontal and the
-  document owns vertical scrolling. The TMDB detail leads with a compact health
+  document owns vertical scrolling. Radarr adds one compact integration header with
+  Acquisitions, Setup, and Webhooks. The selected destination uses the gold state
+  marker. Child pages do not repeat their navigation label as a page heading. Setup
+  renders each instance as a tree root with its presets beneath it. Routine test
+  timestamps stay hidden. Row-level edit, test, retry, archive, and abandon controls
+  use accessible icon buttons. Destructive icons use the danger color at rest.
+  Acquisition work is split into action-required and in-progress registers, with
+  history collapsed. A movie detail keeps one compact target summary and discloses
+  full target and record data only on request. The TMDB detail leads with a compact health
   summary and actions. Routine timestamps and the latest completed run live under the
   native `Activity details` disclosure; active runs, warnings, errors, and recovery
   reasons stay visible. A compact settings ledger follows. Active sources remain

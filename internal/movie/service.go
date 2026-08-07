@@ -22,6 +22,15 @@ const maxPoolSize = 3
 // countdown from it: there is no client-side copy to keep in sync.
 const DefaultAutoRevealDelay = 16500 * time.Millisecond
 
+// A fired time.AfterFunc cannot be reused. When its durable Reveal write fails,
+// schedule a small bounded retry instead of leaving autoRevealArmed true for a
+// timer that has already completed. The admin error hook still receives every
+// failure, and a manual confirm can succeed between retries.
+const (
+	autoRevealRetryDelay = time.Second
+	maxAutoRevealRetries = 3
+)
+
 // watchCurrentAndAdvanceNextUpStore is the consumer-side port for the one
 // lifecycle transition whose durable state crosses movies and next_up.
 type watchCurrentAndAdvanceNextUpStore interface {
@@ -44,17 +53,35 @@ type editMovieStore interface {
 	) (movie *domain.Movie, identityChanged bool, err error)
 }
 
+// drawLifecycleStore owns the durable half of Draw and Reveal. StartDraw commits
+// the movie's pool -> current transition and its concealed Pending acquisition
+// together. RevealDraw persists the visibility boundary before any in-memory
+// flip or client publication. ConcealedCurrentDraw restores a draw whose process
+// was restarted before Reveal.
+type drawLifecycleStore interface {
+	StartDraw(
+		ctx context.Context,
+		movieID int,
+		drawnAt, revealAt time.Time,
+		drawClientID string,
+	) error
+	RevealDraw(ctx context.Context, movieID int, revealedAt time.Time) error
+	ConcealedCurrentDraw(
+		ctx context.Context,
+	) (movieID int, drawnAt, revealAt time.Time, drawClientID string, found bool, err error)
+}
+
 type movieStore interface {
 	domain.MovieRepo
 	watchCurrentAndAdvanceNextUpStore
 	editMovieStore
+	drawLifecycleStore
 }
 
-// ActiveDraw records the most recent random draw so a reloading client — or one
-// that joined late / dropped the SSE event — can resume the draw-reveal spin
-// instead of jumping straight to the result. Held in memory only: a server
-// restart mid-draw forgets it, and clients then show the result directly
-// (the ceremony is lost, the state stays correct).
+// ActiveDraw records the most recent random draw so a reloading client, one
+// that joined late, or one that dropped the SSE event can resume the draw-reveal
+// spin instead of jumping straight to the result. A concealed draw is restored
+// from its durable Acquisition after a server restart.
 type ActiveDraw struct {
 	MovieID int
 	// Generation binds post-publication timer arming and stale deadline
@@ -101,6 +128,9 @@ type DrawConfig struct {
 	// early watch) exactly once per draw. The server wires it to the
 	// movie:revealed broadcast so every client closes its reel off one frame.
 	OnRevealed func(ActiveDraw)
+	// OnRevealError observes a failed durable Reveal. The active draw stays
+	// unrevealed and no OnRevealed callback runs. Nil is allowed.
+	OnRevealError func(error)
 }
 
 // Service owns the movie lifecycle: stash/pool moves, watched history, and the
@@ -110,11 +140,12 @@ type Service struct {
 	movieRepo movieStore
 	drawCfg   DrawConfig
 
-	mu              sync.Mutex
-	activeDraw      *ActiveDraw
-	stopAutoReveal  func()
-	autoRevealArmed bool
-	closed          bool
+	mu                sync.Mutex
+	activeDraw        *ActiveDraw
+	stopAutoReveal    func()
+	autoRevealArmed   bool
+	autoRevealRetries int
+	closed            bool
 	// drawGen counts draws so an auto-reveal timer can confine itself to the
 	// draw it was armed for: a watch + fresh draw bumps it, so a stale timer
 	// that already fired reveals nothing instead of the replacement draw.
@@ -122,6 +153,16 @@ type Service struct {
 }
 
 func NewService(movieRepo movieStore, drawCfg DrawConfig) *Service {
+	service, err := NewServiceChecked(movieRepo, drawCfg)
+	if err != nil {
+		panic(err)
+	}
+	return service
+}
+
+// NewServiceChecked restores the concealed draw before returning. A repository
+// failure is fatal because serving without that draw could expose its winner.
+func NewServiceChecked(movieRepo movieStore, drawCfg DrawConfig) (*Service, error) {
 	if drawCfg.AutoRevealDelay <= 0 {
 		drawCfg.AutoRevealDelay = DefaultAutoRevealDelay
 	}
@@ -134,9 +175,47 @@ func NewService(movieRepo movieStore, drawCfg DrawConfig) *Service {
 			return func() { t.Stop() }
 		}
 	}
-	return &Service{
+	service := &Service{
 		movieRepo: movieRepo,
 		drawCfg:   drawCfg,
+	}
+	if err := service.resumeConcealedDraw(context.Background()); err != nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+// resumeConcealedDraw restores the one durable draw that did not cross Reveal
+// before a restart. The persisted deadline remains authoritative. An elapsed
+// deadline schedules immediately; a future deadline keeps the Held draw hidden
+// until its remaining time passes.
+func (s *Service) resumeConcealedDraw(ctx context.Context) error {
+	movieID, drawnAt, revealAt, clientID, found, err := s.movieRepo.ConcealedCurrentDraw(ctx)
+	if err != nil {
+		s.notifyRevealError(err)
+		return err
+	}
+	if !found {
+		return nil
+	}
+
+	s.mu.Lock()
+	s.drawGen++
+	s.activeDraw = &ActiveDraw{
+		MovieID:      movieID,
+		Generation:   s.drawGen,
+		DrawnAt:      drawnAt,
+		RevealAt:     revealAt,
+		DrawClientID: clientID,
+	}
+	s.armAutoRevealLocked(s.drawGen)
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Service) notifyRevealError(err error) {
+	if err != nil && s.drawCfg.OnRevealError != nil {
+		s.drawCfg.OnRevealError(err)
 	}
 }
 
@@ -156,12 +235,37 @@ func (s *Service) Close() {
 func (s *Service) armAutoRevealLocked(gen uint64) {
 	s.cancelAutoRevealLocked()
 	delay := max(time.Until(s.activeDraw.RevealAt), 0)
+	s.scheduleAutoRevealLocked(gen, delay)
+}
+
+// scheduleAutoRevealLocked installs one timer without changing the retry
+// counter. Callers hold s.mu and have already retired any previous timer.
+func (s *Service) scheduleAutoRevealLocked(gen uint64, delay time.Duration) {
 	s.stopAutoReveal = s.drawCfg.StartTimer(delay, func() {
 		// Guarded by gen: a late manual confirm, a watch, or a watch-then-redraw
 		// all leave this deadline a harmless no-op.
-		s.revealActive(gen, true)
+		_, _, _ = s.revealActive(context.Background(), gen, true)
 	})
 	s.autoRevealArmed = true
+}
+
+// retryAutoRevealLocked retires the one-shot timer that just failed and, while
+// this exact draw remains active, schedules a bounded retry. Once the retry
+// budget is exhausted autoRevealArmed stays false, so state never claims that a
+// dead timer is still responsible for the Reveal.
+func (s *Service) retryAutoRevealLocked(gen uint64) {
+	s.stopAutoReveal = nil
+	s.autoRevealArmed = false
+	if s.activeDraw == nil ||
+		s.activeDraw.Revealed ||
+		s.activeDraw.Generation != gen ||
+		s.drawGen != gen ||
+		s.closed ||
+		s.autoRevealRetries >= maxAutoRevealRetries {
+		return
+	}
+	s.autoRevealRetries++
+	s.scheduleAutoRevealLocked(gen, autoRevealRetryDelay)
 }
 
 // cancelAutoRevealLocked stops a pending auto-reveal: a manual confirm won
@@ -173,6 +277,7 @@ func (s *Service) cancelAutoRevealLocked() {
 		s.stopAutoReveal = nil
 	}
 	s.autoRevealArmed = false
+	s.autoRevealRetries = 0
 }
 
 func (s *Service) AddToStash(
@@ -593,17 +698,18 @@ func (s *Service) DrawRandom(ctx context.Context, clientID string) (*DrawResult,
 	}
 	selected := cloneMovieSnapshot(candidates[selectedIndex])
 
-	if err = s.movieRepo.UpdateStatus(ctx, selected.ID, "current"); err != nil {
+	drawnAt := time.Now().UTC()
+	revealAt := drawnAt.Add(s.drawCfg.AutoRevealDelay)
+	if err = s.movieRepo.StartDraw(ctx, selected.ID, drawnAt, revealAt, clientID); err != nil {
 		return nil, err
 	}
 
-	drawnAt := time.Now().UTC()
 	s.drawGen++
 	activeDraw := ActiveDraw{
 		MovieID:      selected.ID,
 		Generation:   s.drawGen,
 		DrawnAt:      drawnAt,
-		RevealAt:     drawnAt.Add(s.drawCfg.AutoRevealDelay),
+		RevealAt:     revealAt,
 		DrawClientID: clientID,
 	}
 	s.activeDraw = &activeDraw
@@ -683,9 +789,8 @@ func (s *Service) notifyWatchReveal(revealed *ActiveDraw) {
 
 // ActiveDraw reports the in-flight draw (movie id + when it was drawn) that
 // drives the cross-client draw-reveal spin, or ok=false when none is active
-// (no current draw, or the current draw was already marked watched). It is
-// in-memory only, consistent with the in-process event broker: a server
-// restart drops it, which just means a reload won't replay the spin.
+// (no current draw, or the current draw was already marked watched). A server
+// restart restores a concealed draw from its durable Acquisition.
 func (s *Service) ActiveDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -710,7 +815,15 @@ func (s *Service) DrawInProgress() bool {
 // whether this call flipped it; ok=false when there's no active draw or it
 // was already revealed.
 func (s *Service) RevealCurrentDraw() (ActiveDraw, bool) {
-	return s.revealActive(0, false)
+	ap, flipped, _ := s.RevealCurrentDrawContext(context.Background())
+	return ap, flipped
+}
+
+// RevealCurrentDrawContext is RevealCurrentDraw with a caller-owned context and
+// a durable error result. Kept beside the compatibility wrapper so handlers can
+// adopt explicit error reporting without changing the reveal-once semantics.
+func (s *Service) RevealCurrentDrawContext(ctx context.Context) (ActiveDraw, bool, error) {
+	return s.revealActive(ctx, 0, false)
 }
 
 // revealActive flips the active draw to revealed, cancels its pending timer,
@@ -719,13 +832,25 @@ func (s *Service) RevealCurrentDraw() (ActiveDraw, bool) {
 // auto-reveal timer was armed for) so a stale deadline can't reveal a
 // replacement. Manual confirms pass requireGen=false: they target whatever
 // draw is current.
-func (s *Service) revealActive(gen uint64, requireGen bool) (ActiveDraw, bool) {
+func (s *Service) revealActive(ctx context.Context, gen uint64, requireGen bool) (ActiveDraw, bool, error) {
 	s.mu.Lock()
 	if s.activeDraw == nil ||
 		s.activeDraw.Revealed ||
 		(requireGen && (s.drawGen != gen || s.closed)) {
 		s.mu.Unlock()
-		return ActiveDraw{}, false
+		return ActiveDraw{}, false, nil
+	}
+
+	// The durable boundary comes first. If it fails, the draw stays held and
+	// clients receive no Reveal publication. A failed auto-reveal retires its
+	// spent one-shot timer and schedules a bounded retry.
+	if err := s.movieRepo.RevealDraw(ctx, s.activeDraw.MovieID, time.Now().UTC()); err != nil {
+		if requireGen {
+			s.retryAutoRevealLocked(gen)
+		}
+		s.mu.Unlock()
+		s.notifyRevealError(err)
+		return ActiveDraw{}, false, err
 	}
 	s.activeDraw.Revealed = true
 	ap := *s.activeDraw
@@ -735,5 +860,5 @@ func (s *Service) revealActive(gen uint64, requireGen bool) (ActiveDraw, bool) {
 	if s.drawCfg.OnRevealed != nil {
 		s.drawCfg.OnRevealed(ap)
 	}
-	return ap, true
+	return ap, true, nil
 }

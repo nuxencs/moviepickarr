@@ -9,12 +9,15 @@ database are all embedded, so there is nothing else to set up.
   [themoviedb.org](https://www.themoviedb.org/settings/api) under Settings,
   API. The key is optional: without it the app still works, but movies show
   placeholder posters and the metadata stats stay empty.
+- An optional Radarr installation and API key. Radarr is not required for the
+  movie-night workflow. When configured, it can arrange a file for each drawn
+  movie before the next movie night.
 - Either Docker, or Go 1.26+ and [Bun](https://bun.sh) to build from source.
 
 ## Docker
 
 The repo contains a ready [`docker-compose.yml`](../docker-compose.yml). Start
-it, then configure TMDB from Admin > Integrations if you want metadata:
+it, then configure the optional services from Admin > Integrations:
 
 ```bash
 docker compose up -d
@@ -40,17 +43,19 @@ promote up to 3 per member into the pool, and draw.
 
 ## Configuration
 
-TMDB can be configured from Admin > Integrations without a restart. The same
-typed settings remain available as environment variables for deployment-owned
-overrides. An environment value wins over its Admin value and makes that field
-read-only in the app. Set environment variables directly, or place them in a
-`.env` file next to the binary:
+TMDB and Radarr can be configured from Admin > Integrations without a restart.
+TMDB typed settings also remain available as environment variables for
+deployment-owned overrides. An environment value wins over its Admin value and
+makes that field read-only in the app. Radarr instances, presets, and webhook
+destinations are Admin-managed. Set environment variables directly, or place
+them in a `.env` file next to the binary:
 
 | Variable | What it does | Default |
 | --- | --- | --- |
 | `TMDB_API_KEY` | Enables posters, cast and metadata stats | unset (enrichment off) |
 | `TMDB_ENABLED` | Enables or disables TMDB while retaining its credential and cache | enabled when a key exists |
-| `MPA_INTEGRATION_KEY_FILE` | AES-GCM instance key file for Admin-managed credentials | `<DB_FILE>.integration.key` |
+| `MPA_INTEGRATION_KEY_FILE` | AES-GCM instance key file for Admin-managed credentials and webhook URLs | `<DB_FILE>.integration.key` |
+| `MPA_PUBLIC_URL` | Public moviepickarr base URL used in Acquisition webhook links | unset (links omitted) |
 | `MPA_ADMIN_NAME` | Break-glass admin: display name to create or adopt | unset (seed skipped) |
 | `MPA_ADMIN_USERNAME` | Break-glass admin: login username | unset (seed skipped) |
 | `MPA_ADMIN_PASSWORD` | Break-glass admin: login password | unset (seed skipped) |
@@ -88,6 +93,59 @@ The Admin TMDB page also exposes connection status, scheduled and manual
 refreshes, cancellation, and run history. `TMDB_ENRICH_QUEUE_SIZE`,
 `TMDB_ENRICH_BATCH_DEBOUNCE_MS`, and `TMDB_ENRICH_BATCH_MAX_WAIT_MS` remain
 environment-only worker controls.
+
+### Admin-managed Radarr
+
+Open Admin > Integrations > Radarr > Setup. Add each Radarr installation as a
+separate instance with a name, base URL, and API key. A new or edited instance
+must be reachable and must accept its API key before it can be saved. This
+supports setups such as separate 1080p, 4K, and anime instances.
+Enter the API key again when an edit changes the URL scheme or host. This keeps
+the stored write-only key from being sent to a different endpoint.
+
+Create one or more Acquisition presets after an instance is saved. Each preset
+selects exactly one instance, root folder, quality profile, optional tags,
+minimum availability, and Acquisition mode. moviepickarr fetches root folders,
+quality profiles, and tags from the selected instance. Minimum availability and
+Acquisition mode are local typed selections. A preset save checks the live
+instance and verifies every selected remote value. The same checks run when the
+preset is used. Archive a preset or instance to remove it from future selection
+while keeping its name in Acquisition history. Archiving an instance also
+archives its presets.
+
+The modes control only the initial grab:
+
+- Manual adds a new movie unmonitored and does not start a search. An Admin can
+  run an Interactive search in moviepickarr, select a matched release, and ask
+  Radarr to grab it. moviepickarr then enables monitoring.
+- Automatic adds a new movie monitored and asks Radarr to search immediately.
+
+Only the drawn winner gets an Acquisition. The record is created with the draw
+and remains concealed until Reveal. After Reveal, an Admin selects one preset,
+reviews the exact target, and confirms it. This review does not add or change a
+Radarr movie. If the movie already exists in that instance, the review shows
+its effective settings and confirmation preserves them. If that movie already
+has a file, the Acquisition completes immediately. Otherwise moviepickarr
+observes its queue or starts the selected mode.
+
+The Admin and Radarr navigation show a persistent attention count until the
+selected instance reports a file or an Admin abandons the Acquisition with a
+reason. This does not block Reveal, Watch, or the next draw. Completed and
+abandoned entries remain in the Admin-only Acquisition history. They do not
+appear on the shared Runs page.
+
+Admin > Integrations > Radarr > Webhooks can send actionable Acquisition states
+to multiple Generic or Discord destinations. Save a destination disabled, send
+a successful test, then enable it. Destinations can filter by action-needed
+reason. Discord uses an embed and can mention one role. Set `MPA_PUBLIC_URL` to
+the externally reachable moviepickarr base URL if the message must link to the
+Acquisition. For example, use `https://movies.example.com` without an Admin
+path. When this value is unset or invalid, the webhook still sends but omits
+the Admin link.
+
+Plex availability is not part of this integration. Download completion uses
+Radarr `hasFile` on the selected instance. See the deferred
+[Plex availability note](research/plex-availability.md).
 
 ### Break-glass admin
 

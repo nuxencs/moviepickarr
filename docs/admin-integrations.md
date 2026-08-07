@@ -1,59 +1,63 @@
 # Admin-managed integrations
 
-Status: implemented (2026-08-04)
+Status: implemented (2026-08-07)
 
 ## Goal
 
-Let an admin configure TMDB without editing deployment environment variables or
-restarting moviepickarr. Keep deployment overrides authoritative and leave a
-clear seam for integrations with richer setup, such as Radarr.
+Let an Admin configure TMDB and Radarr without restarting moviepickarr. Keep
+TMDB deployment overrides authoritative. Give Radarr a dedicated Admin workflow
+for routing a drawn movie to one verified target and arranging its initial file.
 
-The first release covers TMDB configuration and integration run history. It does
-not expose database paths, backups, logging, break-glass credentials, OIDC
-credentials, or the OIDC redirect URL.
+The Admin surface does not expose database paths, backups, logging, break-glass
+credentials, OIDC credentials, or the OIDC redirect URL.
 
 ## Admin information architecture
 
 Admin uses internal pages rather than dashboard cards:
 
 - `/admin/roster`: existing roster, and the target of `/admin`.
-- `/admin/integrations`: selects TMDB while it is the only integration.
+- `/admin/integrations`: integration catalog for TMDB and Radarr.
 - `/admin/integrations/tmdb`: TMDB status, configuration, actions, and latest
   run.
-- `/admin/runs`: run history across all integrations.
+- `/admin/integrations/radarr`: Radarr Acquisitions and history.
+- `/admin/integrations/radarr/acquisitions/:id`: one Acquisition workflow.
+- `/admin/integrations/radarr/setup`: Radarr instances and Acquisition presets.
+- `/admin/integrations/radarr/webhooks`: Generic and Discord destinations.
+- `/admin/runs`: shared Integration run history. Individual Acquisitions are
+  excluded.
 
-Admin uses one nested index for Roster, Integrations, and Runs. TMDB appears
-inside the active Integrations branch, so integrations do not add a second rail
-or repeat an integration heading. At widths of 901px and up, the index stays on
-the left and every selected Admin page scrolls independently on the right. Below
-901px, the index becomes horizontal and the document owns vertical scrolling.
-The persistent content inset stays identical across routes, so a pending outlet
-cannot move the page being replaced. The shared scroller resets only when the
-new leaf route commits, so a pending destination cannot move the outgoing page.
-`/admin/integrations/tmdb` remains a shareable deep link.
+Admin uses one nested index for Roster, Integrations, and Runs. TMDB and Radarr
+appear inside the active Integrations branch, so integrations do not add a
+second rail or repeat an integration heading. Radarr adds a local section switch
+for Acquisitions, Setup, and Webhooks. At widths of 901px and up, the index stays
+on the left and every selected Admin page scrolls independently on the right.
+Below 901px, the index becomes horizontal and the document owns vertical
+scrolling. Integration and Acquisition routes remain shareable deep links.
 
 One vertical indicator slides between Roster, Integrations, and Runs with the
 same duration and easing as the primary tabs. It keeps the standard 22px line on
-Roster and Runs, then grows across the full Integrations branch while TMDB is
-visible. The child slot derives from the same row step, including coarse-pointer
-targets, so the line and branch share one geometry. TMDB uses a weighted,
-gold-tinted label without a selected fill or marker. The shell has no repeated
-Admin heading. The detail uses section dividers rather than cards. Its
-run-history link opens
-`/admin/runs` with the TMDB filter applied.
+Roster and Runs, then grows across the full Integrations branch while an
+integration is visible. The child slot derives from the same row step, including
+coarse-pointer targets, so the line and branch share one geometry. The selected
+integration uses a weighted, gold-tinted label without a selected fill or
+marker. The shell has no repeated Admin heading. TMDB can link to `/admin/runs`
+with its filter applied. Radarr Acquisitions remain on the Radarr page.
 
 Each desktop destination uses the full row as its pointer target and shares the
 same background hover treatment. Below 901px, the current leaf has a gold bottom
-marker, including TMDB inside the Integrations branch.
+marker, including TMDB and Radarr inside the Integrations branch.
 
 Route changes keep one current-page marker and announce the newly selected
 section. Touch-sized desktop rows update the indicator's step from the same CSS
 row variable, so the line stays centered without measuring link geometry.
 
-Only admins may read or change integration configuration, test connections,
-start or cancel runs, and read run history.
+Only Admins may read or change integration configuration, test connections,
+start or cancel runs, read run history, or see and control Acquisitions. A
+persistent attention count appears on the top-level Admin destination and the
+Radarr entry. No Acquisition identity or state is sent through member-facing
+SSE events.
 
-## Configuration model
+## TMDB configuration model
 
 Each setting has a typed value, built-in default, optional persisted Admin
 value, optional environment value, validation, help text, and sensitivity. The
@@ -100,8 +104,9 @@ The shared integration framework owns:
 - Encrypted secret storage and write-only API shapes
 - Common status and connection-test behavior
 - Atomic saves and live runtime replacement
-- Common Admin navigation, source indicators, and run links
-- The integration run ledger
+- Common Admin navigation and status conventions
+- TMDB source indicators and run links
+- The integration run ledger for work that has a recorded execution outcome
 
 Each typed integration module owns:
 
@@ -112,9 +117,9 @@ Each typed integration module owns:
 - Scheduling, pacing, retries, cancellation, and integration-specific actions
 
 This is an internal code seam, not a runtime plugin system or schema-generated
-form. A future Radarr module can test its base URL and API key, then fetch root
-folders and quality profiles for typed selectors. It shares persistence, secret
-handling, sources, saving, status, and history with TMDB.
+form. Radarr uses the shared encryption and Admin conventions, but owns typed
+instances, presets, Acquisitions, and webhooks. Individual Acquisition actions
+and routine status checks are domain workflow, not Integration runs.
 
 See [ADR 0004](adr/0004-typed-integration-modules.md).
 
@@ -233,11 +238,212 @@ search reports `Movie search is temporarily unavailable` without exposing the
 configuration or credential failure. Admins see the specific cause and recovery
 action on the TMDB page.
 
+## Radarr setup
+
+Radarr setup uses two Admin-managed resource types. There are no Radarr
+environment defaults or automatic routing rules.
+
+A Radarr instance is one separately configured installation. Each active
+instance has a unique name, HTTP or HTTPS base URL, write-only API key,
+connection state, and revision. The create and edit flow must reach Radarr and
+load its catalog before it saves. A later outage marks the instance Offline but
+does not delete its configuration. The same movie can exist in several
+instances, such as 1080p, 4K, and anime. moviepickarr does not infer which one
+to use.
+
+An edit can reuse the stored API key only when the URL scheme and host stay the
+same. A scheme or host change requires the Admin to enter the API key again
+before moviepickarr contacts the new endpoint.
+
+An Acquisition preset contains:
+
+- One Radarr instance
+- One root folder
+- One quality profile
+- Zero or more tags
+- One minimum-availability value
+- Manual or Automatic Acquisition mode
+
+The root folders, quality profiles, and tags come from the live selected
+instance. Saving verifies that the instance is reachable, the root folder is
+accessible, and every selected value still exists. A preset that later drifts
+cannot be selected until the configuration is valid again. A stale revision is
+rejected so one Admin cannot silently overwrite another Admin's change.
+
+Archiving removes an instance or preset from future selection without erasing
+its historical identity. Archiving an instance also archives its presets. An
+instance cannot be archived while an unresolved Acquisition targets it.
+Acquisitions store a snapshot of the selected preset, so later edits do not
+change earlier target history.
+
+Radarr API keys use the same AES-GCM instance key as other persisted integration
+secrets. The API reports only whether a key is configured. It never returns or
+masks the value.
+
+## Radarr Acquisition workflow
+
+One durable Acquisition is created atomically with each draw. Pooled candidates
+do not get Acquisitions. Its identity and state remain concealed from every
+Admin view and webhook until Reveal. A restart can resume this pending record.
+If startup cannot restore the concealed record, boot fails before serving.
+The draw, Reveal, Watch, and next-draw workflows never wait for Radarr.
+
+After Reveal, an Admin selects one preset. moviepickarr snapshots its instance,
+root folder, quality profile, tags, minimum availability, and mode. It resolves
+identity by stored TMDB ID first. If there is no TMDB ID, it resolves the stored
+IMDb ID through Radarr and verifies the returned match. It does not use title
+and year as an automatic fallback. When exact identity cannot resolve, an Admin
+can search Radarr and select a TMDB result for this Acquisition only.
+
+Target review is the final read-only check before any Radarr mutation. It shows
+the Acquisition identity and the complete selected target. If the movie already
+exists in that instance, it also shows the effective configuration that Radarr
+will keep. The Admin can change the preset until confirmation. Confirmation
+adopts the existing movie or adds a new one and then locks the target. A locked
+Acquisition cannot move to another instance. If Radarr later removes the movie,
+an explicit retry can recreate it only from the same snapshot.
+
+An add response can be ambiguous after Radarr accepts the request. The
+Acquisition stays unlocked with its durable add claim. The contextual `Check
+Radarr add` action uses the normal retry endpoint and only reads Radarr. A found
+movie is adopted and locks the target. Proven absence clears the claim and
+returns the target to review. Only a later confirmation can send a new add.
+
+Existing Radarr movies keep their root folder, quality profile, tags, minimum
+availability, and monitoring. `hasFile` completes the Acquisition immediately.
+An active queue item is observed instead of replaced. With no file or queue,
+Manual mode offers Interactive search and Automatic mode asks Radarr to run one
+search. The selected target must report `hasFile`; a copy in another Radarr
+instance does not count.
+
+For a new movie, Manual mode adds it unmonitored with search disabled. An Admin
+starts Interactive search in moviepickarr and chooses one matched release. An
+approved release can be sent directly. Radarr-rejected matched releases remain
+available in a collapsed section and require an explicit override. Unmatched or
+unparsed results cannot be sent. Result IDs are opaque and expire after 30
+minutes; moviepickarr does not return or persist a URL, magnet, hash, or GUID.
+After a successful grab, moviepickarr enables monitoring. Automatic mode adds a
+new movie monitored, then starts a Radarr movie search. It first stores a
+durable `searching` claim. After a timeout or restart, recovery checks the
+selected movie and queue. It also looks for an active or recent `MoviesSearch`
+command that contains exactly the selected movie. A found command is stored and
+observed when the original handoff was not recorded. If a stored command can no
+longer be read directly, moviepickarr checks the matching command list and
+continues to observe it without changing the durable claim. An unknown result
+keeps the claim and does not permit another automatic search. An Admin must
+inspect Radarr, start work there, or abandon after acknowledging unavailable
+activity.
+
+A manual grab also starts with a durable `grabbing` claim. If the response is
+ambiguous, the contextual `Check Radarr status` action uses the normal retry
+endpoint to read the selected movie, queue, and history. It never sends the
+cached release again. A file, queue item, or matching history proves that Radarr
+accepted the request. Otherwise moviepickarr keeps observing until it can report
+a definite release failure.
+
+The reconciler observes only the locked target. It maps file, queue, command,
+and history state to Needs release, Waiting for Radarr, Queued, Downloading,
+Importing, Downloaded, or Action needed. Elapsed time alone does not create an
+error. If Radarr has already started a replacement, moviepickarr observes it and
+does not send a duplicate search or actionable message.
+
+If the locked Radarr movie no longer matches the Acquisition identity,
+moviepickarr reports `identity_required`. Identity search cannot change a locked
+target. The Admin must restore the exact movie in Radarr or abandon the
+Acquisition.
+
+## Radarr attention and history
+
+Every revealed Acquisition that is not Downloaded or Abandoned contributes to
+the persistent Admin attention count, including healthy automatic progress and
+Needs preset. The reminder is not dismissible. Marking the Current draw Watched
+does not clear it and does not block any movie workflow.
+
+The Acquisitions section shows active work and searchable Downloaded or
+Abandoned history. Each detail keeps one compact summary per draw: identity and
+target snapshots, the effective configuration of an adopted movie, the latest
+selected release summary, attempt count, latest failure, milestones, and any
+abandonment reason. It does not store a full event log, every
+release attempt, raw remote responses, or release URLs.
+
+Abandonment requires a reason. Review returns `not_applicable` for an unlocked
+idle target and `unavailable` for an unlocked in-progress mutation. For a locked
+target, moviepickarr reads the exact movie and its queue. A file changes the
+Acquisition to Downloaded. Active work returns `active`; a failed live check
+returns `unavailable`; and a successful check with no work returns `inactive`.
+A failed Radarr check does not block abandonment.
+
+Submission repeats the review and uses a revision comparison. A current
+`active` or `unavailable` value must exactly match `acknowledgedActivity`. A new
+actionable risk refreshes the warning for another confirmation. A state change
+to `inactive` needs no risk acknowledgement. A revision change after the
+repeated review still rejects the final update. Every unresolved mutation state
+can be abandoned. The check and abandonment do not remove or change Radarr
+data. Abandonment clears the attention count and does not reopen when a file
+appears later.
+
+See [ADR 0007](adr/0007-admin-routed-single-target-radarr-acquisition.md).
+
+## Radarr Acquisition webhooks
+
+Admins can configure multiple named Generic or Discord destinations. A
+destination starts disabled. It must pass a saved-destination test before it can
+be enabled. Changing its URL, payload format, or Discord role makes it unverified
+and disabled again. Webhook URLs are encrypted and write-only.
+
+There is one event contract: `acquisition.action_required`. Each destination
+filters only the action-needed reasons it wants. A transition sends the movie
+title, reason, target label when known, and an Admin link when `MPA_PUBLIC_URL`
+is configured. At least one reason is required. A new destination receives only
+later transitions, not existing conditions. A condition that is resolved before
+delivery is retired. Queue progress and completed downloads are not events.
+The reason values are `preset_required`, `identity_required`,
+`release_required`, `configuration_invalid`, `connection_failed`, `add_failed`,
+`no_releases`, `release_failed`, `import_failed`, and `monitoring_failed`.
+
+Generic destinations receive unsigned JSON. Discord destinations receive an
+embed with the movie, reason, target, Admin link, and optional role mention.
+Payloads exclude root paths, Radarr URLs, API details, and release URLs.
+
+A Generic delivery has this stable shape:
+
+```json
+{
+  "event": "acquisition.action_required",
+  "data": {
+	"deliveryId": 105,
+    "acquisitionId": 42,
+	"actionVersion": 3,
+    "movieTitle": "Example Movie",
+    "reason": "release_required",
+    "target": "1080p Manual",
+    "adminUrl": "https://movies.example.com/admin/integrations/radarr/acquisitions/42"
+  }
+}
+```
+
+For a Discord incoming-webhook URL, choose the Discord format instead of
+Generic. moviepickarr builds the required `embeds` payload and restricts
+mentions to the configured role ID.
+
+Delivery is durable and does not affect Acquisition state. Failures retry with
+bounded backoff for up to five claimed attempts. A process crash after the
+destination accepts a request can cause an at-least-once duplicate. Generic
+receivers can deduplicate with the stable `deliveryId` and `actionVersion`.
+Exhausted retries create a separate Webhook health warning. A successful real
+delivery or test clears it. Delivered diagnostics remain for 30 days. Resolved
+terminal failures remain for 90 days. There is no long-term delivery audit.
+An unreadable encrypted webhook URL is terminal on the first worker pass. Key
+recovery does not replay that delivery. A later successful test or real delivery
+only clears the destination warning.
+
 ## Integration run ledger
 
-The shared ledger records actual integration work, including single-movie
-enrichment. Scheduled and manual scans that select no subjects update `Last
-checked` but do not create a run.
+The shared ledger records integration operations with an execution outcome,
+including single-movie TMDB enrichment. Scheduled and manual scans that select
+no subjects update `Last checked` but do not create a run. Radarr Acquisition
+actions and routine reconciliation do not create runs. They remain in the
+Acquisitions section, so the shared Runs page and its retention stay unchanged.
 
 A run records:
 
@@ -280,6 +486,27 @@ credential value.
 | `PUT` | `/api/v1/integrations/tmdb` | Validate and atomically save a revisioned settings draft. |
 | `POST` | `/api/v1/integrations/tmdb/test` | Test the unsaved draft without creating a run. |
 | `POST` | `/api/v1/integrations/tmdb/runs` | Start a stale refresh or confirmed full re-enrichment. |
+| `GET` | `/api/v1/integrations/radarr/attention` | Read the unresolved revealed Acquisition count. |
+| `GET` | `/api/v1/integrations/radarr/acquisitions` | Read active and historical Acquisitions. |
+| `GET` | `/api/v1/integrations/radarr/acquisitions/:id` | Read one visible Acquisition. |
+| `PUT` | `/api/v1/integrations/radarr/acquisitions/:id/preset` | Select and preview one target snapshot. |
+| `POST` | `/api/v1/integrations/radarr/acquisitions/:id/confirm` | Confirm and lock the reviewed target. |
+| `POST` | `/api/v1/integrations/radarr/acquisitions/:id/identity-search` | Search for an Acquisition-only identity override. |
+| `PUT` | `/api/v1/integrations/radarr/acquisitions/:id/identity` | Select an Acquisition-only TMDB identity. |
+| `POST` | `/api/v1/integrations/radarr/acquisitions/:id/releases/search` | Run Interactive search. |
+| `POST` | `/api/v1/integrations/radarr/acquisitions/:id/releases/:resultId/grab` | Ask Radarr to grab one cached result. |
+| `POST` | `/api/v1/integrations/radarr/acquisitions/:id/retry` | Run the contextual `Check Radarr add`, `Check Radarr status`, or locked retry action. |
+| `POST` | `/api/v1/integrations/radarr/acquisitions/:id/abandon/review` | Return `{ acquisition, activity }` after a live read. Activity is `active`, `inactive`, `unavailable`, `not_applicable`, or `complete`. |
+| `POST` | `/api/v1/integrations/radarr/acquisitions/:id/abandon` | End an Acquisition with `{ reason, acknowledgedActivity }`. A current `active` or `unavailable` risk must match the acknowledgement. |
+| `GET`, `POST` | `/api/v1/integrations/radarr/instances` | List or create verified instances. |
+| `PUT`, `DELETE` | `/api/v1/integrations/radarr/instances/:id` | Update or archive an instance. |
+| `GET` | `/api/v1/integrations/radarr/instances/:id/options` | Load live root folders, quality profiles, and tags. |
+| `GET`, `POST` | `/api/v1/integrations/radarr/presets` | List or create validated presets. |
+| `PUT`, `DELETE` | `/api/v1/integrations/radarr/presets/:id` | Update or archive a preset. |
+| `GET`, `POST` | `/api/v1/integrations/radarr/webhooks` | List or create webhook destinations. |
+| `PUT`, `DELETE` | `/api/v1/integrations/radarr/webhooks/:id` | Update or archive a destination. |
+| `POST` | `/api/v1/integrations/radarr/webhooks/:id/test` | Test and verify a saved destination. |
+| `POST` | `/api/v1/integrations/radarr/webhooks/test` | Test an unsaved draft without verifying it. |
 | `GET` | `/api/v1/integration-runs` | Read newest-first, filtered finished results with keyset pagination. |
 | `DELETE` | `/api/v1/integration-runs/:runID` | Request cooperative cancellation of the active library run. |
 
@@ -296,17 +523,14 @@ debounced browser invalidation batch.
 
 ## Implementation map
 
-1. Add typed effective-configuration resolution, revisioned persistence, and
-   encrypted secret storage.
-2. Move TMDB client and worker construction behind a replaceable typed runtime.
-3. Add Admin routes, integration list, TMDB form, validation, source display,
-   and connection testing.
-4. Add live status, manual actions, cooperative cancellation, and member-facing
-   unavailable behavior.
-5. Add the run ledger, retention, history filters, and current-run progress.
-6. Update installation, environment, backend-layout, product, and design docs;
-   verify migrations, backend behavior, Admin permissions, desktop, mobile,
-   keyboard use, and both themes.
+- The shared integration layer owns secret encryption and TMDB configuration
+  and run contracts.
+- TMDB owns its revisioned runtime, enrichment workers, scheduler, and run
+  history.
+- Radarr owns its revisioned instances and presets, durable per-draw
+  Acquisitions, reconciler, Interactive search cache, and webhook outbox.
+- Admin routes enforce role checks for every integration configuration and
+  Acquisition operation.
 
 ## Explicit non-goals
 
@@ -317,3 +541,7 @@ debounced browser invalidation batch.
 - A distributed job queue or general background-job framework
 - Automatic replay of failed integration runs
 - Returning, masking, or previewing stored secrets
+- Sending one Acquisition to several Radarr instances
+- Maintaining later release upgrades after the first imported file
+- Download-complete or routine-progress Acquisition webhooks
+- Plex library availability checks

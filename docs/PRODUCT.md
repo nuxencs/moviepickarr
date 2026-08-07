@@ -9,7 +9,9 @@ movie-night rotation. Each member keeps a personal stash of movies and
 promotes up to 3 into a shared pool. The app draws a random movie from the
 pool for movie night, then tracks the watched history and stats. Movies are
 enriched with TMDB metadata (poster, backdrop, runtime, rating, genres, tagline,
-overview, external links, and cast/crew credits).
+overview, external links, and cast/crew credits). An optional Radarr integration
+lets an Admin arrange the drawn winner's initial media file before the next
+movie night.
 
 ## Audience
 A handful of friends who know each other. Private, authenticated by obscurity,
@@ -43,12 +45,17 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   the filtered subset); each card also carries a corner link to the person's
   TMDB page.
 - Admin: a shared shell for the Roster, Integrations, and Runs destinations.
-  The primary app Members tab keeps its existing name. A nested index selects TMDB without adding a second integration
-  rail. Every desktop Admin page scrolls inside that shell. The TMDB detail owns
-  typed settings, source indicators, connection testing, manual refreshes, and
-  current-run progress. Runs lists finished results only, with a lean summary and
-  per-result details modal. Routine activity is available on demand. Environment
-  overrides stay visible and read-only.
+  The primary app Members tab keeps its existing name. A nested index selects
+  TMDB or Radarr without adding a second integration rail. Every desktop Admin
+  page scrolls inside that shell. The TMDB detail owns typed settings, source
+  indicators, connection testing, manual refreshes, and current-run progress.
+  Radarr owns Admin-only Acquisitions, multi-instance setup and presets, and
+  Generic or Discord actionable webhooks. Its persistent attention badge remains
+  until the selected target reports a file or an Admin abandons the Acquisition.
+  Runs lists finished integration operations only, with a lean summary and
+  per-result details modal. Individual Radarr Acquisition work stays on the
+  Radarr page and does not change Runs. Routine activity is available on demand.
+  TMDB environment overrides stay visible and read-only.
 
 ## Design
 The full design system and the decisions behind it live in

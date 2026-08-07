@@ -37,6 +37,20 @@
   and cooperative cancellation commands.
 - `internal/server/integration_run_handlers.go`: filtered, keyset-paginated run
   history. The cursor is the newest-first `(started_at, id)` boundary.
+- `internal/server/radarr_handlers.go`: Admin-only Radarr instance, preset,
+  Acquisition, Interactive search, and webhook HTTP surface. DTOs expose
+  write-only secret state and sanitized release summaries only.
+- `internal/server/radarr_service.go`: revision-scoped Radarr clients, verified
+  instance saves, live catalog reads, and preset snapshot validation.
+- `internal/server/radarr_acquisition_service.go`: target preview and lock,
+  exact identity resolution, add/adopt/recreate commands, release selection,
+  monitoring handoff, retry, and abandonment.
+- `internal/server/radarr_reconciler.go`: process-owned Acquisition worker. It
+  polls due locked targets at startup and every 30 seconds, and derives state
+  from the selected Radarr movie, queue, command, and history.
+- `internal/server/radarr_webhooks.go`: Generic and Discord payloads, encrypted
+  destination management, verification, durable delivery, retry, health
+  warning, and retention worker.
 - `internal/server/tmdb_runtime_gateway.go`: revision-scoped TMDB clients shared
   by search, poster discovery, and enrichment. New work acquires the current
   immutable runtime snapshot; in-flight work keeps its prior snapshot.
@@ -269,11 +283,22 @@
   source, and the shared run ledger model.
 - `internal/integration/tmdb`: typed TMDB defaults, environment parsing,
   validation, warning thresholds, service commands, and the atomic runtime.
+- `internal/integration/radarr`: typed Radarr v3 HTTP boundary. It validates
+  redirects and response sizes, classifies remote errors, loads instance
+  catalogs, resolves exact movie identity, manages movies and commands, reads
+  queue and history, and provides opaque 30-minute Interactive search results.
 - `internal/repository/integration_config.go`: compare-and-swap settings saves,
   encrypted credential bytes, state, and schedule timestamps.
 - `internal/repository/integration_run.go`: run lifecycle, bounded failure
   samples, retention, and keyset history queries. Retention runs at startup and
   daily while the process remains alive.
+- `internal/repository/radarr.go`: Radarr instance and Acquisition preset
+  persistence, revision checks, validation state, and archive constraints.
+- `internal/repository/radarr_acquisition.go`: durable concealed and visible
+  Acquisition state, preset snapshots, target locks, compact history,
+  milestones, and transactional action-required outbox creation.
+- `internal/repository/radarr_webhook.go`: destination revisions, due-delivery
+  claims, retry outcomes, health warnings, and delivery retention.
 
 - `internal/repository/sqlite.go`: SQLite repository implementations. Its
   `WatchCurrentAndAdvanceNextUp` store operation runs the conditional current
@@ -319,6 +344,10 @@
   passwords are preserved, archived matches are rejected, and admin counts are
   active-only. See ADR 0002 and ADR 0003.
 - `internal/db/*`: DB open/migrations + Bolt->SQLite migration.
+- `internal/db/migrations/016_radarr.sql`: Radarr instances, presets,
+  Acquisitions, webhook destinations, and webhook delivery outbox. The migration
+  also creates a revealed Acquisition for a Current movie that predates Radarr
+  support.
 
 ### SQLite connections, timestamps, and movie identity
 
@@ -329,7 +358,11 @@
 - Timestamps are stored as **INTEGER unix epoch seconds** (UTC by definition)
   and must be bound via `db.ToUnix`/`db.ToUnixPtr` — never as a raw
   `time.Time` (the driver would store TEXT, which the STRICT tables reject
-  outright). Scanning goes through `db.FromUnix` (repos use `unixTimePtr`).
+  outright). Scanning goes through `db.FromUnix` (repos use `unixTimePtr`). The
+  `radarr_acquisitions` table is the deliberate exception: its draw, Reveal,
+  status, and milestone timestamps use Unix milliseconds so a restart preserves
+  the 16.5-second Reveal boundary. Radarr configuration and webhook-delivery
+  timestamps use Unix seconds.
   Migration `007` converted the three historical text formats and rebuilt
   `movies`, `users`, and `movie_metadata` as STRICT with: `status <->
   watched_at` coupling, a partial UNIQUE on `tmdb_id`, a partial UNIQUE on
@@ -525,6 +558,122 @@ authoritative deployment overrides: `TMDB_ENABLED`, `TMDB_API_KEY`,
 `TMDB_ENRICH_REFRESH_INTERVAL` (`1h`, `0` disables), `TMDB_ENRICH_TTL` (`720h`).
 `TMDB_ENRICH_QUEUE_SIZE` (256), `TMDB_ENRICH_BATCH_DEBOUNCE_MS` (500), and
 `TMDB_ENRICH_BATCH_MAX_WAIT_MS` (2000) remain environment-only worker controls.
+
+## Radarr Acquisition
+
+Radarr is a separate Admin-only bounded context. It uses a
+`SqliteRadarrRepository`, the shared AES-GCM `SecretStore`, and one cached client
+per instance revision. Radarr API keys and webhook URLs are encrypted and never
+cross a read API. There are no member-facing Radarr fields or SSE events.
+
+`movie.Service.StartDraw` moves the selected movie to Current and inserts its
+concealed `radarr_acquisitions` row in the same writer transaction. Reveal
+persists `revealed_at` and creates matching action-required webhook outbox rows
+before it publishes the normal movie lifecycle event. Manual confirmation,
+auto-Reveal, and early Watch use the same durable transition. On restart, a
+concealed Current acquisition restores the active draw and keeps its original
+Reveal boundary. A legacy Current movie is backfilled as already revealed.
+
+After Reveal, preset selection copies the instance, root folder, quality
+profile, tags, minimum availability, and mode into the Acquisition. Selection
+also performs a read-only Target review. The review resolves stored TMDB ID
+first or verifies an IMDb-to-TMDB result through Radarr. Only an explicit Admin
+identity search can use title and year. It records an Acquisition-only TMDB
+override without changing `movies`.
+
+Confirmation repeats the live catalog and exact-movie checks, then compares
+them with the preview. A changed preview returns a conflict and requires another
+review. The mutation uses an explicit `adding` marker so a timeout can be
+reconciled before any repeated add. Initial add and locked recreation claims use
+a 30-second lease and revision comparison. A concurrent request cannot send a
+second add while the lease is active. An expired lease must be reclaimed before
+recovery continues. For an unlocked ambiguous add, the retry endpoint is the
+contextual `Check Radarr add` action. It performs the exact TMDB read only. It
+adopts a found movie or clears the claim after proven absence. It cannot send a
+new add. A found movie is adopted with all remote configuration preserved.
+
+A new Manual movie is added unmonitored with search off. A new Automatic movie
+is added monitored, then gets an explicit Radarr movie-search command. Before
+that command is sent, a revision-CAS transition stores the `searching` mutation
+state and claim time. The returned command ID is recorded with another
+revision-CAS transition. After a timeout or restart, the service checks
+`hasFile`, the exact movie queue, and the Radarr command list. It observes an
+active `MoviesSearch` command, or a recent finished command inside the claim
+boundary, only when its body contains exactly the selected movie. An unrecorded
+ambiguous handoff keeps `searching`. A missing direct lookup for a recorded
+command keeps its command ID and claim boundary while the command list is
+checked. No ambiguous recovery path sends another search. The target
+locks only when a remote movie ID is known. Later preset edits cannot change the
+snapshot. Explicit recreation changes only the missing remote movie ID and keeps
+the locked target.
+
+Interactive search is available only for a locked movie with no file or active
+queue item. The integration client keeps raw Radarr grab data in a process-local
+30-minute cache and returns a random opaque result ID plus display-safe fields.
+The server caches the same sanitized summary for compact history. Only matched
+results can be grabbed. A rejected matched result requires an explicit override.
+The API and database never contain release URLs, magnets, hashes, or GUIDs. A
+grab first stores a revision-CAS `grabbing` claim and increments the manual
+attempt count. A successful grab enables monitoring only for a movie that
+moviepickarr added. An ambiguous response keeps the claim. The contextual
+`Check Radarr status` retry reads `hasFile`, queue, and history. It does not send
+the cached release again. Reconciliation clears the claim only after it finds
+acceptance evidence or reaches a definite release failure. Every post-grab
+state update compares the claim revision. A late Radarr response cannot
+overwrite a newer worker or Admin observation.
+
+The Acquisition worker processes at most 50 due locked rows per pass. It runs at
+startup and every 30 seconds. `hasFile` on the exact selected movie is the only
+Downloaded signal. Queue state maps to Queued, Downloading, or Importing. A
+running automatic command remains Waiting for Radarr. Queue and history failures
+become typed action-needed reasons only when Radarr has no active recovery work.
+Downloaded and Abandoned are terminal. Every other revealed status contributes
+to the persistent Admin attention count. Watch never closes an Acquisition.
+An identity mismatch on a locked remote movie becomes `identity_required`.
+Identity search and selection reject locked targets, so recovery must restore
+the exact Radarr movie or abandon the Acquisition.
+
+Abandonment review classifies an unlocked idle target as `not_applicable` and an
+unlocked non-idle mutation as `unavailable`. A locked target gets a live movie
+and queue read. The review transitions `hasFile` to Downloaded and returns
+`active`, `inactive`, or `unavailable` for other results. Final abandonment
+repeats this review, requires an exact acknowledgement for `active` or
+`unavailable`, and uses the reviewed Acquisition revision in the final update.
+The update accepts every unresolved mutation state, clears its local claim, and
+does not change Radarr.
+
+Each actionable-condition transition increments an action version and inserts
+one delivery per enabled, verified destination whose reason filter matches.
+The unique `(destination_id, acquisition_id, action_version)` key prevents
+duplicate sends. Destination edits retire pending rows from the prior revision,
+and Acquisition transitions supersede pending rows for conditions that are no
+longer current. Query-time action checks provide a second guard. The webhook
+worker atomically changes each row from `pending` to `sending` before it calls
+the destination. The send claim has a 30-second expiry and a monotonic version,
+so concurrent workers cannot send the same current claim and a stale worker
+cannot complete a replacement claim. Expired claims return to `pending` on the
+next worker pass. A claim counts as an attempt before the outbound request, so
+repeated worker crashes cannot exceed the five-attempt cap. Delivery remains
+at-least-once if a process stops after the destination accepts a request but
+before local completion. Generic payloads include a stable delivery ID and
+action version for deduplication. The worker checks up to 50 rows every 15
+seconds. It retries after 1 minute, 5 minutes, 30 minutes, and 2 hours, with five
+total attempts. Terminal failure sets a destination health warning. A
+successful test or real delivery clears it. An unreadable encrypted URL is
+terminal on the first worker pass and is not replayed after key recovery.
+
+The Generic payload uses `acquisition.action_required`. Discord uses one embed
+and an optional allow-listed role mention. `MPA_PUBLIC_URL` adds the Admin detail
+link after URL normalization; an unset or invalid value omits the link. The HTTP
+sender uses an 8-second timeout, does not follow redirects, and reads at most 4
+KiB of response body. Webhook delivery never changes Acquisition state.
+Successful delivery rows are retained for 30 days. Resolved terminal failures
+are retained for 90 days. The webhook worker prunes once every 24 hours.
+
+Acquisition history retains one compact row per draw for the movie's lifetime.
+Individual Radarr actions and reconciliation checks do not enter the shared
+Integration run ledger. The shared Runs page remains unchanged. Plex is
+deferred; see [`research/plex-availability.md`](research/plex-availability.md).
 
 ## Stats
 

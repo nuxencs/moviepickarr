@@ -2,6 +2,7 @@ import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router"
 import { HistoryIcon, PlugIcon, UsersIcon } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 
+import { RadarrAttentionBadge } from "@/components/moviepickarr/admin/RadarrAttentionBadge";
 import { Shell } from "@/components/moviepickarr/AppShell";
 
 import "@/components/moviepickarr/admin/admin-layout.css";
@@ -13,6 +14,15 @@ const ADMIN_BODY_LABELS: Record<AdminSection, string> = {
   integrations: "Selected integration configuration",
   runs: "Integration run history",
 };
+
+function adminBodyLabel(pathname: string, active?: AdminSection) {
+  if (pathname === "/admin/integrations") return "Integration catalog";
+  if (pathname.includes("/integrations/radarr/setup")) return "Radarr setup";
+  if (pathname.includes("/integrations/radarr/webhooks")) return "Radarr webhooks";
+  if (pathname.includes("/integrations/radarr/acquisitions/")) return "Radarr acquisition details";
+  if (pathname.startsWith("/admin/integrations/radarr")) return "Radarr acquisitions";
+  return active ? ADMIN_BODY_LABELS[active] : "Admin content";
+}
 
 function adminSectionFromPath(pathname: string): AdminSection | undefined {
   if (pathname.startsWith("/admin/integrations")) return "integrations";
@@ -29,12 +39,7 @@ export function AdminLayout() {
     select: (state) => state.matches[state.matches.length - 1]?.pathname,
   });
   const active = adminSectionFromPath(pathname);
-  const bodyLabel =
-    pathname === "/admin/integrations"
-      ? "Integration catalog"
-      : active
-        ? ADMIN_BODY_LABELS[active]
-        : "Admin content";
+  const bodyLabel = adminBodyLabel(pathname, active);
   const navRef = useRef<HTMLElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const integrationLabel = (
@@ -110,6 +115,13 @@ export function AdminLayout() {
                   className="admin-layout__integration"
                 >
                   <span>TMDB</span>
+                </Link>
+                <Link
+                  to="/admin/integrations/radarr"
+                  className="admin-layout__integration"
+                >
+                  <span>Radarr</span>
+                  <RadarrAttentionBadge />
                 </Link>
               </div>
             </div>

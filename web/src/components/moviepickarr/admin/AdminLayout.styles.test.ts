@@ -52,7 +52,7 @@ describe("Admin navigation styles", () => {
     );
     expect(declarations(".admin-layout__indicator")).toMatch(/position:\s*absolute/);
     expect(declarations(".admin-layout__indicator")).toMatch(
-      /height:\s*var\(--admin-nav-row\)/,
+      /height:\s*calc\(var\(--admin-nav-row\) \+ var\(--admin-nav-step\) \+ var\(--admin-nav-step\)\)/,
     );
     expect(declarations(".admin-layout__indicator")).toMatch(
       /transition:\s*transform var\(--dur\) var\(--ease\)/,
@@ -75,13 +75,19 @@ describe("Admin navigation styles", () => {
 
   it("stretches the persistent indicator across the selected Integrations branch", () => {
     expect(declarations(".admin-layout__indicator")).toMatch(
-      /transition:[^;]*transform var\(--dur\) var\(--ease\)[^;]*height var\(--dur\) var\(--ease\)/,
+      /transition:\s*transform var\(--dur\) var\(--ease\)/,
     );
-    expect(
-      declarations('.admin-layout[data-section="integrations"] .admin-layout__indicator'),
-    ).toMatch(/height:\s*calc\(var\(--admin-nav-row\) \+ var\(--admin-nav-step\)\)/);
+    expect(declarations(".admin-layout__indicator")).not.toMatch(
+      /transition:[^;]*height/,
+    );
     expect(declarations(".admin-layout__indicator::before")).toMatch(
       /inset-block:\s*10px/,
+    );
+    expect(declarations(".admin-layout__indicator::before")).toMatch(
+      /transition:\s*transform var\(--dur\) var\(--ease\)/,
+    );
+    expect(css).toMatch(
+      /\.admin-layout\[data-section="roster"\] \.admin-layout__indicator::before,[\s\S]*?\.admin-layout\[data-section="runs"\] \.admin-layout__indicator::before\s*\{[^}]*transform:\s*scaleY\(0\.2\)/,
     );
     expect(declarations(".admin-layout__indicator::before")).not.toMatch(
       /height:\s*22px/,

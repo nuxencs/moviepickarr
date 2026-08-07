@@ -17,6 +17,14 @@ type testMovieRepo struct {
 	movies             map[int]*domain.Movie
 	updateTitleHit     int
 	updateWatchedAtHit int
+	concealedMovieID   int
+	concealedDrawnAt   time.Time
+	concealedRevealAt  time.Time
+	concealedClientID  string
+	concealedErr       error
+	durableRevealed    bool
+	revealCalls        int
+	revealErr          error
 }
 
 func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, error) {
@@ -122,6 +130,57 @@ func (r *testMovieRepo) UpdateStatus(_ context.Context, id int, status string) e
 	return nil
 }
 
+func (r *testMovieRepo) StartDraw(
+	_ context.Context,
+	id int,
+	drawnAt, revealAt time.Time,
+	drawClientID string,
+) error {
+	m, ok := r.movies[id]
+	if !ok {
+		return sql.ErrNoRows
+	}
+	if m.Status != string(domain.MovieStatusPool) {
+		return domain.ErrInvalidState
+	}
+	m.Status = string(domain.MovieStatusCurrent)
+	r.concealedMovieID = id
+	r.concealedDrawnAt = drawnAt
+	r.concealedRevealAt = revealAt
+	r.concealedClientID = drawClientID
+	r.durableRevealed = false
+	return nil
+}
+
+func (r *testMovieRepo) RevealDraw(_ context.Context, movieID int, _ time.Time) error {
+	r.revealCalls++
+	if r.revealErr != nil {
+		return r.revealErr
+	}
+	if r.concealedMovieID != movieID {
+		return sql.ErrNoRows
+	}
+	r.durableRevealed = true
+	return nil
+}
+
+func (r *testMovieRepo) ConcealedCurrentDraw(
+	context.Context,
+) (int, time.Time, time.Time, string, bool, error) {
+	if r.concealedErr != nil {
+		return 0, time.Time{}, time.Time{}, "", false, r.concealedErr
+	}
+	if r.concealedMovieID == 0 || r.durableRevealed {
+		return 0, time.Time{}, time.Time{}, "", false, nil
+	}
+	return r.concealedMovieID,
+		r.concealedDrawnAt,
+		r.concealedRevealAt,
+		r.concealedClientID,
+		true,
+		nil
+}
+
 func (r *testMovieRepo) UpdateStatusIf(context.Context, int, string, string) (int64, error) {
 	panic("unexpected call")
 }
@@ -140,6 +199,9 @@ func (r *testMovieRepo) WatchCurrentAndAdvanceNextUp(
 		}
 		movie.Status = "watched"
 		movie.WatchedAt = &watchedAt
+		if r.concealedMovieID == movie.ID {
+			r.durableRevealed = true
+		}
 		watched := *movie
 		return &watched, nil, false, nil
 	}
@@ -291,6 +353,74 @@ func TestActiveDrawLifecycle(t *testing.T) {
 	}
 }
 
+func TestRevealPersistsBeforePublication(t *testing.T) {
+	t.Parallel()
+
+	repo := poolRepo()
+	publishedAfterPersistence := false
+	svc := NewService(repo, DrawConfig{
+		OnRevealed: func(ActiveDraw) {
+			publishedAfterPersistence = repo.durableRevealed
+		},
+	})
+	if _, err := svc.DrawRandom(context.Background(), "drawer"); err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+
+	if _, flipped, err := svc.RevealCurrentDrawContext(context.Background()); err != nil {
+		t.Fatalf("RevealCurrentDrawContext: %v", err)
+	} else if !flipped {
+		t.Fatal("expected Reveal to flip the draw")
+	}
+	if !publishedAfterPersistence {
+		t.Fatal("OnRevealed ran before the durable Reveal")
+	}
+}
+
+func TestRevealPersistenceFailureKeepsDrawConcealed(t *testing.T) {
+	t.Parallel()
+
+	persistErr := errors.New("reveal write failed")
+	repo := poolRepo()
+	repo.revealErr = persistErr
+	published := 0
+	reported := 0
+	svc := NewService(repo, DrawConfig{
+		OnRevealed: func(ActiveDraw) { published++ },
+		OnRevealError: func(err error) {
+			if errors.Is(err, persistErr) {
+				reported++
+			}
+		},
+	})
+	if _, err := svc.DrawRandom(context.Background(), "drawer"); err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+
+	if _, flipped, err := svc.RevealCurrentDrawContext(context.Background()); !errors.Is(err, persistErr) || flipped {
+		t.Fatalf("failed Reveal = flipped=%v err=%v, want false and persistence error", flipped, err)
+	}
+	if repo.durableRevealed || published != 0 || reported != 1 {
+		t.Fatalf(
+			"failed Reveal state = durable=%v published=%d reported=%d",
+			repo.durableRevealed,
+			published,
+			reported,
+		)
+	}
+	if active, ok := svc.ActiveDraw(); !ok || active.Revealed {
+		t.Fatalf("failed Reveal exposed active draw: active=%+v ok=%v", active, ok)
+	}
+
+	repo.revealErr = nil
+	if _, flipped, err := svc.RevealCurrentDrawContext(context.Background()); err != nil || !flipped {
+		t.Fatalf("retry Reveal = flipped=%v err=%v, want success", flipped, err)
+	}
+	if !repo.durableRevealed || published != 1 {
+		t.Fatalf("successful retry = durable=%v published=%d", repo.durableRevealed, published)
+	}
+}
+
 // fakeTimer captures the auto-reveal scheduling so tests drive the deadline
 // by hand: fire() runs the scheduled fn, stops counts cancellations.
 type fakeTimer struct {
@@ -368,6 +498,117 @@ func TestPublishedDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
 	}
 	if ap, ok := svc.ActiveDraw(); !ok || !ap.Revealed {
 		t.Fatal("expected the draw to be revealed after the deadline")
+	}
+}
+
+func TestAutoRevealPersistenceFailureRearmsSpentTimer(t *testing.T) {
+	t.Parallel()
+
+	persistErr := errors.New("temporary write failure")
+	repo := poolRepo()
+	ft := &fakeTimer{}
+	reported := 0
+	svc := NewService(repo, DrawConfig{
+		StartTimer: ft.start,
+		OnRevealError: func(err error) {
+			if errors.Is(err, persistErr) {
+				reported++
+			}
+		},
+	})
+	drawn, err := svc.DrawRandom(context.Background(), "drawer")
+	if err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	active, ok := svc.ActiveDraw()
+	if !ok {
+		t.Fatal("expected an active draw")
+	}
+	svc.StartAutoReveal(drawn.Movie.ID, active.Generation)
+
+	repo.revealErr = persistErr
+	ft.fire()
+	if repo.revealCalls != 1 || reported != 1 {
+		t.Fatalf("first timer = reveal calls %d, reported errors %d", repo.revealCalls, reported)
+	}
+	if ft.starts != 2 || ft.lastDur != autoRevealRetryDelay {
+		t.Fatalf("retry timer = starts %d delay %v", ft.starts, ft.lastDur)
+	}
+	svc.mu.Lock()
+	armed := svc.autoRevealArmed
+	svc.mu.Unlock()
+	if !armed {
+		t.Fatal("autoRevealArmed is false while a retry timer is scheduled")
+	}
+	if active, ok := svc.ActiveDraw(); !ok || active.Revealed {
+		t.Fatalf("failed timer exposed draw: active=%+v ok=%v", active, ok)
+	}
+
+	repo.revealErr = nil
+	ft.fire()
+	if repo.revealCalls != 2 || !repo.durableRevealed {
+		t.Fatalf("retry = reveal calls %d durable=%v", repo.revealCalls, repo.durableRevealed)
+	}
+	if active, ok := svc.ActiveDraw(); !ok || !active.Revealed {
+		t.Fatalf("successful retry did not reveal draw: active=%+v ok=%v", active, ok)
+	}
+}
+
+func TestNewServiceResumesConcealedDraw(t *testing.T) {
+	t.Parallel()
+
+	drawnAt := time.Now().UTC().Add(-2 * time.Second)
+	revealAt := time.Now().UTC().Add(5 * time.Second)
+	repo := &testMovieRepo{
+		movies: map[int]*domain.Movie{
+			42: {ID: 42, Title: "Heat", Status: string(domain.MovieStatusCurrent)},
+		},
+		concealedMovieID:  42,
+		concealedDrawnAt:  drawnAt,
+		concealedRevealAt: revealAt,
+		concealedClientID: "drawer-before-restart",
+	}
+	ft := &fakeTimer{}
+	svc := NewService(repo, DrawConfig{StartTimer: ft.start})
+
+	active, ok := svc.ActiveDraw()
+	if !ok {
+		t.Fatal("expected the concealed draw to resume")
+	}
+	if active.MovieID != 42 ||
+		!active.DrawnAt.Equal(drawnAt) ||
+		!active.RevealAt.Equal(revealAt) ||
+		active.DrawClientID != "drawer-before-restart" ||
+		active.Revealed {
+		t.Fatalf("resumed draw = %+v", active)
+	}
+	if ft.starts != 1 || ft.lastDur <= 0 || ft.lastDur > 5*time.Second {
+		t.Fatalf("resume timer = starts %d delay %v", ft.starts, ft.lastDur)
+	}
+
+	ft.fire()
+	if !repo.durableRevealed {
+		t.Fatal("resumed deadline did not persist Reveal")
+	}
+}
+
+func TestNewServiceCheckedFailsClosedWhenConcealedDrawCannotLoad(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("concealed draw unavailable")
+	var observed error
+	service, err := NewServiceChecked(&testMovieRepo{
+		movies:       make(map[int]*domain.Movie),
+		concealedErr: wantErr,
+	}, DrawConfig{OnRevealError: func(err error) { observed = err }})
+	if service != nil {
+		t.Fatal("service returned after concealed draw restoration failed")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("NewServiceChecked error = %v, want %v", err, wantErr)
+	}
+	if !errors.Is(observed, wantErr) {
+		t.Fatalf("observed error = %v, want %v", observed, wantErr)
 	}
 }
 
@@ -912,6 +1153,16 @@ func (r *countingStatusUpdateRepo) UpdateStatus(ctx context.Context, id int, sta
 	return r.titlePoolRepo.UpdateStatus(ctx, id, status)
 }
 
+func (r *countingStatusUpdateRepo) StartDraw(
+	ctx context.Context,
+	id int,
+	drawnAt, revealAt time.Time,
+	drawClientID string,
+) error {
+	r.updateCalls++
+	return r.titlePoolRepo.StartDraw(ctx, id, drawnAt, revealAt, drawClientID)
+}
+
 func TestDrawRandomRejectsInvalidRandomIndexBeforeMutation(t *testing.T) {
 	t.Parallel()
 
@@ -982,16 +1233,21 @@ func TestDrawRandomDoesNotSelectWhenCurrentDrawExists(t *testing.T) {
 	}
 }
 
-// pausingDrawRepo exposes the instant after the winner is persisted as current
-// but before UpdateStatus returns to the service.
+// pausingDrawRepo exposes the instant after the winner and its Acquisition are
+// persisted but before StartDraw returns to the service.
 type pausingDrawRepo struct {
 	titlePoolRepo
 	statusUpdated chan struct{}
 	resume        chan struct{}
 }
 
-func (r *pausingDrawRepo) UpdateStatus(ctx context.Context, id int, status string) error {
-	if err := r.titlePoolRepo.UpdateStatus(ctx, id, status); err != nil {
+func (r *pausingDrawRepo) StartDraw(
+	ctx context.Context,
+	id int,
+	drawnAt, revealAt time.Time,
+	drawClientID string,
+) error {
+	if err := r.titlePoolRepo.StartDraw(ctx, id, drawnAt, revealAt, drawClientID); err != nil {
 		return err
 	}
 	close(r.statusUpdated)

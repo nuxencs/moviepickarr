@@ -495,11 +495,14 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 // no-op, so racing clients don't double-fire the reveal.
 func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
 	ran, err := h.runMovieNightCommand(c, func() error {
-		h.movieService.RevealCurrentDraw()
-		return nil
+		_, _, revealErr := h.movieService.RevealCurrentDrawContext(c.UserContext())
+		return revealErr
 	})
 	if !ran {
 		return err
+	}
+	if err != nil {
+		return writeError(c, err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }

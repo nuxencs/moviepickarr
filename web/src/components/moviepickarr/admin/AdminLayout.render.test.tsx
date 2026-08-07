@@ -15,6 +15,10 @@ import { AdminLayout } from "@/components/moviepickarr/admin/AdminLayout";
 
 import type { ComponentType } from "react";
 
+vi.mock("@/components/moviepickarr/admin/RadarrAttentionBadge", () => ({
+  RadarrAttentionBadge: () => null,
+}));
+
 const scrollTo = vi.fn();
 window.scrollTo = scrollTo as typeof window.scrollTo;
 const scrollIntoView = vi.fn();
@@ -69,6 +73,11 @@ async function renderAdmin(
     path: "tmdb",
     component: () => <p>TMDB settings</p>,
   });
+  const radarrRoute = createRoute({
+    getParentRoute: () => integrationsRoute,
+    path: "radarr",
+    component: () => <p>Radarr acquisitions</p>,
+  });
   const runsRoute = createRoute({
     getParentRoute: () => adminRoute,
     path: "runs",
@@ -82,7 +91,7 @@ async function renderAdmin(
       adminRoute.addChildren([
         adminIndexRoute,
         rosterRoute,
-        integrationsRoute.addChildren([integrationsIndexRoute, tmdbRoute]),
+        integrationsRoute.addChildren([integrationsIndexRoute, tmdbRoute, radarrRoute]),
         runsRoute,
       ]),
     ]),
@@ -179,10 +188,12 @@ describe("Admin navigation", () => {
     const navigation = await screen.findByRole("navigation", { name: "Admin sections" });
 
     expect(within(navigation).queryByRole("link", { name: "TMDB" })).toBeNull();
+    expect(within(navigation).queryByRole("link", { name: "Radarr" })).toBeNull();
 
     await act(() => router.navigate({ to: "/admin/integrations/tmdb" }));
 
     expect(within(navigation).getByRole("link", { name: "TMDB", current: "page" })).toBeTruthy();
+    expect(within(navigation).getByRole("link", { name: "Radarr" })).toBeTruthy();
   });
 
   it("labels the content region for every Admin destination", async () => {
@@ -285,6 +296,14 @@ describe("Admin navigation", () => {
 
     expect(await screen.findByText("TMDB settings")).toBeTruthy();
     expect(screen.getByRole("link", { name: "TMDB", current: "page" })).toBeTruthy();
+  });
+
+  it("keeps Integrations active on the Radarr acquisition page", async () => {
+    await renderAdmin("/admin/integrations/radarr");
+
+    const region = await screen.findByRole("region", { name: "Radarr acquisitions" });
+    expect(within(region).getByText("Radarr acquisitions")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Radarr", current: "page" })).toBeTruthy();
   });
 
   it("gives run history its own active Admin destination", async () => {

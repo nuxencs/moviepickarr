@@ -159,7 +159,12 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	h := newHandler(pool, rootLog)
+	h, err := newHandlerChecked(pool, rootLog)
+	if err != nil {
+		_ = pool.Close()
+		return err
+	}
+	h.startRadarrWorkers(ctx)
 	h.startSessionSweeper(ctx)
 	if h.enrichRunner != nil {
 		h.enrichRunner.Start(ctx)
@@ -323,6 +328,14 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
+	h, err := newHandlerChecked(pool, rootLog)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+func newHandlerChecked(pool *db.Pool, rootLog zerolog.Logger) (*handler, error) {
 	userRepo := repository.NewSqliteUserRepository(pool)
 	movieRepo := repository.NewSqliteMoviesRepository(pool)
 	nextUpRepo := repository.NewSqliteNextUpRepository(pool)
@@ -331,6 +344,16 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	movieCreditsRepo := repository.NewSqliteMovieCreditsRepository(pool)
 	integrationConfigRepo := repository.NewSqliteIntegrationConfigRepository(pool)
 	integrationRunRepo := repository.NewSqliteIntegrationRunRepository(pool)
+	broker := newEventBroker()
+	movieService, err := movie.NewServiceChecked(movieRepo, movie.DrawConfig{
+		OnRevealed: revealBroadcaster(broker),
+		OnRevealError: func(err error) {
+			rootLog.Error().Err(err).Msg("restoring or persisting movie Reveal failed")
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("restore concealed draw: %w", err)
+	}
 	startupAt := time.Now().UTC()
 	if interrupted, err := integrationRunRepo.InterruptRunning(context.Background(), startupAt); err != nil {
 		rootLog.Error().Err(err).Msg("interrupting abandoned integration runs failed")
@@ -362,6 +385,12 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		keyPath = integrationKeyFilePath(pool)
 	}
 	secretStore := integration.NewSecretStore(integration.NewFileKeySource(keyPath))
+	radarrService := newRadarrService(
+		repository.NewSqliteRadarrRepository(pool),
+		secretStore,
+		nil,
+		os.Getenv("MPA_PUBLIC_URL"),
+	)
 	tmdbRuntime := integrationtmdb.NewRuntime(integrationtmdb.RuntimeConfig{}, 0)
 	tmdbIntegration := integrationtmdb.NewService(
 		integrationConfigRepo,
@@ -373,7 +402,6 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	if _, err := tmdbIntegration.Get(context.Background()); err != nil {
 		rootLog.Error().Err(err).Msg("loading TMDB runtime failed, integration stays unavailable")
 	}
-	broker := newEventBroker()
 	var tmdbScheduler *tmdbRunScheduler
 	pauseScheduleIfRejected := func(revision int64) {
 		if tmdbScheduler == nil {
@@ -472,10 +500,8 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 			repository.NewSqliteInviteRepository(pool),
 			repository.NewSqliteAuthTransitionStore(pool),
 		),
-		userService: user.NewService(userRepo, nextUpRepo),
-		movieService: movie.NewService(movieRepo, movie.DrawConfig{
-			OnRevealed: revealBroadcaster(broker),
-		}),
+		userService:        user.NewService(userRepo, nextUpRepo),
+		movieService:       movieService,
 		nextUpService:      nextup.NewService(nextUpRepo, userRepo),
 		settingsService:    settings.NewService(settingsRepo),
 		movieMetadata:      movieMetadataRepo,
@@ -488,6 +514,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		runRetention:       runRetention,
 		tmdbRuns:           tmdbRuns,
 		tmdbScheduler:      tmdbScheduler,
+		radarr:             radarrService,
 		posterWall:         posterWall,
 		statsCache:         make(map[string]statsCacheEntry),
 		statsCacheTTL:      time.Minute,
@@ -508,7 +535,7 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		wireOIDC(h, oidcCfg, rootLog)
 	}
 
-	return h
+	return h, nil
 }
 
 func tmdbRunStatusIsSuccessful(status integration.RunStatus) bool {
@@ -652,6 +679,33 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Put("/integrations/tmdb", h.handleSaveTMDBIntegration)
 	v1.Post("/integrations/tmdb/test", h.handleTestTMDBConnection)
 	v1.Post("/integrations/tmdb/runs", h.handleStartTMDBRun)
+	v1.Get("/integrations/radarr/attention", h.handleGetRadarrAttention)
+	v1.Get("/integrations/radarr/acquisitions", h.handleListRadarrAcquisitions)
+	v1.Get("/integrations/radarr/acquisitions/:id", h.handleGetRadarrAcquisition)
+	v1.Put("/integrations/radarr/acquisitions/:id/preset", h.handleSelectRadarrPreset)
+	v1.Post("/integrations/radarr/acquisitions/:id/confirm", h.handleConfirmRadarrTarget)
+	v1.Post("/integrations/radarr/acquisitions/:id/identity-search", h.handleSearchRadarrIdentity)
+	v1.Put("/integrations/radarr/acquisitions/:id/identity", h.handleSelectRadarrIdentity)
+	v1.Post("/integrations/radarr/acquisitions/:id/releases/search", h.handleSearchRadarrReleases)
+	v1.Post("/integrations/radarr/acquisitions/:id/releases/:resultId/grab", h.handleGrabRadarrRelease)
+	v1.Post("/integrations/radarr/acquisitions/:id/retry", h.handleRetryRadarrAcquisition)
+	v1.Post("/integrations/radarr/acquisitions/:id/abandon/review", h.handleReviewRadarrAbandonment)
+	v1.Post("/integrations/radarr/acquisitions/:id/abandon", h.handleAbandonRadarrAcquisition)
+	v1.Get("/integrations/radarr/instances", h.handleListRadarrInstances)
+	v1.Post("/integrations/radarr/instances", h.handleCreateRadarrInstance)
+	v1.Put("/integrations/radarr/instances/:id", h.handleUpdateRadarrInstance)
+	v1.Delete("/integrations/radarr/instances/:id", h.handleArchiveRadarrInstance)
+	v1.Get("/integrations/radarr/instances/:id/options", h.handleGetRadarrInstanceOptions)
+	v1.Get("/integrations/radarr/presets", h.handleListRadarrPresets)
+	v1.Post("/integrations/radarr/presets", h.handleCreateRadarrPreset)
+	v1.Put("/integrations/radarr/presets/:id", h.handleUpdateRadarrPreset)
+	v1.Delete("/integrations/radarr/presets/:id", h.handleArchiveRadarrPreset)
+	v1.Get("/integrations/radarr/webhooks", h.handleListRadarrWebhooks)
+	v1.Post("/integrations/radarr/webhooks", h.handleCreateRadarrWebhook)
+	v1.Put("/integrations/radarr/webhooks/:id", h.handleUpdateRadarrWebhook)
+	v1.Delete("/integrations/radarr/webhooks/:id", h.handleArchiveRadarrWebhook)
+	v1.Post("/integrations/radarr/webhooks/:id/test", h.handleTestRadarrWebhook)
+	v1.Post("/integrations/radarr/webhooks/test", h.handleTestRadarrWebhookDraft)
 	v1.Get("/integration-runs", h.handleListIntegrationRuns)
 	v1.Delete("/integration-runs/:runID", h.handleCancelTMDBRun)
 

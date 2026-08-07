@@ -4,6 +4,7 @@ import { ChartNoAxesColumnIcon, FilmIcon, ShieldIcon, UsersIcon } from "lucide-r
 
 import { MeQueryOptions } from "@/api/queries";
 
+import { RadarrAttentionBadge } from "@/components/moviepickarr/admin/RadarrAttentionBadge";
 import { type Tab, tabFromPath, tabsForRole } from "@/components/moviepickarr/nav";
 import { ProfilePanel } from "@/components/moviepickarr/ProfilePanel";
 
@@ -61,7 +62,10 @@ export function NavBar() {
                   aria-current={active === id ? "page" : undefined}
                 >
                   <Icon />
-                  {label}
+                  <span className="tab__label">
+                    {label}
+                    {id === "admin" ? <RadarrAttentionBadge /> : null}
+                  </span>
                 </Link>
               );
             })}
@@ -91,7 +95,10 @@ export function NavBar() {
               aria-current={active === id ? "page" : undefined}
             >
               <Icon />
-              <span>{label}</span>
+              <span className="navbar-bottom__label">
+                {label}
+                {id === "admin" ? <RadarrAttentionBadge /> : null}
+              </span>
             </Link>
           );
         })}

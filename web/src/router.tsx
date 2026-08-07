@@ -170,6 +170,51 @@ const adminTMDBRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/AdminTMDBPage"), "AdminTMDBPage"),
 });
 
+const adminRadarrRoute = createRoute({
+  getParentRoute: () => adminIntegrationsRoute,
+  path: "radarr",
+  component: lazyRouteComponent(
+    () => import("@/pages/AdminRadarrLayout"),
+    "AdminRadarrLayout",
+  ),
+});
+
+const adminRadarrIndexRoute = createRoute({
+  getParentRoute: () => adminRadarrRoute,
+  path: "/",
+  component: lazyRouteComponent(
+    () => import("@/pages/AdminRadarrAcquisitionsPage"),
+    "AdminRadarrAcquisitionsPage",
+  ),
+});
+
+const adminRadarrAcquisitionRoute = createRoute({
+  getParentRoute: () => adminRadarrRoute,
+  path: "acquisitions/$acquisitionID",
+  component: lazyRouteComponent(
+    () => import("@/pages/AdminRadarrAcquisitionPage"),
+    "AdminRadarrAcquisitionPage",
+  ),
+});
+
+const adminRadarrSetupRoute = createRoute({
+  getParentRoute: () => adminRadarrRoute,
+  path: "setup",
+  component: lazyRouteComponent(
+    () => import("@/pages/AdminRadarrSetupPage"),
+    "AdminRadarrSetupPage",
+  ),
+});
+
+const adminRadarrWebhooksRoute = createRoute({
+  getParentRoute: () => adminRadarrRoute,
+  path: "webhooks",
+  component: lazyRouteComponent(
+    () => import("@/pages/AdminRadarrWebhooksPage"),
+    "AdminRadarrWebhooksPage",
+  ),
+});
+
 const adminRunsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "runs",
@@ -210,6 +255,12 @@ const routeTree = rootRoute.addChildren([
       adminIntegrationsRoute.addChildren([
         adminIntegrationsIndexRoute,
         adminTMDBRoute,
+        adminRadarrRoute.addChildren([
+          adminRadarrIndexRoute,
+          adminRadarrAcquisitionRoute,
+          adminRadarrSetupRoute,
+          adminRadarrWebhooksRoute,
+        ]),
       ]),
       adminRunsRoute,
     ]),

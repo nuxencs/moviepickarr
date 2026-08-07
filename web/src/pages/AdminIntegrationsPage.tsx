@@ -37,6 +37,24 @@ function ActivityTime({ value }: { value?: string }) {
   return <time dateTime={value}>{ACTIVITY_FORMATTER.format(date)}</time>;
 }
 
+const INTEGRATION_UI = {
+  tmdb: {
+    description: "Movie metadata and artwork",
+    to: "/admin/integrations/tmdb",
+  },
+  radarr: {
+    description: "Current-draw acquisition",
+    to: "/admin/integrations/radarr",
+  },
+} as const;
+
+function integrationUI(id: string) {
+  return INTEGRATION_UI[id as keyof typeof INTEGRATION_UI] ?? {
+    description: "Connected service",
+    to: "/admin/integrations" as const,
+  };
+}
+
 export function AdminIntegrationsPage() {
   const integrations = useQuery({
     queryKey: IntegrationKeys.list(),
@@ -71,10 +89,10 @@ export function AdminIntegrationsPage() {
         <ul className="integration-index__list" aria-label="Integrations">
           {integrations.data.map((integration) => (
             <li key={integration.id}>
-              <Link to="/admin/integrations/tmdb" className="integration-index__row">
+              <Link to={integrationUI(integration.id).to} className="integration-index__row">
                 <span className="integration-index__identity">
                   <strong>{integration.name}</strong>
-                  <span>{integration.id === "tmdb" ? "Movie metadata and artwork" : "Connected service"}</span>
+                  <span>{integrationUI(integration.id).description}</span>
                 </span>
                 <span className="integration-index__state" data-state={integration.state}>
                   <strong>{STATE_LABELS[integration.state]}</strong>

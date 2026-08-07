@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon, FilmIcon, ShieldIcon, UsersIcon } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { MeQueryOptions } from "@/api/queries";
 
 import { type Tab, tabFromPath, tabsForRole } from "@/components/moviepickarr/nav";
 import { ProfilePanel } from "@/components/moviepickarr/ProfilePanel";
+
+import { useSlidingTabIndicator } from "@/hooks/useSlidingTabIndicator";
 
 /** Icon per tab id; the pure nav module carries ids/labels/paths, not JSX. */
 const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
@@ -16,9 +17,6 @@ const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
   admin: ShieldIcon,
 };
 
-/** Horizontal inset (px) the underline keeps from each edge of the active tab. */
-const INK_INSET = 12;
-
 export function NavBar() {
   const active = useRouterState({ select: (s) => tabFromPath(s.location.pathname) });
   // The Admin tab only appears for admins. A 401 (not logged in) leaves role
@@ -26,52 +24,7 @@ export function NavBar() {
   const { data: me } = useQuery(MeQueryOptions());
   const tabs = tabsForRole(me?.role);
 
-  // A single shared underline that slides between tabs, rather than one per tab
-  // that unmounts/remounts on switch. We measure the active link and drive the
-  // indicator's left/width; CSS transitions the move (and the reduced-motion
-  // guard in index.css collapses it to an instant jump).
-  const btnRefs = useRef<Record<Tab, HTMLAnchorElement | null>>({
-    movies: null,
-    users: null,
-    stats: null,
-    admin: null,
-  });
-  const [ink, setInk] = useState<{ left: number; width: number } | null>(null);
-
-  const measure = useCallback(() => {
-    // On a non-tab page (account settings) no tab is active, so retire the
-    // underline instead of leaving it parked under whichever tab it last sat on.
-    if (!active) {
-      setInk(null);
-      return;
-    }
-    const btn = btnRefs.current[active];
-    // Skip when the top-bar tabs are hidden (mobile bottom-bar layout): a
-    // display:none link reports offsetWidth 0, which would park the slider
-    // at a bogus negative width. It re-measures on resize back to desktop.
-    if (!btn || btn.offsetParent === null) return;
-    setInk({ left: btn.offsetLeft + INK_INSET, width: btn.offsetWidth - INK_INSET * 2 });
-  }, [active]);
-
-  // Measure before paint so the indicator never flashes at a stale position.
-  // tabs.length is a dep so the pass re-runs when the Admin tab appears once
-  // `me` loads as admin (its ref is null on the first, admin-less render).
-  useLayoutEffect(() => measure(), [measure, tabs.length]);
-
-  // Re-measure on resize and once web fonts settle (font swap changes label width).
-  // fonts.ready can settle after this effect is torn down (a sign-out unmounts
-  // the whole chrome), so the late measure is gated on the effect still being live.
-  useEffect(() => {
-    let cancelled = false;
-    window.addEventListener("resize", measure);
-    document.fonts?.ready.then(() => {
-      if (!cancelled) measure();
-    });
-    return () => {
-      cancelled = true;
-      window.removeEventListener("resize", measure);
-    };
-  }, [measure]);
+  const { position: ink, setItemRef } = useSlidingTabIndicator(active, tabs.length);
 
   return (
     <>
@@ -101,7 +54,7 @@ export function NavBar() {
                   key={id}
                   to={path}
                   ref={(el) => {
-                    btnRefs.current[id] = el;
+                    setItemRef(id, el);
                   }}
                   className="tab"
                   data-active={active === id}

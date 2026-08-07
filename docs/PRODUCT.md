@@ -42,6 +42,13 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   and drills the whole page down (every aggregate is computed server-side over
   the filtered subset); each card also carries a corner link to the person's
   TMDB page.
+- Admin: a shared shell for the Roster, Integrations, and Runs destinations.
+  The primary app Members tab keeps its existing name. A nested index selects TMDB without adding a second integration
+  rail. Every desktop Admin page scrolls inside that shell. The TMDB detail owns
+  typed settings, source indicators, connection testing, manual refreshes, and
+  current-run progress. Runs lists finished results only, with a lean summary and
+  per-result details modal. Routine activity is available on demand. Environment
+  overrides stay visible and read-only.
 
 ## Design
 The full design system and the decisions behind it live in

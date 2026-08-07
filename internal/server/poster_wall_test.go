@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -105,4 +106,36 @@ func TestPosterWallCache_NilSafe(t *testing.T) {
 	var c *posterWallCache
 	c.Start(context.Background())
 	c.Stop()
+}
+
+func TestPosterWallCache_RefreshWarmsAfterRuntimeBecomesAvailable(t *testing.T) {
+	t.Parallel()
+	var available atomic.Bool
+	calls := make(chan struct{}, 2)
+	fetch := func(context.Context) ([]string, error) {
+		calls <- struct{}{}
+		if !available.Load() {
+			return nil, errors.New("disabled")
+		}
+		return []string{"/enabled.jpg"}, nil
+	}
+	c := newPosterWallCache(fetch, time.Hour, zerolog.Nop())
+	c.Start(context.Background())
+	t.Cleanup(c.Stop)
+	select {
+	case <-calls:
+	case <-time.After(time.Second):
+		t.Fatal("initial warm did not run")
+	}
+
+	available.Store(true)
+	c.Refresh()
+	select {
+	case <-calls:
+	case <-time.After(time.Second):
+		t.Fatal("requested refresh did not run")
+	}
+	if got := c.list(); len(got) != 1 || got[0] != "/enabled.jpg" {
+		t.Fatalf("post-enable wall = %v", got)
+	}
 }

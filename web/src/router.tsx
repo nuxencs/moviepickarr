@@ -3,6 +3,7 @@ import {
   createRoute,
   createRouter,
   lazyRouteComponent,
+  redirect,
   stripSearchParams,
 } from "@tanstack/react-router";
 
@@ -20,6 +21,7 @@ import { statsSearchDefaults, validateStatsSearch } from "@/components/moviepick
 import type { QueryClient } from "@tanstack/react-query";
 
 import { clearMovieModalHistory } from "@/hooks/useMovieModalHistory";
+import { validateAdminRunsSearch } from "@/pages/adminRunsSearch";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -118,13 +120,61 @@ const usersRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/UsersPage"), "UsersPage"),
 });
 
-// The admin roster surface. A non-admin who navigates here still gets the page
-// (and its first-class "Admins only" state from the 403), never a 404, so the
-// route is mounted for everyone and the gating lives in the page.
+// Admin is one top-level tab with its own internal route seam. The shared shell
+// stays mounted while each destination remains an independent lazy chunk.
+// Non-admins still reach the route and get the API's first-class 403 state once
+// a destination reads protected data, rather than a masked 404.
 const adminRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/admin",
+  component: lazyRouteComponent(
+    () => import("@/components/moviepickarr/admin/AdminLayout"),
+    "AdminLayout",
+  ),
+});
+
+const adminIndexRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/roster", replace: true });
+  },
+});
+
+const adminRosterRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "roster",
   component: lazyRouteComponent(() => import("@/pages/AdminPage"), "AdminPage"),
+});
+
+// /admin/members is intentionally absent. Old bookmarks fall through to the
+// normal not-found path instead of preserving a second name for this surface.
+
+const adminIntegrationsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "integrations",
+});
+
+const adminIntegrationsIndexRoute = createRoute({
+  getParentRoute: () => adminIntegrationsRoute,
+  path: "/",
+  component: lazyRouteComponent(
+    () => import("@/pages/AdminIntegrationsPage"),
+    "AdminIntegrationsPage",
+  ),
+});
+
+const adminTMDBRoute = createRoute({
+  getParentRoute: () => adminIntegrationsRoute,
+  path: "tmdb",
+  component: lazyRouteComponent(() => import("@/pages/AdminTMDBPage"), "AdminTMDBPage"),
+});
+
+const adminRunsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "runs",
+  validateSearch: validateAdminRunsSearch,
+  component: lazyRouteComponent(() => import("@/pages/AdminRunsPage"), "AdminRunsPage"),
 });
 
 // The account settings surface. Path is /settings, not /account: the merged
@@ -151,7 +201,21 @@ const statsRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([moviesRoute, usersRoute, adminRoute, settingsRoute, statsRoute]),
+  appLayoutRoute.addChildren([
+    moviesRoute,
+    usersRoute,
+    adminRoute.addChildren([
+      adminIndexRoute,
+      adminRosterRoute,
+      adminIntegrationsRoute.addChildren([
+        adminIntegrationsIndexRoute,
+        adminTMDBRoute,
+      ]),
+      adminRunsRoute,
+    ]),
+    settingsRoute,
+    statsRoute,
+  ]),
   loginRoute,
   claimRoute,
 ]);

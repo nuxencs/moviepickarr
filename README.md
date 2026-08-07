@@ -34,6 +34,9 @@ friends. There is no public signup.
   most-watched directors and actors, and a release-decades timeline. The whole
   page can be filtered by genre, release year or decade, adder, and specific
   actors or crew.
+- Admin: member and invite management, TMDB configuration, connection testing,
+  manual refresh actions, and integration run history. Deployment environment
+  values remain authoritative over settings saved in the app.
 
 Movie data comes from TMDB and is fetched in the background: posters,
 backdrops, runtimes, ratings, genres, taglines, overviews, cast and crew.
@@ -46,7 +49,9 @@ Movies without data yet show a placeholder poster.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md): developer setup and the tech
   stack.
 - [`docs/RUNBOOK.md`](docs/RUNBOOK.md): auth cutover and loosening a forward-auth
-  proxy in front of the app.
+  proxy in front of the app, plus integration-key recovery.
+- [`docs/admin-integrations.md`](docs/admin-integrations.md): Admin integration
+  settings, runtime behavior, API, and run history.
 - [`docs/PRODUCT.md`](docs/PRODUCT.md) and [`docs/DESIGN.md`](docs/DESIGN.md):
   product and design decisions.
 

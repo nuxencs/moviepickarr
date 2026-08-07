@@ -1,0 +1,339 @@
+/* One nested Admin index. The route content stays on the same flat surface. */
+
+.admin-layout {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 230px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.admin-layout__nav {
+  --admin-nav-row: 42px;
+  --admin-nav-step: calc(var(--admin-nav-row) + 2px);
+  --admin-nav-child-tail: 8px;
+
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 2px;
+  padding: 16px 14px;
+  border-right: 1px solid var(--line);
+  background: transparent;
+}
+
+.admin-layout__indicator {
+  position: absolute;
+  z-index: 1;
+  top: 16px;
+  left: 14px;
+  width: 2px;
+  height: var(--admin-nav-row);
+  pointer-events: none;
+  transition: transform var(--dur) var(--ease), height var(--dur) var(--ease);
+}
+
+.admin-layout__indicator::before {
+  position: absolute;
+  inset-block: 10px;
+  left: 0;
+  width: 2px;
+  background: var(--accent);
+  content: "";
+}
+
+.admin-layout[data-section="roster"] .admin-layout__indicator {
+  transform: translateY(0);
+}
+
+.admin-layout[data-section="integrations"] .admin-layout__indicator {
+  height: calc(var(--admin-nav-row) + var(--admin-nav-step));
+  transform: translateY(var(--admin-nav-step));
+}
+
+.admin-layout[data-section="runs"] .admin-layout__indicator {
+  transform: translateY(calc(var(--admin-nav-step) + var(--admin-nav-step)));
+}
+
+.admin-layout__link {
+  display: flex;
+  min-height: var(--admin-nav-row);
+  align-items: center;
+  gap: 10px;
+  padding: 0 11px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.admin-layout__link:hover,
+.admin-layout__link:focus-visible {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--surface-2) 52%, transparent);
+}
+
+.admin-layout__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.admin-layout__link[data-active="true"] {
+  color: var(--ink);
+}
+
+.admin-layout__link svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.admin-layout__branch {
+  min-width: 0;
+}
+
+.admin-layout__branch > .admin-layout__link {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding-left: 11px;
+  text-align: left;
+}
+
+.admin-layout__children {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows var(--dur) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.admin-layout__children[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.admin-layout__children-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-layout__integration {
+  display: flex;
+  min-height: calc(var(--admin-nav-step) - var(--admin-nav-child-tail));
+  align-items: center;
+  gap: 9px;
+  margin: 0 9px var(--admin-nav-child-tail) 35px;
+  padding: 0 9px;
+  color: var(--ink-3);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 550;
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.admin-layout__integration:hover,
+.admin-layout__integration:focus-visible {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--surface-3) 42%, transparent);
+}
+
+.admin-layout__integration:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.admin-layout__integration[aria-current="page"] {
+  background: transparent;
+  color: color-mix(in oklab, var(--accent) 45%, var(--ink));
+  font-weight: 650;
+}
+
+.admin-layout__body {
+  min-width: 0;
+  padding: 16px clamp(22px, 3vw, 46px) 0;
+  container: admin-integration / inline-size;
+}
+
+.admin-layout__body:focus-visible {
+  outline: 1px solid var(--accent-line);
+  outline-offset: -1px;
+}
+
+.admin-section {
+  padding: 0 4px 64px;
+}
+
+/* Shared Admin loading/error rows and Modal content primitives. These live in
+   the shell so every nested Admin route can render correctly when opened
+   directly. */
+
+.adm-state {
+  padding: 48px 16px;
+  color: var(--ink-3);
+  font-size: 14px;
+  text-align: center;
+}
+
+.adm-sheet {
+  padding: 24px;
+}
+
+.adm-modal__title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 640;
+  letter-spacing: -0.015em;
+}
+
+.adm-modal__sub {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.adm-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+@media (min-width: 901px) {
+  .shell--admin {
+    height: calc(100dvh - 63px);
+    overflow: hidden;
+    padding-bottom: 30px;
+  }
+
+  .admin-layout {
+    height: 100%;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .admin-layout > .admin-layout__nav,
+  .admin-layout > .admin-layout__body {
+    min-height: 0;
+  }
+
+  .admin-layout > .admin-layout__nav {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .admin-layout > .admin-layout__body {
+    height: 100%;
+    overflow-x: clip;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+}
+
+@media not all and (min-width: 901px) {
+  .admin-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-layout__nav {
+    display: flex;
+    padding: 0 0 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    scrollbar-width: none;
+  }
+
+  .admin-layout__nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-layout__indicator {
+    display: none;
+  }
+
+  .admin-layout__link {
+    flex: none;
+  }
+
+  .admin-layout__link[aria-current="page"],
+  .admin-layout__integration[aria-current="page"] {
+    /* The desktop rail has a vertical indicator. Its horizontal counterpart
+       marks the current leaf after the rail becomes a scrolling tab row. */
+    box-shadow: inset 0 -2px var(--accent);
+    color: var(--accent);
+  }
+
+  .admin-layout__branch,
+  .admin-layout__branch[data-active="true"] {
+    display: flex;
+    flex: none;
+  }
+
+  .admin-layout__branch > .admin-layout__link {
+    width: auto;
+    padding-left: 11px;
+  }
+
+  .admin-layout__children {
+    grid-template-columns: 0fr;
+    grid-template-rows: 1fr;
+    transition: grid-template-columns var(--dur) var(--ease), opacity var(--dur-fast) var(--ease);
+  }
+
+  .admin-layout__children[data-open="true"] {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-layout__children-inner {
+    display: flex;
+    min-width: 0;
+  }
+
+  .admin-layout__integration {
+    min-height: 42px;
+    margin: 0;
+    padding-inline: 11px;
+  }
+
+  .admin-layout__body {
+    padding: 24px 0 0;
+  }
+
+  .admin-section {
+    padding-inline: 0;
+  }
+
+}
+
+@media (pointer: coarse) {
+  .admin-layout__nav {
+    --admin-nav-row: 48px;
+    --admin-nav-child-tail: 2px;
+  }
+
+  .admin-layout__integration,
+  .admin-layout__link {
+    min-height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-layout__children,
+  .admin-layout__indicator,
+  .admin-layout__integration,
+  .admin-layout__link {
+    transition: none;
+  }
+}

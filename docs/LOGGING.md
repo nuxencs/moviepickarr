@@ -40,6 +40,8 @@ LOG_FORMAT=console LOG_LEVEL=debug ./bin/moviepickarr
   - `component=http` — the HTTP handler (`handler.log`) and the access-log
     middleware.
   - `component=enrich` — the background enrichment worker (`enrichRunner.log`).
+  - `component=integration`: integration startup checks, with an additional
+    `integration` field naming the provider.
   - SSE sites additionally tag `subsystem=sse`.
 
 Sub-loggers are plain `zerolog.Logger` values (cheap to copy); tests pass

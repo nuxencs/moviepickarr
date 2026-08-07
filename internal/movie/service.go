@@ -155,10 +155,7 @@ func (s *Service) Close() {
 // reveals that draw, never one that replaced it. Callers hold s.mu.
 func (s *Service) armAutoRevealLocked(gen uint64) {
 	s.cancelAutoRevealLocked()
-	delay := time.Until(s.activeDraw.RevealAt)
-	if delay < 0 {
-		delay = 0
-	}
+	delay := max(time.Until(s.activeDraw.RevealAt), 0)
 	s.stopAutoReveal = s.drawCfg.StartTimer(delay, func() {
 		// Guarded by gen: a late manual confirm, a watch, or a watch-then-redraw
 		// all leave this deadline a harmless no-op.

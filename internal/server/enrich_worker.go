@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"moviepickarr/internal/domain"
+	"moviepickarr/internal/integration"
 
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
@@ -125,42 +127,89 @@ func envDuration(key string) (time.Duration, bool) {
 
 // rateLimiter enforces a minimum interval between calls. Safe for concurrent
 // use; for the single worker it simply paces successive requests.
+const rateLimiterMaxPending = 32
+
+type tmdbRequestQueueFullError struct {
+	Limit int
+}
+
+func (e *tmdbRequestQueueFullError) Error() string {
+	return fmt.Sprintf("tmdb request queue is full (%d pending)", e.Limit)
+}
+
 type rateLimiter struct {
-	mu       sync.Mutex
 	interval time.Duration
 	next     time.Time
+	turn     chan struct{}
+	pending  chan struct{}
 }
 
 func newRateLimiter(interval time.Duration) *rateLimiter {
-	return &rateLimiter{interval: interval}
+	turn := make(chan struct{}, 1)
+	turn <- struct{}{}
+	return &rateLimiter{
+		interval: interval,
+		turn:     turn,
+		pending:  make(chan struct{}, rateLimiterMaxPending),
+	}
 }
 
 func (r *rateLimiter) wait(ctx context.Context) error {
+	return r.waitWithAdmission(ctx, true)
+}
+
+// waitReserved admits bounded internal workers even when interactive callers
+// fill the public queue. Internal concurrency is fixed by the worker and run
+// controller, so waiting here cannot create an unbounded goroutine set.
+func (r *rateLimiter) waitReserved(ctx context.Context) error {
+	return r.waitWithAdmission(ctx, false)
+}
+
+func (r *rateLimiter) waitWithAdmission(ctx context.Context, rejectWhenFull bool) error {
 	if r == nil || r.interval <= 0 {
 		return ctx.Err()
 	}
-
-	r.mu.Lock()
-	now := time.Now()
-	if r.next.Before(now) {
-		r.next = now
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	wait := r.next.Sub(now)
-	r.next = r.next.Add(r.interval)
-	r.mu.Unlock()
-
-	if wait <= 0 {
-		return ctx.Err()
+	if rejectWhenFull {
+		select {
+		case r.pending <- struct{}{}:
+		default:
+			return &tmdbRequestQueueFullError{Limit: cap(r.pending)}
+		}
+	} else {
+		select {
+		case r.pending <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
+	defer func() { <-r.pending }()
 
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-timer.C:
-		return nil
+	case <-r.turn:
 	}
+	defer func() { r.turn <- struct{}{} }()
+
+	now := time.Now()
+	wait := r.next.Sub(now)
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.next = time.Now().Add(r.interval)
+	return nil
 }
 
 // enrichRunner owns the single background goroutine that enriches movies.
@@ -173,6 +222,9 @@ type enrichRunner struct {
 	onEnriched func()       // optional post-enrich hook (stats-cache invalidation); nil-safe
 	cfg        enrichConfig
 	log        zerolog.Logger
+	// Library-wide work is owned by tmdbRunController in production. Legacy
+	// worker tests and direct construction keep the initial drain enabled.
+	initialDrain bool
 
 	queue    chan int
 	trigger  chan struct{}
@@ -193,19 +245,30 @@ type enrichRunner struct {
 }
 
 type enrichClaim struct {
-	processing bool
-	rerun      bool
+	processing   bool
+	trigger      integration.RunTrigger
+	rerun        bool
+	rerunTrigger integration.RunTrigger
+}
+
+type triggerAwareEnricher interface {
+	EnrichOneWithTrigger(
+		ctx context.Context,
+		movieID int,
+		trigger integration.RunTrigger,
+	) (enrichResult, error)
 }
 
 func newEnrichRunner(enricher Enricher, broker *eventBroker, cfg enrichConfig, log zerolog.Logger) *enrichRunner {
 	return &enrichRunner{
-		enricher: enricher,
-		broker:   broker,
-		cfg:      cfg,
-		log:      log,
-		queue:    make(chan int, cfg.QueueSize),
-		trigger:  make(chan struct{}, 1),
-		inflight: make(map[int]enrichClaim),
+		enricher:     enricher,
+		broker:       broker,
+		cfg:          cfg,
+		log:          log,
+		queue:        make(chan int, cfg.QueueSize),
+		trigger:      make(chan struct{}, 1),
+		inflight:     make(map[int]enrichClaim),
+		initialDrain: true,
 	}
 }
 
@@ -213,25 +276,28 @@ func (r *enrichRunner) Start(ctx context.Context) {
 	stopCtx, cancel := context.WithCancel(ctx)
 	r.cancel = cancel
 
-	refresh := r.cfg.RefreshInterval.String()
-	if r.cfg.RefreshInterval <= 0 {
-		refresh = "disabled"
+	startup := r.log.Info().
+		Int("queue_capacity", cap(r.queue)).
+		Str("batch_debounce", r.cfg.BatchDebounce.String()).
+		Str("batch_max_wait", r.cfg.BatchMaxWait.String())
+	if r.initialDrain || r.cfg.RefreshInterval > 0 {
+		refresh := r.cfg.RefreshInterval.String()
+		if r.cfg.RefreshInterval <= 0 {
+			refresh = "disabled"
+		}
+		cast := strconv.Itoa(r.cfg.CastLimit)
+		if r.cfg.CastLimit <= 0 {
+			cast = "unlimited"
+		}
+		startup.
+			Str("rate", r.cfg.MinInterval.String()).
+			Int("retries", r.cfg.MaxRetries).
+			Int("batch", r.cfg.BatchLimit).
+			Str("cast", cast).
+			Str("ttl", r.cfg.TTL.String()).
+			Str("refresh", refresh)
 	}
-	cast := strconv.Itoa(r.cfg.CastLimit)
-	if r.cfg.CastLimit <= 0 {
-		cast = "unlimited"
-	}
-	// rate/ttl are logged as strings (e.g. "250ms", "720h0m0s") to match the
-	// already-stringified cast/refresh — this line is a human-facing config echo,
-	// not a metric, so readable units beat zerolog's raw-millisecond numbers.
-	r.log.Info().
-		Str("rate", r.cfg.MinInterval.String()).
-		Int("retries", r.cfg.MaxRetries).
-		Int("batch", r.cfg.BatchLimit).
-		Str("cast", cast).
-		Str("ttl", r.cfg.TTL.String()).
-		Str("refresh", refresh).
-		Msg("worker started")
+	startup.Msg("worker started")
 
 	r.wg.Add(1)
 	go r.consume(stopCtx)
@@ -241,8 +307,10 @@ func (r *enrichRunner) Start(ctx context.Context) {
 		go r.scheduleLoop(stopCtx)
 	}
 
-	// Kick the initial backfill of un-enriched (and any already-stale) rows.
-	r.triggerDrain()
+	if r.initialDrain {
+		// Kick the initial backfill of un-enriched (and any already-stale) rows.
+		r.triggerDrain()
+	}
 }
 
 func (r *enrichRunner) Stop() {
@@ -259,7 +327,13 @@ func (r *enrichRunner) Stop() {
 // if the queue is full the id is dropped and the next scheduled drain re-selects
 // it. Dedup avoids queuing an id that is already pending.
 func (r *enrichRunner) Enqueue(movieID int) {
-	if !r.tryEnqueue(movieID) {
+	r.EnqueueWithTrigger(movieID, integration.RunTriggerMovieAdded)
+}
+
+// EnqueueWithTrigger schedules single-movie enrichment while preserving the
+// event that caused it for the integration run ledger.
+func (r *enrichRunner) EnqueueWithTrigger(movieID int, trigger integration.RunTrigger) {
+	if !r.tryEnqueue(movieID, trigger) {
 		return
 	}
 
@@ -274,7 +348,7 @@ func (r *enrichRunner) Enqueue(movieID int) {
 // tryEnqueue claims a new queued movie. A duplicate for a queued movie is
 // already covered by its future read. A duplicate for a processing movie means
 // committed state changed after that read, so remember one coalesced rerun.
-func (r *enrichRunner) tryEnqueue(movieID int) bool {
+func (r *enrichRunner) tryEnqueue(movieID int, trigger integration.RunTrigger) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -282,11 +356,14 @@ func (r *enrichRunner) tryEnqueue(movieID int) bool {
 	if ok {
 		if claim.processing {
 			claim.rerun = true
-			r.inflight[movieID] = claim
+			claim.rerunTrigger = trigger
+		} else {
+			claim.trigger = trigger
 		}
+		r.inflight[movieID] = claim
 		return false
 	}
-	r.inflight[movieID] = enrichClaim{}
+	r.inflight[movieID] = enrichClaim{trigger: trigger}
 	return true
 }
 
@@ -303,12 +380,13 @@ func (r *enrichRunner) tryClaim(movieID int) bool {
 	return true
 }
 
-func (r *enrichRunner) markProcessing(movieID int) {
+func (r *enrichRunner) markProcessing(movieID int) integration.RunTrigger {
 	r.mu.Lock()
 	claim := r.inflight[movieID]
 	claim.processing = true
 	r.inflight[movieID] = claim
 	r.mu.Unlock()
+	return claim.trigger
 }
 
 // finishAttempt atomically either consumes one requested rerun while retaining
@@ -337,6 +415,8 @@ func (r *enrichRunner) finishAttempt(
 	if allowRerun && claim.rerun {
 		claim.processing = false
 		claim.rerun = false
+		claim.trigger = claim.rerunTrigger
+		claim.rerunTrigger = ""
 		r.inflight[movieID] = claim
 		if inlineRerunAvailable {
 			return attemptRerunInline
@@ -453,8 +533,8 @@ const (
 func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 	inlineRerunAvailable := true
 	for {
-		r.markProcessing(movieID)
-		res, outcome, err := r.processAttempt(ctx, movieID)
+		trigger := r.markProcessing(movieID)
+		res, outcome, err := r.processAttempt(ctx, movieID, trigger)
 		switch r.finishAttempt(movieID, outcome != outcomeCanceled, inlineRerunAvailable) {
 		case attemptRerunInline:
 			inlineRerunAvailable = false
@@ -479,8 +559,17 @@ func (r *enrichRunner) process(ctx context.Context, movieID int) enrichOutcome {
 func (r *enrichRunner) processAttempt(
 	ctx context.Context,
 	movieID int,
+	trigger integration.RunTrigger,
 ) (enrichResult, enrichOutcome, error) {
-	res, err := r.enricher.EnrichOne(ctx, movieID)
+	var (
+		res enrichResult
+		err error
+	)
+	if triggered, ok := r.enricher.(triggerAwareEnricher); ok && trigger != "" {
+		res, err = triggered.EnrichOneWithTrigger(ctx, movieID, trigger)
+	} else {
+		res, err = r.enricher.EnrichOne(ctx, movieID)
+	}
 	switch {
 	case err == nil:
 		return res, outcomeEnriched, nil

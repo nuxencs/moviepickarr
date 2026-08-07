@@ -15,6 +15,8 @@ import (
 
 	"moviepickarr/internal/auth"
 	"moviepickarr/internal/db"
+	"moviepickarr/internal/integration"
+	integrationtmdb "moviepickarr/internal/integration/tmdb"
 	"moviepickarr/internal/logger"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/nextup"
@@ -58,6 +60,19 @@ func logHTTPShutdownError(log zerolog.Logger, err error) {
 		return
 	}
 	event.Msg("shutting down the http server failed")
+}
+
+func logTMDBEnvironmentIssues(rootLog zerolog.Logger, issues []integrationtmdb.EnvironmentIssue) {
+	log := rootLog.With().
+		Str("component", "integration").
+		Str("integration", "tmdb").
+		Logger()
+	for _, issue := range issues {
+		log.Warn().
+			Str("environment_key", issue.Field).
+			Str("reason", issue.Message).
+			Msg("invalid integration environment value; using lower-precedence setting")
+	}
 }
 
 // dbMaxBackups resolves DB_BACKUP_MAX: how many pre-migration snapshots to
@@ -148,8 +163,27 @@ func Run(ctx context.Context, cfg Config) error {
 	h.startSessionSweeper(ctx)
 	if h.enrichRunner != nil {
 		h.enrichRunner.Start(ctx)
-	} else {
-		rootLog.Info().Msg("enrichment disabled: TMDB_API_KEY not set")
+	}
+	if h.tmdbScheduler != nil {
+		if err := h.tmdbScheduler.Start(); err != nil {
+			rootLog.Error().Err(err).Msg("starting TMDB refresh scheduler failed")
+		}
+	}
+	if h.tmdbRuns != nil {
+		result, err := h.tmdbRuns.Start(ctx, tmdbRunStart{
+			Operation: integration.RunOperationRefreshStale,
+			Trigger:   integration.RunTriggerStartup,
+		})
+		if err == nil && result.NoWork && h.integrationConfigs != nil {
+			if updateErr := h.integrationConfigs.UpdateLastChecked(ctx, "tmdb", result.CheckedAt); updateErr != nil {
+				rootLog.Error().Err(updateErr).Msg("updating TMDB startup check time failed")
+			}
+		} else if err != nil &&
+			!errors.Is(err, integrationtmdb.ErrRuntimeDisabled) &&
+			!errors.Is(err, integrationtmdb.ErrAPIKeyRejected) &&
+			!errors.Is(err, integration.ErrCredentialUnavailable) {
+			rootLog.Error().Err(err).Msg("starting TMDB startup refresh failed")
+		}
 	}
 	// Warm the public poster wall in the background: nil (no key) means the wall
 	// never warms and the endpoint serves []. Async, so boot is never blocked by
@@ -295,29 +329,133 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	settingsRepo := repository.NewSqliteSettingsRepository(pool)
 	movieMetadataRepo := repository.NewSqliteMovieMetadataRepository(pool)
 	movieCreditsRepo := repository.NewSqliteMovieCreditsRepository(pool)
+	integrationConfigRepo := repository.NewSqliteIntegrationConfigRepository(pool)
+	integrationRunRepo := repository.NewSqliteIntegrationRunRepository(pool)
+	startupAt := time.Now().UTC()
+	if interrupted, err := integrationRunRepo.InterruptRunning(context.Background(), startupAt); err != nil {
+		rootLog.Error().Err(err).Msg("interrupting abandoned integration runs failed")
+	} else if interrupted > 0 {
+		rootLog.Warn().Int64("count", interrupted).Msg("abandoned integration runs marked interrupted")
+	}
+	if removed, err := integrationRunRepo.Prune(context.Background(), startupAt); err != nil {
+		rootLog.Error().Err(err).Msg("pruning integration run history failed")
+	} else if removed > 0 {
+		rootLog.Info().Int64("count", removed).Msg("old integration runs pruned")
+	}
+	runRetention := newIntegrationRunRetention(
+		context.Background(),
+		integrationRunRepo,
+		nil,
+		nil,
+		func(err error) {
+			rootLog.Error().Err(err).Msg("pruning integration run history failed")
+		},
+		func(removed int64) {
+			rootLog.Info().Int64("count", removed).Msg("old integration runs pruned")
+		},
+	)
 
-	enrichCfg := loadEnrichConfig()
-	limiter := newRateLimiter(enrichCfg.MinInterval)
-	tmdbCli := newTMDBClient(enrichCfg, limiter)
+	tmdbEnvironment, environmentIssues := integrationtmdb.LoadEnvironmentConfig(os.LookupEnv)
+	logTMDBEnvironmentIssues(rootLog, environmentIssues)
+	keyPath := os.Getenv("MPA_INTEGRATION_KEY_FILE")
+	if keyPath == "" {
+		keyPath = integrationKeyFilePath(pool)
+	}
+	secretStore := integration.NewSecretStore(integration.NewFileKeySource(keyPath))
+	tmdbRuntime := integrationtmdb.NewRuntime(integrationtmdb.RuntimeConfig{}, 0)
+	tmdbIntegration := integrationtmdb.NewService(
+		integrationConfigRepo,
+		secretStore,
+		tmdbEnvironment,
+		newTMDBConnectionTester("https://api.themoviedb.org/3", &http.Client{Timeout: 8 * time.Second}),
+		tmdbRuntime,
+	)
+	if _, err := tmdbIntegration.Get(context.Background()); err != nil {
+		rootLog.Error().Err(err).Msg("loading TMDB runtime failed, integration stays unavailable")
+	}
 	broker := newEventBroker()
-
-	// The enrichment runner is only created when TMDB is configured; otherwise
-	// it stays nil and all enqueue/start/stop sites no-op (handlers guard on nil).
-	var runner *enrichRunner
-	if tmdbCli.apiKey != "" {
-		enrichmentSvc := newEnrichmentService(movieRepo, movieMetadataRepo, tmdbCli, enrichCfg.CastLimit)
-		enrichLog := rootLog.With().Str("component", "enrich").Logger()
-		runner = newEnrichRunner(enrichmentSvc, broker, enrichCfg, enrichLog)
+	var tmdbScheduler *tmdbRunScheduler
+	pauseScheduleIfRejected := func(revision int64) {
+		if tmdbScheduler == nil {
+			return
+		}
+		if err := tmdbScheduler.AuthenticationRejected(revision); err != nil {
+			rootLog.Error().Err(err).Msg("pausing TMDB refresh schedule failed")
+		}
 	}
-
-	// The poster wall shares the same nil-when-keyless guard: with no TMDB key the
-	// cache stays nil, the warm goroutine never starts, and the endpoint serves [].
-	// It reuses h.tmdb (so it rides the enrichment rate limiter) via the fetch seam.
-	var posterWall *posterWallCache
-	if tmdbCli.apiKey != "" {
-		posterLog := rootLog.With().Str("component", "poster-wall").Logger()
-		posterWall = newPosterWallCache(tmdbCli.DiscoverPopularPosters, posterWallRefreshInterval, posterLog)
+	tmdbGateway := newTMDBRuntimeGateway(
+		tmdbIntegration,
+		defaultTMDBOperationsFactory,
+		func(_ context.Context, snapshot integrationtmdb.RuntimeSnapshot, err error) {
+			if err != nil {
+				rootLog.Error().Err(err).Msg("recording rejected TMDB credential failed")
+			}
+			pauseScheduleIfRejected(snapshot.Revision)
+		},
+	)
+	runEnricher := &tmdbSnapshotRunEnricher{
+		gateway: tmdbGateway, movies: movieRepo, candidates: movieMetadataRepo,
 	}
+	authenticationRejected := func(snapshot integrationtmdb.RuntimeSnapshot) {
+		applied, err := tmdbIntegration.AuthenticationRejected(context.Background(), snapshot)
+		if err != nil {
+			rootLog.Error().Err(err).Msg("recording rejected TMDB credential failed")
+		}
+		if applied {
+			pauseScheduleIfRejected(snapshot.Revision)
+		}
+	}
+	tmdbRuns := newTMDBRunController(
+		context.Background(),
+		&tmdbRepositoryRunCandidates{candidates: movieMetadataRepo},
+		runEnricher,
+		tmdbIntegration,
+		integrationRunRepo,
+		nil,
+		authenticationRejected,
+		withTMDBRunCompletion(func(completion tmdbRunCompletion) {
+			ctx := context.Background()
+			if err := integrationConfigRepo.UpdateLastChecked(ctx, "tmdb", completion.FinishedAt); err != nil {
+				rootLog.Error().Err(err).Msg("updating TMDB last checked time failed")
+			}
+			if tmdbRunStatusIsSuccessful(completion.Status) {
+				if err := integrationConfigRepo.UpdateSuccessfulRun(ctx, "tmdb", completion.FinishedAt); err != nil {
+					rootLog.Error().Err(err).Msg("updating TMDB successful refresh time failed")
+				}
+			}
+		}),
+		withTMDBRunError(func(err error) {
+			rootLog.Error().Err(err).Msg("persisting TMDB run state failed")
+		}),
+	)
+	tmdbScheduler = newTMDBRunScheduler(
+		context.Background(),
+		tmdbIntegration,
+		tmdbRuns,
+		integrationConfigRepo,
+		nil,
+		func(err error) {
+			rootLog.Error().Err(err).Msg("running scheduled TMDB refresh failed")
+		},
+	)
+	singleMovieEnricher := newTMDBSingleMovieLedgerEnricher(
+		movieMetadataRepo,
+		runEnricher,
+		tmdbIntegration,
+		integrationRunRepo,
+		nil,
+		authenticationRejected,
+	)
+	enrichCfg := loadEnrichConfig()
+	enrichCfg.RefreshInterval = 0
+	enrichLog := rootLog.With().Str("component", "enrich").Logger()
+	runner := newEnrichRunner(singleMovieEnricher, broker, enrichCfg, enrichLog)
+	runner.initialDrain = false
+
+	// The public wall stays empty while TMDB is unavailable. It shares the same
+	// revision-scoped client and pacing as search and enrichment.
+	posterLog := rootLog.With().Str("component", "poster-wall").Logger()
+	posterWall := newPosterWallCache(tmdbGateway.DiscoverPopularPosters, posterWallRefreshInterval, posterLog)
 
 	// The local-account repo backs LocalAuth reads and password verification.
 	// InviteManager gets the scoped store that commits credential and invite
@@ -338,24 +476,29 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 		movieService: movie.NewService(movieRepo, movie.DrawConfig{
 			OnRevealed: revealBroadcaster(broker),
 		}),
-		nextUpService:   nextup.NewService(nextUpRepo, userRepo),
-		settingsService: settings.NewService(settingsRepo),
-		movieMetadata:   movieMetadataRepo,
-		movieCredits:    movieCreditsRepo,
-		tmdb:            tmdbCli,
-		enrichRunner:    runner,
-		posterWall:      posterWall,
-		statsCache:      make(map[string]statsCacheEntry),
-		statsCacheTTL:   time.Minute,
+		nextUpService:      nextup.NewService(nextUpRepo, userRepo),
+		settingsService:    settings.NewService(settingsRepo),
+		movieMetadata:      movieMetadataRepo,
+		movieCredits:       movieCreditsRepo,
+		tmdb:               tmdbGateway,
+		enrichRunner:       runner,
+		tmdbIntegration:    tmdbIntegration,
+		integrationConfigs: integrationConfigRepo,
+		integrationRuns:    integrationRunRepo,
+		runRetention:       runRetention,
+		tmdbRuns:           tmdbRuns,
+		tmdbScheduler:      tmdbScheduler,
+		posterWall:         posterWall,
+		statsCache:         make(map[string]statsCacheEntry),
+		statsCacheTTL:      time.Minute,
 
 		sseHeartbeatInterval: sseHeartbeatInterval,
 	}
 
 	// Stats now aggregate enriched metadata/credits, so every successful
 	// enrichment invalidates the cached stats payloads.
-	if runner != nil {
-		runner.onEnriched = h.invalidateStatsCache
-	}
+	runner.onEnriched = h.invalidateStatsCache
+	wireTMDBRunEnriched(tmdbRuns, runner)
 
 	// OIDC is presence-derived: wired only when the config quartet is set. A tx
 	// codec or a discovery failure leaves SSO off (routes unmounted, claim page
@@ -366,6 +509,29 @@ func newHandler(pool *db.Pool, rootLog zerolog.Logger) *handler {
 	}
 
 	return h
+}
+
+func tmdbRunStatusIsSuccessful(status integration.RunStatus) bool {
+	return status == integration.RunStatusCompleted
+}
+
+func wireTMDBRunEnriched(controller *tmdbRunController, runner *enrichRunner) {
+	if controller == nil {
+		return
+	}
+	if runner == nil {
+		controller.setEnrichedCallback(nil)
+		return
+	}
+	controller.setEnrichedCallback(runner.recordEnriched)
+}
+
+func integrationKeyFilePath(pool *db.Pool) string {
+	var path string
+	if err := pool.Write.QueryRow(`SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&path); err != nil || path == "" {
+		return "moviepickarr.integration.key"
+	}
+	return path + ".integration.key"
 }
 
 // wireOIDC builds the relying party (running discovery once) and tx-cookie AEAD
@@ -481,6 +647,13 @@ func registerRoutes(app *fiber.App, h *handler) {
 
 func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/events", h.handleSSE)
+	v1.Get("/integrations", h.handleListIntegrations)
+	v1.Get("/integrations/tmdb", h.handleGetTMDBIntegration)
+	v1.Put("/integrations/tmdb", h.handleSaveTMDBIntegration)
+	v1.Post("/integrations/tmdb/test", h.handleTestTMDBConnection)
+	v1.Post("/integrations/tmdb/runs", h.handleStartTMDBRun)
+	v1.Get("/integration-runs", h.handleListIntegrationRuns)
+	v1.Delete("/integration-runs/:runID", h.handleCancelTMDBRun)
 
 	// Roster: reads are any-authenticated; create/delete are admin-only (guarded
 	// inside the handlers). The actor is always the session member, never a path id.

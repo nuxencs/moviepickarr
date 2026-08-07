@@ -32,10 +32,14 @@ subjects, let the active remote request finish, preserve completed updates, and
 record the outcome as `Cancelled`. A process restart records an unfinished run
 as `Interrupted` instead.
 
-Admin exposes one shared run-history page across integrations, with filters for
-integration, operation, status, and trigger. An integration page shows its
-current or latest run and links to the shared history with that integration
-filter applied.
+Admin exposes one shared finished-result page across integrations, with filters
+for integration, operation, and result. Active progress stays on the integration
+page. Each lean result row opens a details modal for timing, trigger, complete
+counts, and failure information. Internal run IDs and configuration revisions do
+not appear in the Admin interface. Each integration publishes its operation IDs
+and labels through the integration catalog, so the shared Type filter does not
+own a TMDB-only vocabulary. An integration page shows its current or latest run
+and links to the shared results with that integration filter applied.
 
 ## Consequences
 

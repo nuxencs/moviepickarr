@@ -79,9 +79,9 @@ Two notes:
 - Leave `MPA_ADMIN_*` unset in dev. The fixtures seed their own admin login, so
   the break-glass admin seed isn't needed and a matching `MPA_ADMIN_USERNAME`
   would collide with a seeded login on boot.
-- Movies carry real TMDB ids but no cached metadata. With a `TMDB_API_KEY` set,
-  the enrichment worker fills posters and details on the next `make dev`;
-  without one they render with placeholder posters.
+- Movies carry real TMDB ids but no cached metadata. Configure TMDB in Admin or
+  set `TMDB_API_KEY`, then the startup refresh fills posters and details on the
+  next `make dev`. Without a key they render with placeholder posters.
 
 The movie dataset (`internal/devfixtures/data/movies.json`) is a committed list
 of real TMDB titles. To regenerate it (rarely needed, since TMDB ids are stable),
@@ -101,8 +101,8 @@ done | jq -s 'add as $x | [.[] | .results[] | select(.adult|not) |
 
 - Backend: [Go](https://go.dev) with the [Fiber](https://gofiber.io) web
   framework and an embedded [SQLite](https://sqlite.org) database. Movie
-  enrichment runs in a background worker, and live updates reach the browser
-  over Server-Sent Events.
+  enrichment runs through a paced worker and durable integration runs. Live
+  updates reach the browser over Server-Sent Events.
 - Frontend: [React 19](https://react.dev) with
   [TypeScript](https://www.typescriptlang.org),
   [TanStack Router](https://tanstack.com/router) and

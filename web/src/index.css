@@ -413,7 +413,8 @@
   }
   .field:focus-within { border-color: var(--accent-line); background: var(--surface); }
   .field svg { width: 16px; height: 16px; color: var(--ink-3); flex: none; }
-  .field input { background: none; border: none; outline: none; color: var(--ink); font-size: 14px; width: 100%; }
+  .field input,
+  .field select { min-width: 0; width: 100%; border: none; outline: none; background: none; color: var(--ink); font: 14px var(--font-ui); }
   .field input::placeholder { color: var(--ink-3); }
   .field[data-invalid="true"], .field[data-invalid="true"]:focus-within { border-color: color-mix(in oklab, var(--danger) 55%, var(--line)); }
   .fieldgroup { display: grid; gap: 6px; }

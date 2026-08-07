@@ -370,42 +370,6 @@
   color: color-mix(in oklab, var(--danger) 55%, var(--ink));
 }
 
-/* ---------- empty / loading / error rows ---------- */
-.adm-state {
-  padding: 48px 16px;
-  text-align: center;
-  color: var(--ink-3);
-  font-size: 14px;
-}
-
-/* =========================================================
-   Ceremony dialogs, rendered inside the shared Modal, which
-   supplies the veil, focus trap, and scale motion. .adm-sheet
-   is the content padding the Modal surface doesn't add.
-   ========================================================= */
-.adm-sheet {
-  padding: 24px;
-}
-.adm-modal__title {
-  font-size: 17px;
-  font-weight: 640;
-  letter-spacing: -0.015em;
-  margin: 0;
-  color: var(--ink);
-}
-.adm-modal__sub {
-  font-size: 13.5px;
-  color: var(--ink-2);
-  line-height: 1.5;
-  margin: 8px 0 0;
-}
-.adm-modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 22px;
-}
-
 /* one-time invite reveal */
 .adm-invite__head {
   display: flex;

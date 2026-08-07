@@ -50,6 +50,6 @@ export function AppLayout() {
  * own, so navigating between tabs unmounts/remounts the content — preserving the
  * old `key={tab}` behavior (fresh state and scroll on every tab entry).
  */
-export function Shell({ children }: { children: ReactNode }) {
-  return <main className="shell">{children}</main>;
+export function Shell({ children, className }: { children: ReactNode; className?: string }) {
+  return <main className={className ? `shell ${className}` : "shell"}>{children}</main>;
 }

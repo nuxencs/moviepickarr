@@ -16,6 +16,7 @@ import (
 
 	"moviepickarr/internal/db"
 	"moviepickarr/internal/domain"
+	integrationtmdb "moviepickarr/internal/integration/tmdb"
 	"moviepickarr/internal/movie"
 	"moviepickarr/internal/repository"
 
@@ -261,8 +262,8 @@ func TestHandleEditMovie_IdentityChangeRemovesDerivedDataAndStaysQueued(t *testi
 	h, app, userRepo, movieRepo, dbConn := setupEditMovieTestWithDB(t)
 	metaRepo := repository.NewSqliteMovieMetadataRepository(dbConn)
 	creditsRepo := repository.NewSqliteMovieCreditsRepository(dbConn)
-	if h.enrichRunner != nil {
-		t.Fatal("test requires enrichment to be disabled")
+	if _, err := h.tmdbIntegration.Acquire(ctx); !errors.Is(err, integrationtmdb.ErrRuntimeDisabled) {
+		t.Fatalf("TMDB runtime error = %v, want disabled", err)
 	}
 
 	user, err := userRepo.Create(ctx, "Cleanup owner")

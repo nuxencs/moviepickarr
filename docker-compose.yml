@@ -10,6 +10,7 @@ services:
       PGID: 1000
       UMASK: 002
       TZ: Etc/UTC
-      TMDB_API_KEY: <your_key>
+      # Optional deployment override. Omit this to configure TMDB in Admin.
+      # TMDB_API_KEY: <your_key>
     volumes:
       - ~/.config/moviepickarr:/app

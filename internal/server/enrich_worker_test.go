@@ -3,16 +3,158 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"moviepickarr/internal/domain"
+	"moviepickarr/internal/integration"
 
 	"github.com/rs/zerolog"
 )
+
+func TestRateLimiter_CancelledWaitDoesNotDelayNextCaller(t *testing.T) {
+	const interval = 400 * time.Millisecond
+	limiter := newRateLimiter(interval)
+	if err := limiter.wait(context.Background()); err != nil {
+		t.Fatalf("first wait: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	waiting := make(chan error, 1)
+	go func() { waiting <- limiter.wait(ctx) }()
+	time.Sleep(25 * time.Millisecond)
+	cancel()
+	if err := <-waiting; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled wait error = %v, want context canceled", err)
+	}
+
+	started := time.Now()
+	if err := limiter.wait(context.Background()); err != nil {
+		t.Fatalf("next wait: %v", err)
+	}
+	elapsed := time.Since(started)
+	if elapsed > 600*time.Millisecond {
+		t.Fatalf("next wait took %s, want at most the remainder of one 400ms interval", elapsed)
+	}
+}
+
+func TestRateLimiter_PacesConcurrentCallers(t *testing.T) {
+	const (
+		callers  = 4
+		interval = 30 * time.Millisecond
+	)
+	limiter := newRateLimiter(interval)
+	start := make(chan struct{})
+	type result struct {
+		at  time.Time
+		err error
+	}
+	completed := make(chan result, callers)
+	for range callers {
+		go func() {
+			<-start
+			err := limiter.wait(context.Background())
+			completed <- result{at: time.Now(), err: err}
+		}()
+	}
+	close(start)
+
+	times := make([]time.Time, 0, callers)
+	for range callers {
+		result := <-completed
+		if result.err != nil {
+			t.Fatalf("wait: %v", result.err)
+		}
+		times = append(times, result.at)
+	}
+	slices.SortFunc(times, func(a, b time.Time) int { return a.Compare(b) })
+	for index := 1; index < len(times); index++ {
+		if gap := times[index].Sub(times[index-1]); gap < interval/2 {
+			t.Fatalf("completion gap %d = %s, want paced calls", index, gap)
+		}
+	}
+}
+
+func TestRateLimiter_RejectsBurstBeyondPendingLimit(t *testing.T) {
+	limiter := newRateLimiter(time.Hour)
+	if err := limiter.wait(context.Background()); err != nil {
+		t.Fatalf("prime limiter: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	const callers = rateLimiterMaxPending + 1
+	start := make(chan struct{})
+	results := make(chan error, callers)
+	for range callers {
+		go func() {
+			<-start
+			results <- limiter.wait(ctx)
+		}()
+	}
+	close(start)
+
+	var first error
+	select {
+	case first = <-results:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("burst did not reject an excess waiter")
+	}
+	var overload *tmdbRequestQueueFullError
+	if !errors.As(first, &overload) {
+		cancel()
+		t.Fatalf("burst error = %v, want typed queue-full error", first)
+	}
+
+	cancel()
+	for received := 1; received < callers; received++ {
+		select {
+		case err := <-results:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("admitted waiter error = %v, want context canceled", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("admitted waiters did not leave after cancellation")
+		}
+	}
+}
+
+func TestRateLimiter_ReservedCallerWaitsInsteadOfRejectingFullQueue(t *testing.T) {
+	limiter := newRateLimiter(time.Hour)
+	if err := limiter.wait(context.Background()); err != nil {
+		t.Fatalf("prime limiter: %v", err)
+	}
+
+	searchCtx := t.Context()
+	for range rateLimiterMaxPending {
+		go func() { _ = limiter.wait(searchCtx) }()
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(limiter.pending) != cap(limiter.pending) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(limiter.pending) != cap(limiter.pending) {
+		t.Fatalf("pending = %d, want full queue %d", len(limiter.pending), cap(limiter.pending))
+	}
+
+	reservedCtx, cancelReserved := context.WithCancel(context.Background())
+	reserved := make(chan error, 1)
+	go func() { reserved <- limiter.waitReserved(reservedCtx) }()
+	select {
+	case err := <-reserved:
+		t.Fatalf("reserved caller returned early with %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	cancelReserved()
+	if err := <-reserved; !errors.Is(err, context.Canceled) {
+		t.Fatalf("reserved caller error = %v, want context canceled", err)
+	}
+}
 
 // countBatchEvents drains a broker client for "movies:enriched-batch" frames
 // until the channel goes quiet for `within`.
@@ -42,6 +184,30 @@ func newBatchRunner(broker *eventBroker, debounce, maxWait time.Duration) (*enri
 	var statsInvalidations atomic.Int32
 	r.onEnriched = func() { statsInvalidations.Add(1) }
 	return r, &statsInvalidations
+}
+
+func TestEnrichRunner_StartupLogOmitsInactiveDrainConfiguration(t *testing.T) {
+	t.Parallel()
+	var logs bytes.Buffer
+	cfg := defaultEnrichConfig()
+	cfg.RefreshInterval = 0
+	r := newEnrichRunner(nil, nil, cfg, zerolog.New(&logs))
+	r.initialDrain = false
+
+	r.Start(context.Background())
+	r.Stop()
+
+	logged := logs.String()
+	for _, inactive := range []string{`"rate":`, `"retries":`, `"batch":`, `"cast":`, `"ttl":`, `"refresh":`} {
+		if strings.Contains(logged, inactive) {
+			t.Fatalf("startup log includes inactive field %s: %s", inactive, logged)
+		}
+	}
+	for _, active := range []string{`"queue_capacity":256`, `"batch_debounce":"500ms"`, `"batch_max_wait":"2s"`} {
+		if !strings.Contains(logged, active) {
+			t.Fatalf("startup log omits active field %s: %s", active, logged)
+		}
+	}
 }
 
 // A drain enriching many movies back-to-back must collapse to ONE batch event
@@ -188,6 +354,48 @@ func (*blockingRerunEnricher) NeedsEnrichment(
 	int,
 ) ([]domain.EnrichmentCandidate, error) {
 	return nil, nil
+}
+
+type triggerRecordingEnricher struct {
+	triggers []integration.RunTrigger
+}
+
+func (e *triggerRecordingEnricher) EnrichOne(context.Context, int) (enrichResult, error) {
+	return enrichResult{}, errors.New("trigger was not forwarded")
+}
+
+func (e *triggerRecordingEnricher) EnrichOneWithTrigger(
+	_ context.Context,
+	movieID int,
+	trigger integration.RunTrigger,
+) (enrichResult, error) {
+	e.triggers = append(e.triggers, trigger)
+	return enrichResult{TMDBID: movieID}, nil
+}
+
+func (*triggerRecordingEnricher) NeedsEnrichment(
+	context.Context,
+	time.Time,
+	int,
+) ([]domain.EnrichmentCandidate, error) {
+	return nil, nil
+}
+
+func TestEnrichRunner_ForwardsMovieUpdateTrigger(t *testing.T) {
+	t.Parallel()
+	enricher := &triggerRecordingEnricher{}
+	r := newEnrichRunner(enricher, nil, defaultEnrichConfig(), zerolog.Nop())
+
+	// The edit can arrive before an earlier add has left the queue. The worker
+	// enriches the latest identity, so the ledger must retain the edit trigger.
+	r.Enqueue(17)
+	r.EnqueueWithTrigger(17, integration.RunTriggerMovieUpdated)
+	if got := r.process(context.Background(), <-r.queue); got != outcomeEnriched {
+		t.Fatalf("outcome = %d, want enriched", got)
+	}
+	if !slices.Equal(enricher.triggers, []integration.RunTrigger{integration.RunTriggerMovieUpdated}) {
+		t.Fatalf("triggers = %v, want movie update", enricher.triggers)
+	}
 }
 
 func TestEnrichRunner_EnqueueDuringProcessingCoalescesOneRerun(t *testing.T) {

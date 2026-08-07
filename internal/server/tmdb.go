@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -36,61 +35,21 @@ type tmdbClient struct {
 	backoffBase time.Duration // base delay for exponential backoff
 }
 
-func newTMDBClient(cfg enrichConfig, limiter *rateLimiter) *tmdbClient {
-	return &tmdbClient{
-		apiKey:      os.Getenv("TMDB_API_KEY"),
-		baseURL:     "https://api.themoviedb.org/3",
-		limiter:     limiter,
-		maxRetries:  cfg.MaxRetries,
-		backoffBase: cfg.BackoffBase,
-		http: &http.Client{
-			Timeout: 8 * time.Second,
-		},
-	}
-}
-
 func (c *tmdbClient) Search(ctx context.Context, query string) ([]tmdbMovie, error) {
-	if c.apiKey == "" {
-		return nil, fmt.Errorf("tmdb api key not configured")
-	}
-
-	u := fmt.Sprintf("https://api.themoviedb.org/3/search/movie?query=%s", url.QueryEscape(query))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("tmdb api request failed: status %d", resp.StatusCode)
-	}
-
+	u := fmt.Sprintf("%s/search/movie?query=%s", c.baseURL, url.QueryEscape(query))
 	var payload tmdbSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := c.doRequestWithAdmission(ctx, u, &payload, true); err != nil {
 		return nil, err
 	}
-	// Drain any trailing bytes so net/http can return the connection to the idle
-	// pool (keep-alive) instead of closing it — Decode stops at the JSON value's
-	// end and typically leaves a trailing newline unread.
-	_, _ = io.Copy(io.Discard, resp.Body)
-
 	return payload.Results, nil
 }
 
 // --- Enrichment: reverse lookup + full details -----------------------------
 
 var (
-	errTMDBNotFound      = errors.New("tmdb: not found")
-	errTMDBNotConfigured = errors.New("tmdb: api key not configured")
+	errTMDBNotFound       = errors.New("tmdb: not found")
+	errTMDBNotConfigured  = errors.New("tmdb: api key not configured")
+	errTMDBAuthentication = errors.New("tmdb: API key rejected")
 )
 
 // tmdbRateLimitError is returned when retries are exhausted on HTTP 429.
@@ -227,6 +186,15 @@ func (c *tmdbClient) DiscoverPopularPosters(ctx context.Context) ([]string, erro
 // taxonomy, honors 429 Retry-After, and retries 5xx/network errors with
 // exponential backoff + jitter until maxRetries is reached or ctx is done.
 func (c *tmdbClient) doRequest(ctx context.Context, requestURL string, out any) error {
+	return c.doRequestWithAdmission(ctx, requestURL, out, false)
+}
+
+func (c *tmdbClient) doRequestWithAdmission(
+	ctx context.Context,
+	requestURL string,
+	out any,
+	rejectWhenFull bool,
+) error {
 	if c.apiKey == "" {
 		return errTMDBNotConfigured
 	}
@@ -237,7 +205,13 @@ func (c *tmdbClient) doRequest(ctx context.Context, requestURL string, out any) 
 			return err
 		}
 		if c.limiter != nil {
-			if err := c.limiter.wait(ctx); err != nil {
+			var err error
+			if rejectWhenFull {
+				err = c.limiter.wait(ctx)
+			} else {
+				err = c.limiter.waitReserved(ctx)
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -270,6 +244,9 @@ func (c *tmdbClient) doRequest(ctx context.Context, requestURL string, out any) 
 		case resp.StatusCode == http.StatusNotFound:
 			_ = resp.Body.Close()
 			return errTMDBNotFound
+		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+			_ = resp.Body.Close()
+			return errTMDBAuthentication
 		case resp.StatusCode == http.StatusTooManyRequests:
 			d := parseRetryAfter(resp.Header.Get("Retry-After"), c.backoffBase)
 			_ = resp.Body.Close()
@@ -294,16 +271,36 @@ func (c *tmdbClient) doRequest(ctx context.Context, requestURL string, out any) 
 	return lastErr
 }
 
-// sleepBackoff waits base*2^attempt (capped at 30s) plus up to base of jitter,
-// returning false if ctx is cancelled during the wait.
+const maxTMDBRetryBackoff = 30 * time.Second
+
+// sleepBackoff waits base*2^attempt plus up to base of jitter, with the complete
+// delay capped at 30 seconds. A zero base retries immediately.
 func sleepBackoff(ctx context.Context, attempt int, base time.Duration) bool {
-	const maxBackoff = 30 * time.Second
-	d := base << attempt
-	if d <= 0 || d > maxBackoff {
-		d = maxBackoff
+	return sleepFor(ctx, retryBackoffDuration(attempt, base))
+}
+
+func retryBackoffDuration(attempt int, base time.Duration) time.Duration {
+	if base <= 0 {
+		return 0
 	}
-	d += time.Duration(rand.Int63n(int64(base) + 1))
-	return sleepFor(ctx, d)
+	if base >= maxTMDBRetryBackoff {
+		return maxTMDBRetryBackoff
+	}
+
+	delay := base
+	for range attempt {
+		if delay >= maxTMDBRetryBackoff/2 {
+			delay = maxTMDBRetryBackoff
+			break
+		}
+		delay *= 2
+	}
+	if delay >= maxTMDBRetryBackoff {
+		return maxTMDBRetryBackoff
+	}
+
+	jitterLimit := min(base, maxTMDBRetryBackoff-delay)
+	return delay + time.Duration(rand.Int63n(int64(jitterLimit)+1))
 }
 
 // sleepFor blocks for d, returning false if ctx is cancelled first.

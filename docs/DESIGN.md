@@ -190,6 +190,43 @@ old shadcn primitives.
   takes focus only after an admin creates or replaces a link, when it must be copied
   and delivered. Loading or failed invite metadata must not turn every roster row into
   a repeated status card.
+- Admin uses one persistent nested index for Roster, Integrations, and Runs, without
+  a repeated Admin heading. The active Integrations branch reveals TMDB in the same
+  index. One vertical accent indicator moves between the three top-level destinations
+  using the primary tabs' duration and easing. Each desktop destination owns its full
+  row hit target and uses the same background hover. Its standard 22px line grows across the
+  full parent-and-child branch while Integrations is active. The child slot derives
+  from the same row step, including coarse-pointer targets. TMDB uses a weighted,
+  gold-tinted label without a selected fill or marker, which remains legible when the
+  rail is hidden on mobile. On mobile, the selected leaf has a gold bottom marker.
+  The child row stays mounted and opens with a grid
+  transition, so Runs does not snap. At 901px and up, the index stays at the left while
+  every selected Admin page scrolls independently. The persistent content inset never
+  changes with the selected route, because TanStack can keep the outgoing outlet painted while
+  the next lazy route resolves. The shared scroller resets from the committed leaf
+  route, not the pending location, so the painted outgoing page remains still. Below
+  901px, the index becomes horizontal and the
+  document owns vertical scrolling. The TMDB detail leads with a compact health
+  summary and actions. Routine timestamps and the latest completed run live under the
+  native `Activity details` disclosure; active runs, warnings, errors, and recovery
+  reasons stay visible. A compact settings ledger follows. Active sources remain
+  visible; help, defaults, and environment keys live behind accessible info controls.
+  Their tooltips portal to the viewport, flip and clamp at its edges, and never
+  participate in the setting row's layout.
+  Environment-controlled inputs are read-only, secrets are write-only, and advanced
+  settings start collapsed.
+  Draft state stays inside the form so typing does not re-render status or run progress.
+  A visible one-shot refresh at the next scheduled check discovers a newly started run.
+  Waits longer than the browser timer range are split into safe chunks and rechecked
+  before the request is sent.
+  Progress polling then runs only while that run is active and the document is visible.
+  Run history is a terminal-result register with Integration, Type, and Result filters.
+  It uses 50-row keyset pages and keeps the previous page in memory while the next page
+  loads. Active progress remains on the integration detail. Each result row opens a
+  modal with timing, trigger, complete counts, and failure detail when present. The
+  register omits run IDs, configuration revisions, trigger, and processed totals. Below
+  640px, facts and settings controls stack and result rows expose the same lean summary
+  without requiring horizontal page scroll.
 - **Stats filter row:** `.statsfilters` — ONE filter system (time presets, watch-year
   quick-select, genre, actors, crew, added by, release year) in a single wrapping row under the
   stats header. The seg stays a seg (presets are mutually exclusive) but drops its

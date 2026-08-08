@@ -48,6 +48,13 @@ other reds.
 **Radii (tight, squared):** `--r-sm 2px`, `--r-md 3px`, `--r-lg 4px`, `--r-xl 6px`.
 Modals use `--r-xl`. Don't exceed the scale.
 
+**Control geometry:** `--control-h-sm 34px`, `--control-h 42px`, and
+`--control-h-lg 46px`. The standard height serves fields and buttons. The small
+height serves icon buttons, compact buttons, segmented-control options, and
+compact fields embedded in menus or dense panes. The large height serves focused
+form entry points such as login and modal search. An icon never changes a
+control's height.
+
 **Motion:** a 3-step duration scale — `--dur-fast 0.14s` (pointer feedback: hover,
 press, color), `--dur-base 0.22s` (state changes, crossfades), `--dur-slow 0.4s`
 (entrances), plus `--dur-reveal 0.6s` (the hero draw-reveal) and `--dur-spin 6.5s`
@@ -90,8 +97,16 @@ old shadcn primitives.
   Hover brightens (`filter: brightness(1.06)`, no lift); `:active` presses
   (`translateY(1px) scale(0.99)`). Verb+object labels. Buttons deliberately do **not**
   lift on hover — the press on `:active` is the only positional feedback.
+  Icon use follows the action's role. Repeated row utilities and universal controls
+  such as close, edit, overflow, and month navigation use `.iconbtn` with an accessible
+  name. Toolbar actions, page-level task starters, navigation, retry, copy, and account
+  row actions use one clear icon plus a label. Dialog decisions and form commits such
+  as Cancel, Save, Apply, Done, and confirmation choices stay label-only. A loading
+  indicator may replace or precede the normal icon without changing that role.
+  Directional icons sit on the side they point toward; other labeled-button icons lead.
 - Inputs use `.field`, a 42px filled wrapper with a leading icon and gold
-  focus-within border. Invalid inputs set `aria-invalid` and `data-invalid`.
+  focus-within border plus the shared visible focus outline. Invalid inputs set
+  `aria-invalid` and `data-invalid`.
   `.fieldgroup` keeps the field and its specific `.field-error` together, with
   `aria-describedby` linking the input to the message. There is no bare input style.
   A watched film's date-time field is required. When its minute-level display value

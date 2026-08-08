@@ -6,7 +6,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 
 import type {
@@ -168,6 +168,21 @@ it("keeps an active run and its cancellation outside routine activity", async ()
   expect(within(activeRun).getByText("5 of 20 processed")).toBeTruthy();
   expect(within(activeRun).getByText("15 remaining")).toBeTruthy();
   expect(within(status).getByRole("button", { name: "Cancel run" })).toBeTruthy();
+});
+
+it("uses icons for toolbar actions and labels only for dialog decisions", async () => {
+  await renderStatus(tmdbConfig());
+
+  const status = await screen.findByRole("region", { name: "TMDB status" });
+  const refresh = within(status).getByRole("button", { name: "Refresh stale now" });
+  const reEnrich = within(status).getByRole("button", { name: "Re-enrich all" });
+  expect(refresh.querySelector("svg")).not.toBeNull();
+  expect(reEnrich.querySelector("svg")).not.toBeNull();
+
+  fireEvent.click(reEnrich);
+  const dialog = await screen.findByRole("dialog", { name: "Re-enrich every movie?" });
+  expect(within(dialog).getByRole("button", { name: "Cancel" }).querySelector("svg")).toBeNull();
+  expect(within(dialog).getByRole("button", { name: "Re-enrich all" }).querySelector("svg")).toBeNull();
 });
 
 it("shows single-movie enrichment as active without bulk-run controls", async () => {

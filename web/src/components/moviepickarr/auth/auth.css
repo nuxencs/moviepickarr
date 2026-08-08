@@ -173,7 +173,7 @@
 
 /* Reused .field rows, sized for a login form. */
 .auth__field {
-  height: 46px;
+  height: var(--control-h-lg);
   width: 100%;
 }
 .auth__field + .auth__field {
@@ -185,7 +185,7 @@
 
 .auth__submit {
   width: 100%;
-  height: 46px;
+  height: var(--control-h-lg);
   margin-top: 12px;
   justify-content: center;
   gap: 8px;

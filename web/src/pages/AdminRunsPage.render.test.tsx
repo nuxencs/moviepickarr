@@ -261,7 +261,9 @@ describe("Admin run history", () => {
     const register = await screen.findByRole("list", { name: "Integration run history" });
     expect(within(register).getByText("Refresh stale")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    const nextPageButton = screen.getByRole("button", { name: "Next page" });
+    expect(nextPageButton.querySelector("svg")).not.toBeNull();
+    fireEvent.click(nextPageButton);
     await waitFor(() => {
       expect(router.state.location.search).toMatchObject({
         integration: "tmdb",
@@ -278,7 +280,9 @@ describe("Admin run history", () => {
       runs: [{ ...completedRun, id: 42, operation: "re_enrich_all", failedSubjects: [] }],
     });
     expect(await within(register).findByText("Re-enrich all")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
+    const previousPageButton = screen.getByRole("button", { name: "Previous page" });
+    expect(previousPageButton.querySelector("svg")).not.toBeNull();
+    fireEvent.click(previousPageButton);
     await waitFor(() => expect(router.state.location.search.cursor).toBeUndefined());
     expect(await within(register).findByText("Refresh stale")).toBeTruthy();
   });

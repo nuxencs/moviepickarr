@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowLeftIcon, BanIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  BanIcon,
+  CheckIcon,
+  Loader2Icon,
+  RefreshCwIcon,
+  SearchIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { IntegrationProblem } from "@/api/integrations";
@@ -78,6 +85,11 @@ function IdentityResolver({ acquisition }: { acquisition: RadarrAcquisition }) {
           <input value={query} onChange={(event) => setQuery(event.target.value)} />
         </label>
         <button type="submit" className="btn btn--ghost" disabled={busy || !query.trim()}>
+          {search.isPending ? (
+            <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" />
+          ) : (
+            <SearchIcon aria-hidden="true" />
+          )}
           {search.isPending ? "Searching…" : "Search Radarr"}
         </button>
       </form>
@@ -89,6 +101,11 @@ function IdentityResolver({ acquisition }: { acquisition: RadarrAcquisition }) {
               <li key={result.tmdbId}>
                 <div><strong>{result.title}</strong><span>{result.year ?? "Year unavailable"} · TMDB {result.tmdbId}</span></div>
                 <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => select.mutate(result)}>
+                  {select.isPending ? (
+                    <Loader2Icon className="animate-spin mg-spin" aria-hidden="true" />
+                  ) : (
+                    <CheckIcon aria-hidden="true" />
+                  )}
                   {select.isPending ? "Selecting…" : "Use this movie"}
                 </button>
               </li>

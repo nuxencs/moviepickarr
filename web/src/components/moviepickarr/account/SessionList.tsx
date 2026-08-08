@@ -1,4 +1,4 @@
-import { MonitorIcon, SmartphoneIcon, TabletIcon } from "lucide-react";
+import { LogOutIcon, MonitorIcon, SmartphoneIcon, TabletIcon } from "lucide-react";
 
 import { sessionMeta } from "@/components/moviepickarr/account/sessions";
 
@@ -44,6 +44,7 @@ export function SessionList({ sessions, revokingID, disabled = false, onRevoke }
             onClick={() => onRevoke(s)}
             disabled={disabled || revokingID !== null}
           >
+            <LogOutIcon aria-hidden="true" />
             {revokingID === s.id ? "Signing out…" : "Sign out"}
           </button>
         </li>

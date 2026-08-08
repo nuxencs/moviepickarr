@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { CheckCircle2Icon, KeyRoundIcon, LockIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  CheckCircle2Icon,
+  LockIcon,
+  RotateCcwIcon,
+  TriangleAlertIcon,
+  UserIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { APIClient, oidcClaimPath } from "@/api/APIClient";
@@ -42,6 +49,7 @@ function ErrorScreen({ onRetry }: { onRetry: () => void }) {
         We couldn&rsquo;t load your invite just now. Check your connection and try again.
       </p>
       <button type="button" className="btn btn--accent auth__submit" onClick={onRetry}>
+        <RotateCcwIcon aria-hidden="true" />
         Try again
       </button>
     </div>
@@ -60,6 +68,7 @@ function AlreadyScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
       <p className="auth__lead">This login is already set up. Just sign in.</p>
       <button type="button" className="btn btn--accent auth__submit" onClick={onGoToLogin}>
         Go to login
+        <ArrowRightIcon aria-hidden="true" />
       </button>
     </div>
   );
@@ -168,7 +177,6 @@ function ClaimForm({ token, claim }: { token: string; claim: ClaimInfo }) {
           className="btn btn--ghost auth__submit"
           onClick={() => window.location.assign(oidcClaimPath(token))}
         >
-          <KeyRoundIcon />
           Set up with SSO instead
         </button>
       )}

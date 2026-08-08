@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { RefreshCwIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -209,6 +210,7 @@ export function TMDBStatus({ config }: { config: TMDBIntegration }) {
             start.mutate({ operation: "refresh_stale", confirm: false });
           }}
         >
+          <RefreshCwIcon aria-hidden="true" />
           Refresh stale now
         </button>
         <button
@@ -217,6 +219,7 @@ export function TMDBStatus({ config }: { config: TMDBIntegration }) {
           disabled={!available || Boolean(running) || busy}
           onClick={() => setConfirmReEnrich(true)}
         >
+          <SparklesIcon aria-hidden="true" />
           Re-enrich all
         </button>
         {running ? (
@@ -226,6 +229,7 @@ export function TMDBStatus({ config }: { config: TMDBIntegration }) {
             disabled={busy}
             onClick={() => cancel.mutate(running.id)}
           >
+            <XIcon aria-hidden="true" />
             {cancel.isPending ? "Cancelling…" : "Cancel run"}
           </button>
         ) : null}

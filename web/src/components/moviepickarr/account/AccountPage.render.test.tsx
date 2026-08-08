@@ -284,6 +284,8 @@ describe("the device list", () => {
 
     expect(screen.getByText("Chrome on macOS")).not.toBeNull();
     expect(screen.getByText("This device")).not.toBeNull();
+    expect(button("Change").querySelector("svg")).not.toBeNull();
+    expect(button("Log out this device").querySelector("svg")).not.toBeNull();
 
     const disclosure = screen.getByText("1 other device").closest("details") as HTMLDetailsElement;
     expect(disclosure.open).toBe(false);
@@ -292,7 +294,7 @@ describe("the device list", () => {
 
     expect(disclosure.open).toBe(true);
     expect(screen.getByText("Safari on iPhone")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Sign out of Safari on iPhone" })).not.toBeNull();
+    expect(button("Sign out of Safari on iPhone").querySelector("svg")).not.toBeNull();
   });
 
   it("signs out the device whose row was taken, not another", async () => {

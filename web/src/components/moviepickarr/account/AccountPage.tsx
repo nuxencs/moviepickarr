@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { ChevronDownIcon, KeyRoundIcon, LinkIcon, LogOutIcon, MonitorSmartphoneIcon, UnlinkIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  KeyRoundIcon,
+  LinkIcon,
+  LogOutIcon,
+  MonitorSmartphoneIcon,
+  RotateCcwIcon,
+  UnlinkIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { APIClient, ApiError, oidcLinkPath } from "@/api/APIClient";
@@ -223,6 +231,7 @@ export function AccountPage() {
               <div className="acc__rowmeta">Used to sign in with your username.</div>
             </div>
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => openDialog("change-password")}>
+              <KeyRoundIcon aria-hidden="true" />
               Change
             </button>
           </div>
@@ -236,6 +245,7 @@ export function AccountPage() {
               <div className="acc__rowmeta">You sign in with {PROVIDER}. Add a password as a backup way in.</div>
             </div>
             <button type="button" className="btn btn--accent btn--sm" onClick={() => openDialog("set-password")}>
+              <KeyRoundIcon aria-hidden="true" />
               Set a password
             </button>
           </div>
@@ -325,6 +335,7 @@ export function AccountPage() {
             <div className="acc-devices__status" role="alert">
               <span>Couldn&apos;t load other devices.</span>
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => void sessions.refetch()}>
+                <RotateCcwIcon aria-hidden="true" />
                 Retry
               </button>
               <button
@@ -333,6 +344,7 @@ export function AccountPage() {
                 onClick={() => openDialog("logout-all")}
                 disabled={sessionActionsBusy}
               >
+                <LogOutIcon aria-hidden="true" />
                 Log out everywhere
               </button>
             </div>
@@ -366,6 +378,7 @@ export function AccountPage() {
                   onClick={() => openDialog("logout-all")}
                   disabled={sessionActionsBusy}
                 >
+                  <LogOutIcon aria-hidden="true" />
                   Log out everywhere
                 </button>
               </div>

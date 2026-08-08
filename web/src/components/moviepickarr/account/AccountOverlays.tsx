@@ -279,7 +279,6 @@ export function LogoutEverywhereDialog({
               Cancel
             </button>
             <button type="button" className="btn btn--danger" onClick={onConfirm} disabled={pending}>
-              <LogOutIcon />
               {pending ? "Logging out…" : "Log out everywhere"}
             </button>
           </div>
@@ -316,7 +315,6 @@ export function UnlinkGuardDialog({
               Cancel
             </button>
             <button type="button" className="btn btn--accent" onClick={onSetPassword}>
-              <KeyRoundIcon />
               Set a password
             </button>
           </div>

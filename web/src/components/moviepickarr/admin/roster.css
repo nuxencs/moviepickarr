@@ -34,7 +34,6 @@
    drift apart again. */
 .adm-field {
   width: 220px;
-  height: 40px;
 }
 
 /* ---------- the table ---------- */
@@ -398,20 +397,11 @@
 .adm-invite__url {
   flex: 1;
   min-width: 0;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.adm-invite__url input {
+  font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--ink-2);
-  background: color-mix(in oklab, var(--ink) 5%, transparent);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 11px 12px;
-  overflow-x: auto;
-  white-space: nowrap;
-  outline: none;
-}
-.adm-invite__url:focus {
-  border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .adm-invite__copy {
   flex: none;

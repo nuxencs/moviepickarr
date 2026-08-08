@@ -34,16 +34,14 @@ describe("Radarr Admin workspace styles", () => {
     expect(css).toMatch(/\.radarr-current-action\s*\{[^}]*padding:\s*16px 0/);
   });
 
-  it("keeps disclosures and the History filter visually flat", () => {
+  it("keeps disclosures flat and lets the History filter use the shared field", () => {
     expect(css).toMatch(
       /\.radarr-disclosure__trigger\s*\{[^}]*transition:\s*color var\(--dur-fast\)/,
     );
     expect(css).not.toMatch(
       /\.radarr-disclosure__trigger:hover,\s*\.radarr-disclosure__trigger:focus-visible\s*\{[^}]*background/,
     );
-    expect(css).toMatch(
-      /\.radarr-acquisition-history__tools \.field\s*\{[^}]*border-bottom:\s*1px solid var\(--line\)[^}]*background:\s*transparent/,
-    );
+    expect(css).not.toMatch(/\.radarr-acquisition-history__tools \.field/);
   });
 
   it("honors reduced motion for the interactive register", () => {

@@ -20,9 +20,38 @@ describe("Radarr Admin workspace styles", () => {
     );
   });
 
+  it("uses one animated disclosure and one aligned action inset", () => {
+    expect(css).toMatch(
+      /\.radarr-disclosure__viewport\s*\{[^}]*grid-template-rows:\s*0fr[^}]*transition:\s*grid-template-rows var\(--dur-base\)/,
+    );
+    expect(css).toMatch(
+      /\.radarr-disclosure\[data-open="true"\][^{]*\.radarr-disclosure__viewport\s*\{[^}]*grid-template-rows:\s*1fr/,
+    );
+    expect(css).toMatch(
+      /\.radarr-disclosure\[data-open="true"\][^{]*\.radarr-disclosure__chevron\s*\{[^}]*transform:\s*rotate\(90deg\)/,
+    );
+    expect(css).toMatch(/\.radarr-disclosure__trigger\s*\{[^}]*padding:\s*0;/);
+    expect(css).toMatch(/\.radarr-current-action\s*\{[^}]*padding:\s*16px 0/);
+  });
+
+  it("keeps disclosures and the History filter visually flat", () => {
+    expect(css).toMatch(
+      /\.radarr-disclosure__trigger\s*\{[^}]*transition:\s*color var\(--dur-fast\)/,
+    );
+    expect(css).not.toMatch(
+      /\.radarr-disclosure__trigger:hover,\s*\.radarr-disclosure__trigger:focus-visible\s*\{[^}]*background/,
+    );
+    expect(css).toMatch(
+      /\.radarr-acquisition-history__tools \.field\s*\{[^}]*border-bottom:\s*1px solid var\(--line\)[^}]*background:\s*transparent/,
+    );
+  });
+
   it("honors reduced motion for the interactive register", () => {
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.radarr-acquisition-row[^}]*transition:\s*none/,
+    );
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.radarr-disclosure__viewport,[\s\S]*?transition:\s*none/,
     );
   });
 });

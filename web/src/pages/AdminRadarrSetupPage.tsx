@@ -1,66 +1,93 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveIcon, PencilIcon, PlusIcon } from "lucide-react";
+import { ArchiveIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 
 import { IntegrationKeys, IntegrationProblem } from "@/api/integrations";
 import {
-  archiveRadarrInstance,
-  archiveRadarrPreset,
   listRadarrInstances,
   listRadarrPresets,
   RadarrKeys,
+  removeRadarrInstance,
+  removeRadarrPreset,
   type RadarrInstance,
   type RadarrPreset,
 } from "@/api/radarr";
 
 import { humanize } from "@/components/moviepickarr/admin/radarr";
+import { RadarrDisclosure } from "@/components/moviepickarr/admin/RadarrDisclosure";
 import { RadarrInstanceDialog } from "@/components/moviepickarr/admin/RadarrInstanceDialog";
 import { RadarrPresetDialog } from "@/components/moviepickarr/admin/RadarrPresetDialog";
 import { Modal } from "@/components/moviepickarr/Modal";
+import { toast } from "@/components/ui/toast-api";
 
 type SetupDialog =
   | { kind: "instance"; value?: RadarrInstance }
   | { kind: "preset"; value?: RadarrPreset }
-  | { kind: "archive-instance"; value: RadarrInstance }
-  | { kind: "archive-preset"; value: RadarrPreset }
+  | { kind: "remove-instance"; value: RadarrInstance }
+  | { kind: "remove-preset"; value: RadarrPreset }
   | null;
 
-function ArchiveSetupDialog({
+function SetupRemoveButton({
+  item,
+  onClick,
+}: {
+  item: Pick<RadarrInstance, "name" | "used">;
+  onClick: () => void;
+}) {
+  const action = item.used ? "Archive" : "Delete";
+  return (
+    <button type="button" className="iconbtn iconbtn--danger" title={`${action} ${item.name}`} aria-label={`${action} ${item.name}`} onClick={onClick}>
+      {item.used ? <ArchiveIcon aria-hidden="true" /> : <Trash2Icon aria-hidden="true" />}
+    </button>
+  );
+}
+
+function RemoveSetupDialog({
   dialog,
   onClose,
   onDone,
 }: {
-  dialog: Extract<SetupDialog, { kind: "archive-instance" | "archive-preset" }>;
+  dialog: Extract<SetupDialog, { kind: "remove-instance" | "remove-preset" }>;
   onClose: () => void;
   onDone: () => void;
 }) {
-  const isInstance = dialog.kind === "archive-instance";
-  const archive = useMutation({
+  const isInstance = dialog.kind === "remove-instance";
+  const used = dialog.value.used === true;
+  const noun = isInstance ? "instance" : "preset";
+  const action = used ? "Archive" : "Delete";
+  const remove = useMutation({
     mutationFn: () => isInstance
-      ? archiveRadarrInstance(dialog.value.id)
-      : archiveRadarrPreset(dialog.value.id),
-    onSuccess: onDone,
+      ? removeRadarrInstance(dialog.value.id)
+      : removeRadarrPreset(dialog.value.id),
+    onSuccess: (result) => {
+      toast.success(`${dialog.value.name} ${result.outcome}`);
+      onDone();
+    },
   });
-  const feedback = archive.isError
-    ? archive.error instanceof IntegrationProblem
-      ? archive.error.message
-      : `The ${isInstance ? "instance" : "preset"} could not be archived.`
+  const feedback = remove.isError
+    ? remove.error instanceof IntegrationProblem
+      ? remove.error.message
+      : `The ${noun} could not be removed.`
     : "";
-  const title = `Archive ${dialog.value.name}?`;
+  const title = `${action} ${dialog.value.name}?`;
   return (
-    <Modal label={title} className="modal--form" dismissible={!archive.isPending} onClose={onClose}>
+    <Modal label={title} className="modal--form" dismissible={!remove.isPending} onClose={onClose}>
       {(close) => (
         <div className="adm-sheet">
           <h3 className="adm-modal__title">{title}</h3>
           <p className="adm-modal__sub">
-            {isInstance
-              ? "This instance and its presets will be archived. It cannot be archived while an unresolved acquisition targets it. Existing history keeps its snapshots."
-              : "This preset will disappear from future target selection. Existing acquisition snapshots remain unchanged."}
+            {used
+              ? isInstance
+                ? "This instance and its presets will be archived. It cannot be removed while an unresolved acquisition targets it. Existing history keeps its snapshots."
+                : "This preset will be archived. Existing acquisition snapshots remain unchanged."
+              : isInstance
+                ? "This instance and its presets have never been used. They will be deleted permanently."
+                : "This preset has never been used. It will be deleted permanently."}
           </p>
           {feedback ? <p className="radarr-feedback" role="alert">{feedback}</p> : null}
           <div className="adm-modal__actions">
-            <button type="button" className="btn btn--ghost" disabled={archive.isPending} onClick={close}>Keep {isInstance ? "instance" : "preset"}</button>
-            <button type="button" className="btn btn--danger" disabled={archive.isPending} onClick={() => archive.mutate()}>{archive.isPending ? "Archiving…" : `Archive ${isInstance ? "instance" : "preset"}`}</button>
+            <button type="button" className="btn btn--ghost" disabled={remove.isPending} onClick={close}>Keep {noun}</button>
+            <button type="button" className="btn btn--danger" disabled={remove.isPending} onClick={() => remove.mutate()}>{remove.isPending ? `${used ? "Archiving" : "Deleting"}…` : `${action} ${noun}`}</button>
           </div>
         </div>
       )}
@@ -94,7 +121,7 @@ export function AdminRadarrSetupPage() {
   const error = instances.error ?? presets.error;
 
   return (
-    <section className="radarr-page radarr-page--setup" aria-label="Radarr setup">
+    <section className="radarr-page radarr-page--setup mg-rise" aria-label="Radarr setup">
       {instances.isPending || presets.isPending ? (
         <div className="adm-state" role="status">Loading Radarr setup…</div>
       ) : error ? (
@@ -132,7 +159,7 @@ export function AdminRadarrSetupPage() {
                       </span>
                       <span className="radarr-setup-list__actions">
                         <button type="button" className="iconbtn" title={`Edit ${instance.name}`} aria-label={`Edit ${instance.name}`} onClick={() => setDialog({ kind: "instance", value: instance })}><PencilIcon aria-hidden="true" /></button>
-                        <button type="button" className="iconbtn iconbtn--danger" title={`Archive ${instance.name}`} aria-label={`Archive ${instance.name}`} onClick={() => setDialog({ kind: "archive-instance", value: instance })}><ArchiveIcon aria-hidden="true" /></button>
+                        <SetupRemoveButton item={instance} onClick={() => setDialog({ kind: "remove-instance", value: instance })} />
                       </span>
                     </div>
                     <ul className="radarr-setup-tree__presets" aria-label={`${instance.name} presets`}>
@@ -145,7 +172,7 @@ export function AdminRadarrSetupPage() {
                           </span>
                           <span className="radarr-setup-list__actions">
                             <button type="button" className="iconbtn" title={`Edit ${preset.name}`} aria-label={`Edit ${preset.name}`} onClick={() => setDialog({ kind: "preset", value: preset })}><PencilIcon aria-hidden="true" /></button>
-                            <button type="button" className="iconbtn iconbtn--danger" title={`Archive ${preset.name}`} aria-label={`Archive ${preset.name}`} onClick={() => setDialog({ kind: "archive-preset", value: preset })}><ArchiveIcon aria-hidden="true" /></button>
+                            <SetupRemoveButton item={preset} onClick={() => setDialog({ kind: "remove-preset", value: preset })} />
                           </span>
                         </li>
                       ))}
@@ -167,7 +194,7 @@ export function AdminRadarrSetupPage() {
                     <span className="radarr-setup-list__state" data-state="error"><strong>Invalid</strong><span>{preset.invalidReason ?? "Instance unavailable"}</span></span>
                     <span className="radarr-setup-list__actions">
                       <button type="button" className="iconbtn" title={`Edit ${preset.name}`} aria-label={`Edit ${preset.name}`} onClick={() => setDialog({ kind: "preset", value: preset })}><PencilIcon aria-hidden="true" /></button>
-                      <button type="button" className="iconbtn iconbtn--danger" title={`Archive ${preset.name}`} aria-label={`Archive ${preset.name}`} onClick={() => setDialog({ kind: "archive-preset", value: preset })}><ArchiveIcon aria-hidden="true" /></button>
+                      <SetupRemoveButton item={preset} onClick={() => setDialog({ kind: "remove-preset", value: preset })} />
                     </span>
                   </li>
                 ))}
@@ -176,17 +203,20 @@ export function AdminRadarrSetupPage() {
           ) : null}
 
           {archivedInstances.length + archivedPresets.length > 0 ? (
-            <details className="radarr-archived">
-              <summary>Archived setup · {archivedInstances.length + archivedPresets.length}</summary>
+            <RadarrDisclosure
+              className="radarr-disclosure--archived"
+              title="Archived setup"
+              meta={archivedInstances.length + archivedPresets.length}
+            >
               <ul>{archivedInstances.map((item) => <li key={`instance-${item.id}`}><strong>{item.name}</strong><span>Instance</span></li>)}{archivedPresets.map((item) => <li key={`preset-${item.id}`}><strong>{item.name}</strong><span>Preset</span></li>)}</ul>
-            </details>
+            </RadarrDisclosure>
           ) : null}
         </>
       )}
 
       {dialog?.kind === "instance" ? <RadarrInstanceDialog instance={dialog.value} onClose={() => setDialog(null)} onSaved={reload} /> : null}
       {dialog?.kind === "preset" ? <RadarrPresetDialog preset={dialog.value} instances={activeInstances} onClose={() => setDialog(null)} onSaved={reload} /> : null}
-      {dialog?.kind === "archive-instance" || dialog?.kind === "archive-preset" ? <ArchiveSetupDialog dialog={dialog} onClose={() => setDialog(null)} onDone={reload} /> : null}
+      {dialog?.kind === "remove-instance" || dialog?.kind === "remove-preset" ? <RemoveSetupDialog dialog={dialog} onClose={() => setDialog(null)} onDone={reload} /> : null}
     </section>
   );
 }

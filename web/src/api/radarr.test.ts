@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   abandonRadarrAcquisition,
+  removeRadarrInstance,
+  removeRadarrPreset,
   getRadarrAttention,
   grabRadarrRelease,
   listRadarrAcquisitions,
@@ -45,6 +47,27 @@ describe("Radarr integration API", () => {
 
     await expect(listRadarrAcquisitions()).resolves.toEqual([first]);
     await expect(listRadarrAcquisitions()).resolves.toEqual([second]);
+  });
+
+  it("returns the delete-or-archive outcome for setup removal", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ outcome: "deleted" }))
+      .mockResolvedValueOnce(jsonResponse({ outcome: "archived" }));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(removeRadarrPreset(17)).resolves.toEqual({ outcome: "deleted" });
+    await expect(removeRadarrInstance(4)).resolves.toEqual({ outcome: "archived" });
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/integrations/radarr/presets/17",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/integrations/radarr/instances/4",
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
   });
 
   it("sends target and release choices to their acquisition actions", async () => {
@@ -111,6 +134,8 @@ describe("Radarr integration API", () => {
         title: "Arrival.2016.1080p",
         quality: { name: "Bluray-1080p" },
         seeders: 18,
+        customFormats: ["Preferred group", "Original language", { name: "Not accepted" }],
+        customFormatScore: 1450,
         rejected: true,
         rejectionReasons: ["Custom format score is below zero"],
         downloadUrl: "https://indexer.example/private-token",
@@ -126,6 +151,8 @@ describe("Radarr integration API", () => {
       title: "Arrival.2016.1080p",
       quality: "Bluray-1080p",
       peers: 18,
+      customFormats: ["Preferred group", "Original language"],
+      customFormatScore: 1450,
       rejected: true,
       rejections: ["Custom format score is below zero"],
       grabAllowed: true,

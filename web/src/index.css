@@ -424,6 +424,17 @@
     font-size: 12px; line-height: 1.4; animation: mg-fadeIn var(--dur-fast) var(--ease);
   }
 
+  /* Shared integration checkbox label. TMDB and Radarr both use this control,
+     so its themed native input belongs in the app-wide component layer. */
+  .int-toggle {
+    display: inline-flex; min-height: 34px; align-items: center; gap: 9px;
+    color: var(--ink-2); font-size: 13px;
+  }
+  .int-toggle input {
+    width: 17px; height: 17px; flex: none; margin: 0;
+    accent-color: var(--accent);
+  }
+
   /* ---- Segmented control ---- */
   .seg { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; }
   .seg button {

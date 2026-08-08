@@ -40,6 +40,9 @@ func TestInteractiveSearchReturnsOpaqueSanitizedMatchedResultsApprovedFirst(t *t
 	if releases[0].Title != "Approved.Release" || !releases[0].Approved || releases[0].Rejected {
 		t.Fatalf("first release = %+v", releases[0])
 	}
+	if len(releases[0].CustomFormats) != 1 || releases[0].CustomFormats[0] != "Good group" {
+		t.Fatalf("first release custom formats = %+v", releases[0].CustomFormats)
+	}
 	if releases[1].Title != "Rejected.Release" || !releases[1].Rejected || len(releases[1].RejectionReasons) != 1 {
 		t.Fatalf("second release = %+v", releases[1])
 	}

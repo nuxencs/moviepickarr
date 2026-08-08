@@ -89,12 +89,18 @@ describe("Radarr acquisition register", () => {
 
     const active = await screen.findByRole("list", { name: "Active Radarr acquisitions" });
     expect(within(active).getByRole("link", { name: /Arrival/ })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Action required" })).toBeTruthy();
+    const actionHeading = screen.getByRole("heading", { name: "Action required" });
+    expect(actionHeading.closest(".radarr-page__toolbar")).toBeTruthy();
+    expect(screen.getByLabelText("1 acquisition requires action")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "In progress" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Acquisitions" })).toBeNull();
     expect(within(screen.getByRole("list", { name: "Radarr acquisitions in progress" })).getByText("Dune")).toBeTruthy();
 
-    fireEvent.click(screen.getByText("History"));
+    const historyTrigger = screen.getByRole("button", { name: "History" });
+    expect(within(historyTrigger).getByText("1")).toBeTruthy();
+    expect(historyTrigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(historyTrigger);
+    expect(historyTrigger.getAttribute("aria-expanded")).toBe("true");
     const history = screen.getByRole("list", { name: "Radarr acquisition history" });
     expect(within(history).getByText("Heat")).toBeTruthy();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search acquisition history" }), {

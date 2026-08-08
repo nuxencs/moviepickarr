@@ -17,6 +17,7 @@ import {
   radarrStatusLabel,
   targetName,
 } from "@/components/moviepickarr/admin/radarr";
+import { RadarrDisclosure } from "@/components/moviepickarr/admin/RadarrDisclosure";
 
 function AcquisitionRow({ acquisition }: { acquisition: RadarrAcquisition }) {
   const reason = acquisition.status === "action_needed"
@@ -88,7 +89,7 @@ export function AdminRadarrAcquisitionsPage() {
   );
 
   return (
-    <section className="radarr-page radarr-page--acquisitions" aria-label="Radarr acquisitions">
+    <section className="radarr-page radarr-page--acquisitions mg-rise" aria-label="Radarr acquisitions">
       {acquisitions.isPending ? (
         <div className="adm-state" role="status">Loading Radarr acquisitions…</div>
       ) : acquisitions.isError ? (
@@ -99,11 +100,14 @@ export function AdminRadarrAcquisitionsPage() {
         </div>
       ) : (
         <>
-          <section className="radarr-queue-group" aria-labelledby="radarr-action-required-title">
-            <div className="radarr-section__head">
+          <div className="radarr-page__toolbar radarr-page__toolbar--overview">
+            <div className="radarr-page__overview">
               <h3 id="radarr-action-required-title">Action required</h3>
-              <span className="radarr-section__count">{actionRequired.length}</span>
+              <p>Drawn winners that need an Admin decision before Radarr can continue.</p>
             </div>
+            <span className="radarr-section__count" aria-label={`${actionRequired.length} ${actionRequired.length === 1 ? "acquisition requires" : "acquisitions require"} action`}>{actionRequired.length}</span>
+          </div>
+          <section className="radarr-queue-group" aria-labelledby="radarr-action-required-title">
             {actionRequired.length > 0 ? (
               <ul className="radarr-register" aria-label="Active Radarr acquisitions">
                 {actionRequired.map((acquisition) => (
@@ -129,8 +133,11 @@ export function AdminRadarrAcquisitionsPage() {
             </section>
           ) : null}
 
-          <details className="radarr-acquisition-history">
-            <summary><span>History</span><span>{history.length}</span></summary>
+          <RadarrDisclosure
+            className="radarr-disclosure--history"
+            title="History"
+            meta={history.length}
+          >
             <div className="radarr-acquisition-history__tools">
               <label className="field radarr-search">
                 <SearchIcon aria-hidden="true" />
@@ -154,7 +161,7 @@ export function AdminRadarrAcquisitionsPage() {
                 {deferredSearch ? "No acquisition history matches this search." : "No acquisition history yet."}
               </p>
             )}
-          </details>
+          </RadarrDisclosure>
         </>
       )}
     </section>

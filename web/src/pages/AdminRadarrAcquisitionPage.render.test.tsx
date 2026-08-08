@@ -101,7 +101,13 @@ describe("Radarr acquisition target safety", () => {
     });
     renderPage();
 
-    expect(await screen.findByText("Target details")).toBeTruthy();
+    const targetDetails = await screen.findByRole("button", {
+      name: "Target details",
+    });
+    expect(within(targetDetails).getByText("Movies 1080p")).toBeTruthy();
+    expect(targetDetails.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(targetDetails);
+    expect(screen.getByRole("region", { name: "Target details" })).toBeTruthy();
     expect(screen.getByText(/Movies 1080p · Radarr 1080p/)).toBeTruthy();
     expect(screen.queryByRole("combobox", { name: "Acquisition preset" })).toBeNull();
 
@@ -258,6 +264,88 @@ describe("Radarr acquisition target safety", () => {
     expect(screen.queryByRole("button", { name: "Search releases" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Abandon acquisition" })).toBeNull();
     expect(screen.queryByRole("dialog", { name: "Review acquisition target" })).toBeNull();
+  });
+
+  it("does not show an acquisition record for a closed movie with only zero attempts", async () => {
+    api.getAcquisition.mockResolvedValue({
+      id: 42,
+      title: "Arrival",
+      status: "downloaded",
+      targetLocked: true,
+      radarrMovieId: 12,
+      manualAttemptCount: 0,
+    });
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Arrival" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Acquisition record/ })).toBeNull();
+  });
+
+  it("keeps distinct outcome history without repeating the attempt count", async () => {
+    api.getAcquisition.mockResolvedValue({
+      id: 42,
+      title: "Arrival",
+      status: "abandoned",
+      targetLocked: true,
+      manualAttemptCount: 0,
+      abandonmentReason: "No longer needed",
+    });
+    renderPage();
+
+    const record = await screen.findByRole("button", {
+      name: "Acquisition record",
+    });
+    expect(within(record).getByText("Reason recorded")).toBeTruthy();
+    fireEvent.click(record);
+
+    const region = screen.getByRole("region", { name: "Acquisition record" });
+    expect(within(region).getByText("No longer needed")).toBeTruthy();
+    expect(within(region).queryByText("Total manual release attempts")).toBeNull();
+  });
+
+  it("keeps non-zero manual attempts with the selected release", async () => {
+    api.getAcquisition.mockResolvedValue({
+      id: 42,
+      title: "Arrival",
+      status: "downloaded",
+      targetLocked: true,
+      manualAttemptCount: 2,
+      latestRelease: {
+        title: "Arrival.2016.1080p.BluRay",
+        quality: "Bluray-1080p",
+      },
+    });
+    renderPage();
+
+    const release = await screen.findByRole("button", {
+      name: "Selected release",
+    });
+    expect(within(release).getByText("Bluray-1080p")).toBeTruthy();
+    fireEvent.click(release);
+
+    const region = screen.getByRole("region", { name: "Selected release" });
+    expect(within(region).getByText("Total manual release attempts")).toBeTruthy();
+    expect(within(region).getByText("2")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Acquisition record/ })).toBeNull();
+  });
+
+  it("keeps a historical failure after the acquisition no longer needs action", async () => {
+    api.getAcquisition.mockResolvedValue({
+      id: 42,
+      title: "Arrival",
+      status: "downloaded",
+      targetLocked: true,
+      radarrMovieId: 12,
+      latestFailure: "The first release could not be imported.",
+    });
+    renderPage();
+
+    const record = await screen.findByRole("button", { name: "Acquisition record" });
+    expect(within(record).getByText("Previous failure")).toBeTruthy();
+    fireEvent.click(record);
+
+    const region = screen.getByRole("region", { name: "Acquisition record" });
+    expect(within(region).getByText("The first release could not be imported.")).toBeTruthy();
   });
 
   it("shows a reason label and one distinct failure for an action-needed acquisition", async () => {

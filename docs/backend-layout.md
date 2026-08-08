@@ -293,7 +293,8 @@
   samples, retention, and keyset history queries. Retention runs at startup and
   daily while the process remains alive.
 - `internal/repository/radarr.go`: Radarr instance and Acquisition preset
-  persistence, revision checks, validation state, and archive constraints.
+  persistence, revision checks, validation state, and transactional
+  delete-unused-or-archive-used removal constraints.
 - `internal/repository/radarr_acquisition.go`: durable concealed and visible
   Acquisition state, preset snapshots, target locks, compact history,
   milestones, and transactional action-required outbox creation.

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { DownloadIcon, Loader2Icon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { IntegrationProblem } from "@/api/integrations";
 import {
@@ -12,9 +13,18 @@ import {
 } from "@/api/radarr";
 
 import { formatBytes } from "@/components/moviepickarr/admin/radarr";
+import { RadarrDisclosure } from "@/components/moviepickarr/admin/RadarrDisclosure";
 import { Modal } from "@/components/moviepickarr/Modal";
 
 type ReleaseSort = "score" | "quality" | "age" | "size" | "peers" | "indexer";
+
+interface ScoreTooltipPlacement {
+  left: number;
+  top: number;
+}
+
+const SCORE_TOOLTIP_GAP = 7;
+const SCORE_TOOLTIP_MARGIN = 8;
 
 function ageLabel(hours?: number) {
   if (hours === undefined || !Number.isFinite(hours) || hours < 0) return "Age unknown";
@@ -41,6 +51,142 @@ function sortedReleases(releases: RadarrRelease[], sort: ReleaseSort) {
     if (sort === "peers") return (b.peers ?? 0) - (a.peers ?? 0);
     return String(a[sort] ?? "").localeCompare(String(b[sort] ?? ""));
   });
+}
+
+function ReleaseScore({ release }: { release: RadarrRelease }) {
+  const formats = release.customFormats?.filter(Boolean) ?? [];
+  const score = release.customFormatScore ?? 0;
+  const [mode, setMode] = useState<"closed" | "transient" | "pinned">("closed");
+  const [placement, setPlacement] = useState<ScoreTooltipPlacement | null>(null);
+  const focused = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const tooltipID = useId();
+  const open = mode !== "closed";
+
+  const place = useCallback(() => {
+    const trigger = triggerRef.current;
+    const tooltip = tooltipRef.current;
+    if (!trigger || !tooltip) return;
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    let top = triggerRect.bottom + SCORE_TOOLTIP_GAP;
+    if (
+      top + tooltipRect.height > window.innerHeight - SCORE_TOOLTIP_MARGIN &&
+      triggerRect.top - SCORE_TOOLTIP_GAP - tooltipRect.height >= SCORE_TOOLTIP_MARGIN
+    ) {
+      top = triggerRect.top - SCORE_TOOLTIP_GAP - tooltipRect.height;
+    }
+    const maximumTop = Math.max(
+      SCORE_TOOLTIP_MARGIN,
+      window.innerHeight - tooltipRect.height - SCORE_TOOLTIP_MARGIN,
+    );
+    top = Math.min(maximumTop, Math.max(SCORE_TOOLTIP_MARGIN, top));
+    const left = Math.max(
+      SCORE_TOOLTIP_MARGIN,
+      Math.min(
+        triggerRect.left + (triggerRect.width - tooltipRect.width) / 2,
+        window.innerWidth - tooltipRect.width - SCORE_TOOLTIP_MARGIN,
+      ),
+    );
+    setPlacement((current) => current?.top === top && current.left === left ? current : { left, top });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) place();
+  }, [open, place]);
+
+  useEffect(() => {
+    if (!open) return;
+    let frame: number | null = null;
+    const reposition = () => {
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        place();
+      });
+    };
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, place]);
+
+  useEffect(() => {
+    if (mode !== "pinned") return;
+    const dismissOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (triggerRef.current?.contains(target) || tooltipRef.current?.contains(target)) return;
+      setMode("closed");
+    };
+    document.addEventListener("pointerdown", dismissOutside, true);
+    return () => document.removeEventListener("pointerdown", dismissOutside, true);
+  }, [mode]);
+
+  if (formats.length === 0) return score;
+
+  return (
+    <span
+      className="radarr-release__score-wrap"
+      data-open={open ? true : undefined}
+      onMouseEnter={() => setMode((current) => current === "closed" ? "transient" : current)}
+      onMouseLeave={() => {
+        if (!focused.current) setMode((current) => current === "transient" ? "closed" : current);
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className="radarr-release__score"
+        aria-label={`Score ${score}. Show applied custom formats`}
+        aria-expanded={open}
+        aria-describedby={open ? tooltipID : undefined}
+        onClick={() => setMode((current) => current === "pinned" ? "closed" : "pinned")}
+        onFocus={() => {
+          focused.current = true;
+          setMode((current) => current === "closed" ? "transient" : current);
+        }}
+        onBlur={() => {
+          focused.current = false;
+          setMode((current) => current === "pinned" ? current : "closed");
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            setMode("closed");
+          } else if (event.key === "Tab") {
+            setMode("closed");
+          }
+        }}
+      >
+        {score}
+      </button>
+      {createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipID}
+          className="radarr-release__formats-tooltip"
+          role="tooltip"
+          hidden={!open}
+          data-pinned={mode === "pinned" ? true : undefined}
+          style={{
+            left: placement?.left ?? 0,
+            top: placement?.top ?? 0,
+            visibility: open && placement ? "visible" : "hidden",
+          }}
+        >
+          <strong>Custom formats</strong>
+          <span>{formats.join(" · ")}</span>
+        </span>,
+        document.body,
+      )}
+    </span>
+  );
 }
 
 function ReleaseRow({
@@ -73,7 +219,7 @@ function ReleaseRow({
       </div>
       <dl className="radarr-release__facts">
         <div><dt>Quality</dt><dd>{release.quality ?? "Unknown"}</dd></div>
-        <div><dt>Score</dt><dd>{release.customFormatScore ?? 0}</dd></div>
+        <div><dt>Score</dt><dd><ReleaseScore release={release} /></dd></div>
         <div><dt>Size</dt><dd>{formatBytes(release.size)}</dd></div>
         <div><dt>Age</dt><dd>{ageLabel(release.ageHours)}</dd></div>
       </dl>
@@ -249,12 +395,15 @@ export function RadarrReleasePicker({
                 </ul>
               ) : null}
               {rejected.length > 0 ? (
-                <details className="radarr-rejected">
-                  <summary>{rejected.length} rejected release{rejected.length === 1 ? "" : "s"}</summary>
+                <RadarrDisclosure
+                  className="radarr-disclosure--rejected"
+                  title="Rejected releases"
+                  meta={rejected.length}
+                >
                   <ul className="radarr-release-list" aria-label="Rejected releases">
                     {rejected.map((release) => <ReleaseRow key={release.id} release={release} busy={busy} grabbing={grab.isPending && grab.variables?.release.id === release.id} onGrab={startGrab} />)}
                   </ul>
-                </details>
+                </RadarrDisclosure>
               ) : null}
             </div>
           </>

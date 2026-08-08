@@ -231,14 +231,18 @@ func sameRadarrInstanceAuthority(left, right string) bool {
 		strings.EqualFold(leftURL.Host, rightURL.Host)
 }
 
-func (s *radarrService) archiveInstance(ctx context.Context, id int64) error {
-	if err := s.repo.ArchiveInstance(ctx, id, s.now().UTC()); err != nil {
-		return err
+func (s *radarrService) removeInstance(
+	ctx context.Context,
+	id int64,
+) (repository.RadarrRemoveOutcome, error) {
+	outcome, err := s.repo.RemoveInstance(ctx, id, s.now().UTC())
+	if err != nil {
+		return "", err
 	}
 	s.clientsMu.Lock()
 	delete(s.clients, id)
 	s.clientsMu.Unlock()
-	return nil
+	return outcome, nil
 }
 
 func (s *radarrService) instanceCatalog(
@@ -452,8 +456,11 @@ func (s *radarrService) validateStoredPreset(
 	return preset, catalog, nil
 }
 
-func (s *radarrService) archivePreset(ctx context.Context, id int64) error {
-	return s.repo.ArchivePreset(ctx, id, s.now().UTC())
+func (s *radarrService) removePreset(
+	ctx context.Context,
+	id int64,
+) (repository.RadarrRemoveOutcome, error) {
+	return s.repo.RemovePreset(ctx, id, s.now().UTC())
 }
 
 func validMinimumAvailability(value string) bool {

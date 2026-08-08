@@ -12,6 +12,11 @@ const api = vi.hoisted(() => ({
   test: vi.fn(),
   update: vi.fn(),
 }));
+const notifications = vi.hoisted(() => ({
+  error: vi.fn(),
+  info: vi.fn(),
+  success: vi.fn(),
+}));
 
 vi.mock("@/api/radarr", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/radarr")>()),
@@ -20,6 +25,7 @@ vi.mock("@/api/radarr", async (importOriginal) => ({
   testRadarrWebhook: api.test,
   updateRadarrWebhook: api.update,
 }));
+vi.mock("@/components/ui/toast-api", () => ({ toast: notifications }));
 
 const DESTINATION: RadarrWebhook = {
   id: 8,
@@ -48,10 +54,31 @@ beforeEach(() => {
   api.list.mockReset();
   api.test.mockReset();
   api.update.mockReset();
+  notifications.error.mockReset();
+  notifications.info.mockReset();
+  notifications.success.mockReset();
   api.list.mockResolvedValue([DESTINATION]);
 });
 
 describe("Radarr webhook destination controls", () => {
+  it("uses the shared disclosure for archived destinations", async () => {
+    api.list.mockResolvedValue([{
+      ...DESTINATION,
+      id: 12,
+      name: "Old Discord",
+      archivedAt: "2026-07-01T12:00:00Z",
+    }]);
+    renderPage();
+
+    const trigger = await screen.findByRole("button", { name: "Archived destinations" });
+    expect(within(trigger).getByText("1")).toBeTruthy();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+
+    const archive = screen.getByRole("region", { name: "Archived destinations" });
+    expect(within(archive).getByText("Old Discord")).toBeTruthy();
+  });
+
   it("enables a verified destination without sending its write-only URL", async () => {
     api.list.mockReset();
     api.list
@@ -73,6 +100,19 @@ describe("Radarr webhook destination controls", () => {
       revision: 4,
     });
     expect(await screen.findByRole("switch", { name: "Disable Movie night Discord" })).toBeTruthy();
+    expect(notifications.success).toHaveBeenCalledWith("Movie night Discord enabled");
+    expect(document.querySelector(".radarr-action-feedback")).toBeNull();
+  });
+
+  it("reports row action failures without moving the destination list", async () => {
+    api.test.mockRejectedValue(new Error("network unavailable"));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Test Movie night Discord" }));
+
+    await waitFor(() => expect(notifications.error).toHaveBeenCalledWith("The test delivery failed."));
+    expect(document.querySelector(".radarr-action-feedback")).toBeNull();
+    expect(screen.getByRole("list", { name: "Radarr webhook destinations" })).toBeTruthy();
   });
 
   it("requires a successful test before an inactive destination can be enabled", async () => {
@@ -136,7 +176,7 @@ describe("Radarr webhook destination controls", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Test Movie night Discord" }));
 
-    expect(screen.getByRole("button", { name: "Test Movie night Discord" }).querySelector(".mg-spin")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test Movie night Discord" }).querySelector(".mg-spin")).toBeTruthy());
     expect(screen.getByRole("button", { name: "Test Generic automation" }).querySelector(".mg-spin")).toBeNull();
     expect((screen.getByRole("switch", { name: "Enable Movie night Discord" }) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Edit Movie night Discord" }) as HTMLButtonElement).disabled).toBe(true);

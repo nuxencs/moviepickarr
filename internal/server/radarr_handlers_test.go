@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"moviepickarr/internal/domain"
 	integrationradarr "moviepickarr/internal/integration/radarr"
 	"moviepickarr/internal/repository"
 
@@ -174,6 +176,265 @@ func TestRadarrSetupListsArchivedRecordsWithoutSecrets(t *testing.T) {
 		if strings.Contains(string(body), "sealed-secret") || strings.Contains(string(body), "sealed-webhook") {
 			t.Fatalf("%s response leaked an encrypted secret: %s", endpoint, body)
 		}
+	}
+}
+
+func TestRadarrRemoveInstanceReportsHardDeleteForUnusedSetup(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, app, _, _, pool := setupEditMovieTestWithDB(t)
+	repo := repository.NewSqliteRadarrRepository(pool)
+	now := time.Now().UTC()
+	instance, err := repo.CreateInstance(ctx, repository.RadarrInstanceSave{
+		Name: "Temporary", BaseURL: "https://radarr.example.test",
+		EncryptedAPIKey: []byte("sealed-secret"), State: radarrInstanceConnected,
+		CheckedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	preset, err := repo.CreatePreset(ctx, repository.RadarrPresetSave{
+		Name: "Temporary preset", InstanceID: instance.ID, RootFolderID: 2,
+		RootFolderPath: "/movies", QualityProfileID: 4, QualityProfileName: "HD",
+		Tags:                []repository.RadarrTagSnapshot{},
+		MinimumAvailability: "released", AcquisitionMode: "manual", Valid: true,
+		ValidatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create preset: %v", err)
+	}
+
+	response := doAs(t, app, httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/integrations/radarr/instances/"+strconv.FormatInt(instance.ID, 10),
+		nil,
+	), 1, "admin")
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("remove unused instance status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	var result radarrRemoveResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode removal response: %v", err)
+	}
+	if result.Outcome != repository.RadarrOutcomeDeleted {
+		t.Fatalf("removal outcome = %q, want %q", result.Outcome, repository.RadarrOutcomeDeleted)
+	}
+	if _, err := repo.GetInstance(ctx, instance.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted instance = %v, want not found", err)
+	}
+	if _, err := repo.GetPreset(ctx, preset.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted preset = %v, want not found", err)
+	}
+}
+
+func TestRadarrRemovePresetReportsHardDeleteForUnusedSetup(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, app, _, _, pool := setupEditMovieTestWithDB(t)
+	repo := repository.NewSqliteRadarrRepository(pool)
+	now := time.Now().UTC()
+	instance, err := repo.CreateInstance(ctx, repository.RadarrInstanceSave{
+		Name: "Preset host", BaseURL: "https://radarr.example.test",
+		EncryptedAPIKey: []byte("sealed-secret"), State: radarrInstanceConnected,
+		CheckedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	preset, err := repo.CreatePreset(ctx, repository.RadarrPresetSave{
+		Name: "Temporary preset", InstanceID: instance.ID, RootFolderID: 2,
+		RootFolderPath: "/movies", QualityProfileID: 4, QualityProfileName: "HD",
+		Tags:                []repository.RadarrTagSnapshot{},
+		MinimumAvailability: "released", AcquisitionMode: "manual", Valid: true,
+		ValidatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create preset: %v", err)
+	}
+
+	response := doAs(t, app, httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/integrations/radarr/presets/"+strconv.FormatInt(preset.ID, 10),
+		nil,
+	), 1, "admin")
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("remove unused preset status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	var result radarrRemoveResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode removal response: %v", err)
+	}
+	if result.Outcome != repository.RadarrOutcomeDeleted {
+		t.Fatalf("removal outcome = %q, want %q", result.Outcome, repository.RadarrOutcomeDeleted)
+	}
+	if _, err := repo.GetPreset(ctx, preset.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted preset = %v, want not found", err)
+	}
+}
+
+func TestRadarrRemovePresetHardDeletesArchivedUnusedSetup(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, app, _, _, pool := setupEditMovieTestWithDB(t)
+	repo := repository.NewSqliteRadarrRepository(pool)
+	now := time.Now().UTC()
+	instance, err := repo.CreateInstance(ctx, repository.RadarrInstanceSave{
+		Name: "Legacy preset host", BaseURL: "https://radarr.example.test",
+		EncryptedAPIKey: []byte("sealed-secret"), State: radarrInstanceConnected,
+		CheckedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create legacy instance: %v", err)
+	}
+	preset, err := repo.CreatePreset(ctx, repository.RadarrPresetSave{
+		Name: "Legacy preset", InstanceID: instance.ID, RootFolderID: 2,
+		RootFolderPath: "/movies", QualityProfileID: 4, QualityProfileName: "HD",
+		Tags:                []repository.RadarrTagSnapshot{},
+		MinimumAvailability: "released", AcquisitionMode: "manual", Valid: true,
+		ValidatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create legacy preset: %v", err)
+	}
+	if err := repo.ArchivePreset(ctx, preset.ID, now.Add(time.Minute)); err != nil {
+		t.Fatalf("archive legacy preset: %v", err)
+	}
+
+	response := doAs(t, app, httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/integrations/radarr/presets/"+strconv.FormatInt(preset.ID, 10),
+		nil,
+	), 1, "admin")
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("remove archived preset status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	var result radarrRemoveResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode archived removal response: %v", err)
+	}
+	if result.Outcome != repository.RadarrOutcomeDeleted {
+		t.Fatalf("archived removal outcome = %q, want %q", result.Outcome, repository.RadarrOutcomeDeleted)
+	}
+	if _, err := repo.GetPreset(ctx, preset.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted archived preset = %v, want not found", err)
+	}
+}
+
+func setupUsedRadarrRemovalHTTPTest(
+	t *testing.T,
+) (*fiber.App, *repository.SqliteRadarrRepository, repository.RadarrInstance, repository.RadarrPreset) {
+	t.Helper()
+	ctx := context.Background()
+	_, app, users, movies, pool := setupEditMovieTestWithDB(t)
+	repo := repository.NewSqliteRadarrRepository(pool)
+	now := time.Now().UTC().Truncate(time.Second)
+	actor, err := users.Create(ctx, "Radarr removal Admin")
+	if err != nil {
+		t.Fatalf("create removal actor: %v", err)
+	}
+	instance, err := repo.CreateInstance(ctx, repository.RadarrInstanceSave{
+		Name: "Used instance", BaseURL: "https://radarr.example.test",
+		EncryptedAPIKey: []byte("sealed-secret"), State: radarrInstanceConnected,
+		CheckedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create used instance: %v", err)
+	}
+	preset, err := repo.CreatePreset(ctx, repository.RadarrPresetSave{
+		Name: "Used preset", InstanceID: instance.ID, RootFolderID: 2,
+		RootFolderPath: "/movies", QualityProfileID: 4, QualityProfileName: "HD",
+		Tags:                []repository.RadarrTagSnapshot{},
+		MinimumAvailability: "released", AcquisitionMode: "manual", Valid: true,
+		ValidatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create used preset: %v", err)
+	}
+	movie, err := movies.Add(ctx, "Arrival", "pool", actor.ID)
+	if err != nil {
+		t.Fatalf("add removal movie: %v", err)
+	}
+	if err := movies.StartDraw(ctx, movie.ID, now, now.Add(16*time.Second), "drawer"); err != nil {
+		t.Fatalf("start removal draw: %v", err)
+	}
+	if err := movies.RevealDraw(ctx, movie.ID, now.Add(17*time.Second)); err != nil {
+		t.Fatalf("reveal removal draw: %v", err)
+	}
+	acquisitions, err := repo.ListAcquisitions(ctx, "")
+	if err != nil {
+		t.Fatalf("list removal acquisitions: %v", err)
+	}
+	if len(acquisitions) != 1 {
+		t.Fatalf("removal acquisitions = %d, want 1", len(acquisitions))
+	}
+	if _, err := repo.SelectAcquisitionPreset(
+		ctx,
+		acquisitions[0].ID,
+		preset.ID,
+		actor.ID,
+		now.Add(18*time.Second),
+	); err != nil {
+		t.Fatalf("select removal preset: %v", err)
+	}
+	return app, repo, instance, preset
+}
+
+func TestRadarrRemovePresetReportsArchivedOutcomeForUsedSetup(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	app, repo, _, preset := setupUsedRadarrRemovalHTTPTest(t)
+
+	response := doAs(t, app, httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/integrations/radarr/presets/"+strconv.FormatInt(preset.ID, 10),
+		nil,
+	), 1, "admin")
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("remove used preset status = %d, want %d", response.StatusCode, fiber.StatusOK)
+	}
+	var result radarrRemoveResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode removal response: %v", err)
+	}
+	if result.Outcome != repository.RadarrOutcomeArchived {
+		t.Fatalf("removal outcome = %q, want %q", result.Outcome, repository.RadarrOutcomeArchived)
+	}
+	stored, err := repo.GetPreset(ctx, preset.ID)
+	if err != nil {
+		t.Fatalf("get archived preset: %v", err)
+	}
+	if stored.ArchivedAt == nil {
+		t.Fatal("used preset remained active")
+	}
+}
+
+func TestRadarrRemoveInstanceReportsConflictForUnresolvedTarget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	app, repo, instance, _ := setupUsedRadarrRemovalHTTPTest(t)
+
+	response := doAs(t, app, httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/integrations/radarr/instances/"+strconv.FormatInt(instance.ID, 10),
+		nil,
+	), 1, "admin")
+	defer response.Body.Close()
+	if response.StatusCode != fiber.StatusConflict {
+		t.Fatalf("remove unresolved instance status = %d, want %d", response.StatusCode, fiber.StatusConflict)
+	}
+	if code := problemCode(t, response); code != "conflict" {
+		t.Fatalf("remove unresolved instance problem = %q, want conflict", code)
+	}
+	stored, err := repo.GetInstance(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("get retained instance: %v", err)
+	}
+	if stored.ArchivedAt != nil {
+		t.Fatalf("refused instance archived_at = %v, want active", stored.ArchivedAt)
 	}
 }
 
@@ -510,6 +771,7 @@ func TestRadarrReleaseDTOContainsOnlySanitizedSelectionFields(t *testing.T) {
 		Size: 8_000_000_000, PublishedAt: time.Now().UTC().Add(-2 * time.Hour),
 		Protocol: "torrent", Seeders: &seeders,
 		Quality:           integrationradarr.Quality{Name: "Bluray-1080p"},
+		CustomFormats:     []string{"Preferred group", "Original language"},
 		CustomFormatScore: 1200, Approved: false, Rejected: true,
 		RejectionReasons: []string{"below preferred score"},
 	}, time.Now().UTC())
@@ -525,6 +787,9 @@ func TestRadarrReleaseDTOContainsOnlySanitizedSelectionFields(t *testing.T) {
 	}
 	if !strings.Contains(text, `"id":"opaque-3"`) || !strings.Contains(text, `"rejected":true`) {
 		t.Fatalf("release DTO = %s", text)
+	}
+	if !strings.Contains(text, `"customFormats":["Preferred group","Original language"]`) {
+		t.Fatalf("release DTO custom formats = %s", text)
 	}
 }
 

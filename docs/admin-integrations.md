@@ -270,11 +270,16 @@ accessible, and every selected value still exists. A preset that later drifts
 cannot be selected until the configuration is valid again. A stale revision is
 rejected so one Admin cannot silently overwrite another Admin's change.
 
-Archiving removes an instance or preset from future selection without erasing
-its historical identity. Archiving an instance also archives its presets. An
-instance cannot be archived while an unresolved Acquisition targets it.
+Removing unused setup is a hard delete. A preset is unused when no Acquisition
+has selected it. An instance is unused when no Acquisition has selected it or
+any of its presets. Deleting an unused instance also deletes its unused presets.
+Once an Acquisition references the setup, removal archives it instead and keeps
+its historical identity. Removing a used instance archives referenced presets
+and deletes child presets that were never used. An instance cannot be removed
+while an unresolved Acquisition targets it.
 Acquisitions store a snapshot of the selected preset, so later edits do not
-change earlier target history.
+change earlier target history. The removal endpoint reports `deleted` or
+`archived` to the Admin client.
 
 Radarr API keys use the same AES-GCM instance key as other persisted integration
 secrets. The API reports only whether a key is configured. It never returns or
@@ -367,6 +372,13 @@ target snapshots, the effective configuration of an adopted movie, the latest
 selected release summary, attempt count, latest failure, milestones, and any
 abandonment reason. It does not store a full event log, every
 release attempt, raw remote responses, or release URLs.
+
+The Admin UI uses one animated chevron disclosure for Acquisition history,
+archived setup, target facts, selected releases, recorded outcomes, and rejected
+releases. A zero manual-attempt count does not create an Acquisition record by
+itself. A non-zero count appears with the selected release. The record appears
+only when an abandonment reason or historical failure adds distinct information.
+The selected release reports the total manual release-attempt count when it is non-zero.
 
 Abandonment requires a reason. Review returns `not_applicable` for an unlocked
 idle target and `unavailable` for an unlocked in-progress mutation. For a locked
@@ -501,10 +513,10 @@ credential value.
 | `POST` | `/api/v1/integrations/radarr/acquisitions/:id/abandon/review` | Return `{ acquisition, activity }` after a live read. Activity is `active`, `inactive`, `unavailable`, `not_applicable`, or `complete`. |
 | `POST` | `/api/v1/integrations/radarr/acquisitions/:id/abandon` | End an Acquisition with `{ reason, acknowledgedActivity }`. A current `active` or `unavailable` risk must match the acknowledgement. |
 | `GET`, `POST` | `/api/v1/integrations/radarr/instances` | List or create verified instances. |
-| `PUT`, `DELETE` | `/api/v1/integrations/radarr/instances/:id` | Update or archive an instance. |
+| `PUT`, `DELETE` | `/api/v1/integrations/radarr/instances/:id` | Update or remove an instance. Delete returns `{ outcome }`; unused setup is deleted, used setup is archived. |
 | `GET` | `/api/v1/integrations/radarr/instances/:id/options` | Load live root folders, quality profiles, and tags. |
 | `GET`, `POST` | `/api/v1/integrations/radarr/presets` | List or create validated presets. |
-| `PUT`, `DELETE` | `/api/v1/integrations/radarr/presets/:id` | Update or archive a preset. |
+| `PUT`, `DELETE` | `/api/v1/integrations/radarr/presets/:id` | Update or remove a preset. Delete returns `{ outcome }`; unused setup is deleted, used setup is archived. |
 | `GET`, `POST` | `/api/v1/integrations/radarr/webhooks` | List or create webhook destinations. |
 | `PUT`, `DELETE` | `/api/v1/integrations/radarr/webhooks/:id` | Update or archive a destination. |
 | `POST` | `/api/v1/integrations/radarr/webhooks/:id/test` | Test and verify a saved destination. |

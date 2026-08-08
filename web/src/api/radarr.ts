@@ -145,6 +145,7 @@ export interface RadarrInstance {
   lastTestedAt?: string;
   archivedAt?: string;
   revision?: number;
+  used?: boolean;
 }
 
 export interface RadarrRootFolder {
@@ -181,6 +182,11 @@ export interface RadarrPreset {
   invalidReason?: string;
   archivedAt?: string;
   revision?: number;
+  used?: boolean;
+}
+
+export interface RadarrRemovalResult {
+  outcome: "deleted" | "archived";
 }
 
 export const RADARR_ACTION_REASONS = [
@@ -228,6 +234,7 @@ export interface RadarrRelease {
   peers?: number;
   protocol?: string;
   indexer?: string;
+  customFormats?: string[];
   customFormatScore?: number;
   approved?: boolean;
   rejected?: boolean;
@@ -383,6 +390,9 @@ export async function searchRadarrReleases(id: RadarrID) {
       : Array.isArray(release.rejectionReasons)
         ? release.rejectionReasons
         : undefined;
+    const customFormats = Array.isArray(release.customFormats)
+      ? release.customFormats.filter((value): value is string => typeof value === "string")
+      : undefined;
     return {
       id: resultId ?? `unavailable-${index}`,
       title: stringValue(release.title) ?? "Unnamed release",
@@ -392,6 +402,7 @@ export async function searchRadarrReleases(id: RadarrID) {
       peers: numberValue(release.peers) ?? numberValue(release.seeders),
       protocol: stringValue(release.protocol),
       indexer: stringValue(release.indexer),
+      customFormats,
       customFormatScore: numberValue(release.customFormatScore),
       approved: booleanValue(release.approved),
       rejected: booleanValue(release.rejected),
@@ -456,8 +467,8 @@ export function updateRadarrInstance(id: RadarrID, draft: RadarrInstanceDraft) {
   );
 }
 
-export function archiveRadarrInstance(id: RadarrID) {
-  return integrationRequest<void>(`/api/v1/integrations/radarr/instances/${idPath(id)}`, {
+export function removeRadarrInstance(id: RadarrID) {
+  return integrationRequest<RadarrRemovalResult>(`/api/v1/integrations/radarr/instances/${idPath(id)}`, {
     method: "DELETE",
   });
 }
@@ -499,8 +510,8 @@ export function updateRadarrPreset(id: RadarrID, draft: RadarrPresetDraft) {
   );
 }
 
-export function archiveRadarrPreset(id: RadarrID) {
-  return integrationRequest<void>(`/api/v1/integrations/radarr/presets/${idPath(id)}`, {
+export function removeRadarrPreset(id: RadarrID) {
+  return integrationRequest<RadarrRemovalResult>(`/api/v1/integrations/radarr/presets/${idPath(id)}`, {
     method: "DELETE",
   });
 }

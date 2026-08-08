@@ -147,10 +147,54 @@ func (e *radarrRepositoryTestEnv) deliveryCount(t *testing.T) int {
 	return count
 }
 
-func TestRadarrInstanceArchiveRefusesUnresolvedSelectedTarget(t *testing.T) {
+func TestRadarrUnusedInstanceRemovalHardDeletesItsUnusedPresets(t *testing.T) {
 	e := setupRadarrRepositoryTest(t)
 	instance := e.createInstance(t, "Movies")
 	preset := e.createPreset(t, instance, "1080p")
+
+	outcome, err := e.radarr.RemoveInstance(e.base.ctx, instance.ID, e.now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("remove unused instance: %v", err)
+	}
+	if outcome != RadarrOutcomeDeleted {
+		t.Fatalf("unused instance outcome = %q, want %q", outcome, RadarrOutcomeDeleted)
+	}
+	if _, err := e.radarr.GetInstance(e.base.ctx, instance.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted instance = %v, want not found", err)
+	}
+	if _, err := e.radarr.GetPreset(e.base.ctx, preset.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted child preset = %v, want not found", err)
+	}
+}
+
+func TestRadarrArchivedUnusedInstanceRemovalHardDeletesLegacySetup(t *testing.T) {
+	e := setupRadarrRepositoryTest(t)
+	instance := e.createInstance(t, "Legacy unused")
+	preset := e.createPreset(t, instance, "Legacy preset")
+	if err := e.radarr.ArchiveInstance(e.base.ctx, instance.ID, e.now.Add(time.Minute)); err != nil {
+		t.Fatalf("archive unused instance: %v", err)
+	}
+
+	outcome, err := e.radarr.RemoveInstance(e.base.ctx, instance.ID, e.now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("remove archived unused instance: %v", err)
+	}
+	if outcome != RadarrOutcomeDeleted {
+		t.Fatalf("archived unused instance outcome = %q, want %q", outcome, RadarrOutcomeDeleted)
+	}
+	if _, err := e.radarr.GetInstance(e.base.ctx, instance.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted archived instance = %v, want not found", err)
+	}
+	if _, err := e.radarr.GetPreset(e.base.ctx, preset.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted archived child preset = %v, want not found", err)
+	}
+}
+
+func TestRadarrUsedInstanceRemovalRefusesUnresolvedThenArchivesHistory(t *testing.T) {
+	e := setupRadarrRepositoryTest(t)
+	instance := e.createInstance(t, "Movies")
+	preset := e.createPreset(t, instance, "1080p")
+	unusedPreset := e.createPreset(t, instance, "Unused")
 	acquisitionID := e.startDraw(t)
 	e.reveal(t, acquisitionID)
 	if _, err := e.radarr.SelectAcquisitionPreset(
@@ -163,7 +207,7 @@ func TestRadarrInstanceArchiveRefusesUnresolvedSelectedTarget(t *testing.T) {
 		t.Fatalf("select preset: %v", err)
 	}
 
-	if err := e.radarr.ArchiveInstance(
+	if _, err := e.radarr.RemoveInstance(
 		e.base.ctx,
 		instance.ID,
 		e.now.Add(2*time.Minute),
@@ -192,12 +236,16 @@ func TestRadarrInstanceArchiveRefusesUnresolvedSelectedTarget(t *testing.T) {
 	); err != nil {
 		t.Fatalf("abandon acquisition: %v", err)
 	}
-	if err := e.radarr.ArchiveInstance(
+	outcome, err := e.radarr.RemoveInstance(
 		e.base.ctx,
 		instance.ID,
 		e.now.Add(4*time.Minute),
-	); err != nil {
-		t.Fatalf("archive instance after terminal acquisition: %v", err)
+	)
+	if err != nil {
+		t.Fatalf("remove instance after terminal acquisition: %v", err)
+	}
+	if outcome != RadarrOutcomeArchived {
+		t.Fatalf("used instance outcome = %q, want %q", outcome, RadarrOutcomeArchived)
 	}
 	stored, err = e.radarr.GetInstance(e.base.ctx, instance.ID)
 	if err != nil {
@@ -206,12 +254,135 @@ func TestRadarrInstanceArchiveRefusesUnresolvedSelectedTarget(t *testing.T) {
 	if stored.ArchivedAt == nil {
 		t.Fatal("expected instance to be archived")
 	}
+	if !stored.Used {
+		t.Fatal("archived instance did not report its Acquisition use")
+	}
 	storedPreset, err := e.radarr.GetPreset(e.base.ctx, preset.ID)
 	if err != nil {
 		t.Fatalf("get preset after instance archive: %v", err)
 	}
 	if storedPreset.ArchivedAt == nil {
 		t.Fatal("expected instance archive to archive its presets")
+	}
+	if _, err := e.radarr.GetPreset(e.base.ctx, unusedPreset.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get unused child preset = %v, want not found", err)
+	}
+}
+
+func TestRadarrInstanceRemovalDoesNotFollowPresetMovedAfterTargetSelection(t *testing.T) {
+	e := setupRadarrRepositoryTest(t)
+	targetInstance := e.createInstance(t, "Original target")
+	otherInstance := e.createInstance(t, "Later preset host")
+	preset := e.createPreset(t, targetInstance, "1080p")
+	acquisitionID := e.startDraw(t)
+	e.reveal(t, acquisitionID)
+	if _, err := e.radarr.SelectAcquisitionPreset(
+		e.base.ctx,
+		acquisitionID,
+		preset.ID,
+		e.actorID,
+		e.now.Add(time.Minute),
+	); err != nil {
+		t.Fatalf("select target preset: %v", err)
+	}
+	if _, err := e.radarr.UpdatePreset(e.base.ctx, preset.ID, preset.Revision, RadarrPresetSave{
+		Name:                preset.Name,
+		InstanceID:          otherInstance.ID,
+		RootFolderID:        preset.RootFolderID,
+		RootFolderPath:      preset.RootFolderPath,
+		QualityProfileID:    preset.QualityProfileID,
+		QualityProfileName:  preset.QualityProfileName,
+		Tags:                preset.Tags,
+		MinimumAvailability: preset.MinimumAvailability,
+		AcquisitionMode:     preset.AcquisitionMode,
+		Valid:               true,
+		ValidatedAt:         e.now.Add(2 * time.Minute),
+	}); err != nil {
+		t.Fatalf("move selected preset: %v", err)
+	}
+
+	outcome, err := e.radarr.RemoveInstance(
+		e.base.ctx,
+		otherInstance.ID,
+		e.now.Add(3*time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("remove non-target instance: %v", err)
+	}
+	if outcome != RadarrOutcomeArchived {
+		t.Fatalf("non-target instance outcome = %q, want %q", outcome, RadarrOutcomeArchived)
+	}
+	storedTarget, err := e.radarr.GetInstance(e.base.ctx, targetInstance.ID)
+	if err != nil {
+		t.Fatalf("get original target instance: %v", err)
+	}
+	if storedTarget.ArchivedAt != nil {
+		t.Fatalf("original target archived_at = %v, want active", storedTarget.ArchivedAt)
+	}
+}
+
+func TestRadarrPresetRemovalDeletesUnusedAndArchivesUsed(t *testing.T) {
+	e := setupRadarrRepositoryTest(t)
+	instance := e.createInstance(t, "Movies")
+	unused := e.createPreset(t, instance, "Unused")
+
+	outcome, err := e.radarr.RemovePreset(e.base.ctx, unused.ID, e.now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("remove unused preset: %v", err)
+	}
+	if outcome != RadarrOutcomeDeleted {
+		t.Fatalf("unused preset outcome = %q, want %q", outcome, RadarrOutcomeDeleted)
+	}
+	if _, err := e.radarr.GetPreset(e.base.ctx, unused.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted preset = %v, want not found", err)
+	}
+
+	used := e.createPreset(t, instance, "Used")
+	acquisitionID := e.startDraw(t)
+	e.reveal(t, acquisitionID)
+	if _, err := e.radarr.SelectAcquisitionPreset(
+		e.base.ctx,
+		acquisitionID,
+		used.ID,
+		e.actorID,
+		e.now.Add(2*time.Minute),
+	); err != nil {
+		t.Fatalf("select used preset: %v", err)
+	}
+
+	outcome, err = e.radarr.RemovePreset(e.base.ctx, used.ID, e.now.Add(3*time.Minute))
+	if err != nil {
+		t.Fatalf("remove used preset: %v", err)
+	}
+	if outcome != RadarrOutcomeArchived {
+		t.Fatalf("used preset outcome = %q, want %q", outcome, RadarrOutcomeArchived)
+	}
+	stored, err := e.radarr.GetPreset(e.base.ctx, used.ID)
+	if err != nil {
+		t.Fatalf("get archived preset: %v", err)
+	}
+	if stored.ArchivedAt == nil || !stored.Used {
+		t.Fatalf("used preset after removal = %+v, want archived and used", stored)
+	}
+}
+
+func TestRadarrArchivedUnusedPresetRemovalHardDeletesLegacySetup(t *testing.T) {
+	e := setupRadarrRepositoryTest(t)
+	instance := e.createInstance(t, "Movies")
+	preset := e.createPreset(t, instance, "Legacy unused")
+	if err := e.radarr.ArchivePreset(e.base.ctx, preset.ID, e.now.Add(time.Minute)); err != nil {
+		t.Fatalf("archive unused preset: %v", err)
+	}
+
+	outcome, err := e.radarr.RemovePreset(e.base.ctx, preset.ID, e.now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("remove archived unused preset: %v", err)
+	}
+	if outcome != RadarrOutcomeDeleted {
+		t.Fatalf("archived unused preset outcome = %q, want %q", outcome, RadarrOutcomeDeleted)
+	}
+	if _, err := e.radarr.GetPreset(e.base.ctx, preset.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("get deleted archived preset = %v, want not found", err)
 	}
 }
 

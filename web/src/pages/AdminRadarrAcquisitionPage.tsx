@@ -28,6 +28,7 @@ import {
   tagLabel,
   targetName,
 } from "@/components/moviepickarr/admin/radarr";
+import { RadarrDisclosure } from "@/components/moviepickarr/admin/RadarrDisclosure";
 import { RadarrReleasePicker } from "@/components/moviepickarr/admin/RadarrReleasePicker";
 import { RadarrTargetReviewModal } from "@/components/moviepickarr/admin/RadarrTargetReviewModal";
 import { Modal } from "@/components/moviepickarr/Modal";
@@ -343,12 +344,12 @@ export function AdminRadarrAcquisitionPage() {
     : checkingAdd ? "Check Radarr add"
       : checkingGrab ? "Check Radarr status"
         : "Retry Radarr action";
-  const recordVisible = (typeof item.manualAttemptCount === "number" && (item.manualAttemptCount > 0 || !open)) ||
-    Boolean(item.abandonmentReason) ||
-    Boolean(item.latestFailure && item.status !== "action_needed");
+  const historicalFailure = item.status !== "action_needed" ? item.latestFailure : undefined;
+  const recordVisible = Boolean(item.abandonmentReason || historicalFailure);
+  const recordMeta = item.abandonmentReason ? "Reason recorded" : "Previous failure";
 
   return (
-    <article className="radarr-page radarr-detail" aria-labelledby="radarr-acquisition-title">
+    <article className="radarr-page radarr-detail mg-rise" aria-labelledby="radarr-acquisition-title">
       <Link to="/admin/integrations/radarr" className="radarr-back">
         <ArrowLeftIcon aria-hidden="true" />
         All acquisitions
@@ -441,37 +442,37 @@ export function AdminRadarrAcquisitionPage() {
       ) : null}
 
       {target ? (
-        <details className="radarr-detail__activity">
-          <summary><span>Target details</span><span>{targetName(target)}</span></summary>
+        <RadarrDisclosure title="Target details" meta={targetName(target)}>
           <TargetFacts acquisition={item} />
-        </details>
+        </RadarrDisclosure>
       ) : null}
 
       {item.latestRelease ? (
-        <details className="radarr-detail__activity">
-          <summary><span>Selected release</span><span>{item.latestRelease.quality ?? "Unknown quality"}</span></summary>
+        <RadarrDisclosure
+          title="Selected release"
+          meta={item.latestRelease.quality ?? "Unknown quality"}
+        >
           <dl className="radarr-detail__facts">
             <div><dt>Release</dt><dd>{item.latestRelease.title ?? "Not available"}</dd></div>
             <div><dt>Quality</dt><dd>{item.latestRelease.quality ?? "Not available"}</dd></div>
+            {typeof item.manualAttemptCount === "number" && item.manualAttemptCount > 0 ? (
+              <div><dt>Total manual release attempts</dt><dd>{item.manualAttemptCount}</dd></div>
+            ) : null}
           </dl>
-        </details>
+        </RadarrDisclosure>
       ) : null}
 
       {recordVisible ? (
-        <details className="radarr-detail__activity">
-          <summary><span>Acquisition record</span><span>{item.manualAttemptCount ?? 0} attempts</span></summary>
+        <RadarrDisclosure title="Acquisition record" meta={recordMeta}>
           <dl className="radarr-detail__facts">
-            {typeof item.manualAttemptCount === "number" ? (
-              <div><dt>Manual release attempts</dt><dd>{item.manualAttemptCount}</dd></div>
-            ) : null}
             {item.abandonmentReason ? (
               <div><dt>Abandonment reason</dt><dd>{item.abandonmentReason}</dd></div>
             ) : null}
-            {item.latestFailure && item.status !== "action_needed" ? (
-              <div><dt>Latest recorded failure</dt><dd>{item.latestFailure}</dd></div>
+            {historicalFailure ? (
+              <div><dt>Latest recorded failure</dt><dd>{historicalFailure}</dd></div>
             ) : null}
           </dl>
-        </details>
+        </RadarrDisclosure>
       ) : null}
 
       {review ? <RadarrTargetReviewModal acquisition={item} onClose={() => setReview(false)} /> : null}

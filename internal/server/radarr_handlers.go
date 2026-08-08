@@ -119,6 +119,7 @@ type radarrInstanceResponse struct {
 	LastTestedAt     string `json:"lastTestedAt,omitempty"`
 	ArchivedAt       string `json:"archivedAt,omitempty"`
 	Revision         int64  `json:"revision"`
+	Used             bool   `json:"used"`
 }
 
 type radarrRootFolderResponse struct {
@@ -155,6 +156,11 @@ type radarrPresetResponse struct {
 	InvalidReason       string              `json:"invalidReason,omitempty"`
 	ArchivedAt          string              `json:"archivedAt,omitempty"`
 	Revision            int64               `json:"revision"`
+	Used                bool                `json:"used"`
+}
+
+type radarrRemoveResponse struct {
+	Outcome repository.RadarrRemoveOutcome `json:"outcome"`
 }
 
 type radarrWebhookResponse struct {
@@ -188,6 +194,7 @@ type radarrReleaseResponse struct {
 	Peers             *int     `json:"peers,omitempty"`
 	Protocol          string   `json:"protocol,omitempty"`
 	Indexer           string   `json:"indexer,omitempty"`
+	CustomFormats     []string `json:"customFormats,omitempty"`
 	CustomFormatScore int      `json:"customFormatScore"`
 	Approved          bool     `json:"approved"`
 	Rejected          bool     `json:"rejected"`
@@ -487,7 +494,7 @@ func (h *handler) handleUpdateRadarrInstance(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(toRadarrInstanceResponse(instance))
 }
 
-func (h *handler) handleArchiveRadarrInstance(c *fiber.Ctx) error {
+func (h *handler) handleRemoveRadarrInstance(c *fiber.Ctx) error {
 	service, err := h.requireRadarrAdmin(c)
 	if service == nil || err != nil {
 		return err
@@ -496,10 +503,11 @@ func (h *handler) handleArchiveRadarrInstance(c *fiber.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
-	if err := service.archiveInstance(c.UserContext(), id); err != nil {
-		return h.writeRadarrError(c, err, "archiving Radarr instance failed")
+	outcome, removeErr := service.removeInstance(c.UserContext(), id)
+	if removeErr != nil {
+		return h.writeRadarrError(c, removeErr, "removing Radarr instance failed")
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.Status(fiber.StatusOK).JSON(radarrRemoveResponse{Outcome: outcome})
 }
 
 func (h *handler) handleGetRadarrInstanceOptions(c *fiber.Ctx) error {
@@ -586,7 +594,7 @@ func (h *handler) handleUpdateRadarrPreset(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(toRadarrPresetResponse(preset))
 }
 
-func (h *handler) handleArchiveRadarrPreset(c *fiber.Ctx) error {
+func (h *handler) handleRemoveRadarrPreset(c *fiber.Ctx) error {
 	service, err := h.requireRadarrAdmin(c)
 	if service == nil || err != nil {
 		return err
@@ -595,10 +603,11 @@ func (h *handler) handleArchiveRadarrPreset(c *fiber.Ctx) error {
 	if err != nil {
 		return writeError(c, err)
 	}
-	if err := service.archivePreset(c.UserContext(), id); err != nil {
-		return h.writeRadarrError(c, err, "archiving Radarr preset failed")
+	outcome, removeErr := service.removePreset(c.UserContext(), id)
+	if removeErr != nil {
+		return h.writeRadarrError(c, removeErr, "removing Radarr preset failed")
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.Status(fiber.StatusOK).JSON(radarrRemoveResponse{Outcome: outcome})
 }
 
 func (h *handler) handleListRadarrWebhooks(c *fiber.Ctx) error {
@@ -815,6 +824,7 @@ func toRadarrInstanceResponse(instance repository.RadarrInstance) radarrInstance
 		APIKeyConfigured: len(instance.EncryptedAPIKey) > 0,
 		LastTestedAt:     formatTimeValue(instance.LastCheckedAt),
 		ArchivedAt:       formatTime(instance.ArchivedAt), Revision: instance.Revision,
+		Used: instance.Used,
 	}
 }
 
@@ -831,7 +841,7 @@ func toRadarrPresetResponse(preset repository.RadarrPreset) radarrPresetResponse
 		TagIDs: tagIDs, Tags: tags, MinimumAvailability: preset.MinimumAvailability,
 		Mode: preset.AcquisitionMode, Valid: preset.Valid,
 		InvalidReason: preset.ValidationReason, ArchivedAt: formatTime(preset.ArchivedAt),
-		Revision: preset.Revision,
+		Revision: preset.Revision, Used: preset.Used,
 	}
 }
 
@@ -930,6 +940,7 @@ func toRadarrReleaseResponse(release integrationradarr.Release, now time.Time) r
 		ID: release.ID, Title: release.Title, Quality: release.Quality.Name,
 		Size: release.Size, AgeHours: ageHours, Peers: release.Seeders,
 		Protocol: release.Protocol, Indexer: release.Indexer,
+		CustomFormats:     append([]string(nil), release.CustomFormats...),
 		CustomFormatScore: release.CustomFormatScore,
 		Approved:          release.Approved, Rejected: release.Rejected,
 		Rejections: append([]string(nil), release.RejectionReasons...),

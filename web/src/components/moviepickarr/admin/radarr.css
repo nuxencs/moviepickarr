@@ -302,20 +302,6 @@
   padding: 6px 0 12px;
 }
 
-.radarr-acquisition-history__tools .field {
-  height: 38px;
-  padding-inline: 2px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-}
-
-.radarr-acquisition-history__tools .field:focus-within {
-  border-color: var(--accent-line);
-  background: transparent;
-}
-
 .radarr-register,
 .radarr-setup-list,
 .radarr-identity-results,

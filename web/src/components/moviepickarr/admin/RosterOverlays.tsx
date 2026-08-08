@@ -1,4 +1,5 @@
 import {
+  ArrowLeftIcon,
   CheckCircle2Icon,
   CopyIcon,
   KeyRoundIcon,
@@ -123,13 +124,15 @@ export function InviteReveal({
           </div>
 
           <div className="adm-invite__urlrow">
-            <input
-              className="adm-invite__url"
-              value={absolute}
-              readOnly
-              aria-label={`${linkLabel} for ${name}`}
-              onFocus={(event) => event.currentTarget.select()}
-            />
+            <span className="field adm-invite__url">
+              <LinkIcon aria-hidden="true" />
+              <input
+                value={absolute}
+                readOnly
+                aria-label={`${linkLabel} for ${name}`}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </span>
             <button
               type="button"
               className="btn btn--accent adm-invite__copy"
@@ -333,6 +336,7 @@ export function ForbiddenState({ onLeave }: { onLeave: () => void }) {
         page is off-limits. If you think that's wrong, ask an admin.
       </p>
       <button type="button" className="btn btn--accent adm-forbidden__btn" onClick={onLeave}>
+        <ArrowLeftIcon aria-hidden="true" />
         Back to movie night
       </button>
     </div>

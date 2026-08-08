@@ -20,6 +20,11 @@
   --r-lg: 4px;
   --r-xl: 6px;
 
+  /* control geometry - one height per density, independent of icon presence */
+  --control-h-sm: 34px;
+  --control-h: 42px;
+  --control-h-lg: 46px;
+
   /* easing — entrances decelerate, exits accelerate away, the draw-reveal is a confident expo */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -389,11 +394,11 @@
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 9px;
     font-family: var(--font-ui); font-weight: 550; font-size: 14px;
-    padding: 11px 17px; border-radius: var(--r-md); border: 1px solid transparent;
+    height: var(--control-h); padding: 0 17px; border-radius: var(--r-md); border: 1px solid transparent;
     cursor: pointer; transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
     white-space: nowrap; line-height: 1;
   }
-  .btn svg { width: 17px; height: 17px; }
+  .btn svg { width: 17px; height: 17px; flex: none; }
   .btn:active { transform: translateY(1px) scale(0.99); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn--accent { background: var(--accent); color: var(--accent-ink); }
@@ -402,16 +407,16 @@
   .btn--ghost:hover:not(:disabled) { background: var(--surface-3); border-color: var(--line-2); }
   .btn--danger { background: var(--danger); color: var(--danger-ink); }
   .btn--danger:hover:not(:disabled) { filter: brightness(1.06); }
-  .btn--sm { padding: 8px 13px; font-size: 13px; }
+  .btn--sm { height: var(--control-h-sm); padding: 0 13px; font-size: 13px; }
   .btn--sm svg { width: 15px; height: 15px; }
 
   .iconbtn {
-    width: 34px; height: 34px; border-radius: var(--r-md); flex: none;
+    width: var(--control-h-sm); height: var(--control-h-sm); border-radius: var(--r-md); flex: none;
     display: inline-flex; align-items: center; justify-content: center;
     background: transparent; border: 1px solid transparent; color: var(--ink-3);
     cursor: pointer; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   }
-  .iconbtn svg { width: 16px; height: 16px; }
+  .iconbtn svg { width: 16px; height: 16px; flex: none; }
   .iconbtn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
   .iconbtn:disabled, .iconbtn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
   .iconbtn:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(0.92); }
@@ -437,14 +442,17 @@
   .field {
     display: flex; align-items: center; gap: 9px;
     background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
-    padding: 0 14px; height: 42px; color: var(--ink-2);
+    padding: 0 14px; height: var(--control-h); color: var(--ink-2);
     transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   }
   .field:focus-within { border-color: var(--accent-line); background: var(--surface); }
+  .field:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .field svg { width: 16px; height: 16px; color: var(--ink-3); flex: none; }
   .field input,
-  .field select { min-width: 0; width: 100%; border: none; outline: none; background: none; color: var(--ink); font: 14px var(--font-ui); }
-  .field input::placeholder { color: var(--ink-3); }
+  .field select,
+  .field textarea { min-width: 0; width: 100%; border: none; outline: none; background: none; color: var(--ink); font: 14px var(--font-ui); }
+  .field input::placeholder,
+  .field textarea::placeholder { color: var(--ink-3); }
   .field[data-invalid="true"], .field[data-invalid="true"]:focus-within { border-color: color-mix(in oklab, var(--danger) 55%, var(--line)); }
   .fieldgroup { display: grid; gap: 6px; }
   .field-error {
@@ -455,7 +463,7 @@
   /* Shared integration checkbox label. TMDB and Radarr both use this control,
      so its themed native input belongs in the app-wide component layer. */
   .int-toggle {
-    display: inline-flex; min-height: 34px; align-items: center; gap: 9px;
+    display: inline-flex; min-height: var(--control-h-sm); align-items: center; gap: 9px;
     color: var(--ink-2); font-size: 13px;
   }
   .int-toggle input {
@@ -467,7 +475,7 @@
   .seg { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; }
   .seg button {
     border: none; background: transparent; color: var(--ink-3); cursor: pointer;
-    font-family: var(--font-ui); font-weight: 550; font-size: 13.5px; padding: 8px 16px; border-radius: var(--r-sm);
+    height: var(--control-h-sm); font-family: var(--font-ui); font-weight: 550; font-size: 13.5px; padding: 0 16px; border-radius: var(--r-sm);
     display: inline-flex; align-items: center; gap: 8px; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   }
   .seg button svg { width: 16px; height: 16px; }
@@ -882,7 +890,7 @@
   .statsfilters .seg { background: transparent; border-color: var(--line-2); border-radius: var(--r-sm); padding: 0; gap: 0; overflow: hidden; }
   .statsfilters .seg button {
     font-family: var(--font-mono); font-size: 12px; font-weight: 400;
-    color: var(--ink-2); padding: 0 12px; min-height: 30px; border-radius: 0; gap: 6px;
+    height: 30px; color: var(--ink-2); padding: 0 12px; min-height: 30px; border-radius: 0; gap: 6px;
   }
   .statsfilters .seg button + button { border-left: 1px solid var(--line); }
   .statsfilters .seg button svg { width: 13px; height: 13px; }
@@ -1187,7 +1195,8 @@
   .modal__head h3 { margin: 0; font-size: 19px; font-weight: 620; letter-spacing: -0.015em; }
   .modal__head p { margin: 5px 0 0; color: var(--ink-3); font-size: 13.5px; }
   .modal__search { display: flex; gap: 10px; margin-top: 18px; }
-  .modal__search .field { flex: 1; height: 46px; }
+  .modal__search .field { flex: 1; height: var(--control-h-lg); }
+  .modal__search .btn { height: var(--control-h-lg); }
   .modal__results { padding: 20px 26px 28px; }
   .modal__count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); margin-bottom: 18px; letter-spacing: 0.04em; }
   .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 22px 16px; }
@@ -1421,7 +1430,7 @@
       position-try-fallbacks: flip-inline;
     }
   }
-  .filtermenu .field { height: 34px; flex: none; margin-bottom: 5px; }
+  .filtermenu .field { height: var(--control-h-sm); flex: none; margin-bottom: 5px; }
   .filtermenu__list { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
   .filtermenu__empty { margin: 0; padding: 9px 10px; font-size: 12.5px; color: var(--ink-3); }
   .filtermenu .mg-menu__item[aria-selected="true"] { color: var(--accent); }
@@ -1563,11 +1572,11 @@
   /* ---- Coarse pointer: grow tap targets toward 44px ---- */
   @media (pointer: coarse) {
     .iconbtn { width: 40px; height: 40px; }
-    .btn--sm { padding: 10px 14px; }
-    .seg button { padding: 10px 16px; }
+    .btn--sm { height: 40px; padding: 0 14px; }
+    .seg button { height: 40px; padding: 0 16px; }
     .filterchip > button { min-height: 40px; }
     /* outranks the .statsfilters .seg button override above */
-    .statsfilters .seg button { min-height: 40px; }
+    .statsfilters .seg button { height: 40px; min-height: 40px; }
     .peoplecard__ext { width: 40px; height: 40px; }
     .peoplecard__ext svg { width: 16px; height: 16px; }
   }

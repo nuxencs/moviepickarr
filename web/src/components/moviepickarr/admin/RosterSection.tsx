@@ -613,6 +613,7 @@ export function RosterSection() {
                 className="btn btn--ghost"
                 onClick={() => void reconcileInviteSurfaces(queryClient)}
               >
+                <RotateCcwIcon aria-hidden="true" />
                 Retry
               </button>
             </div>

@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
-import { ChevronRightIcon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -467,6 +467,7 @@ export function AdminRunsPage() {
                 }
                 onClick={previousPage}
               >
+                <ChevronLeftIcon aria-hidden="true" />
                 {previousCursors.length === 0 && search.cursor ? "First page" : "Previous page"}
               </button>
               <button
@@ -476,6 +477,7 @@ export function AdminRunsPage() {
                 onClick={nextPage}
               >
                 Next page
+                <ChevronRightIcon aria-hidden="true" />
               </button>
             </nav>
           ) : null}

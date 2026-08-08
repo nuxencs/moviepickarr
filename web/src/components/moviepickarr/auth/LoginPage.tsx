@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { KeyRoundIcon, LockIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
+import { LockIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
 import { useState } from "react";
 
 import { APIClient, oidcLoginPath } from "@/api/APIClient";
@@ -99,7 +99,6 @@ export function LoginPage() {
             className="btn btn--ghost auth__submit"
             onClick={() => window.location.assign(oidcLoginPath())}
           >
-            <KeyRoundIcon />
             Log in with SSO
           </button>
         )}

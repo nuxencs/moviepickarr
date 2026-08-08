@@ -497,7 +497,7 @@
    approximation of it (#239). */
 .mem-stash__head .field,
 .mem-stash__head .mem-skel__field {
-  height: 34px;
+  height: var(--control-h-sm);
   width: 210px;
   flex: none;
   margin-left: auto;

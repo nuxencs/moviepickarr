@@ -35,7 +35,9 @@ describe("Admin integrations workspace styles", () => {
   it("overlays help without changing a setting row's geometry", () => {
     expect(declarations(".int-help")).toMatch(/display:\s*inline-flex/);
     expect(formSource).toMatch(/className="iconbtn int-help__trigger"/);
-    expect(declarationsFrom(appCss, ".iconbtn")).toMatch(/width:\s*34px/);
+    expect(declarationsFrom(appCss, ".iconbtn")).toMatch(
+      /width:\s*var\(--control-h-sm\)/,
+    );
     expect(declarations(".int-help__trigger")).toMatch(/cursor:\s*help/);
     expect(declarations(".int-help__tooltip")).toMatch(/position:\s*fixed/);
     expect(declarations(".int-help__tooltip")).toMatch(

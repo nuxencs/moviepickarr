@@ -1,7 +1,9 @@
 import { type CSSProperties, type RefObject, useLayoutEffect, useState } from "react";
 
+import { documentOffsetTop, documentScrollOwner } from "@/lib/scrollPolicy";
+
 /** Resolved track list, lane count and gaps of a CSS grid, plus its offset from
- *  the document top (the window virtualizer's scrollMargin). */
+ *  the body document owner's content origin (the virtualizer's scrollMargin). */
 export interface GridMetrics {
   /** The container's resolved `grid-template-columns`, replayed verbatim onto
    *  each virtual row so the row's tracks can't drift from the container's. */
@@ -49,15 +51,9 @@ const same = (a: GridMetrics, b: GridMetrics) =>
   a.rowGap === b.rowGap &&
   a.offsetTop === b.offsetTop;
 
-/** Document-top offset from the viewport rect. This avoids walking a mixed
- *  offset-parent chain when layout above the grid changes. */
-function documentTop(el: HTMLElement): number {
-  return Math.round(el.getBoundingClientRect().top + window.scrollY);
-}
-
 /** Absolute placement of one virtualized row inside its sizing container. */
 export function virtualRowStyle(offset: number): CSSProperties {
-  return { position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${offset}px)` };
+  return { position: "absolute", top: offset, left: 0, width: "100%" };
 }
 
 /**
@@ -73,14 +69,17 @@ export function useGridMetrics(ref: RefObject<HTMLElement | null>): GridMetrics 
     if (!el) return;
 
     const read = () => {
-      const next = { ...readGridMetrics(getComputedStyle(el)), offsetTop: documentTop(el) };
+      const next = {
+        ...readGridMetrics(getComputedStyle(el)),
+        offsetTop: documentOffsetTop(el),
+      };
       setMetrics((prev) => (same(prev, next) ? prev : next));
     };
 
     read();
     const observer = new ResizeObserver(read);
     observer.observe(el);
-    observer.observe(document.body);
+    observer.observe(document.getElementById("root") ?? documentScrollOwner());
     return () => observer.disconnect();
   }, [ref]);
 

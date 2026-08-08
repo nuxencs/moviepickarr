@@ -1,4 +1,5 @@
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useRouterState } from "@tanstack/react-router";
+import { useLayoutEffect } from "react";
 
 import { AudioProvider } from "@/components/AudioProvider";
 import { NavBar } from "@/components/moviepickarr/NavBar";
@@ -7,6 +8,7 @@ import { Toaster } from "@/components/ui/toast";
 import type { ReactNode } from "react";
 
 import { useSSE } from "@/hooks/useSSE";
+import { resetDocumentScroll } from "@/lib/scrollPolicy";
 
 /**
  * Root shell for every route. Holds only the global Toaster and the outlet, so
@@ -35,6 +37,14 @@ export function RootShell() {
  */
 export function AppLayout() {
   useSSE();
+  const renderedPathname = useRouterState({
+    select: (state) => state.matches[state.matches.length - 1]?.pathname,
+  });
+
+  useLayoutEffect(() => {
+    resetDocumentScroll();
+  }, [renderedPathname]);
+
   return (
     <AudioProvider>
       <div className="app">

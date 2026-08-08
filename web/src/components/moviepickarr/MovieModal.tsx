@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ExternalLinkIcon, PencilIcon, Trash2Icon, XIcon } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import { MeQueryOptions, MovieDetailQueryOptions, SettingsGetPoolStateQueryOptions } from "@/api/queries";
@@ -64,8 +64,9 @@ function GhostCreditRow({ w }: { w: number }) {
 
 /** Modal hero backdrop — the wide-format twin of `Poster`. The procedural
  *  duotone (backdropBg) is painted underneath as the instant first frame, so a
- *  slow TMDB CDN fetch crossfades in over colour instead of flashing the surface
- *  through (pure white in light mode). Mirrors Poster's cache-sync + shimmer. */
+ *  slow TMDB CDN fetch cannot flash the surface through (pure white in light
+ *  mode). The photograph becomes the scroll owner's background after it loads.
+ *  Native scrollbar chrome therefore paints over the backdrop in WebKit. */
 function HeroBackdrop({
   hue,
   src,
@@ -74,16 +75,16 @@ function HeroBackdrop({
    *  be about to replace. */
   pending,
   /** What `src` actually is. A poster in the wide hero is a stand-in, and the
-   *  rail shows that same poster sharp a few pixels below: left as a photograph
-   *  it reads as the poster printed twice. Blurred past recognition it reads as
-   *  a colour field taken from the film, which is what the duotone was
-   *  approximating from the title hash all along. */
+  *  rail shows that same poster sharp a few pixels below. A dark wash makes it
+  *  read as a colour field instead of the poster printed twice. */
   wash = false,
+  children,
 }: {
   hue: number;
   src: string | null;
   pending: boolean;
   wash?: boolean;
+  children: ReactNode;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -99,26 +100,48 @@ function HeroBackdrop({
 
   const url = failed ? null : src;
   const loading = pending || (url !== null && !loaded);
-  // A poster that 404s leaves the duotone showing, and the duotone needs the
-  // ordinary scrim: the deepened one is there to answer the wash's brightness.
+  // A poster that 404s leaves the duotone showing. The duotone uses the normal
+  // scrim because the deeper one only supports a loaded stand-in.
   const washing = wash && url !== null;
+  const photograph = url !== null && loaded ? `url(${JSON.stringify(url)})` : null;
+  const backdrop = photograph
+    ? washing
+      ? `linear-gradient(rgba(8, 9, 14, 0.48), rgba(8, 9, 14, 0.48)), ${photograph}`
+      : photograph
+    : backdropBg(hue);
+  const surfaceMask =
+    "linear-gradient(to bottom, transparent 0 var(--moviemodal-hero-height), var(--surface) var(--moviemodal-hero-height) 100%)";
+  const bottomFade = "linear-gradient(0deg, var(--surface), transparent 72%)";
+  const sideFade = washing
+    ? "linear-gradient(95deg, rgba(8, 9, 14, 0.68), rgba(8, 9, 14, 0.18) 60%)"
+    : "linear-gradient(95deg, rgba(8, 9, 14, 0.5), transparent 60%)";
+  const backgroundImage = `${surfaceMask}, ${bottomFade}, ${sideFade}, ${backdrop}`;
+  // Overlap the fade with the opaque body mask by one CSS pixel. WebKit and
+  // Gecko can otherwise round their shared edge to different device pixels.
+  const fadeHeight = "calc(var(--moviemodal-hero-height) + 1px)";
+  const backgroundSize = photograph
+    ? washing
+      ? `100% 100%, 100% ${fadeHeight}, 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height), 100% auto`
+      : `100% 100%, 100% ${fadeHeight}, 100% var(--moviemodal-hero-height), 100% auto`
+    : `100% 100%, 100% ${fadeHeight}, 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height)`;
 
   return (
-    <div
-      className={`moviemodal__hero${loading ? " moviemodal__hero--loading" : ""}${washing ? " moviemodal__hero--wash" : ""}`}
-      style={{ backgroundImage: backdropBg(hue) }}
-    >
-      {url && (
-        <img
-          ref={imgRef}
-          className={`moviemodal__hero__img${wash ? " moviemodal__hero__img--wash" : ""}`}
-          src={url}
-          alt=""
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
-        />
-      )}
-      {loading && <div className="moviemodal__hero__shimmer" aria-hidden="true" />}
+    <div className="modal__scroll moviemodal__scroll" style={{ backgroundImage, backgroundSize }}>
+      <div className="moviemodal__hero">
+        {url && (
+          <img
+            ref={imgRef}
+            className={`moviemodal__hero__preload${wash ? " moviemodal__hero__preload--wash" : ""}`}
+            src={url}
+            alt=""
+            hidden
+            onLoad={() => setLoaded(true)}
+            onError={() => setFailed(true)}
+          />
+        )}
+        {loading && <div className="moviemodal__hero__shimmer" aria-hidden="true" />}
+      </div>
+      {children}
     </div>
   );
 }
@@ -318,8 +341,8 @@ export function MovieModal({
   const directors = dedupeById(crew.filter((p) => p.job === "Director"));
   const writers = dedupeById(crew.filter((p) => p.job === "Writer" || p.job === "Screenplay"));
   const hasCredits = directors.length > 0 || writers.length > 0;
-  // HeroBackdrop always paints the procedural duotone base; this is just the
-  // photo that crossfades over it (real backdrop, else the poster as a stand-in).
+  // HeroBackdrop always paints the procedural duotone base. This is the photo
+  // it adds to the scroll owner's background (real backdrop, else a poster stand-in).
   //
   // The stand-in waits for the detail. `backdropPath` is a detail field, so a
   // lean tile object has a poster and no backdrop for as long as the fetch takes.
@@ -328,9 +351,8 @@ export function MovieModal({
   // holds instead, and the poster only stands in once we know there is nothing
   // else coming.
   //
-  // The stand-in is asked for at w185: it is about to be blurred past the point
-  // where any detail in it survives, so a w500 would be paying for pixels the
-  // filter throws away.
+  // The dark overlay mutes detail in the stand-in, so w185 provides enough
+  // resolution without fetching a larger poster for a decorative background.
   const heroBackdrop = detail?.backdropPath ? backdropUrl(detail.backdropPath) : null;
   const heroStandIn =
     heroBackdrop || detailLoading || !m.posterPath ? null : posterUrl(m.posterPath, "w185");
@@ -355,14 +377,12 @@ export function MovieModal({
             <XIcon />
           </button>
 
-          <div className="modal__scroll">
-            <HeroBackdrop
-              hue={hue}
-              src={heroSrc}
-              pending={detailLoading}
-              wash={heroStandIn !== null}
-            />
-
+          <HeroBackdrop
+            hue={hue}
+            src={heroSrc}
+            pending={detailLoading}
+            wash={heroStandIn !== null}
+          >
             <div className="moviemodal__body">
               {/* The rail: identity, then the links out as reference material
                   attached to the film — quiet mono lines, not three buttons. */}
@@ -515,7 +535,7 @@ export function MovieModal({
                 ))}
               </div>
             ) : null}
-          </div>
+          </HeroBackdrop>
         </>
       )}
     </Modal>

@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { useDismissible } from "@/hooks/useDismissible";
+import { lockPageScroll } from "@/lib/scrollPolicy";
 
 interface ModalProps {
   onClose: () => void;
@@ -65,7 +66,7 @@ const modalLayers: ModalLayer[] = [];
 
 function focusTarget(target: HTMLElement | null | undefined): boolean {
   if (!target?.isConnected) return false;
-  target.focus();
+  target.focus({ preventScroll: true });
   return document.activeElement === target;
 }
 
@@ -97,42 +98,8 @@ function syncModalLayers() {
 }
 
 /**
- * Body-scroll lock, shared by every open Modal rather than saved and restored
- * per instance: a dialog opened from inside another dialog would otherwise hand
- * the page its scroll back the moment the inner one unmounts, depending on
- * which instance happened to capture the pre-lock value. Only the first lock
- * reads the page's own styles and only the last release puts them back.
- */
-let scrollLocks = 0;
-let releaseScroll: (() => void) | null = null;
-
-function lockBodyScroll() {
-  if (scrollLocks++ === 0) {
-    // Compensate for the removed scrollbar so the page doesn't jump right.
-    // (No-op where scrollbars are overlay — width is 0.)
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    const prevOverflow = document.body.style.overflow;
-    const prevPaddingRight = document.body.style.paddingRight;
-    document.body.style.overflow = "hidden";
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-    releaseScroll = () => {
-      document.body.style.overflow = prevOverflow;
-      document.body.style.paddingRight = prevPaddingRight;
-    };
-  }
-  return () => {
-    if (--scrollLocks === 0) {
-      releaseScroll?.();
-      releaseScroll = null;
-    }
-  };
-}
-
-/**
  * Portalled modal shell with matching enter AND exit animations, Esc / veil-click
- * dismissal, body-scroll lock, and a focus trap (focus moves in on open, cycles
+ * dismissal, page-owner scroll lock, and a focus trap (focus moves in on open, cycles
  * inside, and returns to the opener on close) so it behaves like a real dialog.
  *
  * A Modal opened from inside another Modal portals in as a sibling, not a
@@ -252,7 +219,9 @@ export function Modal({
 
     // Move focus into the dialog: prefer the first form field (so a form dialog
     // lands on its input, not the close X); otherwise the surface itself.
-    (surface.querySelector<HTMLElement>("input,textarea,select") ?? surface).focus();
+    (surface.querySelector<HTMLElement>("input,textarea,select") ?? surface).focus({
+      preventScroll: true,
+    });
 
     // Capture and leave the opener before hiding anything below this surface.
     // On the way out, reverse that order so focus never targets an inert node.
@@ -318,7 +287,7 @@ export function Modal({
       }
     };
 
-    const unlockScroll = lockBodyScroll();
+    const unlockScroll = lockPageScroll();
     document.addEventListener("keydown", onKey);
     return () => {
       unlockScroll();

@@ -326,8 +326,16 @@ describe("MovieModal", () => {
 });
 
 describe("MovieModal hero", () => {
-  function heroImg(dialog: HTMLElement) {
-    return dialog.querySelector(".moviemodal__hero__img") as HTMLImageElement | null;
+  function hero(dialog: HTMLElement) {
+    return dialog.querySelector(".moviemodal__hero") as HTMLElement;
+  }
+
+  function scroller(dialog: HTMLElement) {
+    return dialog.querySelector(".modal__scroll") as HTMLElement;
+  }
+
+  function heroPreload(dialog: HTMLElement) {
+    return dialog.querySelector(".moviemodal__hero__preload") as HTMLImageElement | null;
   }
 
   it("does not stand the poster in for the backdrop while the detail loads", async () => {
@@ -335,42 +343,59 @@ describe("MovieModal hero", () => {
 
     // The lean object has no backdropPath, but the detail is about to bring
     // one: painting the poster here means a visible swap a moment later.
-    expect(heroImg(dialog)?.src ?? "").not.toContain("poster.jpg");
+    expect(heroPreload(dialog)?.src ?? "").not.toContain("poster.jpg");
 
     act(() => {
       client.setQueryData(MoviesKeys.detail(MOVIE_ID), detailed());
     });
-    await vi.waitFor(() =>
-      expect(heroImg(dialog)?.src ?? "").toContain("backdrop.jpg"),
-    );
+    await vi.waitFor(() => expect(heroPreload(dialog)?.src ?? "").toContain("backdrop.jpg"));
   });
 
   it("stands the poster in once the detail says the film has no backdrop", () => {
     const { dialog } = renderModal({ detail: detailed({ backdropPath: undefined }) });
 
-    expect(heroImg(dialog)?.src ?? "").toContain("poster.jpg");
+    expect(heroPreload(dialog)?.src ?? "").toContain("poster.jpg");
   });
 
   // The rail below the hero shows the same poster sharp, so a stand-in that
-  // reads as a photograph reads as the poster printed twice. The wash is what
-  // makes it a colour field instead: blurred past recognition, and asked for at
-  // a width that only a blur could get away with.
-  it("blurs the stand-in poster and asks for a small one", () => {
+  // reads at full brightness looks like the poster printed twice. The muted
+  // wash makes it a colour field and needs only a small source.
+  it("mutes the stand-in poster and asks for a small one", () => {
     const { dialog } = renderModal({ detail: detailed({ backdropPath: undefined }) });
+    const preload = heroPreload(dialog)!;
 
-    expect(heroImg(dialog)?.className).toContain("moviemodal__hero__img--wash");
-    expect(dialog.querySelector(".moviemodal__hero")?.className).toContain(
-      "moviemodal__hero--wash",
-    );
-    expect(heroImg(dialog)?.src ?? "").toContain("w185");
+    expect(preload.className).toContain("moviemodal__hero__preload--wash");
+    expect(preload.src).toContain("w185");
+    fireEvent.load(preload);
+    expect(scroller(dialog).style.backgroundImage).toContain("rgba(8, 9, 14, 0.68)");
   });
 
   it("leaves a real backdrop sharp", async () => {
     const { dialog } = renderModal({ detail: detailed() });
 
-    await vi.waitFor(() => expect(heroImg(dialog)?.src ?? "").toContain("backdrop.jpg"));
-    expect(heroImg(dialog)?.className).not.toContain("--wash");
-    expect(dialog.querySelector(".moviemodal__hero")?.className).not.toContain("--wash");
+    await vi.waitFor(() => expect(heroPreload(dialog)?.src ?? "").toContain("backdrop.jpg"));
+    expect(heroPreload(dialog)?.className).not.toContain("--wash");
+    expect(scroller(dialog).style.backgroundImage).not.toContain("rgba(8, 9, 14, 0.68)");
+  });
+
+  it("preloads the photograph before painting it behind the modal scrollbar", () => {
+    const { dialog } = renderModal({ detail: detailed() });
+    const preload = heroPreload(dialog)!;
+
+    expect(preload.hidden).toBe(true);
+    expect(scroller(dialog).style.backgroundImage).not.toContain("backdrop.jpg");
+
+    fireEvent.load(preload);
+
+    expect(scroller(dialog).style.backgroundImage).toContain("backdrop.jpg");
+    expect(scroller(dialog).style.backgroundImage).toContain("transparent 72%");
+    // Do not let the fade and body mask meet on the same device-pixel edge.
+    // Safari and Firefox can round those independently and expose the backdrop.
+    expect(scroller(dialog).style.backgroundSize).toContain(
+      "calc(var(--moviemodal-hero-height) + 1px)",
+    );
+    expect(hero(dialog).style.backgroundImage).not.toContain("backdrop.jpg");
+    expect(dialog.querySelector(".moviemodal__hero__img")).toBeNull();
   });
 });
 

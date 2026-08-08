@@ -70,7 +70,12 @@ export function AdminLayout() {
         <span className="vis-hidden" role="status" aria-live="polite" aria-atomic="true">
           {bodyLabel}
         </span>
-        <nav ref={navRef} className="admin-layout__nav" aria-label="Admin sections">
+        <nav
+          ref={navRef}
+          className="admin-layout__nav"
+          aria-label="Admin sections"
+          data-page-scroll-owner
+        >
           <span className="admin-layout__indicator" aria-hidden="true" />
           <Link
             to="/admin/roster"
@@ -142,6 +147,7 @@ export function AdminLayout() {
         <div
           ref={bodyRef}
           className="admin-layout__body"
+          data-page-scroll-owner
           role="region"
           aria-label={bodyLabel}
           tabIndex={0}

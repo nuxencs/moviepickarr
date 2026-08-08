@@ -415,6 +415,7 @@ export function UsersTab() {
                 aria-label="Members"
                 ref={railRef}
                 data-overflow={railOverflows}
+                data-page-scroll-owner
               >
                 {ordered.map((user) => (
                   <RailRow
@@ -1200,6 +1201,7 @@ function StashPane({
   return (
     <section
       className="mem-pane"
+      data-page-scroll-owner
       aria-labelledby={headingID}
       inert={offScreen}
       onFocus={() => {
@@ -1278,7 +1280,12 @@ function StashPane({
           </label>
         </div>
 
-        <div className="mem-wallbox" ref={wallRef} data-overflow={wallOverflows}>
+        <div
+          className="mem-wallbox"
+          ref={wallRef}
+          data-overflow={wallOverflows}
+          data-page-scroll-owner
+        >
           {/* The keys are handled on the wall rather than per cell, so they
               answer from the corner action too: an arrow from there moves to
               the next poster the same way it does from a poster. */}

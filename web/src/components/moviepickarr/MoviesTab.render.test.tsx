@@ -9,17 +9,22 @@ import type { MeResponse, MovieTile } from "@/types/Response";
 
 import { renderWithProviders } from "@/test/providers";
 
+const virtualizerOptions = vi.hoisted(() => vi.fn());
+
 vi.mock("@tanstack/react-virtual", () => ({
-  useWindowVirtualizer: ({ count }: { count: number }) => ({
-    getTotalSize: () => count * 300,
-    getVirtualItems: () =>
-      Array.from({ length: count }, (_, index) => ({
-        key: index,
-        index,
-        start: index * 300,
-      })),
-    measureElement: () => {},
-  }),
+  useVirtualizer: (options: { count: number; getScrollElement: () => HTMLElement }) => {
+    virtualizerOptions(options);
+    return {
+      getTotalSize: () => options.count * 300,
+      getVirtualItems: () =>
+        Array.from({ length: options.count }, (_, index) => ({
+          key: index,
+          index,
+          start: index * 300,
+        })),
+      measureElement: () => {},
+    };
+  },
 }));
 
 const poolMovie: MovieTile = {
@@ -72,6 +77,15 @@ const candidates = (path: string) =>
   `https://image.tmdb.org/t/p/w500/${path} 500w`;
 
 describe("Movies poster sources", () => {
+  it("virtualizes the watched grid against the body document owner", async () => {
+    await renderTab();
+
+    const options = virtualizerOptions.mock.lastCall?.[0] as {
+      getScrollElement: () => HTMLElement;
+    };
+    expect(options.getScrollElement()).toBe(document.body);
+  });
+
   it("provides responsive candidates for fluid pool and watched grids", async () => {
     await renderTab();
 

@@ -8,7 +8,7 @@
    are in the #177 commit). What jsdom CAN hold is everything around the mode:
    the surface has to carry `modal--capped` for those rules to select at all,
    plus the dialog behaviour the issue says must not regress in either mode.
-   That's Esc, veil-click, the body-scroll lock, focus in and back out, and the
+   That's Esc, veil-click, the page-owner scroll lock, focus in and back out, and the
    deferred unmount that lets the exit motion play.
 
    Dismissal is driven the way a member does it (Escape, a press and release on
@@ -71,7 +71,10 @@ function runExit() {
 }
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("Modal", () => {
   it("exposes its visible title as the dialog name", () => {
@@ -189,17 +192,46 @@ describe("Modal", () => {
       expect(document.body.style.overflow).toBe("visible");
     });
 
+    it("locks marked inner page owners without adding padding compensation", () => {
+      document.body.style.paddingRight = "7px";
+      const inner = document.createElement("div");
+      inner.dataset.pageScrollOwner = "";
+      inner.style.overflow = "auto";
+      document.body.append(inner);
+
+      const { view } = renderModal({ capped });
+      expect(inner.style.overflow).toBe("hidden");
+      expect(document.body.style.paddingRight).toBe("7px");
+
+      view.unmount();
+      expect(inner.style.overflow).toBe("auto");
+      expect(document.body.style.paddingRight).toBe("7px");
+      inner.remove();
+      document.body.style.paddingRight = "";
+    });
+
     it("takes focus on open and hands it back to the opener on unmount", () => {
       const opener = document.createElement("button");
       document.body.append(opener);
       opener.focus();
+      const restoreFocus = vi.spyOn(opener, "focus");
 
       const { view, dialog } = renderModal({ capped });
       expect(document.activeElement).toBe(dialog);
 
       view.unmount();
       expect(document.activeElement).toBe(opener);
+      expect(restoreFocus).toHaveBeenCalledWith({ preventScroll: true });
       opener.remove();
+    });
+
+    it("takes focus without asking the browser to scroll the page owner", () => {
+      const focus = vi.spyOn(HTMLElement.prototype, "focus");
+
+      const { dialog } = renderModal({ capped });
+
+      expect(document.activeElement).toBe(dialog);
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     });
   });
 
@@ -568,7 +600,7 @@ describe("Modal", () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it("holds the body-scroll lock until the last dialog is gone", () => {
+    it("holds the page-owner scroll lock until the last dialog is gone", () => {
       document.body.style.overflow = "visible";
       const { onInnerClose } = renderNested();
 

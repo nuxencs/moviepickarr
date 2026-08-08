@@ -36,9 +36,16 @@ async function renderPage() {
     path: "tmdb",
     component: () => <p>TMDB settings</p>,
   });
+  const radarrRoute = createRoute({
+    getParentRoute: () => integrationsRoute,
+    path: "radarr",
+    component: () => <p>Radarr acquisitions</p>,
+  });
   const router = createRouter({
     routeTree: rootRoute.addChildren([
-      adminRoute.addChildren([integrationsRoute.addChildren([indexRoute, tmdbRoute])]),
+      adminRoute.addChildren([
+        integrationsRoute.addChildren([indexRoute, tmdbRoute, radarrRoute]),
+      ]),
     ]),
     history: createMemoryHistory({ initialEntries: ["/admin/integrations"] }),
   });
@@ -93,5 +100,24 @@ describe("Admin integrations index", () => {
     expect((await screen.findByRole("alert")).textContent).toBe(
       "Admin access is required to view integrations.",
     );
+  });
+
+  it("opens the Radarr acquisition workspace from the shared catalog", async () => {
+    api.listIntegrations.mockResolvedValue([
+      {
+        id: "radarr",
+        name: "Radarr",
+        state: "connected",
+        operations: [],
+      },
+    ]);
+    const router = await renderPage();
+
+    const row = await screen.findByRole("link", { name: /Radarr/ });
+    expect(within(row).getByText("Current-draw acquisition")).toBeTruthy();
+    fireEvent.click(row);
+
+    expect(await screen.findByText("Radarr acquisitions")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/admin/integrations/radarr");
   });
 });

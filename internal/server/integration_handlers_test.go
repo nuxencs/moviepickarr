@@ -204,7 +204,9 @@ func TestHandleListIntegrations_UsesConnectionCheckAsLatestActivity(t *testing.T
 		t.Fatalf("status = %d, want 200", response.StatusCode)
 	}
 	var body []struct {
+		ID             string `json:"id"`
 		LatestActivity string `json:"latestActivity"`
+		AttentionCount int    `json:"attentionCount"`
 		Operations     []struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
@@ -213,11 +215,14 @@ func TestHandleListIntegrations_UsesConnectionCheckAsLatestActivity(t *testing.T
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(body) != 1 || body[0].LatestActivity != checkedAt.Format(time.RFC3339) {
+	if len(body) != 2 || body[0].ID != "tmdb" || body[0].LatestActivity != checkedAt.Format(time.RFC3339) {
 		t.Fatalf("latest activity = %+v, want %s", body, checkedAt.Format(time.RFC3339))
 	}
 	if len(body[0].Operations) != 3 || body[0].Operations[0].ID != "refresh_stale" || body[0].Operations[0].Name != "Refresh stale" {
 		t.Fatalf("operations = %+v, want typed TMDB operations", body[0].Operations)
+	}
+	if body[1].ID != "radarr" || len(body[1].Operations) != 0 || body[1].AttentionCount != 0 {
+		t.Fatalf("Radarr summary = %+v, want no Runs operations and no attention", body[1])
 	}
 }
 

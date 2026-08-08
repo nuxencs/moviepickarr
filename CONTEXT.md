@@ -192,7 +192,9 @@ TMDB is an integration; each integration owns its admin-managed settings.
 **Integration run**:
 One execution of an integration operation, started by a schedule, an admin, app
 startup, or an application event such as adding a movie. It has a recorded
-outcome and may cover one or many subjects.
+outcome and may cover one or many subjects. Individual Acquisition actions and
+routine status checks are not Integration runs; an explicit Radarr batch or
+maintenance operation can be one.
 
 ### TMDB
 
@@ -208,6 +210,117 @@ genres, rating, tagline). Display only; never part of a movie's identity.
 The people on a movie: cast in billing order (capped) and crew filtered to a
 job whitelist (Director, Writer, Screenplay, Original Music Composer, Director
 of Photography).
+
+### Radarr
+
+**Radarr instance**:
+One configured Radarr installation that represents a media variant or
+collection boundary. The same movie can exist in more than one instance.
+_Avoid_: Radarr client
+
+**Acquisition**:
+The process of arranging a media file for a Current draw. It covers the initial
+grab, not ongoing maintenance of that movie's releases.
+_Avoid_: preparation, delivery
+
+**Pending acquisition**:
+A durable Acquisition created with a Current draw. It remains concealed until
+Reveal and waits for an Admin to select an Acquisition preset.
+_Avoid_: pending download, unassigned download
+
+**Acquisition preset**:
+A reusable Admin-managed combination of one Radarr instance, root folder,
+quality profile, tags, minimum availability, and Acquisition mode.
+_Avoid_: route preset, Radarr preset
+
+**Target review**:
+The final Admin confirmation of an Acquisition target before moviepickarr adds
+a movie that does not already exist in the selected Radarr instance. An exact
+existing movie is adopted during preset selection without this confirmation.
+_Avoid_: preset preview
+
+**Acquisition target**:
+The snapshot of the one selected Acquisition preset used for an Acquisition.
+It is separate from later edits to the reusable preset.
+_Avoid_: destination, route
+
+**Acquisition identity**:
+The movie identity snapshot used for Radarr work. It is independent of later
+edits to the movie.
+_Avoid_: lookup identity
+
+**Downloaded**:
+The terminal Acquisition state in which the selected target reports an
+imported media file.
+_Avoid_: available, playable
+
+**Manual acquisition**:
+An Acquisition mode in which an Admin chooses a release through Interactive
+search.
+_Avoid_: manual download
+
+**Automatic acquisition**:
+An Acquisition mode in which moviepickarr asks Radarr to search for a release.
+_Avoid_: automatic download
+
+**Existing Radarr movie**:
+A movie already present in the selected Radarr instance when its Acquisition
+target is reviewed.
+_Avoid_: imported movie
+
+**Interactive search**:
+A Radarr search shown in moviepickarr so an Admin can choose the release that
+Radarr grabs.
+_Avoid_: manual search
+
+**Acquisition status**:
+The Admin-facing lifecycle label for an Acquisition. A separate Action-needed
+reason identifies a condition that needs Admin work.
+_Avoid_: download status
+
+**Action-needed reason**:
+The typed cause of an Acquisition condition that an Admin can act on in
+moviepickarr.
+_Avoid_: webhook event type, error code
+
+**Acquisition history**:
+The Admin-only durable summary of an Acquisition. It is a compact workflow
+record, not an Integration run or full event log.
+_Avoid_: integration run, event log
+
+**Acquisition reminder**:
+A persistent Admin attention item for an Acquisition that is neither Downloaded
+nor Abandoned.
+_Avoid_: notification, toast
+
+**Abandoned acquisition**:
+An Acquisition that an Admin explicitly ends without a file. It is a terminal
+state and includes the Admin's reason.
+_Avoid_: dismissed acquisition, cancelled download
+
+**Acquisition webhook**:
+An outbound Generic or Discord notification for an Acquisition condition that
+requires action in moviepickarr.
+_Avoid_: Radarr webhook
+
+**Webhook destination**:
+A named Generic or Discord endpoint that can receive Acquisition webhooks.
+_Avoid_: webhook client
+
+**Discord destination**:
+An Acquisition webhook destination that renders notifications as Discord
+embeds.
+_Avoid_: Discord notification
+
+**Webhook delivery**:
+One durable Acquisition condition and destination pairing. Its record tracks up
+to five send attempts.
+_Avoid_: notification run
+
+**Webhook-health warning**:
+A persistent Admin warning for a Webhook destination that has a terminal
+delivery failure.
+_Avoid_: Acquisition reminder
 
 ### Stats
 

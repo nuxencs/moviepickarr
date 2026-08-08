@@ -18,6 +18,7 @@ type integrationSummaryResponse struct {
 	State          string                                `json:"state"`
 	Reason         string                                `json:"reason,omitempty"`
 	LatestActivity string                                `json:"latestActivity,omitempty"`
+	AttentionCount *int                                  `json:"attentionCount,omitempty"`
 	Operations     []integrationOperationSummaryResponse `json:"operations"`
 }
 
@@ -140,7 +141,80 @@ func (h *handler) handleListIntegrations(c *fiber.Ctx) error {
 	if latestActivity != nil {
 		row.LatestActivity = latestActivity.UTC().Format(time.RFC3339)
 	}
-	return c.Status(fiber.StatusOK).JSON([]integrationSummaryResponse{row})
+	rows := []integrationSummaryResponse{row}
+	if h.radarr != nil {
+		radarrRow, err := h.radarrIntegrationSummary(c.UserContext())
+		if err != nil {
+			return h.writeInternal(c, err, "reading Radarr integration summary failed")
+		}
+		rows = append(rows, radarrRow)
+	}
+	return c.Status(fiber.StatusOK).JSON(rows)
+}
+
+func (h *handler) radarrIntegrationSummary(ctx context.Context) (integrationSummaryResponse, error) {
+	instances, err := h.radarr.listInstances(ctx)
+	if err != nil {
+		return integrationSummaryResponse{}, err
+	}
+	attention, err := h.radarr.attentionCount(ctx)
+	if err != nil {
+		return integrationSummaryResponse{}, err
+	}
+	row := integrationSummaryResponse{
+		ID: "radarr", Name: "Radarr", State: string(integration.StateDisabled),
+		AttentionCount: &attention, Operations: []integrationOperationSummaryResponse{},
+	}
+	active := 0
+	connected := false
+	credentialUnavailable := false
+	offline := false
+	credentialReason := ""
+	offlineReason := ""
+	var latest *time.Time
+	for i := range instances {
+		instance := instances[i]
+		if instance.ArchivedAt != nil {
+			continue
+		}
+		active++
+		checkedAt := instance.LastCheckedAt
+		if !checkedAt.IsZero() && (latest == nil || checkedAt.After(*latest)) {
+			latest = &checkedAt
+		}
+		switch instance.State {
+		case radarrInstanceConnected:
+			connected = true
+		case radarrInstanceCredentialUnavailable:
+			credentialUnavailable = true
+			if credentialReason == "" {
+				credentialReason = instance.StateReason
+			}
+		default:
+			offline = true
+			if offlineReason == "" {
+				offlineReason = instance.StateReason
+			}
+		}
+	}
+	switch {
+	case active == 0:
+		row.State = string(integration.StateDisabled)
+		row.Reason = ""
+	case credentialUnavailable:
+		row.State = string(integration.StateCredentialUnavailable)
+		row.Reason = credentialReason
+	case offline:
+		row.State = string(integration.StateCouldNotVerify)
+		row.Reason = offlineReason
+	case connected:
+		row.State = string(integration.StateConnected)
+		row.Reason = ""
+	}
+	if latest != nil {
+		row.LatestActivity = latest.UTC().Format(time.RFC3339)
+	}
+	return row, nil
 }
 
 func (h *handler) handleGetTMDBIntegration(c *fiber.Ctx) error {

@@ -387,6 +387,7 @@
   .iconbtn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-3); color: var(--ink); border-color: var(--line); }
   .iconbtn:disabled, .iconbtn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
   .iconbtn:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(0.92); }
+  .iconbtn--danger { color: var(--danger); }
   .iconbtn--danger:hover:not(:disabled):not([aria-disabled="true"]) { background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger); border-color: color-mix(in oklab, var(--danger) 42%, transparent); }
 
   /* ---- Section heading ---- */
@@ -421,6 +422,17 @@
   .field-error {
     margin: 0 2px; color: color-mix(in oklab, var(--danger) 58%, var(--ink));
     font-size: 12px; line-height: 1.4; animation: mg-fadeIn var(--dur-fast) var(--ease);
+  }
+
+  /* Shared integration checkbox label. TMDB and Radarr both use this control,
+     so its themed native input belongs in the app-wide component layer. */
+  .int-toggle {
+    display: inline-flex; min-height: 34px; align-items: center; gap: 9px;
+    color: var(--ink-2); font-size: 13px;
+  }
+  .int-toggle input {
+    width: 17px; height: 17px; flex: none; margin: 0;
+    accent-color: var(--accent);
   }
 
   /* ---- Segmented control ---- */
@@ -519,6 +531,13 @@
     transition: color var(--dur-fast) var(--ease);
   }
   .tab svg { width: 16px; height: 16px; }
+  .tab__label, .navbar-bottom__label { display: inline-flex; align-items: center; gap: 7px; }
+  .admin-attention {
+    display: inline-grid; min-width: 17px; height: 17px; place-items: center;
+    padding-inline: 4px; border-radius: var(--r-sm); background: var(--accent);
+    color: var(--accent-ink); font-family: var(--font-mono); font-size: 9px;
+    font-weight: 750; letter-spacing: 0; line-height: 1;
+  }
   .tab:hover { color: var(--ink-2); }
   .tab[data-active="true"] { color: var(--ink); }
   /* Single shared underline; left/width are set inline per active tab (NavBar.tsx)
@@ -1439,6 +1458,7 @@
     transition: color var(--dur-fast) var(--ease);
   }
   .navbar-bottom__tab svg { width: 21px; height: 21px; }
+  .navbar-bottom__label { gap: 5px; }
   .navbar-bottom__tab[data-active="true"] { color: var(--accent); }
   /* keyboard + pointer feedback for inactive tabs (the active one stays gold) */
   .navbar-bottom__tab:not([data-active="true"]):hover,

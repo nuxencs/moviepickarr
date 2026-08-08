@@ -28,9 +28,9 @@
   top: 16px;
   left: 14px;
   width: 2px;
-  height: var(--admin-nav-row);
+  height: calc(var(--admin-nav-row) + var(--admin-nav-step) + var(--admin-nav-step));
   pointer-events: none;
-  transition: transform var(--dur) var(--ease), height var(--dur) var(--ease);
+  transition: transform var(--dur) var(--ease);
 }
 
 .admin-layout__indicator::before {
@@ -40,14 +40,20 @@
   width: 2px;
   background: var(--accent);
   content: "";
+  transform-origin: top;
+  transition: transform var(--dur) var(--ease);
 }
 
 .admin-layout[data-section="roster"] .admin-layout__indicator {
   transform: translateY(0);
 }
 
+.admin-layout[data-section="roster"] .admin-layout__indicator::before,
+.admin-layout[data-section="runs"] .admin-layout__indicator::before {
+  transform: scaleY(0.2);
+}
+
 .admin-layout[data-section="integrations"] .admin-layout__indicator {
-  height: calc(var(--admin-nav-row) + var(--admin-nav-step));
   transform: translateY(var(--admin-nav-step));
 }
 
@@ -137,6 +143,10 @@
   font-weight: 550;
   text-decoration: none;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.admin-layout__integration .admin-attention {
+  margin-left: auto;
 }
 
 .admin-layout__integration:hover,
@@ -332,6 +342,7 @@
 @media (prefers-reduced-motion: reduce) {
   .admin-layout__children,
   .admin-layout__indicator,
+  .admin-layout__indicator::before,
   .admin-layout__integration,
   .admin-layout__link {
     transition: none;

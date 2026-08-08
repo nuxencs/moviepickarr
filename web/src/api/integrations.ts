@@ -202,7 +202,7 @@ function problemItems(value: unknown): IntegrationProblemItem[] {
   });
 }
 
-async function request<T>(
+export async function integrationRequest<T>(
   path: string,
   init: RequestInit,
 ): Promise<T> {
@@ -253,22 +253,22 @@ export const IntegrationKeys = {
 };
 
 export function listIntegrations(signal?: AbortSignal) {
-  return request<IntegrationSummary[]>("/api/v1/integrations", { method: "GET", signal });
+  return integrationRequest<IntegrationSummary[]>("/api/v1/integrations", { method: "GET", signal });
 }
 
 export function getTMDBIntegration(signal?: AbortSignal) {
-  return request<TMDBIntegration>("/api/v1/integrations/tmdb", { method: "GET", signal });
+  return integrationRequest<TMDBIntegration>("/api/v1/integrations/tmdb", { method: "GET", signal });
 }
 
 export function saveTMDBIntegration(draft: TMDBDraftRequest) {
-  return request<TMDBIntegration>("/api/v1/integrations/tmdb", {
+  return integrationRequest<TMDBIntegration>("/api/v1/integrations/tmdb", {
     method: "PUT",
     body: JSON.stringify(draft),
   });
 }
 
 export function testTMDBConnection(draft: TMDBDraftRequest) {
-  return request<TMDBConnectionResult>("/api/v1/integrations/tmdb/test", {
+  return integrationRequest<TMDBConnectionResult>("/api/v1/integrations/tmdb/test", {
     method: "POST",
     body: JSON.stringify(draft),
   });
@@ -278,14 +278,14 @@ export function startTMDBRun(
   operation: TMDBLibraryRunOperation,
   confirm: boolean,
 ) {
-  return request<IntegrationRun | TMDBNoWorkResult>("/api/v1/integrations/tmdb/runs", {
+  return integrationRequest<IntegrationRun | TMDBNoWorkResult>("/api/v1/integrations/tmdb/runs", {
     method: "POST",
     body: JSON.stringify({ operation, confirm }),
   });
 }
 
 export function cancelIntegrationRun(runID: number) {
-  return request<void>(`/api/v1/integration-runs/${runID}`, { method: "DELETE" });
+  return integrationRequest<void>(`/api/v1/integration-runs/${runID}`, { method: "DELETE" });
 }
 
 export function listIntegrationRuns(
@@ -299,7 +299,7 @@ export function listIntegrationRuns(
   if (query.trigger) search.set("trigger", query.trigger);
   if (query.cursor) search.set("cursor", query.cursor);
   search.set("limit", String(query.limit));
-  return request<IntegrationRunHistoryPage>(`/api/v1/integration-runs?${search}`, {
+  return integrationRequest<IntegrationRunHistoryPage>(`/api/v1/integration-runs?${search}`, {
     method: "GET",
     signal,
   });

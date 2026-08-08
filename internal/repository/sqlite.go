@@ -757,6 +757,258 @@ func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, statu
 	return nil
 }
 
+// StartDraw commits the movie's pool -> current transition and its concealed
+// Pending acquisition in one writer transaction. The Acquisition snapshots the
+// authored movie identity at the same boundary as the status change, so a later
+// edit cannot retarget Radarr work and a failed insert cannot strand a Current
+// draw without its Acquisition.
+func (d *SqliteMoviesRepository) StartDraw(
+	ctx context.Context,
+	movieID int,
+	drawnAt, revealAt time.Time,
+	drawClientID string,
+) error {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE movies
+		SET status = 'current'
+		WHERE id = ? AND status = 'pool'
+	`, movieID)
+	if err != nil {
+		if db.IsUniqueViolation(err) {
+			return domain.ErrCurrentDrawExists
+		}
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		var status string
+		if err := tx.QueryRowContext(ctx, "SELECT status FROM movies WHERE id = ?", movieID).Scan(&status); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: movie id %d", domain.ErrNotFound, movieID)
+			}
+			return err
+		}
+		return domain.ErrInvalidState
+	}
+
+	// Draw choreography needs millisecond precision. Radarr Acquisition times
+	// deliberately differ from the application's older epoch-second tables.
+	drawnEpoch := drawnAt.UTC().UnixMilli()
+	revealEpoch := revealAt.UTC().UnixMilli()
+	result, err = tx.ExecContext(ctx, `
+		INSERT INTO radarr_acquisitions (
+			movie_id,
+			status,
+			action_reason,
+			action_version,
+			movie_title,
+			movie_year,
+			tmdb_id,
+			imdb_id,
+			identity_source,
+			drawn_at,
+			reveal_at,
+			draw_client_id,
+			created_at,
+			updated_at
+		)
+		SELECT
+			m.id,
+			'needs_preset',
+			'preset_required',
+			0,
+			m.title,
+			CASE
+				WHEN substr(mm.release_date, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+				 AND CAST(substr(mm.release_date, 1, 4) AS INTEGER) BETWEEN 1870 AND 2100
+				THEN CAST(substr(mm.release_date, 1, 4) AS INTEGER)
+				ELSE NULL
+			END,
+			m.tmdb_id,
+			m.imdb_id,
+			CASE
+				WHEN m.tmdb_id IS NOT NULL THEN 'tmdb'
+				WHEN m.imdb_id IS NOT NULL THEN 'imdb'
+				ELSE NULL
+			END,
+			?,
+			?,
+			?,
+			?,
+			?
+		FROM movies AS m
+		LEFT JOIN movie_metadata AS mm ON mm.movie_id = m.id
+		WHERE m.id = ? AND m.status = 'current'
+	`, drawnEpoch, revealEpoch, drawClientID, drawnEpoch, drawnEpoch, movieID)
+	if err != nil {
+		return err
+	}
+	affected, err = result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%w: acquisition snapshot for current movie %d", domain.ErrNotFound, movieID)
+	}
+
+	return tx.Commit()
+}
+
+// RevealDraw persists the Acquisition visibility boundary before the movie
+// service flips its process-local draw or publishes movie:revealed. Repeating it
+// is safe: the first call starts the actionable preset-required condition; later
+// calls leave its version and timestamp unchanged.
+func (d *SqliteMoviesRepository) RevealDraw(ctx context.Context, movieID int, revealedAt time.Time) error {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	found, err := revealAcquisitionTx(ctx, tx, movieID, revealedAt, true)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%w: acquisition for current movie %d", domain.ErrNotFound, movieID)
+	}
+	return tx.Commit()
+}
+
+// revealAcquisitionTx crosses the admin visibility boundary and creates the
+// first actionable webhook outbox rows in the same transaction. A concealed
+// Acquisition never reaches the outbox. Existing delivery rows make repeated
+// Reveal calls idempotent through the condition uniqueness constraint.
+func revealAcquisitionTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	movieID int,
+	revealedAt time.Time,
+	requireCurrent bool,
+) (bool, error) {
+	revealedEpoch := revealedAt.UTC().UnixMilli()
+	requireCurrentValue := 0
+	if requireCurrent {
+		requireCurrentValue = 1
+	}
+
+	var acquisitionID int
+	err := tx.QueryRowContext(ctx, `
+		UPDATE radarr_acquisitions
+		SET revealed_at = COALESCE(revealed_at, ?),
+			action_reason = COALESCE(action_reason, 'preset_required'),
+			action_version = action_version + CASE WHEN revealed_at IS NULL THEN 1 ELSE 0 END,
+			action_started_at = COALESCE(action_started_at, ?),
+			revision = revision + CASE WHEN revealed_at IS NULL THEN 1 ELSE 0 END,
+			updated_at = CASE WHEN revealed_at IS NULL THEN ? ELSE updated_at END
+		WHERE id = (
+			SELECT a.id
+			FROM radarr_acquisitions AS a
+			JOIN movies AS m ON m.id = a.movie_id
+			WHERE a.movie_id = ?
+			  AND (? = 0 OR m.status = 'current')
+			  AND a.status NOT IN ('downloaded', 'abandoned')
+			ORDER BY a.id DESC
+			LIMIT 1
+		)
+		RETURNING id
+	`, revealedEpoch, revealedEpoch, revealedEpoch, movieID, requireCurrentValue).Scan(&acquisitionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	deliveryEpoch := revealedAt.UTC().Unix()
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO radarr_webhook_deliveries (
+			destination_id,
+			acquisition_id,
+			event,
+			reason,
+			destination_revision,
+			action_version,
+			target_label,
+			status,
+			attempt_count,
+			next_attempt_at,
+			created_at,
+			updated_at
+		)
+		SELECT
+			d.id,
+			a.id,
+			'acquisition.action_required',
+			a.action_reason,
+			d.revision,
+			a.action_version,
+			COALESCE(a.target_instance_name, ''),
+			'pending',
+			0,
+			?,
+			?,
+			?
+		FROM radarr_acquisitions AS a
+		JOIN radarr_webhook_destinations AS d
+		  ON d.enabled = 1
+		 AND d.verified_at IS NOT NULL
+		 AND d.archived_at IS NULL
+		WHERE a.id = ?
+		  AND a.revealed_at IS NOT NULL
+		  AND a.action_reason IS NOT NULL
+		  AND a.action_version > 0
+		  AND EXISTS (
+			SELECT 1
+			FROM json_each(d.reason_filters) AS reason_filter
+			WHERE reason_filter.value = a.action_reason
+		  )
+		ON CONFLICT(destination_id, acquisition_id, action_version) DO NOTHING
+	`, deliveryEpoch, deliveryEpoch, deliveryEpoch, acquisitionID)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ConcealedCurrentDraw loads the durable draw needed to rebuild the Held draw
+// after a restart. A revealed Acquisition deliberately returns found=false: the
+// ceremony is complete and the Current draw should render directly.
+func (d *SqliteMoviesRepository) ConcealedCurrentDraw(
+	ctx context.Context,
+) (movieID int, drawnAt, revealAt time.Time, drawClientID string, found bool, err error) {
+	var drawnEpoch, revealEpoch int64
+	err = d.pool.Read.QueryRowContext(ctx, `
+		SELECT a.movie_id, a.drawn_at, a.reveal_at, a.draw_client_id
+		FROM radarr_acquisitions AS a
+		JOIN movies AS m ON m.id = a.movie_id
+		WHERE m.status = 'current' AND a.revealed_at IS NULL
+		ORDER BY a.id DESC
+		LIMIT 1
+	`).Scan(&movieID, &drawnEpoch, &revealEpoch, &drawClientID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, time.Time{}, time.Time{}, "", false, nil
+	}
+	if err != nil {
+		return 0, time.Time{}, time.Time{}, "", false, err
+	}
+	return movieID,
+		time.UnixMilli(drawnEpoch).UTC(),
+		time.UnixMilli(revealEpoch).UTC(),
+		drawClientID,
+		true,
+		nil
+}
+
 func (d *SqliteMoviesRepository) UpdateStatusIf(ctx context.Context, id int, to, from string) (int64, error) {
 	query := "UPDATE movies SET status = ? WHERE id = ? AND status = ?"
 
@@ -837,6 +1089,14 @@ func (d *SqliteMoviesRepository) WatchCurrentAndAdvanceNextUp(
 		return nil, nil, false, domain.ErrNoCurrentDraw
 	}
 	if err != nil {
+		return nil, nil, false, err
+	}
+
+	// Watching an unrevealed draw is itself a Reveal. Keep that visibility and
+	// its actionable webhook outbox rows inside the same transaction as the
+	// watched movie and next-up handoff. Legacy current rows can have no
+	// Acquisition, so found=false remains valid on this compatibility path.
+	if _, err = revealAcquisitionTx(ctx, tx, movieID, watchedAt, false); err != nil {
 		return nil, nil, false, err
 	}
 

@@ -206,7 +206,27 @@ old shadcn primitives.
   the next lazy route resolves. The shared scroller resets from the committed leaf
   route, not the pending location, so the painted outgoing page remains still. Below
   901px, the index becomes horizontal and the
-  document owns vertical scrolling. The TMDB detail leads with a compact health
+  document owns vertical scrolling. Radarr adds compact Acquisitions, Setup, and
+  Webhooks tabs without repeating the integration name. Its selected destination uses
+  the same measured, sliding gold underline as the primary tabs. The persistent tab
+  header and the first child enter together on arrival. Later nested route changes
+  animate only the new child. Child pages do not repeat their navigation label as a
+  page heading. Their first toolbars reserve the same height so switching destinations
+  does not move the first register. Nested routes and Acquisition detail navigation use
+  the shared `mg-rise` page entrance, without row staggering or refetch animation.
+  Setup renders each instance as a tree root with its presets beneath it. Unused setup
+  deletes; setup referenced by Acquisition history archives.
+  Routine test
+  timestamps stay hidden. Row-level edit, test, retry, archive, and abandon controls
+  use accessible icon buttons. Destructive icons use the danger color at rest.
+  Webhook row results use the shared toast surface instead of moving the register.
+  Acquisition work is split into action-required and in-progress registers, with
+  history collapsed. History, archived setup, archived webhooks, target data, selected
+  releases, recorded outcomes, and rejected releases share one chevron disclosure with
+  bounded open and close motion. A movie detail keeps one compact target summary and
+  discloses full target data only on request. It shows an Acquisition record only when
+  an abandonment reason or historical failure adds information. Release scores disclose their applied
+  custom formats in a viewport-clamped tooltip on hover, focus, or tap. The TMDB detail leads with a compact health
   summary and actions. Routine timestamps and the latest completed run live under the
   native `Activity details` disclosure; active runs, warnings, errors, and recovery
   reasons stay visible. A compact settings ledger follows. Active sources remain

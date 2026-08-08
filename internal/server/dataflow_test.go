@@ -259,6 +259,16 @@ func (r *countingDrawRepository) UpdateStatus(ctx context.Context, id int, statu
 	return r.SqliteMoviesRepository.UpdateStatus(ctx, id, status)
 }
 
+func (r *countingDrawRepository) StartDraw(
+	ctx context.Context,
+	id int,
+	drawnAt, revealAt time.Time,
+	drawClientID string,
+) error {
+	r.repositoryCalls++
+	return r.SqliteMoviesRepository.StartDraw(ctx, id, drawnAt, revealAt, drawClientID)
+}
+
 type countingDrawMetadataRepository struct {
 	domain.MovieMetadataRepo
 	repositoryCalls *int

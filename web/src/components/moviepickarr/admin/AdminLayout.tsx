@@ -72,7 +72,7 @@ export function AdminLayout() {
         </span>
         <nav
           ref={navRef}
-          className="admin-layout__nav"
+          className="admin-layout__nav mg-rise"
           aria-label="Admin sections"
           data-page-scroll-owner
         >

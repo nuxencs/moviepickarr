@@ -152,6 +152,13 @@ describe("Admin navigation", () => {
     ).toBeTruthy();
   });
 
+  it("animates the persistent Admin index when the layout enters", async () => {
+    await renderAdmin("/admin/roster");
+
+    const navigation = await screen.findByRole("navigation", { name: "Admin sections" });
+    expect(navigation.classList.contains("mg-rise")).toBe(true);
+  });
+
   it("expands Integrations when its child route is selected", async () => {
     const router = await renderAdmin("/admin/roster");
     const navigation = await screen.findByRole("navigation", { name: "Admin sections" });

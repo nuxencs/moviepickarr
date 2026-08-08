@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { LayoutGridIcon, ListIcon, LinkIcon, LockIcon, LockOpenIcon, PencilIcon, SearchIcon } from "lucide-react";
 import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useDeferredValue, useMemo, useRef, useState } from "react";
 
@@ -34,6 +34,7 @@ import { useToggle } from "@/hooks/hooks";
 import { useFlipRail } from "@/hooks/useFlipRail";
 import { useGridMetrics, virtualRowStyle } from "@/hooks/useGridMetrics";
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
+import { documentScrollOwner } from "@/lib/scrollPolicy";
 
 type WatchedView = "grid" | "list";
 
@@ -284,7 +285,7 @@ function WatchedSection({
 }
 
 /**
- * The watched grid/list, virtualized against the window scroller: only the rows
+ * The watched grid/list, virtualized against the body document owner: only the rows
  * near the viewport are in the DOM, so a keystroke re-renders a screenful of
  * tiles instead of the whole library, and the DOM stays flat as it grows.
  *
@@ -309,8 +310,9 @@ function VirtualWatched({
   const { template, lanes, columnGap, rowGap, offsetTop } = useGridMetrics(containerRef);
   const rows = useMemo(() => chunkRows(movies, lanes), [movies, lanes]);
 
-  const virtualizer = useWindowVirtualizer({
+  const virtualizer = useVirtualizer({
     count: rows.length,
+    getScrollElement: documentScrollOwner,
     estimateSize: () => estimateSize,
     overscan: 3,
     gap: rowGap,

@@ -239,6 +239,7 @@
   .admin-layout > .admin-layout__nav {
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
   }
 
   .admin-layout > .admin-layout__body {

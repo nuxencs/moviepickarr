@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readGridMetrics } from "@/hooks/useGridMetrics";
+import { readGridMetrics, virtualRowStyle } from "@/hooks/useGridMetrics";
 
 const style = (gridTemplateColumns: string, columnGap = "18px", rowGap = "28px") => ({
   gridTemplateColumns,
@@ -31,5 +31,16 @@ describe("readGridMetrics", () => {
 
   it("ignores the padding around a multi-space track list", () => {
     expect(readGridMetrics(style("  100px 100px  ")).lanes).toBe(2);
+  });
+});
+
+describe("virtualRowStyle", () => {
+  it("uses layout coordinates so focusing a row cannot move its body owner", () => {
+    expect(virtualRowStyle(5100)).toEqual({
+      position: "absolute",
+      top: 5100,
+      left: 0,
+      width: "100%",
+    });
   });
 });

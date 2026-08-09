@@ -94,7 +94,7 @@ DevTools-style walker that only descends where the child pointer changed; the
 numbers below are from the corrected walker, and the profiling skill's hook has
 since been fixed the same way.
 
-**Watched search, route `/` (120 films):** typing "godfather" one keystroke at a
+**Watched search, route `/` (120 movies):** typing "godfather" one keystroke at a
 time —
 
 | Typed | Commits | Component renders | Tiles in DOM |

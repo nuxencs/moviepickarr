@@ -155,8 +155,8 @@ func TestToAPIMovieMeta_FoldsCredits(t *testing.T) {
 	}
 }
 
-// The detail payload carries the film's real status, so a surface holding a
-// full record can tell a stash film from a pool one without a proxy. Asserted
+// The detail payload carries the movie's real status, so a surface holding a
+// full record can tell a stash movie from a pool one without a proxy. Asserted
 // against the marshaled bytes: the frontend reads the wire key.
 func TestToFullMovie_CarriesStatus(t *testing.T) {
 	t.Parallel()

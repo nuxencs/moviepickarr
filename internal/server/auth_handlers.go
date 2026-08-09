@@ -59,7 +59,7 @@ func (h *handler) requireAdmin(c *fiber.Ctx) (bool, error) {
 }
 
 // requireNextUpOrAdmin gates the draw → reveal → watch cycle: only the member
-// whose turn it is, or an admin, may run movie night. Anyone else gets 403
+// whose turn it is, or an admin, may run the draw. Anyone else gets 403
 // not_next_up. Because the rotation advances only on watch, the same member
 // holds the turn across the whole cycle.
 func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
@@ -79,13 +79,13 @@ func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
 	return false, writeProblem(c, fiber.StatusForbidden, "not_next_up", "it is not your turn")
 }
 
-// runMovieNightCommand keeps the authorization snapshot, lifecycle command, and
+// runDrawCommand keeps the authorization snapshot, lifecycle command, and
 // synchronous event publication in one process-local critical section. Watch
 // holds the section until next up advances and movie:watched is published, so
 // the outgoing member cannot authorize another command in the gap.
-func (h *handler) runMovieNightCommand(c *fiber.Ctx, command func() error) (ran bool, err error) {
-	h.movieNightMu.Lock()
-	defer h.movieNightMu.Unlock()
+func (h *handler) runDrawCommand(c *fiber.Ctx, command func() error) (ran bool, err error) {
+	h.drawCommandMu.Lock()
+	defer h.drawCommandMu.Unlock()
 
 	if ok, err := h.requireNextUpOrAdmin(c); !ok {
 		return false, err

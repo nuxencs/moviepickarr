@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChartNoAxesColumnIcon, FilmIcon, ShieldIcon, UsersIcon } from "lucide-react";
+import { ChartNoAxesColumnIcon, FilmIcon as MovieIcon, ShieldIcon, UsersIcon } from "lucide-react";
 
 import { MeQueryOptions } from "@/api/queries";
 
@@ -11,8 +11,8 @@ import { ProfilePanel } from "@/components/moviepickarr/ProfilePanel";
 import { useSlidingTabIndicator } from "@/hooks/useSlidingTabIndicator";
 
 /** Icon per tab id; the pure nav module carries ids/labels/paths, not JSX. */
-const TAB_ICONS: Record<Tab, typeof FilmIcon> = {
-  movies: FilmIcon,
+const TAB_ICONS: Record<Tab, typeof MovieIcon> = {
+  movies: MovieIcon,
   users: UsersIcon,
   stats: ChartNoAxesColumnIcon,
   admin: ShieldIcon,
@@ -39,7 +39,7 @@ export function NavBar() {
               title="Go to Movies"
             >
               <span className="mark">
-                <FilmIcon />
+                <MovieIcon />
               </span>
               moviepickarr
             </Link>

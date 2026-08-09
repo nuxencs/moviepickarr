@@ -157,10 +157,10 @@ describe("TMDB Admin settings", () => {
     fireEvent.focus(help);
     expect(screen.getByRole("button", {
       name: "About Enabled",
-      description: /Allow moviepickarr to search TMDB and fetch metadata.*TMDB_ENABLED.*Default: Disabled/,
+      description: /Allow TMDB searches and metadata fetching.*TMDB_ENABLED.*Default: Disabled/,
     })).toBeTruthy();
     const tooltip = screen.getByRole("tooltip");
-    expect(within(tooltip).getByText("Allow moviepickarr to search TMDB and fetch metadata."))
+    expect(within(tooltip).getByText("Allow TMDB searches and metadata fetching."))
       .toBeTruthy();
     expect(within(tooltip).getByText("TMDB_ENABLED")).toBeTruthy();
     expect(within(tooltip).getByText("Default: Disabled")).toBeTruthy();

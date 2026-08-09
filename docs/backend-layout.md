@@ -134,7 +134,7 @@
   contains a claim URL because only the token hash is stored.
 - `internal/server/models.go`: API DTO mapping via two compiler-enforced wire classes:
   `leanMovieTile` (list/tile payload: identity + tile-level enriched fields) and
-  `fullMovie` (detail payload: embeds `leanMovieTile` plus the film's client-visible
+  `fullMovie` (detail payload: embeds `leanMovieTile` plus the movie's client-visible
   `status`, the
   draw/reveal coordination fields `drawnAt`/`revealAt`/`serverNow`/`drawClientId`/`revealed`,
   modal metadata, and `cast`/`crew`). Pool, watched and member-board collections use
@@ -233,7 +233,7 @@
   draw, but only after `WatchCurrentAndAdvanceNextUp` commits the watched movie
   and next-up handoff. A failed transaction leaves `ActiveDraw` and its timer
   intact and publishes no lifecycle event. All successful paths call the
-  `OnRevealed` hook exactly once. The HTTP handler's `movieNightMu` serializes
+  `OnRevealed` hook exactly once. The HTTP handler's `drawCommandMu` serializes
   draw, reveal, and watch from next-up
   authorization through synchronous lifecycle event publication. Watch keeps that
   command lock through next-up rotation, so an outgoing holder cannot start the next
@@ -518,7 +518,7 @@ TMDB movie URL. The handler parses it into a one-provider identity target;
 nothing is stored as a link. Other links return 400 before any repository
 write. On edit, a target matching either stored provider preserves both stored
 ids, metadata, and credit joins. A different target replaces the external
-identity with the selected provider and deletes the prior film's metadata and
+identity with the selected provider and deletes the prior movie's metadata and
 credit joins in the same transaction. The missing metadata row keeps the movie
 in the backfill set even when the live enrichment worker is disabled. Shared
 people remain available to other movies.
@@ -702,9 +702,9 @@ filter. (Adders no longer on the roster keep their historical rows only
 while their added movies pass the active filters.) The roster comes from
 `userService.List`, so user create/delete both invalidate the stats cache.
 
-The response also returns `matchedMovieIDs` — the ids of the films behind
+The response also returns `matchedMovieIDs` — the ids of the movies behind
 `selectedWindowCount`, in watch-recency order — so the client can render the
-exact matched set (the films-in-window rail) by joining against its cached
+exact matched set (the movies-in-window rail) by joining against its cached
 watched list, with no second fetch and no risk of the rail count drifting from
 the KPI.
 

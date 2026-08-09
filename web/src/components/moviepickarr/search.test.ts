@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { chunkRows, filterChoices, filterWatched, normalizeQuery } from "@/components/moviepickarr/search";
 
-const film = (title: string, addedByName: string) => ({ title, addedByName });
+const movie = (title: string, addedByName: string) => ({ title, addedByName });
 
 describe("normalizeQuery", () => {
   it("trims and case-folds", () => {
@@ -15,7 +15,7 @@ describe("normalizeQuery", () => {
 });
 
 describe("filterWatched", () => {
-  const watched = [film("Dune", "Ada"), film("Heat", "Bo"), film("The Duellists", "Cy")];
+  const watched = [movie("Dune", "Ada"), movie("Heat", "Bo"), movie("The Duellists", "Cy")];
 
   it("returns the input untouched when the query is blank", () => {
     expect(filterWatched(watched, "  ")).toBe(watched);

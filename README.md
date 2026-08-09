@@ -1,7 +1,7 @@
 # moviepickarr
 
-moviepickarr is a small, self-hosted web app for a group of friends who share a
-movie night. Each member keeps a personal stash of movies, promotes up to 3 of
+moviepickarr is a small, self-hosted web app for a group of friends who choose
+movies together. Each member keeps a personal stash of movies, promotes up to 3 of
 them into a shared pool, and the app draws the next movie from the pool at
 random. Watched movies land in a shared library with stats on top.
 
@@ -15,7 +15,7 @@ friends. There is no public signup.
    supplies posters and details.
 2. Pool: each member promotes up to 3 movies from their stash into the shared
    pool.
-3. Draw: on movie night, the app draws one movie from the pool at random.
+3. Draw: the app draws one movie from the pool at random.
 4. Watched: mark the current draw as watched and it moves into the watched
    library, together with who added it and the watch date.
 5. Stats: watch counts per member, activity by weekday and hour, top genres,

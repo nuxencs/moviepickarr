@@ -114,7 +114,7 @@ issuance as the same lifecycle invariant.
   projection together. The raw claim token never enters persistence.
 - A failed movie edit does not expose a new title, watched time, or identity
   without its derived-data cleanup and client invalidation. A successful
-  identity change serves no metadata or credits from the prior film while it
+  identity change serves no metadata or credits from the prior movie while it
   waits for enrichment. A successful watched edit clears the stats cache before
   clients hear `movie:updated`.
 - An enrichment result fetched for an older identity cannot overwrite a newer

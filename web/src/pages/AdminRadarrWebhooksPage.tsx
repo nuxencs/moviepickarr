@@ -86,7 +86,7 @@ export function AdminRadarrWebhooksPage() {
       ) : (
         <>
           <div className="radarr-page__toolbar">
-            <p>Send Discord or generic JSON only when an Admin can act in Moviepickarr.</p>
+            <p>Send Discord or generic JSON only for conditions an Admin can act on.</p>
             <div><button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing("new")}><PlusIcon aria-hidden="true" />Add destination</button></div>
           </div>
           {active.length > 0 ? (

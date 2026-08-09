@@ -7,18 +7,18 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// testFilms returns a distinct-id film list large enough for a full plan.
-func testFilms(n int) []Film {
-	films := make([]Film, n)
-	for i := range films {
-		films[i] = Film{TMDBID: 1000 + i, Title: "Film", Year: 2000}
+// testMovies returns a distinct-id movie list large enough for a full plan.
+func testMovies(n int) []MovieIdentity {
+	movies := make([]MovieIdentity, n)
+	for i := range movies {
+		movies[i] = MovieIdentity{TMDBID: 1000 + i, Title: "Movie", Year: 2000}
 	}
-	return films
+	return movies
 }
 
 func buildTestPlan(t *testing.T) Plan {
 	t.Helper()
-	plan, err := BuildPlan(testFilms(600), time.Unix(1_700_000_000, 0).UTC())
+	plan, err := BuildPlan(testMovies(600), time.Unix(1_700_000_000, 0).UTC())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestBuildPlanWatchedStatusCoupling(t *testing.T) {
 
 func TestBuildPlanWatchedHistorySpansWindows(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
-	plan, err := BuildPlan(testFilms(600), now)
+	plan, err := BuildPlan(testMovies(600), now)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -204,11 +204,11 @@ func TestBuildPlanNextUpIsActiveLoginMember(t *testing.T) {
 
 func TestBuildPlanIsDeterministic(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
-	a, err := BuildPlan(testFilms(600), now)
+	a, err := BuildPlan(testMovies(600), now)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
-	b, err := BuildPlan(testFilms(600), now)
+	b, err := BuildPlan(testMovies(600), now)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -239,8 +239,8 @@ func sameMovie(x, y Movie) bool {
 	}
 }
 
-func TestBuildPlanRejectsTooFewFilms(t *testing.T) {
-	if _, err := BuildPlan(testFilms(10), time.Unix(1_700_000_000, 0).UTC()); err == nil {
+func TestBuildPlanRejectsTooFewMovies(t *testing.T) {
+	if _, err := BuildPlan(testMovies(10), time.Unix(1_700_000_000, 0).UTC()); err == nil {
 		t.Fatal("expected an error when the dataset is too small, got nil")
 	}
 }

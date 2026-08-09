@@ -109,7 +109,7 @@ old shadcn primitives.
   `aria-invalid` and `data-invalid`.
   `.fieldgroup` keeps the field and its specific `.field-error` together, with
   `aria-describedby` linking the input to the message. There is no bare input style.
-  A watched film's date-time field is required. When its minute-level display value
+  A watched movie's date-time field is required. When its minute-level display value
   is unchanged, the edit request omits `watchedAt` instead of rounding the stored
   timestamp through `datetime-local`.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
@@ -294,8 +294,8 @@ old shadcn primitives.
   is state). A ring on the photo doesn't work here: `.avatar` is positioned and
   opaque, so it paints over the outline of its non-positioned parent, and an outward
   ring gets shaved by the rail's overflow clip at the edge cards.
-- **Films-in-filter-view rail:** `.movierail` + `.movietile` (stats, under the KPI strip,
-  heading "Films in Filter View") — the concrete films behind the count (the active
+- **Movies-in-filter-view rail:** `.movierail` + `.movietile` (stats, under the KPI strip,
+  heading "Movies in Filter View") — the concrete movies behind the count (the active
   window AND all filters) as a horizontally scrollable strip of `Poster` tiles (title +
   year·adder caption), each a button that opens the movie modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
   first tile's hover/focus ring isn't clipped. The set
@@ -306,7 +306,7 @@ old shadcn primitives.
   thing under the KPI strip — the member leaderboard, activity charts and people rails
   all drop away with it, because zeroed bars under an empty filter view are noise, not
   information. (A non-zero count with no cached posters yet is the transient join lag,
-  so the placeholder reads "Loading films…".)
+  so the placeholder reads "Loading movies…".)
 - **Genre donut:** `.genredonut` + `.donut` + `.donut-legend` (stats) — a pure-CSS
   `conic-gradient` disc (hole cut with a `radial-gradient` mask, so any background
   shows through) of the top genres + "Other". Segments use ONE hue: the accent at
@@ -339,14 +339,14 @@ old shadcn primitives.
   (`Bits.tsx`), shared by the hero and the movie modal — the **hero passes `links`**
   so they sit inline after the genres; the **modal omits them** and renders its own
   `.moviemodal__links` column in the rail instead (no duplication).
-- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a film's record on a
+- **Movie detail modal:** `.moviemodal__*` (`MovieModal.tsx`) — a movie's record on a
   responsive 880px to 1120px surface (§5). Its backdrop grows with the record from
   260px to 420px and returns to 190px below 700px. A 172px **rail** (`.moviemodal__rail`)
   of poster + the links out, beside the reading column. The links are quiet mono lines
   with a small icon, not ghost buttons: three buttons read as three things to do, three
-  mono lines read as reference material attached to the film. The **credit block**
+  mono lines read as reference material attached to the movie. The **credit block**
   (`.moviemodal__credit`) puts "Directed by / Written by" and the attribution
-  (`.moviemodal__by` — added by, plus the watch date on a watched film) side by side,
+  (`.moviemodal__by` — added by, plus the watch date on a watched movie) side by side,
   split by a rule that spans the whole block (`align-items: stretch`), because both are
   the same kind of line: who is responsible for this. The adder's name is a link to
   their board (`/users?member=<userID>`) and wears `.moviemodal__person`, the
@@ -374,18 +374,18 @@ old shadcn primitives.
   destructive red arrives on the pointer instead of sitting at rest. Whether it is drawn
   is derived from the movie object and
   never passed in: the adder gets it, everyone else gets nothing, on every surface the
-  modal opens on. It arrives with the detail, since the film's status is a detail field,
+  modal opens on. It arrives with the detail, since the movie's status is a detail field,
   and a held winner's detail stays projected as pooled until reveal, like every pool
   listing. Delete waits for the shared pool-state query rather than defaulting to open.
   That query carries both the pool lock and the server-owned unrevealed-draw gate, and
-  only runs for a pooled film. Stash, current and watched records do not need the gate
+  only runs for a pooled movie. Stash, current and watched records do not need the gate
   and do not fetch it. While the detail lifecycle is missing, refreshing, or failed,
   any cached stash or pool Delete remains in place but inert as
   `Delete, round state unavailable`: a cached stash status is not permission to act
   while the fresh record is unknown. A settled stash still skips the pool-state
   request. Missing or refreshing pool state applies the same refusal to a pooled
-  film. A remote `404` closes the record immediately and is not retried.
-  A refused delete (a pooled film while the round is locked or a draw is out) stays in
+  movie. A remote `404` closes the record immediately and is not retried.
+  A refused delete (a pooled movie while the round is locked or a draw is out) stays in
   place and goes inert with `aria-disabled`, the reason on both the accessible name and
   the tooltip (`Delete, round closed`) — the same treatment, and the same words, as a
   board tile's refused move (`refusals.ts`). Below 700px, where the rail is a row, the
@@ -423,7 +423,7 @@ features.
 - **No sort control on the wall.** Order is fixed title-ascending. Title and date-added
   are the only keys always present; the rest arrive with enrichment and would reorder the
   wall under the reader as SSE lands, and an untitled tile makes no key but title
-  verifiable by looking. The filter field above the wall is the find-a-film path instead.
+  verifiable by looking. The filter field above the wall is the find-a-movie path instead.
 - **No self-mark in the rail** — no chip, no tint, no border. On arrival your row is
   first and selected, and selection already speaks three times (the active row, its
   `aria-current`, and the pane beside it). The positive self-mark is the pane's
@@ -515,7 +515,7 @@ closes the movie record.
   The one exception is **animated number transitions**, which CSS can't do for arbitrary
   formats. NumberFlow is a Web Component that measures glyph geometry on mount, so it is
   scoped to the two above-the-fold counts where the roll actually reads: the **KPI strip**
-  and the **"Films in Filter View"** heading count use **NumberFlow** (`@number-flow/react`,
+  and the **"Movies in Filter View"** heading count use **NumberFlow** (`@number-flow/react`,
   via the `StatNumber` / `MovieCount` / `RuntimeCount` wrappers in `StatsTab.tsx`), tuned to
   the MG scale (`NUMBER_TIMING` = `--dur-slow` duration + `--ease`, no bounce) and honoring
   `prefers-reduced-motion` (it renders instantly). The below-fold panel counts — the
@@ -526,14 +526,14 @@ closes the movie record.
   (`content-visibility` + an IntersectionObserver mount gate) that only render as they near
   the viewport. The dense hourly + decade axis counts stay static too (too many to roll at
   once reads as noise). The KPI strip counts up from 0 on mount (`animateOnMount`, matching
-  the bars' from-0 entrance); the "Films in Filter View" count stays static on mount and
+  the bars' from-0 entrance); the "Movies in Filter View" count stays static on mount and
   rolls only on change. The stats query keeps the previous result
   (`placeholderData: keepPreviousData`) so an uncached filter change rolls in place
   instead of blanking to "Loading stats…" and remounting. Any new motion must still
   degrade to an instant state under RM. **Alignment gotcha:** `<number-flow-react>` is
   `display:inline-block; line-height:1` with internal vertical mask padding
   `round(0.25em/2,1px)`. The mask is **visual-only** — it does *not* move the glyph
-  baseline — so a number used **inline with text** (the "Films in Filter View · N" title,
+  baseline — so a number used **inline with text** (the "Movies in Filter View · N" title,
   the "avg 1h 53m" runtime sub) baseline-aligns on its own;
   leave it at `vertical-align: baseline` and add no nudge. The one place that needs a fix
   is the **KPI value cell** (`.statitem__val`, `align-items: flex-end`): `flex-end` aligns
@@ -545,12 +545,12 @@ closes the movie record.
   baseline and was reverted — the trap is measuring the box, not the glyph.) Standalone
   number-flows (`.b-val`, donut legend, people-rail counts) have no adjacent text and need
   nothing.
-- **Stats rail motion (on filter change) — FLIP.** The three rails — the films "Films
+- **Stats rail motion (on filter change) — FLIP.** The three rails — the movies "Movies
   in Filter View" rail, the people rails (directors/actors), and the "Added by member"
   leaderboard — animate by how each item's box *actually moved* between the old and new
   layout, via `useFlipRail` (`hooks/useFlipRail.ts`), not a blanket fade-up replay:
   - an item whose position is **unchanged** gets a zero delta and never moves — so the
-    30d films that are a prefix of the 1y set stay dead still (the "skip the overlap"
+    30d movies that are a prefix of the 1y set stay dead still (the "skip the overlap"
     case is free, not special-cased);
   - an item that **moved** (a rerank, or survivors closing the gap after a removal)
     **glides** to its new spot (a JS-driven `transform: translate` released under
@@ -563,7 +563,7 @@ closes the movie record.
   Whether an item is *new* is decided by key membership in the previous render
   (`prevKeys`), never by whether a position happens to be recorded — so a churned/late
   node stays put instead of wrongly fading in. Positions are measured **container-
-  relative**, so a reflow ABOVE a rail (the films rail tripling in height) slides the
+  relative**, so a reflow ABOVE a rail (the movies rail tripling in height) slides the
   whole rail without animating every card. The measured deltas and transforms share one
   CSS-pixel coordinate space. No React remount, so NumberFlow counts keep rolling;
   reduced-motion skips every transform/entrance and drops exits instantly.
@@ -596,7 +596,7 @@ closes the movie record.
   duotone is painted underneath as the instant first frame, so a slow TMDB CDN fetch
   never flashes the surface through (pure white in light mode) — then the real backdrop
   `<img>` crossfades in (`.moviemodal__hero__img` / `--loading` / `__shimmer`).
-  A film with **no backdrop** stands its poster in there instead, as a **wash**:
+  A movie with **no backdrop** stands its poster in there instead, as a **wash**:
   `blur(36px)`, with its source box reaching at least three blur standard deviations past
   every edge (`--wash-overscan`). CSS blur samples transparent pixels beyond its
   source; the overscan keeps that boundary outside the hero, and
@@ -649,7 +649,7 @@ closes the movie record.
   so keyboard users can reach them. Card/tile hover effects must also fire on
   `:focus-visible`.
 - **Roving tabindex where the run is unbounded, plain tab stops where it is a handful.**
-  A wall of films is as long as somebody's stash, so it gets one tab stop and arrow keys
+  A wall of movies is as long as somebody's stash, so it gets one tab stop and arrow keys
   (`nextCell` in `stashWall.ts`; left/right step through the list, up/down step by a row,
   Home/End go to the ends). A rail of six member rows stays six ordinary tab stops. The
   Members page runs both side by side and is the pattern. A roving list is a **list**, not
@@ -658,8 +658,8 @@ closes the movie record.
   read back off the resolved `grid-template-columns` rather than computed again in JS. The
   roving index resets to the first cell on an explicit context change, a filter or switch of
   subject, which also decides where Tab out of the field above it lands. Live keyed-list
-  updates keep a surviving focused film as the tab stop and carry its new cell index
-  along, so the next arrow still starts from that film.
+  updates keep a surviving focused movie as the tab stop and carry its new cell index
+  along, so the next arrow still starts from that movie.
 - **Focus moves only when the thing it is sitting on goes away**, and then to the nearest
   thing that is still there: the item taking the vacated index, else the one before it,
   else the region's heading (focusable at `tabIndex={-1}`, never a tab stop). Removing a
@@ -813,7 +813,7 @@ The reel is a **pure reducer + store**: `drawMachine.ts` folds `movie:drawn` /
 `DrawReel.tsx`, and `useSSE.ts` all read the one store, so every animation surface agrees
 on the reel state. Mutation refusals do not use that phase. Members and the movie modal
 read the server-owned `drawInProgress` pool state, which remains true when reduced motion
-or a one-film pool skips the reel entirely.
+or a one-movie pool skips the reel entirely.
 
 **Reel remounts resume, they don't replay.** The reel is rendered by the Hero, which lives
 on the Movies tab, so switching tabs unmounts it and switching back mounts a new one against
@@ -908,7 +908,7 @@ or controls (§13).
 All "nothing here" / placeholder copy uses the single `.empty` class (centered,
 `--ink-2`, 32px vertical padding). Do not hand-roll per-tab padding/alignment.
 
-On the **stats** tab the empty state is anchored to the films-in-filter-view rail
+On the **stats** tab the empty state is anchored to the movies-in-filter-view rail
 (it is the expansion of the "In window" KPI): an empty filter view collapses the whole
 body to that one rail placeholder rather than showing zeroed leaderboards and charts.
 The member leaderboard and activity charts therefore render only when the filter view
@@ -928,7 +928,7 @@ actually has movies.
 - **Loading labels:** present participle + ellipsis ("Searching…", "Adding…").
 - **Modal headers:** sentence case ("Edit movie", "Delete movie").
 - **Pluralization:** use `plural(n, noun, pluralForm?)` from `lib.ts` for any
-  count + noun, so "1 movie" / "2 movies" (never "1 movies"). Covers films, people, etc.
+  count + noun, so "1 movie" / "2 movies" (never "1 movies"). Covers movies, people, etc.
 - **No em dashes** anywhere in UI copy. Use periods, commas, colons, or parentheses.
 
 ---

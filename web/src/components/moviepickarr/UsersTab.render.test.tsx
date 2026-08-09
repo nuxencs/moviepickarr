@@ -24,10 +24,10 @@
    it, and that a refused board is the same markup as an open one.
 
    And again for the keyboard (#235): which cell a key reaches and where focus
-   lands after a film moves are index arithmetic, and stashWall.test.ts owns
+   lands after a movie moves are index arithmetic, and stashWall.test.ts owns
    both tables. Here is what only the page can answer — how many tab stops the
    wall is, that the stop moves with the arrows, that it resets on a filter and
-   a member switch, and that a film leaving under focus hands focus on rather
+   a member switch, and that a movie leaving under focus hands focus on rather
    than dropping it. jsdom has no layout, so it reads no column count off the
    wall (columnCount floors at one there): up and down move a cell here, and
    multi-column arithmetic is pinned with explicit fixtures in the pure test.
@@ -54,7 +54,7 @@ vi.mock("@/api/APIClient", () => ({
     auth: { me: vi.fn() },
     // The modal lazy-loads the full record on open. It never resolves here, so
     // what the modal shows is the tile's own lean object — which is the point:
-    // the poster that was clicked is the film that opens.
+    // the poster that was clicked is the movie that opens.
     movies: { get: vi.fn(() => new Promise<never>(() => {})) },
   },
 }));
@@ -78,7 +78,7 @@ function deferred<T = void>() {
 function movie(movieID: number): MovieTile {
   return {
     movieID,
-    title: `Film ${movieID}`,
+    title: `Movie ${movieID}`,
     link: "",
     addedAt: "2026-07-01T00:00:00Z",
     addedByID: 1,
@@ -476,7 +476,7 @@ describe("the stash wall", () => {
       // (#233), and the one corner action.
       const controls = within(tile as HTMLElement).getAllByRole("button");
       expect(controls.map((c) => c.getAttribute("aria-label"))).toEqual([
-        `Film ${100 + i}`,
+        `Movie ${100 + i}`,
         "Move to pool",
       ]);
     });
@@ -493,7 +493,7 @@ describe("the stash wall", () => {
       // The poster and nothing beside it: the corner action is the whole of
       // what a guest board is missing.
       const controls = within(tile as HTMLElement).getAllByRole("button");
-      expect(controls.map((c) => c.getAttribute("aria-label"))).toEqual([`Film ${100 + i}`]);
+      expect(controls.map((c) => c.getAttribute("aria-label"))).toEqual([`Movie ${100 + i}`]);
     });
   });
 
@@ -513,7 +513,7 @@ describe("the stash wall", () => {
   it("suppresses the add tile under any filter, hit or miss", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    typeFilter("Film 1");
+    typeFilter("Movie 1");
     expect(within(wall()).queryByRole("button", { name: /^Add to / })).toBeNull();
     expect(wall().querySelectorAll(".mem-tile").length).toBe(3);
 
@@ -561,7 +561,7 @@ describe("the stash wall", () => {
    you cannot act on is made of: the same buttons as your own, minus the corner
    action. So each case here is asserted on both boards, and the empty pool slot
    is the one cell that answers nothing on either. */
-describe("opening a film's record", () => {
+describe("opening a movie's record", () => {
   // Ada: two of three pool slots, three in stash. Cleo: one and two.
   const roster = [member(1, 2, 3, "Ada"), member(2, 1, 2, "Cleo Sands")];
 
@@ -582,8 +582,8 @@ describe("opening a film's record", () => {
       `https://image.tmdb.org/t/p/w185/${path} 185w, ` +
       `https://image.tmdb.org/t/p/w342/${path} 342w, ` +
       `https://image.tmdb.org/t/p/w500/${path} 500w`;
-    const poolPoster = screen.getByRole("img", { name: "Film 10" });
-    const stashPoster = screen.getByRole("img", { name: "Film 100" });
+    const poolPoster = screen.getByRole("img", { name: "Movie 10" });
+    const stashPoster = screen.getByRole("img", { name: "Movie 100" });
 
     expect(poolPoster.getAttribute("src")).toBe("https://image.tmdb.org/t/p/w342/pool.jpg");
     expect(poolPoster.getAttribute("srcset")).toBe(candidates("pool.jpg"));
@@ -606,18 +606,18 @@ describe("opening a film's record", () => {
   it("makes every filled poster a button, on your own board and on a guest's", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // Named by the film, not by an authored verb: the poster is the film, and
+    // Named by the movie, not by an authored verb: the poster is the movie, and
     // the role already says it is a button. Both bands, one language.
     expect(
       Array.from(openPool().querySelectorAll<HTMLElement>(".pslot--filled .mem-open")).map((b) =>
         b.getAttribute("aria-label"),
       ),
-    ).toEqual(["Film 10", "Film 11"]);
+    ).toEqual(["Movie 10", "Movie 11"]);
     expect(
       Array.from(wall().querySelectorAll<HTMLElement>(".mem-open")).map((b) =>
         b.getAttribute("aria-label"),
       ),
-    ).toEqual(["Film 100", "Film 101", "Film 102"]);
+    ).toEqual(["Movie 100", "Movie 101", "Movie 102"]);
 
     cleanup();
     await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
@@ -626,20 +626,20 @@ describe("opening a film's record", () => {
     expect(wall().querySelectorAll(".mem-open").length).toBe(2);
   });
 
-  it("opens the clicked film from a pool slot, on a board that is not yours", async () => {
+  it("opens the clicked movie from a pool slot, on a board that is not yours", async () => {
     await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
 
     fireEvent.click(openPool().querySelector(".pslot--filled .mem-open") as HTMLElement);
 
-    await waitFor(() => expect(within(dialog()).getByRole("heading").textContent).toBe("Film 20"));
+    await waitFor(() => expect(within(dialog()).getByRole("heading").textContent).toBe("Movie 20"));
   });
 
-  it("opens the clicked film from the stash wall, on a board that is not yours", async () => {
+  it("opens the clicked movie from the stash wall, on a board that is not yours", async () => {
     await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
 
     fireEvent.click(wall().querySelectorAll(".mem-open")[1] as HTMLElement);
 
-    await waitFor(() => expect(within(dialog()).getByRole("heading").textContent).toBe("Film 201"));
+    await waitFor(() => expect(within(dialog()).getByRole("heading").textContent).toBe("Movie 201"));
   });
 
   it("closes on Back, so the modal costs one history entry per open", async () => {
@@ -659,13 +659,13 @@ describe("opening a film's record", () => {
      link on every surface, this one included: under replace it consumes the
      modal's own entry, so clicking it here reads as the modal closing onto the
      board it names, the same as a genre chip clicked on Stats. */
-  it("goes from a film to whoever added it, closing the record onto their board", async () => {
+  it("goes from a movie to whoever added it, closing the record onto their board", async () => {
     const { router } = await renderTab({ users: roster, meID: 1 });
 
     fireEvent.click(wall().querySelectorAll(".mem-open")[0] as HTMLElement);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeNull());
 
-    // Every film here was added by member 1; open one from Ada's own board and
+    // Every movie here was added by member 1; open one from Ada's own board and
     // follow the name to member 1's board.
     fireEvent.click(within(dialog()).getByRole("link", { name: "Cleo" }));
 
@@ -838,7 +838,7 @@ describe("a refused action", () => {
 
     const demotes = Array.from(document.querySelectorAll<HTMLElement>(".pslot--filled .mem-act"));
     expect(demotes.length).toBe(3);
-    // Down to the markup: any per-tile difference at all would say which film
+    // Down to the markup: any per-tile difference at all would say which movie
     // was drawn before the reveal.
     expect(new Set(demotes.map((d) => d.outerHTML)).size).toBe(1);
   });
@@ -919,8 +919,8 @@ describe("a pending move", () => {
 
     fireEvent.click(document.querySelector(".mem-tile .mem-act") as HTMLElement);
     const field = screen.getByRole("textbox", { name: "Search Ada's stash" });
-    fireEvent.change(field, { target: { value: "Film 101" } });
-    expect(screen.queryByRole("button", { name: "Film 100" })).toBeNull();
+    fireEvent.change(field, { target: { value: "Movie 101" } });
+    expect(screen.queryByRole("button", { name: "Movie 100" })).toBeNull();
 
     fireEvent.change(field, { target: { value: "" } });
     fireEvent.click(document.querySelector(".mem-tile .mem-act") as HTMLElement);
@@ -984,7 +984,7 @@ describe("a pending move", () => {
 /* The keyboard and the focus behaviour of the wall (#235). One rule over the
    whole page: focus moves only when the thing it is sitting on goes away. */
 describe("moving around the wall with the keyboard", () => {
-  /** Ada's board, holding exactly these films. Her own board unless said. */
+  /** Ada's board, holding exactly these movies. Her own board unless said. */
   function ada({ pool = [], stash = [] }: { pool?: number[]; stash?: number[] }): User {
     return {
       userID: 1,
@@ -1000,7 +1000,7 @@ describe("moving around the wall with the keyboard", () => {
   const wall = () => document.querySelector(".mem-wall") as HTMLElement;
   const heading = () => screen.getByRole("heading", { level: 3 });
   const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;
-  /** The wall's cells, in DOM order: the add tile, then the films. */
+  /** The wall's cells, in DOM order: the add tile, then the movies. */
   const cells = () => Array.from(wall().querySelectorAll<HTMLElement>("[data-cell]"));
   /** Everything in the wall a Tab could reach, in DOM order. */
   const tabStops = () => Array.from(wall().querySelectorAll<HTMLElement>('[tabindex="0"]'));
@@ -1016,7 +1016,7 @@ describe("moving around the wall with the keyboard", () => {
     await renderTab({ users: roster, meID: 1 });
 
     // The responsive column count belongs to CSS, and the wall is an A-Z list
-    // of films: grid coordinates would announce the stylesheet. No row and no
+    // of movies: grid coordinates would announce the stylesheet. No row and no
     // cell roles either.
     expect(document.querySelector('[role="grid"]')).toBeNull();
     expect(wall().getAttribute("role")).toBeNull();
@@ -1031,16 +1031,16 @@ describe("moving around the wall with the keyboard", () => {
 
     cells()[0].focus();
     press("ArrowRight");
-    // A film cell, and the whole wall: the poster and its own corner action.
+    // A movie cell, and the whole wall: the poster and its own corner action.
     // Every other poster and every other action is out of the tab order.
-    expect(tabStops().map(named)).toEqual(["Film 100", "Move to pool"]);
-    // Two per film and the add tile, nine controls in a four-film wall.
+    expect(tabStops().map(named)).toEqual(["Movie 100", "Move to pool"]);
+    // Two per movie and the add tile, nine controls in a four-movie wall.
     expect(wall().querySelectorAll(".mem-open, .mem-act, .mem-addtile").length).toBe(9);
 
     cleanup();
     await renderTab({ users: roster, meID: 2, href: "/users?member=1" });
     // A guest board has no corner action at all, so its wall is one stop.
-    expect(tabStops().map(named)).toEqual(["Film 100"]);
+    expect(tabStops().map(named)).toEqual(["Movie 100"]);
   });
 
   it("moves the one tab stop with the arrows, and with Home and End", async () => {
@@ -1052,7 +1052,7 @@ describe("moving around the wall with the keyboard", () => {
     expect(cells()[0].getAttribute("tabindex")).toBe("-1");
 
     press("End");
-    expect(named(document.activeElement)).toBe("Film 103");
+    expect(named(document.activeElement)).toBe("Movie 103");
 
     press("Home");
     expect(named(document.activeElement)).toBe("Add to Ada's stash");
@@ -1060,7 +1060,7 @@ describe("moving around the wall with the keyboard", () => {
     // In jsdom the wall is one column wide (no layout to read), so a row is a
     // cell. Multi-column movement is stashWall.test.ts's table.
     press("ArrowDown");
-    expect(named(document.activeElement)).toBe("Film 100");
+    expect(named(document.activeElement)).toBe("Movie 100");
     press("ArrowUp");
     expect(named(document.activeElement)).toBe("Add to Ada's stash");
   });
@@ -1074,7 +1074,7 @@ describe("moving around the wall with the keyboard", () => {
 
     press("End");
     press("ArrowRight");
-    expect(named(document.activeElement)).toBe("Film 103");
+    expect(named(document.activeElement)).toBe("Movie 103");
   });
 
   it("answers the arrows from the corner action too", async () => {
@@ -1087,20 +1087,20 @@ describe("moving around the wall with the keyboard", () => {
     const action = wall().querySelector(".mem-tile .mem-act") as HTMLElement;
     action.focus();
     press("ArrowRight");
-    expect(named(document.activeElement)).toBe("Film 101");
+    expect(named(document.activeElement)).toBe("Movie 101");
   });
 
   it("takes the index to wherever focus lands, so a pointer and the arrows agree", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // A click on a poster opens the film's record and leaves focus on it. The
+    // A click on a poster opens the movie's record and leaves focus on it. The
     // next arrow has to move from there, not from wherever the index was last
     // left — mixing the two is the ordinary way to use this page.
     cells()[3].focus();
-    await waitFor(() => expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]));
+    await waitFor(() => expect(tabStops().map(named)).toEqual(["Movie 102", "Move to pool"]));
 
     press("ArrowRight");
-    expect(named(document.activeElement)).toBe("Film 103");
+    expect(named(document.activeElement)).toBe("Movie 103");
 
     // The corner action counts as its own tile's cell, so an arrow from there
     // starts from that tile too.
@@ -1108,15 +1108,15 @@ describe("moving around the wall with the keyboard", () => {
     action.focus();
     await waitFor(() => expect(tabStops()).toContain(action));
     press("ArrowRight");
-    expect(named(document.activeElement)).toBe("Film 101");
+    expect(named(document.activeElement)).toBe("Movie 101");
   });
 
   it("keeps the focused movie as the tab stop when an earlier movie is removed", async () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
-    const focused = within(wall()).getByRole("button", { name: "Film 102" });
+    const focused = within(wall()).getByRole("button", { name: "Movie 102" });
     focused.focus();
     await waitFor(() =>
-      expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]),
+      expect(tabStops().map(named)).toEqual(["Movie 102", "Move to pool"]),
     );
 
     client.setQueryData(UsersKeys.list(), [
@@ -1126,17 +1126,17 @@ describe("moving around the wall with the keyboard", () => {
 
     await waitFor(() => expect(focused.getAttribute("data-cell")).toBe("2"));
     expect(document.activeElement).toBe(focused);
-    expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]);
+    expect(tabStops().map(named)).toEqual(["Movie 102", "Move to pool"]);
     press("ArrowRight");
-    expect(named(document.activeElement)).toBe("Film 103");
+    expect(named(document.activeElement)).toBe("Movie 103");
   });
 
   it("keeps the focused movie as the tab stop when an earlier movie is inserted", async () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
-    const focused = within(wall()).getByRole("button", { name: "Film 102" });
+    const focused = within(wall()).getByRole("button", { name: "Movie 102" });
     focused.focus();
     await waitFor(() =>
-      expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]),
+      expect(tabStops().map(named)).toEqual(["Movie 102", "Move to pool"]),
     );
 
     client.setQueryData(UsersKeys.list(), [
@@ -1146,9 +1146,9 @@ describe("moving around the wall with the keyboard", () => {
 
     await waitFor(() => expect(focused.getAttribute("data-cell")).toBe("4"));
     expect(document.activeElement).toBe(focused);
-    expect(tabStops().map(named)).toEqual(["Film 102", "Move to pool"]);
+    expect(tabStops().map(named)).toEqual(["Movie 102", "Move to pool"]);
     press("ArrowRight");
-    expect(named(document.activeElement)).toBe("Film 103");
+    expect(named(document.activeElement)).toBe("Movie 103");
   });
 
   it("resets the index to the first cell on a filter change", async () => {
@@ -1156,10 +1156,10 @@ describe("moving around the wall with the keyboard", () => {
     cells()[0].focus();
     press("End");
 
-    typeFilter("Film 10");
+    typeFilter("Movie 10");
     // The add tile is gone under a filter, so the first cell is the first
-    // match: Tab out of the field lands on it and not on the fourth film.
-    expect(tabStops().map(named)).toEqual(["Film 100", "Move to pool"]);
+    // match: Tab out of the field lands on it and not on the fourth movie.
+    expect(tabStops().map(named)).toEqual(["Movie 100", "Move to pool"]);
   });
 
   it("resets the index on a member switch", async () => {
@@ -1169,7 +1169,7 @@ describe("moving around the wall with the keyboard", () => {
 
     await router.navigate({ to: "/users", search: { member: 2 } });
     await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
-    expect(tabStops().map(named)).toEqual(["Film 200"]);
+    expect(tabStops().map(named)).toEqual(["Movie 200"]);
   });
 
   it("puts Tab out of the field on Add on your own board and on the first match on a guest's", async () => {
@@ -1180,7 +1180,7 @@ describe("moving around the wall with the keyboard", () => {
 
     cleanup();
     await renderTab({ users: roster, meID: 2, href: "/users?member=1" });
-    expect(named(tabStops()[0])).toBe("Film 100");
+    expect(named(tabStops()[0])).toBe("Movie 100");
   });
 
   it("is not a tab stop at all with no matches", async () => {
@@ -1194,23 +1194,23 @@ describe("moving around the wall with the keyboard", () => {
     expect(wall().querySelector(".mem-wall__empty")?.textContent).toBe('Nothing matches "zzz"');
   });
 
-  it("hands focus to the film taking the vacated cell after a promote", async () => {
+  it("hands focus to the movie taking the vacated cell after a promote", async () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
 
     const promote = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act")[1];
     promote.focus();
     fireEvent.click(promote);
     // The move and the roster are separate round trips; this is the roster
-    // coming back over SSE without the promoted film in it.
+    // coming back over SSE without the promoted movie in it.
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10, 101], stash: [100, 102, 103] }), bo]);
 
     // The poster, never that cell's corner action: the third promote fills the
     // pool, which would strand focus on a control that has just been refused.
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 102"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 102"));
     expect((document.activeElement as HTMLElement).className).toBe("mem-open");
   });
 
-  it("falls back to the previous cell when the promoted film was the last one", async () => {
+  it("falls back to the previous cell when the promoted movie was the last one", async () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
     const promote = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act")[3];
 
@@ -1218,7 +1218,7 @@ describe("moving around the wall with the keyboard", () => {
     fireEvent.click(promote);
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10, 103], stash: [100, 101, 102] }), bo]);
 
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 102"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 102"));
   });
 
   it("falls back to the pane heading when the promote empties the wall", async () => {
@@ -1226,7 +1226,7 @@ describe("moving around the wall with the keyboard", () => {
 
     // Under a filter, so the wall really does empty: your own unfiltered wall
     // always keeps the add tile.
-    typeFilter("Film 103");
+    typeFilter("Movie 103");
     const promote = wall().querySelector(".mem-tile .mem-act") as HTMLElement;
     promote.focus();
     fireEvent.click(promote);
@@ -1253,7 +1253,7 @@ describe("moving around the wall with the keyboard", () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
 
     fireEvent.click(wall().querySelector(".mem-tile .mem-act") as HTMLElement);
-    const destination = within(wall()).getByRole("button", { name: "Film 103" });
+    const destination = within(wall()).getByRole("button", { name: "Movie 103" });
     destination.focus();
     client.setQueryData(UsersKeys.list(), [
       ada({ pool: [10, 100], stash: [101, 102, 103] }),
@@ -1321,7 +1321,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
 
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 102"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 102"));
   });
 
   it("rebases a newer promote landing after an older movie leaves first", async () => {
@@ -1341,7 +1341,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
     await waitFor(() =>
-      expect(within(wall()).queryByRole("button", { name: "Film 100" })).toBeNull(),
+      expect(within(wall()).queryByRole("button", { name: "Movie 100" })).toBeNull(),
     );
     expect(document.activeElement).toBe(promotes[1]);
 
@@ -1350,7 +1350,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
 
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 102"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 102"));
   });
 
   it("returns focus ownership to a repeated pending promote without another request", async () => {
@@ -1371,7 +1371,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
 
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 101"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 101"));
   });
 
   it("hands focus to the next filled slot after a demote", async () => {
@@ -1383,8 +1383,8 @@ describe("moving around the wall with the keyboard", () => {
     client.setQueryData(UsersKeys.list(), [ada({ pool: [11], stash: [10, 100] }), bo]);
 
     // The slot does not reflow around an empty one and an empty slot is not
-    // focusable, so focus goes to the film that is now in that slot.
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 11"));
+    // focusable, so focus goes to the movie that is now in that slot.
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 11"));
   });
 
   it("does not steal focus from another pool movie while a demote lands", async () => {
@@ -1394,7 +1394,7 @@ describe("moving around the wall with the keyboard", () => {
     });
 
     fireEvent.click(openPool().querySelector(".pslot--filled .mem-act") as HTMLElement);
-    const destination = within(openPool()).getByRole("button", { name: "Film 12" });
+    const destination = within(openPool()).getByRole("button", { name: "Movie 12" });
     destination.focus();
     client.setQueryData(UsersKeys.list(), [
       ada({ pool: [11, 12], stash: [10, 100] }),
@@ -1471,7 +1471,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
     await waitFor(() =>
-      expect(within(openPool()).getByRole("button", { name: "Film 10" })).toBeTruthy(),
+      expect(within(openPool()).getByRole("button", { name: "Movie 10" })).toBeTruthy(),
     );
     expect(document.activeElement).toBe(demote);
 
@@ -1480,7 +1480,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
 
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 12"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 12"));
   });
 
   it("keeps a newer demote landing when an older request fails", async () => {
@@ -1511,7 +1511,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
 
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 12"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 12"));
   });
 
   it("returns focus ownership to a repeated pending demote without another request", async () => {
@@ -1537,7 +1537,7 @@ describe("moving around the wall with the keyboard", () => {
       bo,
     ]);
 
-    await waitFor(() => expect(named(document.activeElement)).toBe("Film 11"));
+    await waitFor(() => expect(named(document.activeElement)).toBe("Movie 11"));
   });
 
   it("hands focus to the member's own row when the demote empties the pool", async () => {
@@ -1555,7 +1555,7 @@ describe("moving around the wall with the keyboard", () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
     cells()[1].focus();
 
-    // Somebody else's edit, or your own from another tab: the film goes and
+    // Somebody else's edit, or your own from another tab: the movie goes and
     // takes the focused poster with it. Left alone, focus falls to the document
     // and Tab starts again from the top of the page.
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10], stash: [101, 102, 103] }), bo]);
@@ -1591,7 +1591,7 @@ describe("moving around the wall with the keyboard", () => {
 /* The mobile push (#236). Below 761px the two columns are two screens: the rail,
    where selecting a member opens their pool in place, and the pushed board over
    the top of it. The address has two halves to match — `member` says whose pool
-   the rail has open, `stash` says you have gone on to their films — because one
+   the rail has open, `stash` says you have gone on to their movies — because one
    key saying both would mean tapping a member always left the rail, and nobody
    else's pool would be reachable on a phone at all.
 
@@ -1607,7 +1607,7 @@ describe("the mobile push", () => {
   const roster = [member(1, 1, 3, "Ada"), member(2, 2, 2, "Bo")];
   const heading = () => screen.getByRole("heading", { level: 3 });
   const pushedFlag = () => document.querySelector(".mem")?.getAttribute("data-pushed");
-  /** The open drawer's way on to that member's films. */
+  /** The open drawer's way on to that member's movies. */
   const toStash = () =>
     document.querySelector(".mem-drop__inner:not([inert]) .mem-tostash") as HTMLAnchorElement;
   const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;

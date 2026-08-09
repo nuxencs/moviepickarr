@@ -55,7 +55,7 @@ type statsFiltersEcho struct {
 type statsResponse struct {
 	SelectedWindow      string `json:"selectedWindow"`
 	SelectedWindowCount int    `json:"selectedWindowCount"`
-	MatchedMovieIDs     []int  `json:"matchedMovieIDs"` // films behind the count, watch-recency order
+	MatchedMovieIDs     []int  `json:"matchedMovieIDs"` // movies behind the count, watch-recency order
 
 	Timezone         string             `json:"timezone"`
 	TotalWatched     int                `json:"totalWatched"`

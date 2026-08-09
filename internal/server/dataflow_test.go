@@ -888,7 +888,7 @@ func (r *pausingBatchMetadataRepo) GetMetadataByMovieIDs(
 	return r.MovieMetadataRepo.GetMetadataByMovieIDs(ctx, ids)
 }
 
-func TestMovieNightCommandsPublishInMutationOrder(t *testing.T) {
+func TestDrawCommandsPublishInMutationOrder(t *testing.T) {
 	ctx := context.Background()
 	h, app, userRepo, movieRepo := setupEditMovieTest(t)
 
@@ -940,9 +940,9 @@ func TestMovieNightCommandsPublishInMutationOrder(t *testing.T) {
 	// deterministic order for both the red and green implementations without a
 	// timing assertion: the old implementation lets watch finish while metadata
 	// is paused; the fixed implementation releases draw first.
-	drawOwnsPublication := !h.movieNightMu.TryLock()
+	drawOwnsPublication := !h.drawCommandMu.TryLock()
 	if !drawOwnsPublication {
-		h.movieNightMu.Unlock()
+		h.drawCommandMu.Unlock()
 	}
 	watchDone := startAs(
 		app,

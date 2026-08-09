@@ -151,7 +151,7 @@ function HeroBackdrop({
  *
  * Whether it is drawn at all is derived from the movie in hand, not handed down
  * as a prop (#237): the alternative rule reads, to a member, "you may rename a
- * film you added, if you opened it from Members" — the same film on the same
+ * movie you added, if you opened it from Members" — the same movie on the same
  * surface reached by the same gesture from the pool wall would offer nothing,
  * and no part of the interface could account for the difference.
  *
@@ -161,7 +161,7 @@ function HeroBackdrop({
  *
  * Edit is two capabilities in one dialog and the weaker one is what Members
  * wants: a rename, of a string the poster wall does not even show. The link
- * field is the load-bearing half — writing it re-points the film's IMDb
+ * field is the load-bearing half — writing it re-points the movie's IMDb
  * identity and re-enriches it — so it stays, whatever the dialog's flat copy
  * makes of it.
  */
@@ -171,7 +171,7 @@ function MovieActions({
    *  so browser Back — which withdraws it — closes both at once and "Back
    *  closes the modal" stays one rule. */
   open,
-  /** Delete lands on the film's record, so its success takes the record away:
+  /** Delete lands on the movie's record, so its success takes the record away:
    *  same path as every other dismissal, so the history entry is popped once. */
   onDeleted,
   recordStateKnown,
@@ -185,8 +185,8 @@ function MovieActions({
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  // Only pooled films need either pool gate. Stash deletes ignore both, while
-  // current and watched films never offer Delete. This also avoids a settings
+  // Only pooled movies need either pool gate. Stash deletes ignore both, while
+  // current and watched movies never offer Delete. This also avoids a settings
   // read when the modal opens on an unrelated lifecycle state.
   const needsPoolState = movie.status === "pool";
   const {
@@ -286,7 +286,7 @@ function MovieActions({
 
 /** A movie's own record: backdrop, a rail of poster + links out, the credits
  *  with the attribution beside them, overview, and the cast strip — and, for
- *  the member who added it, the two actions on the film itself (see
+ *  the member who added it, the two actions on the movie itself (see
  *  MovieActions). */
 export function MovieModal({
   movie,
@@ -346,7 +346,7 @@ export function MovieModal({
   //
   // The stand-in waits for the detail. `backdropPath` is a detail field, so a
   // lean tile object has a poster and no backdrop for as long as the fetch takes.
-  // Reading that as "this film has no backdrop" puts the poster in the
+  // Reading that as "this movie has no backdrop" puts the poster in the
   // wide hero for a moment, then swaps it for the real backdrop. The duotone
   // holds instead, and the poster only stands in once we know there is nothing
   // else coming.
@@ -385,7 +385,7 @@ export function MovieModal({
           >
             <div className="moviemodal__body">
               {/* The rail: identity, then the links out as reference material
-                  attached to the film — quiet mono lines, not three buttons. */}
+                  attached to the movie — quiet mono lines, not three buttons. */}
               <div className="moviemodal__rail">
                 <Poster
                   title={m.title}
@@ -459,7 +459,7 @@ export function MovieModal({
 
                   <div className="moviemodal__credits moviemodal__by">
                     <span>
-                      {/* The way from a film to whoever stashed it (#238), at
+                      {/* The way from a movie to whoever stashed it (#238), at
                           the address the rail established. Replace, like the
                           chips above and for the same reason: the entry it
                           leaves is the modal's own, and a push would return to

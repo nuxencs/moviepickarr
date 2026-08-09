@@ -8,10 +8,10 @@ export interface CreditPerson {
     job?: string;
 }
 
-// Where a film sits in the app. Mirrors the server's domain.MovieStatus.
+// Where a movie sits in the app. Mirrors the server's domain.MovieStatus.
 export type MovieStatus = "pool" | "stash" | "current" | "watched";
 
-// The two statuses a member can move a film between (POST /movies/:id/move).
+// The two statuses a member can move a movie between (POST /movies/:id/move).
 // Derived from MovieStatus so renaming a status breaks here too.
 export type MoveTarget = Extract<MovieStatus, "pool" | "stash">;
 
@@ -279,7 +279,7 @@ export interface StatsResponse {
     selectedWindow: StatsWindow;
     selectedWindowCount: number;
     // Movie ids behind selectedWindowCount, watch-recency order — the client
-    // joins these to the cached watched list to render the films-in-window rail.
+    // joins these to the cached watched list to render the movies-in-window rail.
     matchedMovieIDs: number[];
     timezone: string;
     totalWatched: number;

@@ -450,7 +450,7 @@ export function Hero() {
               ""
             ) : draw ? (
               <>
-                {/* The same way from a film to whoever stashed it as the modal's
+                {/* The same way from a movie to whoever stashed it as the modal's
                     attribution (#238). A push, not a replace: the entry it
                     leaves is the Movies page's own, so Back comes back to the
                     draw. The modal replaces because the entry it leaves is the

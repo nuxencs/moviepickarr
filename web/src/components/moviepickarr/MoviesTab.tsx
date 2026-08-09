@@ -208,11 +208,11 @@ function WatchedSection({
           <span className="sec-count">
             {deferredSearch ? (
               <>
-                <StatNumber value={filtered.length} />/<StatNumber value={total} /> films
+                <StatNumber value={filtered.length} />/<StatNumber value={total} /> movies
               </>
             ) : (
               <>
-                <StatNumber value={total} /> {total === 1 ? "film" : "films"}
+                <StatNumber value={total} /> {total === 1 ? "movie" : "movies"}
               </>
             )}
           </span>
@@ -222,7 +222,7 @@ function WatchedSection({
             <SearchIcon />
             <input
               name="watched-search"
-              aria-label="Search watched films by title or adder"
+              aria-label="Search watched movies by title or adder"
               placeholder="Search by title or adder…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -244,7 +244,7 @@ function WatchedSection({
       ) : isPending ? (
         <p className="empty">Loading watched…</p>
       ) : filtered.length === 0 ? (
-        <p className="empty">{deferredSearch ? "No films match your search" : "No movies watched yet"}</p>
+        <p className="empty">{deferredSearch ? "No movies match your search" : "No movies watched yet"}</p>
       ) : view === "grid" ? (
         <VirtualWatched
           key="grid"

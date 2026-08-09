@@ -17,25 +17,25 @@ import (
 //go:embed data/movies.json
 var moviesJSON []byte
 
-// Film is one real TMDB title the fixtures draw from. Only the identity fields
+// MovieIdentity is one real TMDB title the fixtures draw from. Only the identity fields
 // are stored: tmdb_id links the seeded movie so the enrichment worker fills its
 // poster/metadata live on the next boot, and title/year render before that
 // lands (and offline, with no TMDB key).
-type Film struct {
+type MovieIdentity struct {
 	TMDBID int    `json:"tmdb_id"`
 	Title  string `json:"title"`
 	Year   int    `json:"year"`
 }
 
-// LoadFilms returns the embedded film dataset. It fails loudly if the embedded
+// LoadMovies returns the embedded movie dataset. It fails loudly if the embedded
 // file is malformed, since a broken dataset means every fixtures run is broken.
-func LoadFilms() ([]Film, error) {
-	var films []Film
-	if err := json.Unmarshal(moviesJSON, &films); err != nil {
+func LoadMovies() ([]MovieIdentity, error) {
+	var movies []MovieIdentity
+	if err := json.Unmarshal(moviesJSON, &movies); err != nil {
 		return nil, fmt.Errorf("decode embedded movies dataset: %w", err)
 	}
-	if len(films) == 0 {
+	if len(movies) == 0 {
 		return nil, fmt.Errorf("embedded movies dataset is empty")
 	}
-	return films, nil
+	return movies, nil
 }

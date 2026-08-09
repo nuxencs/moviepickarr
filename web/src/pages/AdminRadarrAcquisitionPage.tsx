@@ -223,7 +223,7 @@ function AbandonModal({ acquisition, onClose }: { acquisition: RadarrAcquisition
         >
           <h3 className="adm-modal__title">Abandon acquisition?</h3>
           <p className="adm-modal__sub">
-            Moviepickarr will stop tracking this acquisition. It will not delete or change anything in Radarr.
+            Tracking will stop for this acquisition. Nothing in Radarr will be deleted or changed.
           </p>
           {review.isPending ? (
             <p className="radarr-action-feedback" role="status">Checking current Radarr activity…</p>
@@ -232,7 +232,7 @@ function AbandonModal({ acquisition, onClose }: { acquisition: RadarrAcquisition
             <p className="radarr-warning">Radarr still has active work for this movie. That work will continue after abandonment.</p>
           ) : null}
           {activity === "unavailable" || review.isError ? (
-            <p className="radarr-warning">Moviepickarr could not verify current Radarr activity. Work in Radarr may continue after abandonment.</p>
+            <p className="radarr-warning">Current Radarr activity could not be verified. Work in Radarr may continue after abandonment.</p>
           ) : null}
           {complete ? (
             <p className="radarr-action-feedback" role="status">Radarr now reports a file for this movie. This acquisition is complete and cannot be abandoned.</p>

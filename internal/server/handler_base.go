@@ -52,10 +52,10 @@ type handler struct {
 	movieService    *movie.Service
 	nextUpService   *nextup.Service
 	settingsService *settings.Service
-	// movieNightMu keeps next-up authorization attached to the lifecycle command
+	// drawCommandMu keeps next-up authorization attached to the lifecycle command
 	// and synchronous event publication it admitted. In particular, watch owns
 	// the turn through its rotation and movie:watched broadcast.
-	movieNightMu sync.Mutex
+	drawCommandMu sync.Mutex
 	// poolStateMu orders pool-lock changes with every admitted pool membership
 	// mutation and its synchronous event. A successful lock response therefore
 	// cannot be followed by a move or delete that observed the prior lock value.

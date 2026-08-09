@@ -196,7 +196,7 @@ export function AccountPage() {
     <div className="acc">
       <header className="acc__head mg-rise" style={{ "--i": 0 } as CSSProperties}>
         <h1>Account</h1>
-        <p>Manage how you sign in to movie night.</p>
+        <p>Manage your sign-in methods.</p>
       </header>
 
       {/* You — read-only identity. Naming is an admin concern; the username is

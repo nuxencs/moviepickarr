@@ -29,7 +29,7 @@ vi.mock("@/components/ui/toast-api", () => ({ toast: notifications }));
 
 const DESTINATION: RadarrWebhook = {
   id: 8,
-  name: "Movie night Discord",
+  name: "Radarr alerts",
   format: "discord",
   enabled: false,
   verified: true,
@@ -87,20 +87,20 @@ describe("Radarr webhook destination controls", () => {
     api.update.mockResolvedValue({ ...DESTINATION, enabled: true, revision: 5 });
     renderPage();
 
-    const toggle = await screen.findByRole("switch", { name: "Enable Movie night Discord" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Radarr alerts" });
     fireEvent.click(toggle);
 
     await waitFor(() => expect(api.update).toHaveBeenCalledOnce());
     expect(api.update).toHaveBeenCalledWith(8, {
-      name: "Movie night Discord",
+      name: "Radarr alerts",
       format: "discord",
       enabled: true,
       reasons: ["preset_required", "release_required"],
       roleMention: "1234567890",
       revision: 4,
     });
-    expect(await screen.findByRole("switch", { name: "Disable Movie night Discord" })).toBeTruthy();
-    expect(notifications.success).toHaveBeenCalledWith("Movie night Discord enabled");
+    expect(await screen.findByRole("switch", { name: "Disable Radarr alerts" })).toBeTruthy();
+    expect(notifications.success).toHaveBeenCalledWith("Radarr alerts enabled");
     expect(document.querySelector(".radarr-action-feedback")).toBeNull();
   });
 
@@ -108,7 +108,7 @@ describe("Radarr webhook destination controls", () => {
     api.test.mockRejectedValue(new Error("network unavailable"));
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Test Movie night Discord" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Test Radarr alerts" }));
 
     await waitFor(() => expect(notifications.error).toHaveBeenCalledWith("The test delivery failed."));
     expect(document.querySelector(".radarr-action-feedback")).toBeNull();
@@ -119,7 +119,7 @@ describe("Radarr webhook destination controls", () => {
     api.list.mockResolvedValue([{ ...DESTINATION, verified: false, lastTestedAt: "2026-08-06T12:00:00Z" }]);
     renderPage();
 
-    const toggle = await screen.findByRole("switch", { name: "Enable Movie night Discord" });
+    const toggle = await screen.findByRole("switch", { name: "Enable Radarr alerts" });
     expect((toggle as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByText("Test required")).toBeNull();
     expect(screen.getByRole("tooltip").textContent).toBe("Test this destination before enabling it.");
@@ -138,12 +138,12 @@ describe("Radarr webhook destination controls", () => {
   it("uses compact icon actions and marks archive as destructive", async () => {
     renderPage();
 
-    const row = (await screen.findByRole("switch", { name: "Enable Movie night Discord" })).closest("li");
+    const row = (await screen.findByRole("switch", { name: "Enable Radarr alerts" })).closest("li");
     expect(row).toBeTruthy();
     const actions = [
-      within(row!).getByRole("button", { name: "Test Movie night Discord" }),
-      within(row!).getByRole("button", { name: "Edit Movie night Discord" }),
-      within(row!).getByRole("button", { name: "Archive Movie night Discord" }),
+      within(row!).getByRole("button", { name: "Test Radarr alerts" }),
+      within(row!).getByRole("button", { name: "Edit Radarr alerts" }),
+      within(row!).getByRole("button", { name: "Archive Radarr alerts" }),
     ];
     expect(actions.every((button) => button.textContent === "")).toBe(true);
     expect(actions[2].classList.contains("iconbtn--danger")).toBe(true);
@@ -157,7 +157,7 @@ describe("Radarr webhook destination controls", () => {
     api.update.mockReturnValue(new Promise<RadarrWebhook>(() => {}));
     renderPage();
 
-    const first = await screen.findByRole("switch", { name: "Enable Movie night Discord" });
+    const first = await screen.findByRole("switch", { name: "Enable Radarr alerts" });
     const second = screen.getByRole("switch", { name: "Enable Generic automation" });
     fireEvent.click(first);
 
@@ -174,13 +174,13 @@ describe("Radarr webhook destination controls", () => {
     api.test.mockReturnValue(new Promise<RadarrWebhook>(() => {}));
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Test Movie night Discord" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Test Radarr alerts" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Test Movie night Discord" }).querySelector(".mg-spin")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test Radarr alerts" }).querySelector(".mg-spin")).toBeTruthy());
     expect(screen.getByRole("button", { name: "Test Generic automation" }).querySelector(".mg-spin")).toBeNull();
-    expect((screen.getByRole("switch", { name: "Enable Movie night Discord" }) as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Edit Movie night Discord" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Archive Movie night Discord" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("switch", { name: "Enable Radarr alerts" }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Edit Radarr alerts" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Archive Radarr alerts" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("switch", { name: "Enable Generic automation" }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Edit Generic automation" }) as HTMLButtonElement).disabled).toBe(false);
     await waitFor(() => expect(api.test).toHaveBeenCalledWith(8));
@@ -189,10 +189,10 @@ describe("Radarr webhook destination controls", () => {
   it("uses icon actions and marks archive as destructive", async () => {
     renderPage();
 
-    const archive = await screen.findByRole("button", { name: "Archive Movie night Discord" });
+    const archive = await screen.findByRole("button", { name: "Archive Radarr alerts" });
     expect(archive.textContent).toBe("");
     expect(archive.classList.contains("iconbtn--danger")).toBe(true);
-    expect(screen.getByRole("button", { name: "Test Movie night Discord" }).textContent).toBe("");
-    expect(screen.getByRole("button", { name: "Edit Movie night Discord" }).textContent).toBe("");
+    expect(screen.getByRole("button", { name: "Test Radarr alerts" }).textContent).toBe("");
+    expect(screen.getByRole("button", { name: "Edit Radarr alerts" }).textContent).toBe("");
   });
 });

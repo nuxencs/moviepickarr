@@ -1,7 +1,7 @@
 import type { MovieTile } from "@/types/Response";
 
 /**
- * The find-a-film path on an untitled wall, and the arithmetic behind moving
+ * The find-a-movie path on an untitled wall, and the arithmetic behind moving
  * around it with the keyboard.
  *
  * The wall drops the caption under the tile, so the field is the only way to
@@ -43,13 +43,13 @@ export function missLine(filter: string): string {
  *
  * Left and right step through the wall in its own order, which is the reading
  * order the columns lay out, so at the end of a row they carry on onto the next
- * one: the wall is one A-Z run of films and the responsive column count is the
+ * one: the wall is one A-Z run of movies and the responsive column count is the
  * stylesheet's business, which is the same reason it is not a `role="grid"`.
  * Up and down step by a row.
  *
  * A move with no cell at the other end is refused rather than clamped. Off the
  * first or last cell there is nowhere to go at all; off the last row, over a row
- * that is short, a Down that landed on the last film would move by a distance
+ * that is short, a Down that landed on the last movie would move by a distance
  * nobody asked for and sideways as well as down.
  */
 export function nextCell(key: string, from: number, cells: number, columns: number): number | null {
@@ -75,13 +75,13 @@ export function nextCell(key: string, from: number, cells: number, columns: numb
 }
 
 /**
- * Where focus goes after the film at `vacated` leaves a band that has `left`
+ * Where focus goes after the movie at `vacated` leaves a band that has `left`
  * cells now, or null when nothing is left to hold it.
  *
  * The same rule on both bands: the cell that slides into the vacated index, and
  * the one before it when the vacated index was the end. What a null means is
  * the band's own — the pane heading for the wall, the member's row for a pool
- * emptied of films.
+ * emptied of movies.
  */
 export function landingCell(vacated: number, left: number): number | null {
   if (left <= 0) return null;
@@ -94,7 +94,7 @@ export function landingCell(vacated: number, left: number): number | null {
  * The wall's column count is a container-query artifact of the pane's width, so
  * it is read from the resolved track list rather than computed a second time in
  * JavaScript. One column is the floor: a wall that
- * cannot be measured still moves up and down, a film at a time.
+ * cannot be measured still moves up and down, a movie at a time.
  */
 export function columnCount(template: string): number {
   const tracks = template.trim();

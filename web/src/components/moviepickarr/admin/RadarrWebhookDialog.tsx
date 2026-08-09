@@ -115,7 +115,7 @@ export function RadarrWebhookDialog({
           <div className="modal__scroll radarr-modal__scroll radarr-form">
             <label className="fieldgroup">
               <span>Name</span>
-              <span className="field" data-invalid={issues.name ? true : undefined}><input autoFocus value={name} placeholder="Movie night Discord" aria-invalid={issues.name ? true : undefined} aria-describedby={issues.name ? "radarr-webhook-name-error" : undefined} onChange={(event) => setName(event.target.value)} /></span>
+              <span className="field" data-invalid={issues.name ? true : undefined}><input autoFocus value={name} placeholder="Radarr alerts" aria-invalid={issues.name ? true : undefined} aria-describedby={issues.name ? "radarr-webhook-name-error" : undefined} onChange={(event) => setName(event.target.value)} /></span>
               {issues.name ? <span id="radarr-webhook-name-error" className="field-error">{issues.name}</span> : null}
             </label>
             <label className="fieldgroup">
@@ -143,7 +143,7 @@ export function RadarrWebhookDialog({
               <label className="fieldgroup">
                 <span>Role mention <small>Optional</small></span>
                 <span className="field" data-invalid={issues.roleMention ? true : undefined}><input value={roleMention} placeholder="1234567890" aria-invalid={issues.roleMention ? true : undefined} aria-describedby={issues.roleMention ? "radarr-webhook-role-error" : undefined} onChange={(event) => setRoleMention(event.target.value)} /></span>
-                <small>Enter the Discord role ID. Moviepickarr formats the mention safely.</small>
+                <small>Enter the Discord role ID. The role ID is formatted as a safe mention.</small>
                 {issues.roleMention ? <span id="radarr-webhook-role-error" className="field-error">{issues.roleMention}</span> : null}
               </label>
             ) : null}

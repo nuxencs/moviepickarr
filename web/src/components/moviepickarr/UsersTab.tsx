@@ -130,7 +130,7 @@ function moveRegistry(client: QueryClient): MoveRegistry {
  * Below 761px that address grows a second half and becomes the mobile push
  * (#236). The two columns are two screens there: the rail is the whole screen,
  * where selecting a member opens their pool in place exactly as it does beside
- * the pane, and `stash` in the URL pushes that member's films over the top of
+ * the pane, and `stash` in the URL pushes that member's movies over the top of
  * it. Two keys because the narrow layout has two levels — whose pool the rail
  * has open, and whether you have gone on to their wall — and one key saying
  * both would mean a phone could only reach a member by leaving the rail, with
@@ -143,7 +143,7 @@ function moveRegistry(client: QueryClient): MoveRegistry {
  * focus handoff and the `inert` state of the screen being left.
  *
  * Every filled poster on either band is a button opening the movie modal, which
- * is the one way into a film's record from this page — never gated on whose
+ * is the one way into a movie's record from this page — never gated on whose
  * board it is, on the lock or on a draw. What a board you cannot act on is
  * missing is exactly one thing, the corner action on its tiles, so the absence
  * says "not your board" and nothing else.
@@ -153,7 +153,7 @@ function moveRegistry(client: QueryClient): MoveRegistry {
  * the reason on it (see refusals.ts and TileAction) rather than taking it away.
  *
  * The page has one roving region and one not, deliberately (#235). The wall is
- * a run without a bound — sixty films is a hundred and twenty tab stops — so it
+ * a run without a bound — sixty movies is a hundred and twenty tab stops — so it
  * is a roving-tabindex list with arrow keys, two tab stops on your own board and
  * one on a guest's. The rail is a handful of rows, so it is a handful of plain
  * tab stops. Above both of those: focus moves only when the thing it is sitting
@@ -209,8 +209,8 @@ export function UsersTab() {
     [moves, queryClient],
   );
 
-  // Opening a film's record pushes a history entry, so browser Back closes it
-  // (#196). The film handed over is the tile's own lean object and is not
+  // Opening a movie's record pushes a history entry, so browser Back closes it
+  // (#196). The movie handed over is the tile's own lean object and is not
   // re-derived from the roster as the Stats tab does: the modal lazy-loads the
   // full record itself and SSE invalidates that query, so the live source is
   // already the one inside the modal.
@@ -231,7 +231,7 @@ export function UsersTab() {
       state: "ready",
       // Raw slot occupancy across everybody. It never moves for a draw: the
       // server leaves the winner in its pool until the reveal, and a count that
-      // dropped early would give the film away.
+      // dropped early would give the movie away.
       filled: users.reduce((n, user) => n + Object.keys(user.currentPool).length, 0),
       slots: users.length * POOL_SIZE,
     };
@@ -527,7 +527,7 @@ function RailRow({
     if (active) setEverOpened(true);
   }, [active]);
 
-  // Where focus goes when the last film leaves this member's pool: the row the
+  // Where focus goes when the last movie leaves this member's pool: the row the
   // pool hangs off, which is the nearest thing to the slot that emptied and is
   // still on screen (#235).
   const linkRef = useRef<HTMLAnchorElement>(null);
@@ -595,7 +595,7 @@ function RailRow({
               requestMove={requestMove}
             />
 
-            {/* The way on to this member's films, below 761 only (members.css
+            {/* The way on to this member's movies, below 761 only (members.css
                 draws it there and nowhere else). It is the second half of the
                 address, so it is a link and not a button: the pushed screen
                 can be shared, Back leaves it, and the row above stays the
@@ -639,8 +639,8 @@ function PoolPips({ filled }: { filled: number }) {
 }
 
 /**
- * A film's poster, as the button that opens its record. The same cell on both
- * bands and on every board: what the lock and the draw freeze is moving a film,
+ * A movie's poster, as the button that opens its record. The same cell on both
+ * bands and on every board: what the lock and the draw freeze is moving a movie,
  * never reading one, so this is not gated on anything.
  *
  * It is a sibling of the corner action, never its parent — a poster that
@@ -662,7 +662,7 @@ function PosterButton({
   /** Whether to fetch the art. False in a drawer nobody has opened (see RailRow). */
   showArt?: boolean;
   /** This poster's index in its band, so the band can find it again by number
-   *  after the film that was there has moved (#235). Both bands use the same
+   *  after the movie that was there has moved (#235). Both bands use the same
    *  attribute: they are separate containers and each looks only inside itself. */
   cell?: number;
   /** -1 on every wall poster but the one holding the roving index. Left off in
@@ -763,7 +763,7 @@ function TileAction({
           26px, where it is legible and unambiguous — and it lost anyway: a full
           pool refuses every promote, so it stamped a forbidden sign across
           every poster on a wall stripped down to art, and read as though the
-          films were barred rather than the destination full. */}
+          movies were barred rather than the destination full. */}
       {kind === "promote" ? <MoveUpIcon /> : <MoveDownIcon />}
     </button>
   );
@@ -800,7 +800,7 @@ function PoolSlots({
   drawInFlight: boolean;
   poolStateKnown: boolean;
   onOpen: (movie: MovieTile) => void;
-  /** The member's own row, where focus goes when the last film leaves the pool. */
+  /** The member's own row, where focus goes when the last movie leaves the pool. */
   rowLinkRef: RefObject<HTMLAnchorElement | null>;
   requestMove: RequestMove;
 }) {
@@ -841,8 +841,8 @@ function PoolSlots({
   };
 
   // A demote that has landed: the roster has come back over SSE without the
-  // film in it, so the slot that held it now holds the next one along. Keyed on
-  // the film being gone rather than on the request returning — the two are
+  // movie in it, so the slot that held it now holds the next one along. Keyed on
+  // the movie being gone rather than on the request returning — the two are
   // separate round trips, and focusing between them would land on the tile that
   // is about to unmount and drop focus to the document.
   useEffect(() => {
@@ -910,7 +910,7 @@ function PoolSlots({
           </div>
         ) : (
           // The one cell on either board that answers nothing, and identical on
-          // both: there is no film here to open. Movies reach the pool by being
+          // both: there is no movie here to open. Movies reach the pool by being
           // promoted from the stash, not added directly here — a clickable "+"
           // misleadingly implied a direct pool add (it opened the stash search).
           <div className="pslot pslot--empty" key={`empty-${i}`} aria-hidden="true" />
@@ -926,7 +926,7 @@ function PoolSlots({
  *
  * The wall is six columns of 96px posters with no caption under the tile, which
  * is what the density prototypes settled (docs/findings/members-204-stash):
- * dropping the caption buys half again as many films at a size where the art
+ * dropping the caption buys half again as many movies at a size where the art
  * still identifies one. Six is also the floor — four columns puts a stash
  * poster above the rail's 128px pool poster and inverts the ranking the layout
  * exists to express — so the ceiling on poster size here is arithmetic off the
@@ -936,10 +936,10 @@ function PoolSlots({
  * that are always present are title and date-added, the rest arrive with
  * enrichment and would reorder the wall under you as SSE lands, and an untitled
  * tile makes no key but title verifiable by looking. The field below is the
- * find-a-film path in its place.
+ * find-a-movie path in its place.
  *
  * The wall is a roving-tabindex list and not a `role="grid"` (#235). Its
- * responsive column count belongs to CSS and the wall is an A-Z list of films,
+ * responsive column count belongs to CSS and the wall is an A-Z list of movies,
  * so announcing grid coordinates would be describing the stylesheet. One cell
  * holds tabindex 0 at a time; the arrows move it, so the
  * whole wall is two tab stops on your own board (the poster, then its corner
@@ -1010,8 +1010,8 @@ function StashPane({
   // filter, hit or miss: a dashed cell one keystroke from a row of search hits
   // reads as a result.
   const addTile = isOwnBoard && !filter.trim();
-  // The cell count, not the film count: the add tile is a cell too, and a term
-  // that matches every film takes it away without moving the other number.
+  // The cell count, not the movie count: the add tile is a cell too, and a term
+  // that matches every movie takes it away without moving the other number.
   const cells = filteredStash.length + (addTile ? 1 : 0);
 
   useEffect(() => {
@@ -1092,7 +1092,7 @@ function StashPane({
   };
 
   // A promote that has landed. Same shape and the same reason as the pool's
-  // (see PoolSlots): keyed on the film being gone from the wall rather than on
+  // (see PoolSlots): keyed on the movie being gone from the wall rather than on
   // the request returning, or focus lands on a tile that is about to unmount.
   //
   // Pending request ownership lives above this keyed pane. Hiding a tile,
@@ -1359,7 +1359,7 @@ type PoolMove = {
 };
 
 // Memoized because the stash filter lives in the pane above: without it every
-// keystroke re-renders every surviving tile, and at 60 films that is 60 posters
+// keystroke re-renders every surviving tile, and at 60 movies that is 60 posters
 // and actions. The props are the movie object straight out of the query cache
 // plus primitives, plus stable callbacks, so the memo holds while typing.
 const StashTile = memo(function StashTile({

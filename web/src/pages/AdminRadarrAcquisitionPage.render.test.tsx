@@ -427,7 +427,7 @@ describe("Radarr acquisition target safety", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Abandon acquisition" }));
     const dialog = await screen.findByRole("dialog", { name: "Abandon acquisition?" });
     expect(await within(dialog).findByText(
-      "Moviepickarr could not verify current Radarr activity. Work in Radarr may continue after abandonment.",
+      "Current Radarr activity could not be verified. Work in Radarr may continue after abandonment.",
     )).toBeTruthy();
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), {
       target: { value: "No longer needed" },

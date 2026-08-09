@@ -10,8 +10,8 @@ database are all embedded, so there is nothing else to set up.
   API. The key is optional: without it the app still works, but movies show
   placeholder posters and the metadata stats stay empty.
 - An optional Radarr installation and API key. Radarr is not required for the
-  movie-night workflow. When configured, it can arrange a file for each drawn
-  movie before the next movie night.
+  selection workflow. When configured, it can arrange a file for each drawn
+  movie before the next draw.
 - Either Docker, or Go 1.26+ and [Bun](https://bun.sh) to build from source.
 
 ## Docker

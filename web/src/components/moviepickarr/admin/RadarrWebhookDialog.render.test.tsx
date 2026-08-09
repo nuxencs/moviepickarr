@@ -51,7 +51,7 @@ describe("new Radarr webhook destination", () => {
     api.testDraft.mockResolvedValue({ verified: true });
     api.create.mockResolvedValue({
       id: 7,
-      name: "Movie night Discord",
+      name: "Radarr alerts",
       format: "discord",
       enabled: false,
       verified: false,
@@ -60,7 +60,7 @@ describe("new Radarr webhook destination", () => {
     renderDialog();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-      target: { value: "Movie night Discord" },
+      target: { value: "Radarr alerts" },
     });
     fireEvent.change(screen.getByLabelText("Webhook URL"), {
       target: { value: "https://discord.com/api/webhooks/redacted" },
@@ -90,7 +90,7 @@ describe("new Radarr webhook destination", () => {
     renderDialog();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-      target: { value: "Movie night Discord" },
+      target: { value: "Radarr alerts" },
     });
     fireEvent.change(screen.getByLabelText("Webhook URL"), {
       target: { value: "https://discord.com/api/webhooks/redacted" },
@@ -112,7 +112,7 @@ describe("existing Radarr webhook destination", () => {
   it("uses the concise Discord label and omits the verification banner", () => {
     renderDialog({
       id: 8,
-      name: "Movie night Discord",
+      name: "Radarr alerts",
       format: "discord",
       enabled: false,
       verified: true,
@@ -130,7 +130,7 @@ describe("existing Radarr webhook destination", () => {
     api.testDraft.mockResolvedValue({ verified: true });
     renderDialog({
       id: 8,
-      name: "Movie night Discord",
+      name: "Radarr alerts",
       format: "discord",
       enabled: true,
       verified: true,
@@ -163,7 +163,7 @@ describe("existing Radarr webhook destination", () => {
   it("preserves an enabled saved destination when its verified payload is unchanged", async () => {
     api.update.mockResolvedValue({
       id: 8,
-      name: "Movie night Discord",
+      name: "Radarr alerts",
       format: "discord",
       enabled: true,
       verified: true,
@@ -172,7 +172,7 @@ describe("existing Radarr webhook destination", () => {
     });
     renderDialog({
       id: 8,
-      name: "Movie night Discord",
+      name: "Radarr alerts",
       format: "discord",
       enabled: true,
       verified: true,

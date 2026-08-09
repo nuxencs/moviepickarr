@@ -31,11 +31,11 @@ func applyRealPlan(t *testing.T, pool *db.Pool, now time.Time) Plan {
 	t.Helper()
 	ctx := context.Background()
 
-	films, err := LoadFilms()
+	movies, err := LoadMovies()
 	if err != nil {
-		t.Fatalf("load films: %v", err)
+		t.Fatalf("load movies: %v", err)
 	}
-	plan, err := BuildPlan(films, now)
+	plan, err := BuildPlan(movies, now)
 	if err != nil {
 		t.Fatalf("build plan: %v", err)
 	}
@@ -54,16 +54,16 @@ func applyRealPlan(t *testing.T, pool *db.Pool, now time.Time) Plan {
 	return plan
 }
 
-func TestLoadFilmsHasEnough(t *testing.T) {
-	films, err := LoadFilms()
+func TestLoadMoviesHasEnough(t *testing.T) {
+	movies, err := LoadMovies()
 	if err != nil {
-		t.Fatalf("load films: %v", err)
+		t.Fatalf("load movies: %v", err)
 	}
-	if len(films) < 206 {
-		t.Fatalf("embedded dataset has %d films, need at least 206 for a full plan", len(films))
+	if len(movies) < 206 {
+		t.Fatalf("embedded dataset has %d movies, need at least 206 for a full plan", len(movies))
 	}
 	seen := map[int]bool{}
-	for _, f := range films {
+	for _, f := range movies {
 		if seen[f.TMDBID] {
 			t.Fatalf("embedded dataset has a duplicate tmdb_id %d", f.TMDBID)
 		}

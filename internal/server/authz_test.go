@@ -354,8 +354,8 @@ func TestRotation_WatchOwnsTurnThroughCommit(t *testing.T) {
 			)
 			<-watchStoreReached
 
-			if h.movieNightMu.TryLock() {
-				h.movieNightMu.Unlock()
+			if h.drawCommandMu.TryLock() {
+				h.drawCommandMu.Unlock()
 				t.Fatal("watch released the command lock before its store commit")
 			}
 

@@ -52,8 +52,8 @@ That follow-up stack remains open and is based on `develop`.
 | High, security | Archived members could still authenticate through residual local, OIDC, session, invite, or seed data. | [#284](https://github.com/nuxencs/moviepickarr/pull/284) |
 | Medium | A failed admin seed could leave a credentialless admin or an unintended promotion. This completes the three concrete flows in issue #157. | [#285](https://github.com/nuxencs/moviepickarr/pull/285) |
 | High | Movie edits could partially commit, interleave into a value submitted by neither request, or leave watched-title stats stale. | [#286](https://github.com/nuxencs/moviepickarr/pull/286) |
-| High | A stale enrichment response could overwrite a newer identity, while separate metadata and credit commits could leave mixed-film data. | [#287](https://github.com/nuxencs/moviepickarr/pull/287) |
-| Medium | Changing movie identity could indefinitely expose the previous film's poster, cast, runtime, and statistics. | [#288](https://github.com/nuxencs/moviepickarr/pull/288) |
+| High | A stale enrichment response could overwrite a newer identity, while separate metadata and credit commits could leave mixed-movie data. | [#287](https://github.com/nuxencs/moviepickarr/pull/287) |
+| Medium | Changing movie identity could indefinitely expose the previous movie's poster, cast, runtime, and statistics. | [#288](https://github.com/nuxencs/moviepickarr/pull/288) |
 | High | IMDb identities were neither canonical nor unique, allowing duplicate library identities and distorted pool, draw, and statistics behavior. | [#289](https://github.com/nuxencs/moviepickarr/pull/289) |
 | High | Invalid, foreign-host, or TMDB-only edit links could clear external IDs and derived data or extract a false IMDb identity. | [#292](https://github.com/nuxencs/moviepickarr/pull/292) |
 | Medium | Clearing watched time silently succeeded without changing data, while resubmitting an unchanged minute-level value could lose seconds or shift a repeated DST hour. | [#294](https://github.com/nuxencs/moviepickarr/pull/294) |

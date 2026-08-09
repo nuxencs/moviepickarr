@@ -5,7 +5,7 @@ import {
   CalendarDaysIcon,
   Clock3Icon,
   ExternalLinkIcon,
-  FilmIcon,
+  FilmIcon as MovieIcon,
   HourglassIcon,
   StarIcon,
   TrophyIcon,
@@ -127,9 +127,9 @@ export function StatsTab() {
   // people rails) carry the bulk of the Stats mount cost — FLIP rails, ~45
   // avatars, and the chart DOM. Rather than mount them one frame after data
   // (which just moves that cost off the first paint), we gate them on the
-  // viewport: an IntersectionObserver watching an anchor below the films rail
+  // viewport: an IntersectionObserver watching an anchor below the movies rail
   // flips `panelsVisible` true only when the panels are about to scroll into
-  // view (see the effect below). A visit that reads the KPI strip + films rail
+  // view (see the effect below). A visit that reads the KPI strip + movies rail
   // and leaves never pays for them. Latches true once shown, so filter changes —
   // which keep StatsTab mounted — never re-gate or flicker the panels.
   const [panelsVisible, setPanelsVisible] = useState(false);
@@ -196,7 +196,7 @@ export function StatsTab() {
   }, [watched]);
 
   // Join the matched ids the stats endpoint returns back to the cached watched
-  // movies, so the films-in-filter-view rail renders posters without a second
+  // movies, so the movies-in-filter-view rail renders posters without a second
   // fetch and its count can never drift from the "In window" KPI.
   const watchedById = useMemo(() => {
     const map = new Map<number, MovieTile>();
@@ -375,7 +375,7 @@ export function StatsTab() {
       ) : (
         <>
           <div className="stat-strip">
-            <StatItem icon={<FilmIcon size={15} />} label="In window" value={<StatNumber value={count} animateOnMount />} sub="movies watched" mono />
+            <StatItem icon={<MovieIcon size={15} />} label="In window" value={<StatNumber value={count} animateOnMount />} sub="movies watched" mono />
             <StatItem
               icon={<HourglassIcon size={15} />}
               label="Hours watched"
@@ -407,7 +407,7 @@ export function StatsTab() {
             />
           </div>
 
-          {/* The films rail always renders — it owns the single empty state for the
+          {/* The movies rail always renders — it owns the single empty state for the
               filter view (it is the visual expansion of the "In window" KPI). When
               the count is zero every downstream section drops away with it: zeroed
               member bars and empty charts under an empty filter view are noise, not
@@ -459,7 +459,7 @@ export function StatsTab() {
 }
 
 /**
- * Horizontal rail of the films behind the current window/filters — the concrete
+ * Horizontal rail of the movies behind the current window/filters — the concrete
  * answer to the "In window" KPI. Posters reuse the Movies-tab tile visuals;
  * clicking one opens the detail modal. The heading count comes from the KPI
  * (the authoritative server count), so the two always agree.
@@ -475,9 +475,9 @@ function MatchedMoviesRail({
   filtered: boolean;
   onSelect: (movie: MovieTile) => void;
 }) {
-  // FLIP the matched-films rail: films present in both windows glide to their new
-  // spot (the 30d prefix of a 1y set has a zero delta and stays put), new films
-  // pop in, dropped films fade out then the rail tightens. Keyed by id; item data
+  // FLIP the matched-movies rail: movies present in both windows glide to their new
+  // spot (the 30d prefix of a 1y set has a zero delta and stays put), new movies
+  // pop in, dropped movies fade out then the rail tightens. Keyed by id; item data
   // resolves live so an SSE refetch flows in without re-animating.
   const { containerRef, entries, itemProps } = useFlipRail<MovieTile>(movies, (m) => String(m.movieID));
   return (
@@ -485,7 +485,7 @@ function MatchedMoviesRail({
     // rail is the expansion of the "In window" count, not a separate section.
     <section className="statsec statsec--flush">
       <h3 className="statsec__title">
-        Films in Filter View · <StatNumber value={count} />
+        Movies in Filter View · <StatNumber value={count} />
       </h3>
       {entries.length === 0 ? (
         // count > 0 with no posters means the cached watched list is still
@@ -493,10 +493,10 @@ function MatchedMoviesRail({
         // empty filter view, worded by whether a filter is narrowing it.
         <p className="empty">
           {count > 0
-            ? "Loading films…"
+            ? "Loading movies…"
             : filtered
-              ? "No films match the current filter view."
-              : "No films watched in this window yet."}
+              ? "No movies match the current filter view."
+              : "No movies watched in this window yet."}
         </p>
       ) : (
         <div className="movierail" ref={containerRef}>

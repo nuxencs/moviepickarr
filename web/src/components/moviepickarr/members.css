@@ -43,7 +43,7 @@
 
 /* The roster and the stash are separate things to move through, so at 761 and
    above they scroll separately and the page itself does not scroll: reaching the
-   bottom of a 40-film stash used to drag the roster off screen with it. */
+   bottom of a 40-movie stash used to drag the roster off screen with it. */
 @media (min-width: 761px) {
   /* The shell's 110px bottom padding clears the phone tab bar and the rubber
      band. With nothing below the fold there is nothing to clear. */
@@ -136,7 +136,7 @@
 
   /* A height, not a max-height, and a whole number of rows of it.
      Sized to its contents the box collapsed by several hundred pixels between a
-     14-film member and a 0-film one and dragged everything under it up with it,
+     14-movie member and a 0-movie one and dragged everything under it up with it,
      which is the per-member jitter this layout spent three tickets removing and
      worst at the moment the wall has nothing to look at. Reserved in full,
      every member's pane is the same height and only the contents change.
@@ -312,7 +312,7 @@
 /* ---- posters ----------------------------------------------------------- */
 
 /* The poster is the button, on both bands and on every board: it opens the
-   film's record, which is the one way into it from this page. Two SIBLING
+   movie's record, which is the one way into it from this page. Two SIBLING
    interactive layers per cell, never nested — this one filling the cell, the
    corner action (.mem-act) sitting over it — so the corner action's own hit
    area is its own and a poster cannot contain a button.
@@ -621,7 +621,7 @@
 
 /* Two columns become two screens (#236). The rail is the whole screen, where
    selecting a member opens their pool in place exactly as it does beside the
-   pane, and `stash` in the URL pushes that member's films over the top of it.
+   pane, and `stash` in the URL pushes that member's movies over the top of it.
    Both halves are the address, so they survive a resize by construction — a
    flag built at 375px would have to mean something at 1440px — and the second
    one is inert up there, where the pane is already beside the rail.
@@ -777,7 +777,7 @@
     padding-left: 0;
   }
 
-  /* The way on to the open member's films, and the whole reason the rail keeps
+  /* The way on to the open member's movies, and the whole reason the rail keeps
      its drawers on a phone: the row opens a pool, this leaves for the wall. A
      row across the drawer's full width, so the target is the width of the
      three posters above it and there is nothing to miss. */
@@ -827,7 +827,7 @@
 
   /* The wall stops being a scroller and the page carries it: one flick, one
      scroller. At 761 and above, the fixed height answers a collapse between a
-     14-film member and a 0-film one that cannot happen here. The push hides the
+     14-movie member and a 0-movie one that cannot happen here. The push hides the
      rail and the pool with it, so there is nothing above the wall to move and no
      second member's wall to match. What it did instead was put a ~498px inner
      scroller into ~363px of room, clipped by the tab bar and eating the flick

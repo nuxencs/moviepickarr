@@ -4,14 +4,14 @@ Register: product. An app/tool, so design serves the task and earned
 familiarity beats novelty.
 
 ## What it is
-A small private web app for a friend group to run a shared
-movie-night rotation. Each member keeps a personal stash of movies and
-promotes up to 3 into a shared pool. The app draws a random movie from the
-pool for movie night, then tracks the watched history and stats. Movies are
+A small private web app for a friend group to choose movies together. Each
+member keeps a personal stash of movies and promotes up to 3 into a shared
+pool. The app draws a random movie from the pool, then tracks the watched
+history and stats. Movies are
 enriched with TMDB metadata (poster, backdrop, runtime, rating, genres, tagline,
 overview, external links, and cast/crew credits). An optional Radarr integration
 lets an Admin arrange the drawn winner's initial media file before the next
-movie night.
+draw.
 
 ## Audience
 A handful of friends who know each other. Private, authenticated by obscurity,
@@ -31,7 +31,7 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   always has a row, zero or not, whatever the window or filters; weekday and
   hourly activity; custom date range), plus a TMDB deep-dive over the watched
   subset: hours-watched and average-rating KPIs (with an average-runtime
-  sub-line), a horizontally-scrolling rail of the actual films behind the count
+  sub-line), a horizontally-scrolling rail of the actual movies behind the count
   (click a poster for its detail modal), a top-genres donut, most-watched
   director and actor rails, and a release-decades timeline. One filter system
   sits under the header: the time presets, the watch-year quick-select (snaps

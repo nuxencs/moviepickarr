@@ -23,7 +23,7 @@ const (
 	statsWindowAllTime statsWindow = "all-time"
 	statsWindowCustom  statsWindow = "custom"
 
-	// Sanity bounds for the releaseYear filter (film history through a
+	// Sanity bounds for the releaseYear filter (movie history through a
 	// comfortable future margin).
 	statsMinReleaseYear = 1870
 	statsMaxReleaseYear = 2100
@@ -347,7 +347,7 @@ func buildStatsResponse(
 		presetRanges[j] = rangeForPresetWindow(statsWindowOrder[j], now)
 	}
 	selectedWindowCount := 0
-	// The concrete films behind selectedWindowCount, in watch-recency order (the
+	// The concrete movies behind selectedWindowCount, in watch-recency order (the
 	// watched list arrives most-recent-first) — the client renders them as a
 	// poster rail, so this stays the single source of truth for "what matched".
 	matchedIDs := make([]int, 0)

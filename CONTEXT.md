@@ -1,10 +1,21 @@
 # moviepickarr
 
-A private web app for a friend group to run a shared movie-night
-rotation: everyone stashes movies, promotes a few into a shared pool, and the
-app draws one at random for movie night.
+A private web app for a friend group to choose movies together: everyone stashes
+movies, promotes a few into a shared pool, and the app draws one at random.
 
 ## Language
+
+### Product wording
+
+**Movie**:
+The canonical noun for every title in product copy, code, tests, and documentation.
+
+**Draw workflow**:
+The draw, reveal, and watch sequence. Use the specific action name when possible.
+
+**Brand wordmark**:
+The lowercase `moviepickarr` name shown in the top-left navigation. Site body copy
+describes the action or system directly instead of naming the app as the actor.
 
 ### People
 
@@ -26,7 +37,7 @@ the watched history and stats ("Added by").
 _Avoid_: picker, picked by, owner
 
 **Next up**:
-The member whose turn it is to run movie night: draw, reveal, and mark the
+The member whose turn it is to run the draw workflow: draw, reveal, and mark the
 current draw watched. Enforced, not just shown in the hero: only the next-up
 member (or an admin) can draw, reveal, or mark watched. The turn holds on one
 member across the whole draw → reveal → watch cycle and rotates to the next
@@ -147,7 +158,7 @@ Moving a movie from stash to pool, and back. The only transitions a member
 performs by hand.
 
 **Draw**:
-The app's random selection of one pooled movie for movie night. Members add
+The app's random selection of one pooled movie. Members add
 and promote; only the app draws. Exactly one movie wins; the rest stay pooled.
 _Avoid_: pick, roll, spin (the spin is the reel animation, not the selection)
 

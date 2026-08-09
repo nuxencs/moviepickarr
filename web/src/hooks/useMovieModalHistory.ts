@@ -8,7 +8,7 @@ import type { AnyRouter } from "@tanstack/react-router";
  * The movie modal is a history entry, so browser Back closes it (#196).
  *
  * The entry rides in the router's *location state*, which never reaches the
- * URL: the selected film stays unshareable and the address bar is untouched,
+ * URL: the selected movie stays unshareable and the address bar is untouched,
  * including the Stats tab's filter params. A `?movie=` param would have got
  * Back for free and was rejected for exactly that reason, as was route
  * masking, which needs a real modal route in the tree.
@@ -19,10 +19,10 @@ import type { AnyRouter } from "@tanstack/react-router";
  * only way to leave one behind is to navigate away with the modal still up,
  * which costs nothing.
  *
- * What's stored is a token identifying the *entry*, not the film. An id would
+ * What's stored is a token identifying the *entry*, not the movie. An id would
  * be the obvious thing and is wrong: an abandoned entry (navigate away with
  * the modal open, then come back to it) keeps whatever id it had, so opening
- * that same film again and dismissing would land on an entry still claiming
+ * that same movie again and dismissing would land on an entry still claiming
  * the modal is open, leaving it stuck with every gesture spent.
  */
 declare module "@tanstack/react-router" {
@@ -53,7 +53,7 @@ export function clearMovieModalHistory(router: AnyRouter) {
 /**
  * Open/close for the movie modal, for the two tabs that show one.
  *
- * The history entry says whether the modal is open; `selected` is the film it
+ * The history entry says whether the modal is open; `selected` is the movie it
  * was opened on, kept in React so the surface survives its own exit motion
  * (the entry is gone the moment Back lands, but the modal has an animation to
  * finish). Callers derive a live movie from `selected` against whatever lists
@@ -97,7 +97,7 @@ export function useMovieModal() {
   }, [ownedToken, router]);
 
   return {
-    /** The film the modal was opened on, live through the exit motion. */
+    /** The movie the modal was opened on, live through the exit motion. */
     selected,
     /** Whether the entry this open pushed is still the one we're on. */
     isOpen: ownedToken !== null,

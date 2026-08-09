@@ -2,7 +2,7 @@
  * Query matching for the two search-driven lists — the MoviesTab watched grid
  * and the FilterBar option menus.
  *
- * Both lists grow with the library (watched films, people credited on them), so
+ * Both lists grow with the library (watched movies, people credited on them), so
  * the components defer the typed query into these helpers (useDeferredValue)
  * and render the result through a virtualizer: filtering stays off the
  * keystroke's critical path, and only the rows in view ever hit the DOM.
@@ -13,7 +13,7 @@ export function normalizeQuery(query: string): string {
   return query.trim().toLowerCase();
 }
 
-/** A watched film matches on its title or the name of whoever added it. */
+/** A watched movie matches on its title or the name of whoever added it. */
 export function filterWatched<T extends { title: string; addedByName: string }>(
   movies: readonly T[],
   query: string,

@@ -60,12 +60,12 @@ func run(reset bool) error {
 		return fmt.Errorf("%s already holds data; re-run with `make dev/fixtures-reset` to wipe and reload", dbFile)
 	}
 
-	films, err := devfixtures.LoadFilms()
+	movies, err := devfixtures.LoadMovies()
 	if err != nil {
 		return err
 	}
 	now := time.Now()
-	plan, err := devfixtures.BuildPlan(films, now)
+	plan, err := devfixtures.BuildPlan(movies, now)
 	if err != nil {
 		return err
 	}

@@ -76,7 +76,7 @@ export function RadarrInstanceDialog({
           }}
         >
           <h3 className="adm-modal__title">{title}</h3>
-          <p className="adm-modal__sub">Moviepickarr tests the live connection and credentials before saving.</p>
+          <p className="adm-modal__sub">The live connection and credentials are tested before saving.</p>
           <label className="fieldgroup">
             <span>Name</span>
             <span className="field" data-invalid={issues.name ? true : undefined}>

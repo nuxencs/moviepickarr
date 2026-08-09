@@ -110,11 +110,11 @@ var watchedBuckets = []struct {
 	{28, 366 * 24 * time.Hour, 4 * 365 * 24 * time.Hour}, // 1-4 years
 }
 
-// BuildPlan composes the developer world deterministically from films and a
+// BuildPlan composes the developer world deterministically from movies and a
 // reference time. The only thing that varies run-to-run is the absolute
 // timestamps (anchored to now); the shape (roster, counts, per-window
 // distribution, attribution) is identical every time.
-func BuildPlan(films []Film, now time.Time) (Plan, error) {
+func BuildPlan(catalog []MovieIdentity, now time.Time) (Plan, error) {
 	members := roster()
 
 	poolTotal := 0
@@ -123,14 +123,14 @@ func BuildPlan(films []Film, now time.Time) (Plan, error) {
 	}
 	stashTotal := stashPerMember * len(loginMemberIndices)
 	need := poolTotal + stashTotal + watchedCount
-	if len(films) < need {
-		return Plan{}, fmt.Errorf("dev-fixtures needs at least %d distinct films, dataset has %d", need, len(films))
+	if len(catalog) < need {
+		return Plan{}, fmt.Errorf("dev-fixtures needs at least %d distinct movies, dataset has %d", need, len(catalog))
 	}
 
 	movies := make([]Movie, 0, need)
-	next := 0 // cursor into films; each movie consumes a distinct one (unique tmdb_id)
-	take := func() Film {
-		f := films[next]
+	next := 0 // cursor into the catalog; each movie consumes a distinct one (unique tmdb_id)
+	take := func() MovieIdentity {
+		f := catalog[next]
 		next++
 		return f
 	}

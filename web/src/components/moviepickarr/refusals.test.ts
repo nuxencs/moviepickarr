@@ -103,11 +103,11 @@ describe("deleteRefusalOf", () => {
     expect(deleteRefusalOf({ status: "stash", ...open })).toBeNull();
   });
 
-  it("refuses a pooled film while the round is closed", () => {
+  it("refuses a pooled movie while the round is closed", () => {
     expect(deleteRefusalOf({ status: "pool", ...open, isLocked: true })).toBe("locked");
   });
 
-  it("refuses a pooled film while a draw is out", () => {
+  it("refuses a pooled movie while a draw is out", () => {
     expect(deleteRefusalOf({ status: "pool", ...open, drawInFlight: true })).toBe("drawing");
   });
 

@@ -49,7 +49,7 @@
   --poster-zoom: 1.06; /* hover/focus zoom for poster + avatar tiles, scaled inside their clipped frame */
   --poster-zoom-press: 1.03; /* the :active press, eased back from the hover zoom */
 
-  /* Compact film rails keep one shared target. Wrapping poster grids resolve
+  /* Compact movie rails keep one shared target. Wrapping poster grids resolve
      their own tracks against the width of the surface they occupy. */
   --poster-general: clamp(144px, 6.4vw, 164px);
   --document-scrollbar-width: 0px;
@@ -976,10 +976,10 @@
   }
 
   .statsec { margin-top: 30px; padding-top: 28px; border-top: 1px solid var(--line); }
-  /* Hugs the element above it (e.g. the films rail under the KPI strip, which
+  /* Hugs the element above it (e.g. the movies rail under the KPI strip, which
      already closes with its own bottom rule) — no second divider. */
   .statsec--flush { margin-top: 24px; padding-top: 0; border-top: none; }
-  /* The below-fold panels (everything except the flush films rail) skip layout
+  /* The below-fold panels (everything except the flush movies rail) skip layout
      and paint while off-screen — the browser renders each only as it nears the
      viewport, using the intrinsic-size placeholder to hold scroll position until
      then (it remembers the real height after the first render via `auto`). Pairs
@@ -988,7 +988,7 @@
      the fold once mounted. */
   .statsec:not(.statsec--flush) { content-visibility: auto; contain-intrinsic-size: auto 320px; }
   .statsec__title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0 0 20px; letter-spacing: -0.005em; }
-  /* Inline count ("Films in Filter View · N") baseline-aligns on its own — see the
+  /* Inline count ("Movies in Filter View · N") baseline-aligns on its own — see the
      NOTE on .statitem__val above; no vertical-align nudge. */
 
   .bar-rows { display: flex; flex-direction: column; gap: 16px; }
@@ -1071,7 +1071,7 @@
   .peoplecard__ext:hover { background: rgba(8,9,14,0.8); }
   .peoplecard__ext svg { width: 13px; height: 13px; }
 
-  /* Films-in-window rail: poster tiles of the matched films. Inline padding +
+  /* Movies-in-window rail: poster tiles of the matched movies. Inline padding +
      negative margin (as .peoplerail) and a taller top pad keep the edge tiles'
      hover/focus ring — and the -4px hover lift — clear of the scroll-container
      clip. align-items:flex-start + min-width:0 hold every tile at the shared
@@ -1094,11 +1094,11 @@
   .movietile:hover .movietile__title,
   .movietile:focus-visible .movietile__title { color: var(--accent); }
 
-  /* Filter-change motion for the stats rails (films, people, member bars), driven
+  /* Filter-change motion for the stats rails (movies, people, member bars), driven
      by useFlipRail. The hook measures each item's old→new box and animates by how
      it actually moved: persistent items glide via an inline transform set in JS,
      so an item whose position didn't change —
-     e.g. the 30d films that are a prefix of the 1y set — gets a zero delta and
+     e.g. the 30d movies that are a prefix of the 1y set — gets a zero delta and
      never moves. Newcomers fade in (data-flip-enter, set by the hook with a capped
      per-newcomer stagger via inline animation-delay) — the exit played in reverse,
      a pure opacity fade with no vertical motion; dropped items fade out
@@ -1258,7 +1258,7 @@
   .moviemodal__overview { width: 100%; margin: 14px 0 0; font-size: 14.5px; line-height: 1.62; color: var(--ink-2); text-wrap: pretty; }
   /* The links out, in the rail under the poster: quiet mono text with a small
      icon. Three ghost buttons read as three things to do; three mono lines read
-     as reference material attached to the film, which is what they are. */
+     as reference material attached to the movie, which is what they are. */
   .moviemodal__links { display: flex; flex-direction: column; gap: 7px; padding-top: 4px; border-top: 1px solid var(--line); }
   .moviemodal__links a { display: flex; align-items: center; gap: 7px; padding-top: 3px; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
   .moviemodal__links a:hover,
@@ -1311,7 +1311,7 @@
      a rule. `align-items: stretch` so the rule spans the whole block rather than
      only the line the attribution needs — a one-line right column next to a
      two-line left one still looks deliberate. The rule is on the adjacent-sibling
-     selector, so a film with no credits at all gets the attribution alone. */
+     selector, so a movie with no credits at all gets the attribution alone. */
   .moviemodal__credit { display: flex; align-items: stretch; gap: 22px; margin-top: 12px; }
   .moviemodal__credit .moviemodal__credits { margin: 0; }
   .moviemodal__credits + .moviemodal__by { padding-left: 22px; border-left: 1px solid var(--line); }
@@ -1370,7 +1370,7 @@
        both hugging the poster's foot would start on different lines. */
     .moviemodal__railfoot { display: flex; flex: none; align-items: stretch; align-self: flex-end; gap: 14px; }
     /* Stacked, the rule ran above the actions; side by side it runs between
-       them, and the actions keep their own left edge off it. A film with no
+       them, and the actions keep their own left edge off it. A movie with no
        links (nothing to divide from) gets neither. */
     /* The links open up to a 10px gap here, so the rows follow them to keep the
        31px pitch the two columns share. */

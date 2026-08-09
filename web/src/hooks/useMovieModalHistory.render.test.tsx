@@ -48,18 +48,18 @@ function movie(overrides: Partial<MovieTile> = {}): MovieTile {
 /** What both tabs do: open pushes an entry, every dismiss pops it, and the
  *  surface outlives the entry just long enough to play its exit. */
 function Subject({
-  films = [movie()],
+  movies = [movie()],
   deleteResult,
 }: {
-  films?: MovieTile[];
+  movies?: MovieTile[];
   deleteResult?: Promise<void>;
 } = {}) {
   const { selected, isOpen, open, close, onClosed } = useMovieModal();
   return (
     <>
-      {films.map((film) => (
-        <button key={film.movieID} type="button" onClick={() => open(film)}>
-          {film.title}
+      {movies.map((movie) => (
+        <button key={movie.movieID} type="button" onClick={() => open(movie)}>
+          {movie.title}
         </button>
       ))}
       {selected && (
@@ -85,10 +85,10 @@ function Subject({
 
 function mount(
   path: typeof MOVIES | typeof STATS,
-  films?: MovieTile[],
+  movies?: MovieTile[],
   deleteResult?: Promise<void>,
 ) {
-  return renderWithProviders(<Subject films={films} deleteResult={deleteResult} />, {
+  return renderWithProviders(<Subject movies={movies} deleteResult={deleteResult} />, {
     path,
     seed: () => {},
   });
@@ -187,12 +187,12 @@ describe("the history stack", () => {
     expect(document.activeElement).toBe(opener);
   });
 
-  it("stays flat however many films are opened and closed", async () => {
-    const films = [movie(), movie({ movieID: 7, title: "Stalker" }), movie({ movieID: 9, title: "Solaris" })];
-    const { router } = await mount(MOVIES, films);
+  it("stays flat however many movies are opened and closed", async () => {
+    const movies = [movie(), movie({ movieID: 7, title: "Stalker" }), movie({ movieID: 9, title: "Solaris" })];
+    const { router } = await mount(MOVIES, movies);
 
-    for (const film of films) {
-      fireEvent.click(poster(film.title));
+    for (const movie of movies) {
+      fireEvent.click(poster(movie.title));
       act(() => router.history.back());
       await runExit();
     }
@@ -207,8 +207,8 @@ describe("the history stack", () => {
     const deleteResult = new Promise<void>((resolve) => {
       finishDelete = resolve;
     });
-    const films = [movie(), movie({ movieID: 7, title: "Stalker" })];
-    const { router } = await mount(MOVIES, films, deleteResult);
+    const movies = [movie(), movie({ movieID: 7, title: "Stalker" })];
+    const { router } = await mount(MOVIES, movies, deleteResult);
 
     fireEvent.click(poster("Possession"));
     fireEvent.click(screen.getByRole("button", { name: "Delete movie" }));
@@ -231,7 +231,7 @@ describe("the history stack", () => {
 });
 
 describe("an entry left behind by navigating away", () => {
-  it("doesn't hold the modal open when the same film is opened again", async () => {
+  it("doesn't hold the modal open when the same movie is opened again", async () => {
     const { router } = await mount(MOVIES);
 
     // Leave with the modal up, which strands its entry. Let the abandoned
@@ -246,7 +246,7 @@ describe("an entry left behind by navigating away", () => {
     await runExit();
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    // Same film again: the stranded entry underneath still describes it, so
+    // Same movie again: the stranded entry underneath still describes it, so
     // an id would match and the dismissal below would land on a "still open"
     // entry with every gesture already spent.
     fireEvent.click(poster("Possession"));

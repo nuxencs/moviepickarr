@@ -73,7 +73,7 @@ type leanMovieTile struct {
 type fullMovie struct {
 	leanMovieTile
 
-	// Status is the film's client-visible place in the app (pool / stash /
+	// Status is the movie's client-visible place in the app (pool / stash /
 	// current / watched). A held winner stays projected as pooled until reveal,
 	// matching the pool listings. Detail-class only: a surface holding a full
 	// record reads it instead of guessing membership from a proxy like "has no

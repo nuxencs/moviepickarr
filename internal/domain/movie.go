@@ -120,7 +120,7 @@ type MovieMetadataRepo interface {
 	// MarkEnrichmentStale clears the credits marker so NeedsEnrichment re-selects
 	// the movie on the next drain. Used when a movie's external identity
 	// changes: the enrich queue is in-memory, so without this backstop a lost
-	// enqueue would leave the previous film's metadata and credits in place
+	// enqueue would leave the previous movie's metadata and credits in place
 	// until the periodic refresh TTL.
 	MarkEnrichmentStale(ctx context.Context, movieID int) error
 }

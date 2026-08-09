@@ -3,12 +3,12 @@ import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 
 /**
- * FLIP motion for a stats rail (films, people, member bars). Instead of fading
+ * FLIP motion for a stats rail (movies, people, member bars). Instead of fading
  * the whole list up on every filter change, each item is animated by how its box
  * actually moved between the old and new layout:
  *
  *   - persistent item, position changed  → glides (translate) to its new spot
- *   - persistent item, position unchanged → no motion (e.g. the 30d films that
+ *   - persistent item, position unchanged → no motion (e.g. the 30d movies that
  *     are a prefix of the 1y set get a zero delta and never move — the "skip the
  *     overlap" optimisation falls out for free)
  *   - newly-matched item                 → pops in (mg-fadeUp, staggered)
@@ -73,7 +73,7 @@ export function useFlipRail<T, E extends HTMLElement = HTMLDivElement>(
   const refCbs = useRef(new Map<string, (el: HTMLElement | null) => void>());
   // Positions are stored CONTAINER-RELATIVE (each item's offset from the rail's
   // own top-left), not viewport-absolute — so a reflow ABOVE the rail (e.g. the
-  // films rail tripling in height) slides the whole rail without making every
+  // movies rail tripling in height) slides the whole rail without making every
   // card glide that page-shift distance. Only movement WITHIN the rail animates.
   const prevRects = useRef(new Map<string, { left: number; top: number }>());
   // Keys present in the last committed render (non-exiting). This — not the

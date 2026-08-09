@@ -148,7 +148,7 @@ export function MembersSkeleton() {
               for it.
 
               The field gets a block even though the real one is suppressed at
-              zero films: above 900 the head is a row, so reserving it costs no
+              zero movies: above 900 the head is a row, so reserving it costs no
               vertical shift, and below 900 the head is a column, where leaving
               it out would let the field's arrival push the whole wall down.
 

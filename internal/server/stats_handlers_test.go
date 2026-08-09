@@ -696,8 +696,8 @@ func TestBuildStatsResponse_MatchedMovieIDs(t *testing.T) {
 		want    []int
 	}{
 		{name: "unfiltered keeps watch-recency order", filters: statsFilters{}, want: []int{1, 2, 3}},
-		{name: "decade narrows to its films", filters: statsFilters{ReleaseDecade: 1990}, want: []int{1, 2}},
-		{name: "year narrows to one film", filters: statsFilters{ReleaseYear: 1994}, want: []int{2}},
+		{name: "decade narrows to its movies", filters: statsFilters{ReleaseDecade: 1990}, want: []int{1, 2}},
+		{name: "year narrows to one movie", filters: statsFilters{ReleaseYear: 1994}, want: []int{2}},
 		{name: "zero match is empty not nil", filters: statsFilters{Genre: "Action", ReleaseYear: 2003}, want: []int{}},
 	}
 

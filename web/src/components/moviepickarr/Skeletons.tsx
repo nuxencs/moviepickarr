@@ -60,7 +60,7 @@ export function SkeletonPoster({ className, style }: { className?: string; style
 
 const range = (n: number) => Array.from({ length: n });
 
-/** Stats body: the KPI strip, the films rail, and the panel grid below it. */
+/** Stats body: the KPI strip, the movies rail, and the panel grid below it. */
 export function StatsBodySkeleton() {
   return (
     <>

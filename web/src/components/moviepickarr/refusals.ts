@@ -88,8 +88,8 @@ export function actionLabel(kind: ActionKind, refusal: Refusal | null): string {
   return refusal ? `${VERB[kind]}, ${REASON[refusal]}` : VERB[kind];
 }
 
-/** The statuses a film can be deleted from — the same two the server accepts.
- *  A watched film is history and the held winner is mid-draw, so neither is
+/** The statuses a movie can be deleted from — the same two the server accepts.
+ *  A watched movie is history and the held winner is mid-draw, so neither is
  *  offered the control at all: absence is the permanent boundary here, as it is
  *  on a board that isn't yours. */
 export function isDeletable(status: MovieStatus | undefined): boolean {
@@ -97,15 +97,15 @@ export function isDeletable(status: MovieStatus | undefined): boolean {
 }
 
 /**
- * Why deleting this film is refused, or null when it isn't.
+ * Why deleting this movie is refused, or null when it isn't.
  *
  * Restates the server's own two refusals (movie.Service.Delete): a draw in
  * flight freezes the pool, and a locked round fixes the candidate set, so both
- * refuse a pool film and neither touches a stash one. Stash adds aren't
+ * refuse a pool movie and neither touches a stash one. Stash adds aren't
  * lock-checked, so stash deletes aren't either.
  *
  * Precedence is drawing > locked, matching refusalOf: a mid-draw locked pool
- * film reads `a draw is in progress`, which is the part that will pass on its
+ * movie reads `a draw is in progress`, which is the part that will pass on its
  * own in a minute.
  */
 export function deleteRefusalOf({
@@ -131,7 +131,7 @@ export function deleteRefusalOf({
 /** What the modal's delete button is called: the verb, then the reason it won't
  *  run. One string for the accessible name and the tooltip, as on a tile. Not
  *  an ActionKind, because delete is not one of the two moves a tile carries —
- *  it lives on the film's own record — but it refuses in the same words. */
+ *  it lives on the movie's own record — but it refuses in the same words. */
 export function deleteLabel(refusal: Refusal | null): string {
   return refusal ? `Delete, ${REASON[refusal]}` : "Delete";
 }

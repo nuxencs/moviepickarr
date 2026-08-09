@@ -93,7 +93,7 @@ does not contain usable Admin-managed TMDB credentials, Radarr API keys, or
 Radarr webhook URLs.
 
 If the key is missing or wrong, moviepickarr still starts. Affected integrations
-report `Credential unavailable`; cached movie data and the core movie-night
+report `Credential unavailable`; cached movie data and the core draw
 workflow keep working. Radarr cannot add, search, grab, or reconcile an
 Acquisition until its selected instance credential can be read. Webhook
 deliveries with an unreadable URL fail without changing the Acquisition.

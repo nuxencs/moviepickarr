@@ -707,7 +707,7 @@ export const TMDBSettingsForm = memo(function TMDBSettingsForm({
         <SettingRow
           id="enabled"
           label="Enabled"
-          help="Allow moviepickarr to search TMDB and fetch metadata."
+          help="Allow TMDB searches and metadata fetching."
           setting={settings.enabled}
           defaultLabel={settings.enabled.default ? "Enabled" : "Disabled"}
           staged={staged("enabled")}

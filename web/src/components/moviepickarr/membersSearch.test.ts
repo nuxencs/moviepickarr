@@ -42,7 +42,7 @@ describe("validateMembersSearch", () => {
   });
 
   // The second half of the address: whose pool the rail has open, and whether
-  // you have gone on to their films (#236).
+  // you have gone on to their movies (#236).
   it("takes the stash flag as a boolean and as the string off a URL", () => {
     expect(validateMembersSearch({ member: 4, stash: true })).toEqual({ member: 4, stash: true });
     expect(validateMembersSearch({ member: "4", stash: "true" })).toEqual({

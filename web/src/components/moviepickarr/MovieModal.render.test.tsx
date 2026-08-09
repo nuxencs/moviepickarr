@@ -10,7 +10,7 @@
    columns) is CSS, and jsdom has no layout engine — those are verified in a
    real browser. What jsdom holds: the credit rows exist while loading (so the
    block can't grow under the reader), the attribution sits in the credit block
-   instead of the overview's tail, the watched line is gated on a watched film,
+   instead of the overview's tail, the watched line is gated on a watched movie,
    and the external links are links rather than buttons.
 
    The router `Link` behind the genre/year chips and the detail fetch are the
@@ -145,7 +145,7 @@ function renderModal({
 }: {
   movie?: MovieTile;
   detail?: MovieDetail;
-  /** The session member. Left out, /auth/me never lands and nobody owns the film. */
+  /** The session member. Left out, /auth/me never lands and nobody owns the movie. */
   meID?: number;
   locked?: boolean;
   drawInProgress?: boolean;
@@ -241,7 +241,7 @@ describe("MovieModal", () => {
     ).toBeTruthy();
   });
 
-  it("dates the watch beside the attribution on a watched film", () => {
+  it("dates the watch beside the attribution on a watched movie", () => {
     const { dialog } = renderModal({
       movie: lean({ watchedAt: "2026-07-21T20:00:00Z" }),
       detail: detailed({ watchedAt: "2026-07-21T20:00:00Z" }),
@@ -250,13 +250,13 @@ describe("MovieModal", () => {
     expect(attribution(dialog).textContent).toMatch(/Watched/);
   });
 
-  it("says nothing about a watch on a pooled film", () => {
+  it("says nothing about a watch on a pooled movie", () => {
     const { dialog } = renderModal({ detail: detailed() });
 
     expect(attribution(dialog).textContent).not.toMatch(/Watched/);
   });
 
-  /* The adder's name is the way from a film to the person who stashed it
+  /* The adder's name is the way from a movie to the person who stashed it
      (#238). The address is the rail's: /users?member=<id>. Asserted on the lean
      object, with no detail seeded: the id is on the tile, so the link is there
      from the first frame on every surface the modal opens from. */
@@ -318,7 +318,7 @@ describe("MovieModal", () => {
     expect(close.closest(".modal__scroll")).toBeNull();
   });
 
-  it("keeps the cast strip out of the way when the film has no cast", () => {
+  it("keeps the cast strip out of the way when the movie has no cast", () => {
     const { dialog } = renderModal({ detail: detailed({ cast: [] }) });
 
     expect(dialog.querySelector(".castrow")).toBeNull();
@@ -351,7 +351,7 @@ describe("MovieModal hero", () => {
     await vi.waitFor(() => expect(heroPreload(dialog)?.src ?? "").toContain("backdrop.jpg"));
   });
 
-  it("stands the poster in once the detail says the film has no backdrop", () => {
+  it("stands the poster in once the detail says the movie has no backdrop", () => {
     const { dialog } = renderModal({ detail: detailed({ backdropPath: undefined }) });
 
     expect(heroPreload(dialog)?.src ?? "").toContain("poster.jpg");
@@ -400,7 +400,7 @@ describe("MovieModal hero", () => {
 });
 
 /* ------------------------------------------------------------
-   The action pair (#237): rename and delete on the film's own record.
+   The action pair (#237): rename and delete on the movie's own record.
 
    Which refusal a delete meets and how it reads is pure, and refusals.test.ts
    owns that table. Here is what only the rendered record can answer: who is
@@ -423,7 +423,7 @@ describe("MovieModal actions", () => {
   });
 
   it("keeps delete inert until the round state is known", () => {
-    // No lock seeded, so that query never lands: a pooled film in a round the
+    // No lock seeded, so that query never lands: a pooled movie in a round the
     // page can't describe yet must not offer a delete the server would refuse
     // after the confirm.
     renderModal({ meID: ADDER_ID, detail: detailed({ status: "pool" }) });
@@ -514,7 +514,7 @@ describe("MovieModal actions", () => {
     expect(APIClient.settings.getPoolState).not.toHaveBeenCalled();
   });
 
-  it("offers nothing on somebody else's film", () => {
+  it("offers nothing on somebody else's movie", () => {
     renderModal({ meID: ADDER_ID + 1, locked: false, detail: detailed({ status: "stash" }) });
 
     expect(edit()).toBeNull();
@@ -528,7 +528,7 @@ describe("MovieModal actions", () => {
     expect(del()).toBeNull();
   });
 
-  it("deletes a stash film whatever the round is doing", () => {
+  it("deletes a stash movie whatever the round is doing", () => {
     renderModal({
       meID: ADDER_ID,
       locked: true,
@@ -540,13 +540,13 @@ describe("MovieModal actions", () => {
     expect(del()?.getAttribute("aria-label")).toBe("Delete");
   });
 
-  it("does not read pool state for a stash film", () => {
+  it("does not read pool state for a stash movie", () => {
     renderModal({ meID: ADDER_ID, detail: detailed({ status: "stash" }) });
 
     expect(APIClient.settings.getPoolState).not.toHaveBeenCalled();
   });
 
-  it("says nothing about deleting a watched film, but still lets it be renamed", () => {
+  it("says nothing about deleting a watched movie, but still lets it be renamed", () => {
     renderModal({
       meID: ADDER_ID,
       detail: detailed({ status: "watched", watchedAt: "2026-07-21T20:00:00Z" }),
@@ -556,7 +556,7 @@ describe("MovieModal actions", () => {
     expect(del()).toBeNull();
   });
 
-  it("refuses a pooled film in place while the round is closed", () => {
+  it("refuses a pooled movie in place while the round is closed", () => {
     renderModal({ meID: ADDER_ID, locked: true, detail: detailed({ status: "pool" }) });
 
     const button = del();
@@ -623,7 +623,7 @@ describe("MovieModal actions", () => {
     expect(record.hasAttribute("inert")).toBe(true);
   });
 
-  it("opens the delete confirm on an allowed film, and its success closes the record", async () => {
+  it("opens the delete confirm on an allowed movie, and its success closes the record", async () => {
     const { onRequestClose } = renderModal({
       meID: ADDER_ID,
       locked: false,

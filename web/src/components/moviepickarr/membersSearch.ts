@@ -22,7 +22,7 @@ export interface MembersSearch {
    * view.
    *
    * Two levels, because the narrow layout has two: `member` says whose pool the
-   * rail has open, and this says you have gone on to their films. One key
+   * rail has open, and this says you have gone on to their movies. One key
    * cannot say both, and a phone that could only reach a member by leaving the
    * rail would have no way to see anybody else's pool.
    *

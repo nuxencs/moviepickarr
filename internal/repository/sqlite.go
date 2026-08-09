@@ -707,7 +707,7 @@ func (d *SqliteMoviesRepository) EditMovie(
 	}
 
 	if identityChanged {
-		// Credits and metadata describe the prior film, so do not serve them while
+		// Credits and metadata describe the prior movie, so do not serve them while
 		// the replacement identity awaits enrichment. Delete only the movie joins;
 		// people are shared across movies and stay in place.
 		if _, err := tx.ExecContext(ctx,

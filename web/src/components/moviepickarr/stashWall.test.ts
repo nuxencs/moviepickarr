@@ -10,7 +10,7 @@ import {
 
 import type { MovieTile } from "@/types/Response";
 
-function film(movieID: number, title: string): MovieTile {
+function movie(movieID: number, title: string): MovieTile {
   return {
     movieID,
     title,
@@ -21,7 +21,7 @@ function film(movieID: number, title: string): MovieTile {
   };
 }
 
-const stash = [film(1, "Dune"), film(2, "Dune: Part Two"), film(3, "Arrival")];
+const stash = [movie(1, "Dune"), movie(2, "Dune: Part Two"), movie(3, "Arrival")];
 
 describe("filterStash", () => {
   it("keeps the whole stash when nothing is typed", () => {
@@ -64,7 +64,7 @@ describe("nextCell", () => {
   const COLS = 6;
   const from = (index: number, key: string) => nextCell(key, index, CELLS, COLS);
 
-  it("steps a film at a time left and right, in the wall's own order", () => {
+  it("steps a movie at a time left and right, in the wall's own order", () => {
     expect(from(0, "ArrowRight")).toBe(1);
     expect(from(6, "ArrowLeft")).toBe(5);
     // Across a row boundary, because the order the wall reads in is one run and
@@ -89,7 +89,7 @@ describe("nextCell", () => {
     expect(from(13, "ArrowRight")).toBeNull();
     expect(from(2, "ArrowUp")).toBeNull();
     // Down out of the last full row, over a third row that is two cells long:
-    // no cell there, so focus stays put rather than sliding to the last film.
+    // no cell there, so focus stays put rather than sliding to the last movie.
     expect(from(9, "ArrowDown")).toBeNull();
     expect(from(6, "ArrowDown")).toBe(12);
   });
@@ -105,7 +105,7 @@ describe("nextCell", () => {
     expect(nextCell("ArrowRight", 0, 0, 6)).toBeNull();
   });
 
-  it("is a single column when the wall is one film wide", () => {
+  it("is a single column when the wall is one movie wide", () => {
     expect(nextCell("ArrowDown", 0, 3, 1)).toBe(1);
     expect(nextCell("ArrowRight", 0, 3, 1)).toBe(1);
   });
@@ -134,7 +134,7 @@ describe("columnCount", () => {
 
   it("floors at one column when there is nothing to read", () => {
     // jsdom has no layout and no stylesheet, and a wall that has not been laid
-    // out yet answers `none`. One column still moves, a film at a time.
+    // out yet answers `none`. One column still moves, a movie at a time.
     expect(columnCount("")).toBe(1);
     expect(columnCount("none")).toBe(1);
   });

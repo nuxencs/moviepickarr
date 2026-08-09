@@ -1,4 +1,4 @@
-import { CalendarClockIcon, FilmIcon, LinkIcon, Loader2Icon, XIcon } from "lucide-react";
+import { CalendarClockIcon, FilmIcon as MovieIcon, LinkIcon, Loader2Icon, XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { Modal } from "@/components/moviepickarr/Modal";
@@ -124,7 +124,7 @@ export function EditMovieDialog({
                 <h3>Edit movie</h3>
                 {/* Two readings, not one with a clause bolted on: without the
                     watched date the list is a pair and takes "and", not a
-                    trailing comma. The movie modal opens this dialog on films
+                    trailing comma. The movie modal opens this dialog on movies
                     that have no watched date (#237), so that branch is drawn
                     now. */}
                 <p>{allowWatchedAtEdit ? "Update the title, link, and watched date." : "Update the title and link."}</p>
@@ -137,7 +137,7 @@ export function EditMovieDialog({
 
           <div className="modal__body">
             <label className="field">
-              <FilmIcon />
+              <MovieIcon />
               <input
                 name="movie-title"
                 aria-label="Movie title"

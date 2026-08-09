@@ -69,7 +69,7 @@ export interface MembersStatus {
  *
  * The numerator is whatever the caller passes and nothing here adjusts it for a
  * draw. The server keeps the pool frozen with the winner still in it until the
- * reveal, so a moving numerator would say a film had been drawn.
+ * reveal, so a moving numerator would say a movie had been drawn.
  */
 export function membersStatus(
   occupancy: RosterOccupancy,

@@ -392,7 +392,7 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	_ = c.BodyParser(&body)
 
 	var drawn drawnPayload
-	ran, err := h.runMovieNightCommand(c, func() error {
+	ran, err := h.runDrawCommand(c, func() error {
 		drawResult, drawErr := h.movieService.DrawRandom(ctx, sanitizeInput(body.ClientID))
 		if drawErr != nil {
 			return drawErr
@@ -494,7 +494,7 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 // Idempotent: a second confirm (or a confirm with no active draw) is a quiet
 // no-op, so racing clients don't double-fire the reveal.
 func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
-	ran, err := h.runMovieNightCommand(c, func() error {
+	ran, err := h.runDrawCommand(c, func() error {
 		_, _, revealErr := h.movieService.RevealCurrentDrawContext(c.UserContext())
 		return revealErr
 	})
@@ -510,7 +510,7 @@ func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
 func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 	var payload fullMovie
-	ran, err := h.runMovieNightCommand(c, func() error {
+	ran, err := h.runDrawCommand(c, func() error {
 		watched, next, changed, watchErr := h.movieService.MarkCurrentAsWatchedAndAdvanceNextUp(ctx)
 		if watchErr != nil {
 			if !errors.Is(watchErr, domain.ErrNoCurrentDraw) {

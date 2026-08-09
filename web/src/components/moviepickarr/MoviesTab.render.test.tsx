@@ -29,7 +29,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 const poolMovie: MovieTile = {
   movieID: 1,
-  title: "Pool Film",
+  title: "Pool Movie",
   link: "",
   addedAt: "2026-07-22T10:00:00Z",
   addedByID: 7,
@@ -41,7 +41,7 @@ const poolMovie: MovieTile = {
 const watchedMovie: MovieTile = {
   ...poolMovie,
   movieID: 2,
-  title: "Watched Film",
+  title: "Watched Movie",
   posterPath: "/watched.jpg",
   watchedAt: "2026-07-28T20:00:00Z",
 };
@@ -89,8 +89,8 @@ describe("Movies poster sources", () => {
   it("provides responsive candidates for fluid pool and watched grids", async () => {
     await renderTab();
 
-    const pool = screen.getByRole("img", { name: "Pool Film" });
-    const watched = screen.getByRole("img", { name: "Watched Film" });
+    const pool = screen.getByRole("img", { name: "Pool Movie" });
+    const watched = screen.getByRole("img", { name: "Watched Movie" });
 
     expect(pool.getAttribute("sizes")).toBe("auto, 342px");
     expect(pool.getAttribute("srcset")).toBe(candidates("pool.jpg"));
@@ -106,7 +106,7 @@ describe("Movies poster sources", () => {
     fireEvent.click(screen.getByRole("button", { name: "List view" }));
 
     const watched = await waitFor(() =>
-      screen.getByRole("img", { name: "Watched Film" }),
+      screen.getByRole("img", { name: "Watched Movie" }),
     );
     expect(watched.getAttribute("sizes")).toBe("auto, 44px");
     expect(watched.getAttribute("srcset")).toBe(candidates("watched.jpg"));

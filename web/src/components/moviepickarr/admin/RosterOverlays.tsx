@@ -337,7 +337,7 @@ export function ForbiddenState({ onLeave }: { onLeave: () => void }) {
       </p>
       <button type="button" className="btn btn--accent adm-forbidden__btn" onClick={onLeave}>
         <ArrowLeftIcon aria-hidden="true" />
-        Back to movie night
+        Back to Movies
       </button>
     </div>
   );

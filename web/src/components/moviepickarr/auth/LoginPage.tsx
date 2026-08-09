@@ -62,7 +62,7 @@ export function LoginPage() {
         }}
       >
         <div className="auth__eyebrow">Welcome back</div>
-        <h1 className="auth__title">Sign in to movie night</h1>
+        <h1 className="auth__title">Sign in</h1>
         <BannerRow banner={banner} />
         <label className="field auth__field">
           <UserIcon />

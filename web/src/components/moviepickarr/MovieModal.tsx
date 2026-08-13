@@ -65,8 +65,9 @@ function GhostCreditRow({ w }: { w: number }) {
 /** Modal hero backdrop — the wide-format twin of `Poster`. The procedural
  *  duotone (backdropBg) is painted underneath as the instant first frame, so a
  *  slow TMDB CDN fetch cannot flash the surface through (pure white in light
- *  mode). The photograph becomes the scroll owner's background after it loads.
- *  Native scrollbar chrome therefore paints over the backdrop in WebKit. */
+ *  mode). The photograph becomes a full-width decorative layer after it loads.
+ *  The layer overscans the scroll owner's safe width so native scrollbar chrome
+ *  paints above artwork instead of an empty surface strip. */
 function HeroBackdrop({
   hue,
   src,
@@ -126,7 +127,12 @@ function HeroBackdrop({
     : `100% 100%, 100% ${fadeHeight}, 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height)`;
 
   return (
-    <div className="modal__scroll moviemodal__scroll" style={{ backgroundImage, backgroundSize }}>
+    <div className="modal__scroll moviemodal__scroll">
+      <div
+        className="moviemodal__backdrop"
+        style={{ backgroundImage, backgroundSize }}
+        aria-hidden="true"
+      />
       <div className="moviemodal__hero">
         {url && (
           <img

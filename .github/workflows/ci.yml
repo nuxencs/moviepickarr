@@ -63,6 +63,14 @@ jobs:
         working-directory: web
         run: bun run test
 
+      - name: Install Chromium
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+
+      - name: Test web frontend in Chromium
+        working-directory: web
+        run: bun run test:e2e
+
       # `bun run build` is `tsc -b && vite build`, so this typechecks the
       # frontend as well as producing the bundle the Go binary embeds.
       - name: Build web frontend

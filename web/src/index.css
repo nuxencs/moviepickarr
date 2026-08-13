@@ -201,7 +201,7 @@
   }
 
   body {
-    --active-document-scrollbar-width: var(--document-scrollbar-width);
+    --document-frame-offset: 0px;
     height: 100dvh;
     font-family: var(--font-ui);
     background: var(--bg);
@@ -216,14 +216,14 @@
   /* These surfaces own their own vertical movement. Remove the unused body
      gutter while they are active and let their named owners reserve geometry. */
   body:has(.auth) {
-    --active-document-scrollbar-width: 0px;
+    --document-frame-offset: var(--document-scrollbar-width);
     overflow-y: hidden;
     scrollbar-gutter: auto;
   }
 
   @media (min-width: 901px) {
     body:has(.shell--admin) {
-      --active-document-scrollbar-width: 0px;
+      --document-frame-offset: var(--document-scrollbar-width);
       overflow-y: hidden;
       scrollbar-gutter: auto;
     }
@@ -231,7 +231,7 @@
 
   @media (min-width: 761px) {
     body:has(.mem) {
-      --active-document-scrollbar-width: 0px;
+      --document-frame-offset: var(--document-scrollbar-width);
       overflow-y: hidden;
       scrollbar-gutter: auto;
     }
@@ -537,6 +537,7 @@
      an independently composited fixed blur above the owner's native scrollbar. */
   .nav {
     position: sticky; top: 0; z-index: 40;
+    margin-inline-end: var(--document-frame-offset);
     background: color-mix(in oklab, var(--bg) 94%, transparent);
     border-bottom: 1px solid var(--line);
   }
@@ -1229,13 +1230,21 @@
      backdrop, then a rail of poster + links out beside the reading column, then the
      cast strip. The width is what makes the rest work: the overview stops running
      narrow next to the poster and the cast strip shows nine cards before it scrolls. */
-  /* The backdrop is the scroll owner's background, not a descendant layer.
-     WebKit therefore paints the owner's native scrollbar above it. The first
-     background layer turns opaque below the hero so the photograph cannot
-     leak through the record body. */
-  .moviemodal__scroll { background-position: top center; background-repeat: no-repeat; background-attachment: local; }
+  /* The scroller reserves safe content geometry. Its first child overscans that
+     width by the measured native gutter, so decorative pixels continue beneath
+     the scrollbar without widening required content or creating horizontal
+     movement. The layer stays in the scroll flow's paint plane, with no z-index
+     or compositor of its own, so native scrollbar chrome remains above it. */
+  .moviemodal__scroll { position: relative; overflow-x: hidden; }
+  .moviemodal__backdrop {
+    position: absolute; top: 0; left: 0;
+    width: calc(100% + var(--document-scrollbar-width));
+    height: calc(var(--moviemodal-hero-height) + 1px);
+    pointer-events: none;
+    background-position: top center; background-repeat: no-repeat;
+  }
   /* Clip the shimmer to the hero. The hero itself stays transparent because
-     the backdrop and both scrims belong to the scrollbar's paint owner. */
+     the backdrop and both scrims belong to the overscanned decorative layer. */
   .moviemodal__hero { position: relative; height: var(--moviemodal-hero-height); overflow: hidden; }
   .moviemodal__hero__shimmer {
     position: absolute; inset: 0; pointer-events: none;
@@ -1461,7 +1470,7 @@
   /* Bottom tab bar: styled here, revealed below 900 (the block further down). */
   .navbar-bottom {
     display: none;
-    position: fixed; left: 0; right: var(--active-document-scrollbar-width); bottom: 0; z-index: 40;
+    position: fixed; left: 0; right: var(--document-scrollbar-width); bottom: 0; z-index: 40;
     grid-auto-flow: column; grid-auto-columns: 1fr;
     background: color-mix(in oklab, var(--bg) 94%, transparent);
     border-top: 1px solid var(--line);

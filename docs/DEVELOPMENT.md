@@ -42,6 +42,18 @@ The web tests are split into two vitest projects (`web/vitest.config.ts`):
 
 Run one project with `bunx vitest run --project dom` (or `--project node`).
 
+Browser layout and interaction regressions live under `web/e2e/`. Install the
+browser once, then run the focused Playwright suite:
+
+```bash
+cd web
+bunx playwright install chromium
+bun run test:e2e
+```
+
+CI runs this suite after vitest. The tests mock API responses and start Vite,
+so they do not require the Go backend or a fixture database.
+
 Vite hot-reloads the frontend only. After Go changes, restart the backend pane
 before verifying anything.
 

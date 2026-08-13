@@ -8,7 +8,11 @@ bun run dev       # Vite dev server (proxies /api + SSE to the Go backend on :30
 bun run build     # tsc -b && vite build → dist/ (the Go binary embeds this)
 bun run lint      # eslint
 bun run test      # vitest: the `node` project (pure logic) + `dom` (jsdom render tests)
+bun run test:e2e  # Playwright: browser layout and interaction regressions
 ```
+
+Install the browser once with `bunx playwright install chromium` before the
+first end-to-end run.
 
 For the full dev loop (Vite + Go side by side) run `make dev` from the repo root.
 

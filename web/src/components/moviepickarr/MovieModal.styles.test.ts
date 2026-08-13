@@ -7,11 +7,16 @@ const heroStart = css.indexOf(".moviemodal__hero {");
 const heroEnd = css.indexOf(".moviemodal__body {", heroStart);
 const heroCSS = css.slice(heroStart, heroEnd);
 const scrollerRule = css.match(/\.moviemodal__scroll\s*\{[^}]*\}/)?.[0] ?? "";
+const backdropRule = css.match(/\.moviemodal__backdrop\s*\{[^}]*\}/)?.[0] ?? "";
 
 describe("the movie-modal hero contract", () => {
-  it("paints the photograph on the scroll owner instead of a competing image layer", () => {
+  it("overscans decorative artwork beneath the native scrollbar", () => {
     expect(heroCSS).toContain("overflow: hidden");
-    expect(scrollerRule).toContain("background-attachment: local");
+    expect(scrollerRule).toContain("position: relative");
+    expect(scrollerRule).toContain("overflow-x: hidden");
+    expect(backdropRule).toContain("position: absolute");
+    expect(backdropRule).toContain("width: calc(100% + var(--document-scrollbar-width))");
+    expect(backdropRule).not.toContain("z-index:");
     expect(heroCSS).not.toContain("isolation:");
     expect(heroCSS).not.toContain(".moviemodal__hero::after");
     expect(heroCSS).not.toMatch(/\.moviemodal__hero__img/);

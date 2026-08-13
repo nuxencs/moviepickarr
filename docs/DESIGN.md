@@ -4,9 +4,10 @@ The web UI is a single, bespoke design language called **moviepickarr (MG)**. Th
 document is the durable record of how it works and the decisions behind it, so we
 don't re-litigate them each session.
 
-**Source of truth for values:** `web/src/index.css` (tokens in `:root`/`.dark`/`.light`,
-component classes under `@layer components`). This doc explains the system and the
-rules; the CSS holds the exact numbers. When they disagree, fix one to match.
+**Source of truth for values:** `web/src/index.css` holds shared tokens and component
+classes. A component can import a co-located stylesheet for styles that have no other
+consumer, such as `movie-scrollbar.css`. This doc explains the system and the rules;
+the CSS holds the exact numbers. When they disagree, fix one to match.
 
 Register: **product** (design serves the task; earned familiarity over novelty).
 
@@ -479,11 +480,12 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   buttons). Width tiers: browse surfaces grow from 960px to 1760px, movie records
   grow from 880px to 1120px, and focused forms remain 460px.
 - **Two scroll modes.** By default the veil scrolls and the surface grows to its
-  content. Its 56px of breathing room is two spacer items in a flex column rather
-  than block padding, because a scroll container's bottom padding is not part of its
-  scrollable overflow and a tall dialog would otherwise park flush against the window
-  edge. `<Modal capped>` switches to the other mode: the veil stops scrolling
-  (`:has(.modal--capped)` centers it and hides the spacers), the generic surface caps
+  content. Explicit 56px grid tracks provide breathing room above and below it.
+  Block padding is not part of a scroll container's bottom overflow, and Firefox
+  omits a trailing flex pseudo-element from that overflow, so either alternative can
+  leave a tall dialog flush against the window edge. `<Modal capped>` switches to the
+  other mode: the veil becomes a centered flex container and hides the spacer tracks,
+  the generic surface caps
   against `--modal-block-max` and lays out as a flex column, and the part marked
   `.modal__scroll` scrolls inside it with `overscroll-behavior: contain` so the page
   behind never chains. Chrome outside that region (a close X, a head) stays put while
@@ -491,7 +493,13 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   detail modal is the exception to vertical centering: it starts at
   `--modal-record-top`, sizes to its content, and caps against the remaining viewport
   height. Its close X is pinned to the surface, so it holds its corner while the
-  backdrop scrolls under it.
+  backdrop scrolls under it. Movie records use inset custom scrollbars for their
+  vertical details and horizontal cast strip. The native owners remain underneath
+  for wheel, touch, and momentum scrolling, but their browser chrome is hidden on
+  these two owners. The overlay rails do not reserve layout space, so the backdrop
+  and cast geometry stay identical across browser scrollbar settings. Both rails
+  support dragging, track paging, and keyboard scrolling. Their narrow thumbs have
+  larger invisible hit targets so a near miss starts a drag instead of a page action.
 
 Destructive confirms (`DeletionDialog`) use the same `Modal`: dismissing (Esc / veil /
 Cancel) is the safe choice, so outside-click dismiss is intentional; only the explicit

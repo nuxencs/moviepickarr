@@ -330,8 +330,8 @@ describe("MovieModal hero", () => {
     return dialog.querySelector(".moviemodal__hero") as HTMLElement;
   }
 
-  function scroller(dialog: HTMLElement) {
-    return dialog.querySelector(".modal__scroll") as HTMLElement;
+  function backdrop(dialog: HTMLElement) {
+    return dialog.querySelector(".moviemodal__backdrop") as HTMLElement;
   }
 
   function heroPreload(dialog: HTMLElement) {
@@ -367,7 +367,7 @@ describe("MovieModal hero", () => {
     expect(preload.className).toContain("moviemodal__hero__preload--wash");
     expect(preload.src).toContain("w185");
     fireEvent.load(preload);
-    expect(scroller(dialog).style.backgroundImage).toContain("rgba(8, 9, 14, 0.68)");
+    expect(backdrop(dialog).style.backgroundImage).toContain("rgba(8, 9, 14, 0.68)");
   });
 
   it("leaves a real backdrop sharp", async () => {
@@ -375,23 +375,23 @@ describe("MovieModal hero", () => {
 
     await vi.waitFor(() => expect(heroPreload(dialog)?.src ?? "").toContain("backdrop.jpg"));
     expect(heroPreload(dialog)?.className).not.toContain("--wash");
-    expect(scroller(dialog).style.backgroundImage).not.toContain("rgba(8, 9, 14, 0.68)");
+    expect(backdrop(dialog).style.backgroundImage).not.toContain("rgba(8, 9, 14, 0.68)");
   });
 
-  it("preloads the photograph before painting it behind the modal scrollbar", () => {
+  it("preloads the photograph before painting it beneath the modal scrollbar", () => {
     const { dialog } = renderModal({ detail: detailed() });
     const preload = heroPreload(dialog)!;
 
     expect(preload.hidden).toBe(true);
-    expect(scroller(dialog).style.backgroundImage).not.toContain("backdrop.jpg");
+    expect(backdrop(dialog).style.backgroundImage).not.toContain("backdrop.jpg");
 
     fireEvent.load(preload);
 
-    expect(scroller(dialog).style.backgroundImage).toContain("backdrop.jpg");
-    expect(scroller(dialog).style.backgroundImage).toContain("transparent 72%");
+    expect(backdrop(dialog).style.backgroundImage).toContain("backdrop.jpg");
+    expect(backdrop(dialog).style.backgroundImage).toContain("transparent 72%");
     // Do not let the fade and body mask meet on the same device-pixel edge.
     // Safari and Firefox can round those independently and expose the backdrop.
-    expect(scroller(dialog).style.backgroundSize).toContain(
+    expect(backdrop(dialog).style.backgroundSize).toContain(
       "calc(var(--moviemodal-hero-height) + 1px)",
     );
     expect(hero(dialog).style.backgroundImage).not.toContain("backdrop.jpg");

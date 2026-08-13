@@ -201,7 +201,7 @@
   }
 
   body {
-    --active-document-scrollbar-width: var(--document-scrollbar-width);
+    --document-frame-offset: 0px;
     height: 100dvh;
     font-family: var(--font-ui);
     background: var(--bg);
@@ -216,14 +216,14 @@
   /* These surfaces own their own vertical movement. Remove the unused body
      gutter while they are active and let their named owners reserve geometry. */
   body:has(.auth) {
-    --active-document-scrollbar-width: 0px;
+    --document-frame-offset: var(--document-scrollbar-width);
     overflow-y: hidden;
     scrollbar-gutter: auto;
   }
 
   @media (min-width: 901px) {
     body:has(.shell--admin) {
-      --active-document-scrollbar-width: 0px;
+      --document-frame-offset: var(--document-scrollbar-width);
       overflow-y: hidden;
       scrollbar-gutter: auto;
     }
@@ -231,7 +231,7 @@
 
   @media (min-width: 761px) {
     body:has(.mem) {
-      --active-document-scrollbar-width: 0px;
+      --document-frame-offset: var(--document-scrollbar-width);
       overflow-y: hidden;
       scrollbar-gutter: auto;
     }
@@ -537,9 +537,12 @@
      an independently composited fixed blur above the owner's native scrollbar. */
   .nav {
     position: sticky; top: 0; z-index: 40;
+    margin-inline-end: var(--document-frame-offset);
     background: color-mix(in oklab, var(--bg) 94%, transparent);
-    border-bottom: 1px solid var(--line);
   }
+  /* The content stays inside the stable document frame, but its decorative
+     divider crosses the reserved native gutter and reaches the viewport edge. */
+  .nav::after { content: ""; position: absolute; left: 0; bottom: 0; width: 100vw; border-bottom: 1px solid var(--line); pointer-events: none; }
   .nav__inner { max-width: var(--page-max); margin: 0 auto; padding: 0 32px; height: 62px; display: flex; align-items: center; gap: 30px; }
   @media (max-width: 700px) { .nav__inner { padding: 0 18px; gap: 16px; } }
   /* The wordmark (an <h1>) is a home control: its inner link returns to the
@@ -1153,17 +1156,15 @@
   .hourchart--decades .hourchart__axis span { flex: 0 1 72px; font-size: 10.5px; }
 
   /* ---- Search modal ---- */
-  .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; padding: 0 20px; overflow-y: auto; scrollbar-gutter: stable; animation: mg-fadeIn var(--dur-base) var(--ease); }
-  /* The breathing room above and below the surface is two spacer items, not the
-     veil's block padding: a scroll container's bottom padding is not part of its
-     scrollable overflow, so a dialog taller than the window used to park flush
-     against the bottom edge (an 841px surface in an 806px window scrolled to 897 =
-     56 + 841, no padding left in sight). Items are, so the 56px survives the scroll
-     to the end. `flex: none` throughout, because the surface clips its own overflow
-     and so has an automatic minimum size of 0: without it the surface is squashed to
-     the window instead of overflowing it. */
-  .modal-veil > *, .modal-veil::before, .modal-veil::after { flex: none; }
-  .modal-veil::before, .modal-veil::after { content: ""; height: 56px; }
+  .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px max-content 56px; justify-items: center; align-items: start; padding: 0 20px; overflow-y: auto; scrollbar-gutter: stable; animation: mg-fadeIn var(--dur-base) var(--ease); }
+  /* Explicit grid tracks keep the breathing room in the scrollable layout.
+     Firefox excludes a trailing pseudo-element from a column flex container's
+     scrollable overflow even when the element has a fixed size. A grid track is
+     layout geometry in every engine, so a tall dialog keeps 56px at both ends. */
+  .modal-veil::before, .modal-veil::after { content: ""; width: 0; }
+  .modal-veil::before { grid-row: 1; }
+  .modal-veil > .modal { grid-row: 2; }
+  .modal-veil::after { grid-row: 3; }
   .modal-veil--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
   .modal { width: min(var(--modal-browse-max), 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
   /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
@@ -1182,7 +1183,7 @@
      under a tall dialog. `position: relative` anchors pinned chrome to the surface,
      while `overscroll-behavior` keeps a wheel over that chrome from chaining to the
      page. Opt-in: form dialogs are short and should keep sizing to their content. */
-  .modal-veil:has(.modal--capped) { justify-content: center; overflow: hidden; overscroll-behavior: contain; }
+  .modal-veil:has(.modal--capped) { display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; overscroll-behavior: contain; }
   .modal-veil:has(.modal--capped)::before, .modal-veil:has(.modal--capped)::after { display: none; }
   .modal-veil:has(.modal--movie.modal--capped) { justify-content: flex-start; padding-block: var(--modal-record-top) 48px; }
   .modal--capped { position: relative; max-height: min(var(--modal-block-max), calc(100dvh - 96px)); display: flex; flex-direction: column; min-height: 0; }
@@ -1229,13 +1230,19 @@
      backdrop, then a rail of poster + links out beside the reading column, then the
      cast strip. The width is what makes the rest work: the overview stops running
      narrow next to the poster and the cast strip shows nine cards before it scrolls. */
-  /* The backdrop is the scroll owner's background, not a descendant layer.
-     WebKit therefore paints the owner's native scrollbar above it. The first
-     background layer turns opaque below the hero so the photograph cannot
-     leak through the record body. */
-  .moviemodal__scroll { background-position: top center; background-repeat: no-repeat; background-attachment: local; }
+  /* The scroller keeps the decorative layer in its paint plane. Its first child
+     uses the movie surface's complete container width, so the custom overlay
+     scrollbar never reserves a strip in the backdrop. */
+  .moviemodal__scroll { position: relative; overflow-x: hidden; }
+  .moviemodal__backdrop {
+    position: absolute; top: 0; left: 0;
+    width: 100cqi;
+    height: calc(var(--moviemodal-hero-height) + 1px);
+    pointer-events: none;
+    background-position: top center; background-repeat: no-repeat;
+  }
   /* Clip the shimmer to the hero. The hero itself stays transparent because
-     the backdrop and both scrims belong to the scrollbar's paint owner. */
+     the backdrop and both scrims belong to the overscanned decorative layer. */
   .moviemodal__hero { position: relative; height: var(--moviemodal-hero-height); overflow: hidden; }
   .moviemodal__hero__shimmer {
     position: absolute; inset: 0; pointer-events: none;
@@ -1461,7 +1468,7 @@
   /* Bottom tab bar: styled here, revealed below 900 (the block further down). */
   .navbar-bottom {
     display: none;
-    position: fixed; left: 0; right: var(--active-document-scrollbar-width); bottom: 0; z-index: 40;
+    position: fixed; left: 0; right: var(--document-scrollbar-width); bottom: 0; z-index: 40;
     grid-auto-flow: column; grid-auto-columns: 1fr;
     background: color-mix(in oklab, var(--bg) 94%, transparent);
     border-top: 1px solid var(--line);

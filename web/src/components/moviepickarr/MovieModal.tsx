@@ -10,6 +10,10 @@ import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
 import { backdropBg, backdropUrl, externalLinks, fullDate, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/moviepickarr/lib";
 import { Modal } from "@/components/moviepickarr/Modal";
+import {
+  MovieCastScrollbar,
+  MovieScrollbar,
+} from "@/components/moviepickarr/MovieScrollbar";
 import { isSelf } from "@/components/moviepickarr/ownership";
 import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
@@ -65,8 +69,9 @@ function GhostCreditRow({ w }: { w: number }) {
 /** Modal hero backdrop — the wide-format twin of `Poster`. The procedural
  *  duotone (backdropBg) is painted underneath as the instant first frame, so a
  *  slow TMDB CDN fetch cannot flash the surface through (pure white in light
- *  mode). The photograph becomes the scroll owner's background after it loads.
- *  Native scrollbar chrome therefore paints over the backdrop in WebKit. */
+ *  mode). The photograph becomes a full-width decorative layer after it loads.
+ *  The layer spans the scroll owner so the custom overlay scrollbar never
+ *  reserves an empty surface strip. */
 function HeroBackdrop({
   hue,
   src,
@@ -89,6 +94,7 @@ function HeroBackdrop({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Sync `loaded` from a cached image's `complete` before paint so a reopened
   // modal (or an SSE-swapped backdrop) doesn't re-flash the placeholder.
@@ -126,23 +132,30 @@ function HeroBackdrop({
     : `100% 100%, 100% ${fadeHeight}, 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height), 100% var(--moviemodal-hero-height)`;
 
   return (
-    <div className="modal__scroll moviemodal__scroll" style={{ backgroundImage, backgroundSize }}>
-      <div className="moviemodal__hero">
-        {url && (
-          <img
-            ref={imgRef}
-            className={`moviemodal__hero__preload${wash ? " moviemodal__hero__preload--wash" : ""}`}
-            src={url}
-            alt=""
-            hidden
-            onLoad={() => setLoaded(true)}
-            onError={() => setFailed(true)}
-          />
-        )}
-        {loading && <div className="moviemodal__hero__shimmer" aria-hidden="true" />}
+    <MovieScrollbar viewportRef={scrollRef}>
+      <div ref={scrollRef} className="modal__scroll moviemodal__scroll">
+        <div
+          className="moviemodal__backdrop"
+          style={{ backgroundImage, backgroundSize }}
+          aria-hidden="true"
+        />
+        <div className="moviemodal__hero">
+          {url && (
+            <img
+              ref={imgRef}
+              className={`moviemodal__hero__preload${wash ? " moviemodal__hero__preload--wash" : ""}`}
+              src={url}
+              alt=""
+              hidden
+              onLoad={() => setLoaded(true)}
+              onError={() => setFailed(true)}
+            />
+          )}
+          {loading && <div className="moviemodal__hero__shimmer" aria-hidden="true" />}
+        </div>
+        {children}
       </div>
-      {children}
-    </div>
+    </MovieScrollbar>
   );
 }
 
@@ -500,7 +513,7 @@ export function MovieModal({
             </div>
 
             {cast.length > 0 ? (
-              <div className="castrow">
+              <MovieCastScrollbar>
                 {cast.map((p) => (
                   <a
                     className="castcard"
@@ -520,9 +533,9 @@ export function MovieModal({
                     </span>
                   </a>
                 ))}
-              </div>
+              </MovieCastScrollbar>
             ) : detailLoading ? (
-              <div className="castrow" aria-hidden="true">
+              <MovieCastScrollbar hiddenFromAccessibility>
                 {Array.from({ length: 9 }).map((_, i) => (
                   <div className="castcard" key={i}>
                     {/* The 2:3 frame already; `skel` just adds the shimmer sweep. */}
@@ -533,7 +546,7 @@ export function MovieModal({
                     </span>
                   </div>
                 ))}
-              </div>
+              </MovieCastScrollbar>
             ) : null}
           </HeroBackdrop>
         </>

@@ -6,6 +6,7 @@ session:
 ```bash
 make dev          # live dev: Vite + Go, split-screen
 make test         # run both suites: go test -race + vitest
+make test/e2e     # build and test the production app in three browser engines
 make lint         # lint Go + frontend
 make precommit    # format + fix + lint before committing
 ```
@@ -41,6 +42,31 @@ The web tests are split into two vitest projects (`web/vitest.config.ts`):
   from props should still be rendered bare.
 
 Run one project with `bunx vitest run --project dom` (or `--project node`).
+
+Browser layout and interaction regressions live under `web/e2e/`. Install the
+three browser engines once, then run the Playwright suite:
+
+```bash
+cd web
+bunx playwright install chromium firefox webkit
+bun run test:e2e             # build, seed, start, and test the production app
+bun run test:e2e:run -- --project=firefox  # reuse an existing web/dist build
+```
+
+Playwright builds the Go application with the embedded `web/dist`, loads a
+throwaway database through `cmd/devfixtures`, signs in through the real login
+page, and runs the same specifications in Chromium, Firefox, and WebKit. The
+TMDB result list used to make the uncapped search modal tall is the only mocked
+external boundary. CI runs one browser per matrix job after the web and Go
+jobs pass.
+
+WebKit is Safari's engine, but Playwright WebKit is not the desktop Safari
+application. The browser matrix checks the custom movie scrollbars' geometry,
+drag targets, track paging, and keyboard controls. It also checks the surrounding
+native document-gutter policy. Playwright retains traces and screenshots on
+failure. A manual Safari check is still useful for final visual quality, but the
+movie modal no longer depends on native scrollbar paint order or system scrollbar
+preferences.
 
 Vite hot-reloads the frontend only. After Go changes, restart the backend pane
 before verifying anything.

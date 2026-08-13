@@ -8,7 +8,10 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e:server": "bun e2e/server.ts",
+    "test:e2e": "bun run build && bun run test:e2e:run",
+    "test:e2e:run": "playwright test"
   },
   "dependencies": {
     "@number-flow/react": "0.6.2",
@@ -23,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@playwright/test": "1.62.1",
     "@tanstack/eslint-plugin-query": "5.101.4",
     "@testing-library/react": "16.3.2",
     "@types/node": "24.13.3",

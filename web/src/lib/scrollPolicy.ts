@@ -10,17 +10,13 @@ export function documentScrollOwner(doc: Document = document): HTMLElement {
 }
 
 /**
- * Measure the browser's native scrollbar without applying author scrollbar
- * styles. Overlay scrollbars report zero. Fixed chrome reads the resulting CSS
- * property so it uses the same inline edge as the document owner.
+ * Measure the gutter that the body actually reserves. A forced overflow probe
+ * can disagree with `scrollbar-gutter: stable`, especially in headless Chromium
+ * and overlay-scrollbar environments. Fixed chrome must follow the applied body
+ * geometry because bounded routes temporarily remove that exact gutter.
  */
 export function installDocumentScrollPolicy(doc: Document = document): number {
-  const probe = doc.createElement("div");
-  probe.style.cssText =
-    "position:absolute;inset:-9999px auto auto -9999px;width:100px;height:100px;overflow:scroll;visibility:hidden;contain:strict";
-  doc.body.append(probe);
-  const width = probe.offsetWidth - probe.clientWidth;
-  probe.remove();
+  const width = doc.body.offsetWidth - doc.body.clientWidth;
   doc.documentElement.style.setProperty(SCROLLBAR_WIDTH_PROPERTY, `${width}px`);
   return width;
 }

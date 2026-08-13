@@ -18,11 +18,16 @@ describe("the native scrollbar policy", () => {
     );
   });
 
-  it("aligns fixed chrome to the active document owner", () => {
-    expect(css).toContain("right: var(--active-document-scrollbar-width)");
+  it("keeps shared navigation in the document frame across bounded owners", () => {
+    const navRule = css.match(/\.nav\s*\{[^}]*\}/)?.[0] ?? "";
+    const bottomNavRule = css.match(/\.navbar-bottom\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(css).toContain("--document-frame-offset: var(--document-scrollbar-width)");
+    expect(navRule).toContain("margin-inline-end: var(--document-frame-offset)");
+    expect(bottomNavRule).toContain("right: var(--document-scrollbar-width)");
   });
 
-  it("leaves native WebKit scrollbars unstyled", () => {
+  it("leaves native WebKit scrollbars unstyled globally", () => {
     expect(css).not.toContain("::-webkit-scrollbar");
   });
 
@@ -35,11 +40,10 @@ describe("the native scrollbar policy", () => {
     expect(authCSS).toMatch(/\.auth\s*\{[^}]*scrollbar-gutter:\s*stable/);
   });
 
-  it("paints the movie backdrop on the native scrollbar owner", () => {
+  it("keeps movie-modal chrome in the native scrollbar paint plane", () => {
     const heroRule = css.match(/\.moviemodal__hero\s*\{[^}]*\}/)?.[0] ?? "";
     const heroScrimRule = css.match(/\.moviemodal__hero::after\s*\{[^}]*\}/)?.[0] ?? "";
     const heroShimmerRule = css.match(/\.moviemodal__hero__shimmer\s*\{[^}]*\}/)?.[0] ?? "";
-    const movieScrollerRule = css.match(/\.moviemodal__scroll\s*\{[^}]*\}/)?.[0] ?? "";
     const movieVeilRule = css.match(/\.modal-veil:has\(\.modal--movie\)\s*\{[^}]*\}/)?.[0] ?? "";
     const movieRule = css.match(/\.modal--movie\s*\{[^}]*\}/)?.[0] ?? "";
 
@@ -47,17 +51,21 @@ describe("the native scrollbar policy", () => {
     expect(heroScrimRule).not.toContain("z-index:");
     expect(heroShimmerRule).not.toContain("z-index:");
     expect(css).not.toMatch(/\.moviemodal__hero__img\s*\{/);
-    expect(movieScrollerRule).toContain("background-attachment: local");
     expect(movieVeilRule).toContain("backdrop-filter: none");
     expect(movieRule).toContain("animation: mg-fadeIn");
   });
 
   it("keeps navigation in the body paint plane", () => {
     const navRule = css.match(/\.nav\s*\{[^}]*\}/)?.[0] ?? "";
+    const navDividerRule = css.match(/\.nav::after\s*\{[^}]*\}/)?.[0] ?? "";
     const bottomNavRule = css.match(/\.navbar-bottom\s*\{[^}]*\}/)?.[0] ?? "";
 
     expect(navRule).toContain("position: sticky");
     expect(navRule).not.toContain("backdrop-filter:");
+    expect(navRule).not.toContain("border-bottom:");
+    expect(navDividerRule).toContain("position: absolute");
+    expect(navDividerRule).toContain("width: 100vw");
+    expect(navDividerRule).toContain("border-bottom: 1px solid var(--line)");
     expect(bottomNavRule).not.toContain("backdrop-filter:");
   });
 });

@@ -2,6 +2,9 @@ bin/
 dist/
 node_modules/
 *.db*
+web/e2e/.auth/
+web/playwright-report/
+web/test-results/
 
 .idea
 .env

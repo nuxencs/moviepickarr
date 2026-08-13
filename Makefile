@@ -1,4 +1,4 @@
-.PHONY: all deps test build build/app build/web clean fmt gofix-changed lint precommit dev dev/fixtures dev/fixtures-reset prod
+.PHONY: all deps test test/e2e build build/app build/web clean fmt gofix-changed lint precommit dev dev/fixtures dev/fixtures-reset prod
 .POSIX:
 .SUFFIXES:
 
@@ -18,6 +18,9 @@ test:
 	go test -race -count=3 -v ./...
 	@echo "Testing frontend..."
 	cd $(WEB_DIR) && bun run test
+
+test/e2e:
+	bun run --cwd ./$(WEB_DIR) test:e2e
 
 build: build/web build/app
 

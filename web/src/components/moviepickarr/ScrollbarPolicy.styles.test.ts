@@ -27,7 +27,7 @@ describe("the native scrollbar policy", () => {
     expect(bottomNavRule).toContain("right: var(--document-scrollbar-width)");
   });
 
-  it("leaves native WebKit scrollbars unstyled", () => {
+  it("leaves native WebKit scrollbars unstyled globally", () => {
     expect(css).not.toContain("::-webkit-scrollbar");
   });
 
@@ -57,10 +57,15 @@ describe("the native scrollbar policy", () => {
 
   it("keeps navigation in the body paint plane", () => {
     const navRule = css.match(/\.nav\s*\{[^}]*\}/)?.[0] ?? "";
+    const navDividerRule = css.match(/\.nav::after\s*\{[^}]*\}/)?.[0] ?? "";
     const bottomNavRule = css.match(/\.navbar-bottom\s*\{[^}]*\}/)?.[0] ?? "";
 
     expect(navRule).toContain("position: sticky");
     expect(navRule).not.toContain("backdrop-filter:");
+    expect(navRule).not.toContain("border-bottom:");
+    expect(navDividerRule).toContain("position: absolute");
+    expect(navDividerRule).toContain("width: 100vw");
+    expect(navDividerRule).toContain("border-bottom: 1px solid var(--line)");
     expect(bottomNavRule).not.toContain("backdrop-filter:");
   });
 });

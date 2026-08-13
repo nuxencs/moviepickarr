@@ -18,10 +18,13 @@ afterEach(() => {
 
 describe("document scroll policy", () => {
   it("publishes the measured native scrollbar width", () => {
-    expect(installDocumentScrollPolicy()).toBe(0);
+    vi.spyOn(document.body, "offsetWidth", "get").mockReturnValue(1280);
+    vi.spyOn(document.body, "clientWidth", "get").mockReturnValue(1265);
+
+    expect(installDocumentScrollPolicy()).toBe(15);
     expect(
       document.documentElement.style.getPropertyValue("--document-scrollbar-width"),
-    ).toBe("0px");
+    ).toBe("15px");
   });
 
   it("measures offsets in the body owner's scroll coordinates", () => {

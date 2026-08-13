@@ -1,85 +1,40 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const me = {
-  id: 1,
-  displayName: "Ada",
-  username: "ada",
-  role: "admin",
-  hasLocalLogin: true,
-  hasLinkedIdentity: false,
-};
-
-const watchedMovie = {
-  movieID: 22,
-  title: "Back to the Future",
-  link: "",
-  addedAt: "2026-07-13T10:00:00Z",
-  addedByID: 1,
-  addedByName: "Ada",
-  watchedAt: "2026-08-08T10:00:00Z",
-  tmdbId: 105,
-  imdbId: "tt0088763",
-  releaseDate: "1985-07-03",
-  runtime: 116,
-  genres: ["Adventure"],
-  voteAverage: 8.3,
-};
-
-const movieDetail = {
-  ...watchedMovie,
-  status: "watched",
-  tagline: "He was never in time for his classes.",
-  overview: "Marty McFly is accidentally sent back in time.",
-  cast: [],
-  crew: [],
-};
-
-const replies = new Map<string, unknown>([
-  ["/api/v1/auth/me", me],
-  ["/api/v1/integrations/radarr/attention", { count: 0 }],
-  ["/api/v1/settings/pool-lock", { poolLocked: false, drawInProgress: false }],
-  ["/api/v1/settings/next-up", { id: 1, name: "Ada" }],
-  ["/api/v1/movies/current", null],
-  ["/api/v1/movies/pool", []],
-  ["/api/v1/movies/watched", [watchedMovie]],
-  ["/api/v1/movies/22", movieDetail],
-  ["/api/v1/members", []],
-  ["/api/v1/members/roster", []],
-  ["/api/v1/invites", { serverNow: "2026-08-13T10:00:00Z", items: [] }],
-]);
-
-async function mockApp(page: Page) {
-  await page.route("**/api/v1/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path === "/api/v1/events") {
-      await route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
-      return;
-    }
-
-    if (!replies.has(path)) {
-      await route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
-      return;
-    }
-
-    await route.fulfill({ json: replies.get(path) });
-  });
-}
-
 async function profileX(page: Page) {
   return page.getByRole("button", { name: "Your profile" }).evaluate((element) =>
     element.getBoundingClientRect().x,
   );
 }
 
-test.beforeEach(async ({ page }) => {
-  await mockApp(page);
-  await page.goto("/");
-  await page.addStyleTag({
-    content: `
-      :root { --document-scrollbar-width: 15px !important; }
-    `,
+const castMembers = Array.from({ length: 24 }, (_, index) => ({
+  id: 90_000 + index,
+  name: `Cast Member ${index + 1}`,
+  character: `Character ${index + 1}`,
+}));
+
+async function openScrollableMovie(page: Page) {
+  await page.route(/\/api\/v1\/movies\/\d+$/, async (route) => {
+    const response = await route.fetch();
+    const detail = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...detail,
+        overview: `${detail.overview ?? ""} ${"Long movie overview. ".repeat(80)}`,
+        cast: castMembers,
+      },
+    });
   });
+  await page.locator('.tile-grid--pool article[role="button"]').first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/");
   await expect(page.getByRole("button", { name: "Your profile" })).toBeVisible();
+  // Geometry baselines must not straddle the display-font swap when the full
+  // three-engine matrix is competing for CPU and network time.
+  await page.evaluate(() => document.fonts.ready);
 });
 
 test("top-level tabs keep shared navigation at one horizontal coordinate", async ({ page }) => {
@@ -95,9 +50,17 @@ test("top-level tabs keep shared navigation at one horizontal coordinate", async
   }
 });
 
-test("movie backdrop reaches beneath the native scrollbar gutter", async ({ page }) => {
-  await page.getByRole("button", { name: /Back to the Future/ }).click();
-  await expect(page.getByRole("dialog", { name: "Back to the Future" })).toBeVisible();
+test("navigation divider spans the viewport outside a reserved gutter", async ({ page }) => {
+  const geometry = await page.locator(".nav").evaluate((nav) => ({
+    dividerWidth: Number.parseFloat(getComputedStyle(nav, "::after").width),
+    viewportWidth: window.innerWidth,
+  }));
+
+  expect(Math.abs(geometry.dividerWidth - geometry.viewportWidth)).toBeLessThanOrEqual(0.5);
+});
+
+test("movie backdrop spans the custom scrollbar without a reserved gutter", async ({ page }) => {
+  await openScrollableMovie(page);
 
   const geometry = await page.locator(".modal--movie").evaluate((modal) => {
     const scroller = modal.querySelector<HTMLElement>(".moviemodal__scroll");
@@ -106,31 +69,178 @@ test("movie backdrop reaches beneath the native scrollbar gutter", async ({ page
 
     const scrollerBox = scroller.getBoundingClientRect();
     const backdropBox = backdrop.getBoundingClientRect();
-    const gutter = Number.parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue("--document-scrollbar-width"),
-    );
+    const track = modal.querySelector<HTMLElement>(".movie-scrollbar__track");
+    if (!track) return null;
+    const trackBox = track.getBoundingClientRect();
     return {
       scrollerRight: scrollerBox.right,
-      safeContentRight: scrollerBox.right - gutter,
       backdropRight: backdropBox.right,
+      nativeGutter: scroller.offsetWidth - scroller.clientWidth,
+      trackRight: trackBox.right,
     };
   });
 
   expect(geometry).not.toBeNull();
   expect(Math.abs(geometry!.backdropRight - geometry!.scrollerRight)).toBeLessThanOrEqual(0.5);
-  expect(geometry!.backdropRight - geometry!.safeContentRight).toBeGreaterThan(0);
+  expect(geometry!.nativeGutter).toBe(0);
+  expect(geometry!.trackRight).toBeLessThanOrEqual(geometry!.scrollerRight);
+});
+
+test("loading and loaded cast keep the same custom horizontal owner", async ({ page }) => {
+  let releaseDetail!: () => void;
+  const detailGate = new Promise<void>((resolve) => {
+    releaseDetail = resolve;
+  });
+  await page.route(/\/api\/v1\/movies\/\d+$/, async (route) => {
+    await detailGate;
+    const response = await route.fetch();
+    const detail = await response.json();
+    await route.fulfill({ response, json: { ...detail, cast: castMembers } });
+  });
+
+  await page.locator('.tile-grid--pool article[role="button"]').first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const castOwner = page.locator(".movie-cast-scrollbar > .castrow");
+  await expect(castOwner).toBeVisible();
+  await expect(page.getByRole("scrollbar", { name: "Cast position" })).toHaveCount(0);
+  expect(
+    await castOwner.evaluate((element) => element.offsetHeight - element.clientHeight),
+    "loading cast native gutter",
+  ).toBe(0);
+
+  releaseDetail();
+  await expect(page.getByRole("scrollbar", { name: "Cast position" })).toBeVisible();
+  expect(
+    await castOwner.evaluate((element) => element.offsetHeight - element.clientHeight),
+    "loaded cast native gutter",
+  ).toBe(0);
+});
+
+test("movie details scrollbar has a forgiving drag target and complete controls", async ({ page }) => {
+  await openScrollableMovie(page);
+
+  const viewport = page.locator(".moviemodal__scroll");
+  const scrollbar = page.getByRole("scrollbar", { name: "Movie details position" });
+  const thumb = scrollbar.locator(".movie-scrollbar__thumb");
+  await expect(scrollbar).toBeVisible();
+
+  const thumbBox = await thumb.boundingBox();
+  expect(thumbBox).not.toBeNull();
+  const nearThumbX = thumbBox!.x - 2;
+  const thumbMiddleY = thumbBox!.y + thumbBox!.height / 2;
+
+  await page.mouse.move(nearThumbX, thumbMiddleY);
+  await page.mouse.down();
+  expect(await viewport.evaluate((element) => element.scrollTop)).toBe(0);
+  await page.mouse.move(nearThumbX, thumbMiddleY + 40);
+  await page.mouse.up();
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await scrollbar.press("Home");
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect(scrollbar).toHaveAttribute("aria-valuenow", "0");
+  await scrollbar.press("End");
+  await expect
+    .poll(() =>
+      viewport.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+    )
+    .toBeLessThanOrEqual(1);
+
+  await scrollbar.press("Home");
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect(scrollbar).toHaveAttribute("aria-valuenow", "0");
+  const trackBox = await scrollbar.boundingBox();
+  expect(trackBox).not.toBeNull();
+  await page.mouse.click(trackBox!.x + 1, trackBox!.y + trackBox!.height - 2);
+  const trackDelta = await viewport.evaluate((element) => element.scrollTop);
+  const pageStep = await viewport.evaluate((element) => element.clientHeight * 0.88);
+  expect(trackDelta).toBeGreaterThan(0);
+  expect(trackDelta).toBeLessThanOrEqual(pageStep + 1);
+});
+
+test("cast scrollbar has a forgiving drag target and complete controls", async ({ page }) => {
+  await openScrollableMovie(page);
+
+  const viewport = page.locator(".castrow");
+  await viewport.scrollIntoViewIfNeeded();
+  const scrollbar = page.getByRole("scrollbar", { name: "Cast position" });
+  const thumb = scrollbar.locator(".movie-cast-scrollbar__thumb");
+  await expect(scrollbar).toBeVisible();
+
+  const thumbBox = await thumb.boundingBox();
+  expect(thumbBox).not.toBeNull();
+  const thumbMiddleX = thumbBox!.x + thumbBox!.width / 2;
+  const nearThumbY = thumbBox!.y - 2;
+
+  await page.mouse.move(thumbMiddleX, nearThumbY);
+  await page.mouse.down();
+  expect(await viewport.evaluate((element) => element.scrollLeft)).toBe(0);
+  await page.mouse.move(thumbMiddleX + 40, nearThumbY);
+  await page.mouse.up();
+  await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+
+  await scrollbar.press("Home");
+  await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBe(0);
+  await expect(scrollbar).toHaveAttribute("aria-valuenow", "0");
+  await scrollbar.press("End");
+  await expect
+    .poll(() =>
+      viewport.evaluate((element) => element.scrollWidth - element.clientWidth - element.scrollLeft),
+    )
+    .toBeLessThanOrEqual(1);
+
+  await scrollbar.press("Home");
+  await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBe(0);
+  await expect(scrollbar).toHaveAttribute("aria-valuenow", "0");
+  const trackBox = await scrollbar.boundingBox();
+  expect(trackBox).not.toBeNull();
+  await page.mouse.click(trackBox!.x + trackBox!.width - 2, trackBox!.y + trackBox!.height / 2);
+  const trackDelta = await viewport.evaluate((element) => element.scrollLeft);
+  const pageStep = await viewport.evaluate((element) => element.clientWidth * 0.88);
+  expect(trackDelta).toBeGreaterThan(0);
+  expect(trackDelta).toBeLessThanOrEqual(pageStep + 1);
 });
 
 test("opening and closing a movie modal keeps shared navigation fixed", async ({ page }) => {
   const before = await profileX(page);
 
-  await page.getByRole("button", { name: /Back to the Future/ }).click();
-  await expect(page.getByRole("dialog", { name: "Back to the Future" })).toBeVisible();
+  const opener = page.locator('.tile-grid--pool article[role="button"]').first();
+  await expect(opener).toBeInViewport();
+  const openerBox = await opener.boundingBox();
+  expect(openerBox).not.toBeNull();
+  // Use the pointer at the visible tile coordinates. WebKit's locator click
+  // can scroll the body horizontally while it performs scrollIntoView(),
+  // which is outside the modal transition measured by this test.
+  const viewport = page.viewportSize();
+  expect(viewport).not.toBeNull();
+  await page.mouse.click(
+    (Math.max(0, openerBox!.x) + Math.min(viewport!.width, openerBox!.x + openerBox!.width)) / 2,
+    (Math.max(0, openerBox!.y) + Math.min(viewport!.height, openerBox!.y + openerBox!.height)) / 2,
+  );
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
   expect(Math.abs((await profileX(page)) - before), "modal open shift").toBeLessThanOrEqual(0.5);
 
   await page.getByRole("button", { name: "Close" }).click();
-  await expect(page.getByRole("dialog", { name: "Back to the Future" })).toBeHidden();
+  await expect(dialog).toBeHidden();
   expect(Math.abs((await profileX(page)) - before), "modal close shift").toBeLessThanOrEqual(0.5);
+});
+
+test("filtering across the document overflow threshold keeps shared navigation fixed", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 2200 });
+  const before = await profileX(page);
+  const search = page.getByRole("textbox", { name: "Search watched movies by title or adder" });
+  expect(await page.evaluate(() => document.body.scrollHeight > document.body.clientHeight)).toBe(true);
+
+  await search.fill("no fixture movie has this title");
+  await expect(page.getByText("No movies match your search")).toBeVisible();
+  await expect(page.locator(".watch-body")).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.scrollHeight <= document.body.clientHeight)).toBe(true);
+  expect(Math.abs((await profileX(page)) - before), "filtered navigation shift").toBeLessThanOrEqual(0.5);
+
+  await search.clear();
+  await expect(page.locator(".watch-body")).toBeVisible();
+  expect(Math.abs((await profileX(page)) - before), "restored navigation shift").toBeLessThanOrEqual(0.5);
 });
 
 test("top-level routes do not overflow a 320 px viewport", async ({ page }) => {

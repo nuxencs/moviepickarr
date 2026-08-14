@@ -253,6 +253,18 @@
 @keyframes mg-fadeOut { from { opacity: 1; } to { opacity: 0; } }
 @keyframes mg-scaleIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
 @keyframes mg-scaleOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.97); } }
+@keyframes mg-movieModalIn {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes mg-backdropIn {
+  from { background-color: rgba(5,6,10,0); backdrop-filter: blur(0); }
+  to { background-color: rgba(5,6,10,0.62); backdrop-filter: blur(8px); }
+}
+@keyframes mg-backdropOut {
+  from { background-color: rgba(5,6,10,0.62); backdrop-filter: blur(8px); }
+  to { background-color: rgba(5,6,10,0); backdrop-filter: blur(0); }
+}
 /* Stat bars grow from baseline to the value the element already encodes (the implicit
    keyframe `to` is the element's resting width / height). REQUIRES `backwards` on
    any consumer with a positive animation-delay, else the pre-delay frame shows the
@@ -282,10 +294,6 @@
   }
 
   .app { position: relative; z-index: 1; min-height: 100vh; }
-  /* A movie modal cannot put backdrop-filter on an ancestor of its scroll
-     owner. Blur the page sibling instead, where Safari cannot composite it
-     above the modal's native scrollbar. */
-  body:has(.modal--movie) .app { filter: blur(8px); }
 
   /* ---- Poster ---- */
   .poster {
@@ -1156,23 +1164,27 @@
   .hourchart--decades .hourchart__axis span { flex: 0 1 72px; font-size: 10.5px; }
 
   /* ---- Search modal ---- */
-  .modal-veil { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,0.62); backdrop-filter: blur(8px); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px max-content 56px; justify-items: center; align-items: start; padding: 0 20px; overflow-y: auto; scrollbar-gutter: stable; animation: mg-fadeIn var(--dur-base) var(--ease); }
+  .modal-veil { position: fixed; inset: 0; z-index: 50; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px max-content 56px; justify-items: center; align-items: start; padding: 0 20px; overflow-y: auto; scrollbar-gutter: stable; }
+  /* Cross-browser compositor contract: the blur is a sibling of the dialog,
+     never a filter on .app or an ancestor of a dialog scroll owner. Filtering
+     .app makes Firefox rebuild bounded page scrollers with the navigation in
+     the same layer; filtering their dialog ancestor lets Safari paint modal
+     artwork above a native scrollbar. Keep this fixed layer beside .modal. */
+  .modal-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; background-color: rgba(5,6,10,0.62); backdrop-filter: blur(8px); animation: mg-backdropIn var(--dur-base) var(--ease) both; }
   /* Explicit grid tracks keep the breathing room in the scrollable layout.
      Firefox excludes a trailing pseudo-element from a column flex container's
      scrollable overflow even when the element has a fixed size. A grid track is
      layout geometry in every engine, so a tall dialog keeps 56px at both ends. */
   .modal-veil::before, .modal-veil::after { content: ""; width: 0; }
   .modal-veil::before { grid-row: 1; }
-  .modal-veil > .modal { grid-row: 2; }
+  .modal-veil > .modal { position: relative; z-index: 1; grid-row: 2; }
   .modal-veil::after { grid-row: 3; }
-  .modal-veil--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
+  .modal-veil--closing { pointer-events: none; }
+  .modal-veil--closing .modal-backdrop { animation: mg-backdropOut var(--dur-fast) var(--ease-exit) forwards; }
   .modal { width: min(var(--modal-browse-max), 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
   /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
   .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
-  /* Movie records keep every compositor outside their scroll-owner subtree.
-     Safari otherwise paints descendant artwork above the native scrollbar. */
-  .modal-veil:has(.modal--movie) { backdrop-filter: none; }
-  .modal--movie { --moviemodal-hero-height: clamp(260px, 38cqi, 420px); width: min(var(--modal-record-max), 100%); container-type: inline-size; animation: mg-fadeIn var(--dur-base) var(--ease); }
+  .modal--movie { --moviemodal-hero-height: clamp(260px, 38cqi, 420px); width: min(var(--modal-record-max), 100%); container-type: inline-size; animation: mg-movieModalIn var(--dur-base) var(--ease) both; }
   .modal--movie.modal--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; }
   .modal--form { width: min(var(--modal-form-max), 100%); }
   /* Capped mode (`<Modal capped>`): the surface owns the scroll instead of the veil,

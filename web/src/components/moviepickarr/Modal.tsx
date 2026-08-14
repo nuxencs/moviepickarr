@@ -256,7 +256,7 @@ export function Modal({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const surface = surfaceRef.current;
     const onKey = (e: KeyboardEvent) => {
       // The listener is on `document`, so every mounted Modal hears this key.
@@ -287,6 +287,8 @@ export function Modal({
       }
     };
 
+    // Scroll ownership changes layout and compositor state. Lock before the
+    // first dialog frame so bounded routes never paint an unlocked interval.
     const unlockScroll = lockPageScroll();
     document.addEventListener("keydown", onKey);
     return () => {
@@ -301,6 +303,7 @@ export function Modal({
       onMouseDown={onVeilMouseDown}
       onMouseUp={onVeilMouseUp}
     >
+      <div className="modal-backdrop" aria-hidden="true" />
       <div
         ref={surfaceRef}
         role="dialog"

@@ -40,19 +40,28 @@ describe("the native scrollbar policy", () => {
     expect(authCSS).toMatch(/\.auth\s*\{[^}]*scrollbar-gutter:\s*stable/);
   });
 
-  it("keeps movie-modal chrome in the native scrollbar paint plane", () => {
+  it("keeps the modal backdrop outside the dialog scrollbar paint tree", () => {
     const heroRule = css.match(/\.moviemodal__hero\s*\{[^}]*\}/)?.[0] ?? "";
     const heroScrimRule = css.match(/\.moviemodal__hero::after\s*\{[^}]*\}/)?.[0] ?? "";
     const heroShimmerRule = css.match(/\.moviemodal__hero__shimmer\s*\{[^}]*\}/)?.[0] ?? "";
-    const movieVeilRule = css.match(/\.modal-veil:has\(\.modal--movie\)\s*\{[^}]*\}/)?.[0] ?? "";
+    const backdropRule = css.match(/\.modal-backdrop\s*\{[^}]*\}/)?.[0] ?? "";
     const movieRule = css.match(/\.modal--movie\s*\{[^}]*\}/)?.[0] ?? "";
 
     expect(heroRule).not.toContain("isolation:");
     expect(heroScrimRule).not.toContain("z-index:");
     expect(heroShimmerRule).not.toContain("z-index:");
     expect(css).not.toMatch(/\.moviemodal__hero__img\s*\{/);
-    expect(movieVeilRule).toContain("backdrop-filter: none");
-    expect(movieRule).toContain("animation: mg-fadeIn");
+    expect(backdropRule).toContain("position: fixed");
+    expect(backdropRule).toContain("backdrop-filter: blur(8px)");
+    expect(backdropRule).toContain("animation: mg-backdropIn");
+    expect(css).toMatch(/\.modal-veil--closing \.modal-backdrop\s*\{[^}]*animation:\s*mg-backdropOut/);
+    expect(css.match(/\.modal-veil\s*\{[^}]*\}/)?.[0] ?? "").not.toContain("animation:");
+    expect(css).not.toMatch(/body:has\(\.modal--movie\) \.app\s*\{[^}]*filter:/);
+    expect(css).not.toMatch(/\.modal-veil:has\(\.modal--movie\)\s*\{[^}]*backdrop-filter:/);
+    expect(movieRule).toContain("animation: mg-movieModalIn");
+    expect(css).toMatch(
+      /@keyframes mg-movieModalIn\s*\{\s*from\s*\{[^}]*opacity:\s*0[^}]*transform:\s*scale\(0\.985\)[^}]*\}/,
+    );
   });
 
   it("keeps navigation in the body paint plane", () => {

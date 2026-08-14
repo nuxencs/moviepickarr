@@ -226,6 +226,87 @@ test("opening and closing a movie modal keeps shared navigation fixed", async ({
   expect(Math.abs((await profileX(page)) - before), "modal close shift").toBeLessThanOrEqual(0.5);
 });
 
+test("members movie modal keeps the backdrop outside the page compositor", async ({ page }) => {
+  await page.getByRole("link", { name: /^Members/ }).click();
+  await expect(page.locator(".mem")).toBeVisible();
+  const before = await profileX(page);
+
+  await page.getByRole("button", { name: "American Beauty" }).first().click();
+  await expect(page.getByRole("dialog", { name: "American Beauty" })).toBeVisible();
+  await page.locator(".modal-backdrop").evaluate(async (backdrop) => {
+    await Promise.all(backdrop.getAnimations().map((animation) => animation.finished));
+  });
+
+  const contract = await page.evaluate(() => {
+    const app = document.querySelector<HTMLElement>(".app");
+    const backdrop = document.querySelector<HTMLElement>(".modal-backdrop");
+    const dialog = document.querySelector<HTMLElement>(".modal--movie");
+    const owners = [...document.querySelectorAll<HTMLElement>("[data-page-scroll-owner]")];
+    return {
+      appFilter: app ? getComputedStyle(app).filter : null,
+      backdropFilter: backdrop ? getComputedStyle(backdrop).backdropFilter : null,
+      backdropIsSibling: backdrop?.nextElementSibling === dialog,
+      ownerOverflows: owners.map((owner) => getComputedStyle(owner).overflowY),
+    };
+  });
+
+  expect(contract.appFilter).toBe("none");
+  expect(contract.backdropFilter).toBe("blur(8px)");
+  expect(contract.backdropIsSibling).toBe(true);
+  expect(contract.ownerOverflows).toEqual(["hidden", "hidden", "hidden"]);
+  expect(Math.abs((await profileX(page)) - before), "members modal navigation shift").toBeLessThanOrEqual(0.5);
+});
+
+test("members movie modal interpolates backdrop depth and surface during its entrance", async ({ page }) => {
+  await page.getByRole("link", { name: /^Members/ }).click();
+  await expect(page.locator(".mem")).toBeVisible();
+
+  await page.getByRole("button", { name: "American Beauty" }).first().click();
+  await expect(page.getByRole("dialog", { name: "American Beauty" })).toBeVisible();
+
+  const midpoint = await page.locator(".modal-backdrop").evaluate(async (backdrop) => {
+    const backdropAnimation = backdrop.getAnimations().find(
+      (candidate) => candidate instanceof CSSAnimation && candidate.animationName === "mg-backdropIn",
+    );
+    const surface = backdrop.nextElementSibling;
+    const surfaceAnimation = surface?.getAnimations().find(
+      (candidate) => candidate instanceof CSSAnimation && candidate.animationName === "mg-movieModalIn",
+    );
+    if (!backdropAnimation || !surfaceAnimation || !(surface instanceof HTMLElement)) return null;
+
+    const backdropDuration = Number(backdropAnimation.effect?.getComputedTiming().duration);
+    const surfaceDuration = Number(surfaceAnimation.effect?.getComputedTiming().duration);
+    if (!Number.isFinite(backdropDuration) || !Number.isFinite(surfaceDuration)) return null;
+
+    backdropAnimation.pause();
+    backdropAnimation.currentTime = backdropDuration / 2;
+    surfaceAnimation.pause();
+    surfaceAnimation.currentTime = surfaceDuration / 2;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    const backdropStyle = getComputedStyle(backdrop);
+    const surfaceStyle = getComputedStyle(surface);
+    const colorChannels = backdropStyle.backgroundColor.match(/[\d.]+/g)?.map(Number) ?? [];
+    return {
+      backgroundAlpha: colorChannels[3] ?? 1,
+      backdropFilter: backdropStyle.backdropFilter,
+      surfaceOpacity: Number(surfaceStyle.opacity),
+      surfaceScale: new DOMMatrixReadOnly(surfaceStyle.transform).a,
+    };
+  });
+
+  expect(midpoint).not.toBeNull();
+  const blur = Number(midpoint!.backdropFilter.match(/blur\(([\d.]+)px\)/)?.[1]);
+  expect(blur).toBeGreaterThan(0);
+  expect(blur).toBeLessThan(8);
+  expect(midpoint!.backgroundAlpha).toBeGreaterThan(0);
+  expect(midpoint!.backgroundAlpha).toBeLessThan(0.62);
+  expect(midpoint!.surfaceOpacity).toBeGreaterThan(0);
+  expect(midpoint!.surfaceOpacity).toBeLessThan(1);
+  expect(midpoint!.surfaceScale).toBeGreaterThan(0.985);
+  expect(midpoint!.surfaceScale).toBeLessThan(1);
+});
+
 test("filtering across the document overflow threshold keeps shared navigation fixed", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 2200 });
   const before = await profileX(page);

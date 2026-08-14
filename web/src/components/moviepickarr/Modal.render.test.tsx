@@ -83,6 +83,16 @@ describe("Modal", () => {
     expect(screen.getByRole("dialog", { name: "Test modal" })).not.toBeNull();
   });
 
+  it("keeps the visual backdrop beside the dialog scroll tree", () => {
+    const { dialog } = renderModal();
+    const backdrop = dialog.previousElementSibling;
+
+    expect(backdrop?.classList.contains("modal-backdrop")).toBe(true);
+    expect(backdrop?.getAttribute("aria-hidden")).toBe("true");
+    expect(backdrop?.parentElement).toBe(dialog.parentElement);
+    expect(backdrop?.contains(dialog)).toBe(false);
+  });
+
   it("marks the surface capped only when asked, so the capped CSS can select it", () => {
     const { dialog } = renderModal({ capped: true });
     expect(dialog.classList.contains("modal--capped")).toBe(true);

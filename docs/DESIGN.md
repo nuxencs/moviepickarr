@@ -451,8 +451,19 @@ control system. Extend `.btn`/`.field`/`.modal` instead.
 ## 5. Modals & overlays
 
 One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.tsx`).
-- Portalled; dark blurred veil (`rgba(5,6,10,0.62)` + `blur(8px)`); `--r-xl` corners;
-  matching `mg-scaleIn` enter / `mg-scaleOut` exit.
+- Portalled; dark blurred veil (`rgba(5,6,10,0.62)` + `blur(8px)`); `--r-xl` corners.
+  Generic surfaces use matching `mg-scaleIn` enter / `mg-scaleOut` exit. Movie
+  records use the subtler `mg-movieModalIn` fade-and-settle entrance because their
+  large surface makes the generic 3% scale too pronounced.
+- The blur belongs to a fixed `.modal-backdrop` beside the dialog, never to `.app`
+  and never to an ancestor of a dialog scroll owner. Firefox can drop shared
+  navigation for a frame when a filtered `.app` also contains bounded page scrollers;
+  Safari can paint movie artwork above a native scrollbar when the filter owns the
+  dialog subtree. The sibling keeps both compositor trees separate (ADR 0008).
+- The same `.modal-backdrop` owns `mg-backdropIn` and `mg-backdropOut`. Those
+  animations phase darkening and blur together. Do not animate opacity on the
+  parent veil because a separately composited blur can appear at full strength on
+  its first frame.
 - Dismiss via Esc, veil click, or an explicit top-right close X (`.iconbtn`). A veil
   click closes on the release, with both halves of the gesture on the veil, and the
   press cancels its own selection default so the browser's click chain cannot
@@ -464,7 +475,7 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   per surface: `Modal`, the `Menu`, and the stats filter dropdowns all ride one shared
   machine, `useDismissible` (`web/src/hooks/useDismissible.ts`), so every floating
   surface dismisses the same way. The `ProfilePanel` rides it too; its inline
-  `VolumeControl` owns no dismissal of its own.
+  `VolumeControl` owns no dismissal of its own (ADR 0009).
 - **Esc, outside-click and the focus trap belong to the topmost surface only.** A
   dialog opened from inside another one (a confirm over the movie modal) portals in
   as a sibling, so neither surface can see the other through the DOM. `useDismissible`
@@ -475,6 +486,9 @@ One overlay system: the bespoke `Modal` (`web/src/components/moviepickarr/Modal.
   the top one until its exit finishes, so assistive technology sees one active modal
   and focus returns to a live trigger. The body-scroll lock is refcounted for the same
   reason: the page gets its scroll back when the last dialog closes, not the first.
+  The lock runs in a layout effect because changing a bounded page owner from `auto`
+  to `hidden` is visible layout and compositor work. No unlocked page frame can paint
+  between the portal mount and the lock.
 - Layout slots: `.modal__head` (title + description + close), `.modal__body`
   (`padding: 22px 26px 0`), `.modal__foot` (`padding: 20px 26px 24px`, right-aligned
   buttons). Width tiers: browse surfaces grow from 960px to 1760px, movie records

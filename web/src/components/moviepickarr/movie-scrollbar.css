@@ -22,16 +22,25 @@
 .movie-scrollbar__track,
 .movie-cast-scrollbar__track {
   position: absolute;
-  border: 1px solid color-mix(in oklab, var(--line-2) 72%, transparent);
   border-radius: var(--r-md);
   outline: 0;
-  background: color-mix(in oklab, var(--surface-3) 58%, transparent);
   cursor: pointer;
   touch-action: none;
 }
 
-.movie-scrollbar__track:focus-visible,
-.movie-cast-scrollbar__track:focus-visible {
+.movie-scrollbar__track::before,
+.movie-cast-scrollbar__track::before {
+  /* The real track is forgiving. This paint-only rail stays visually narrow. */
+  position: absolute;
+  border: 1px solid color-mix(in oklab, var(--line-2) 72%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--surface-3) 58%, transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.movie-scrollbar__track:focus-visible::before,
+.movie-cast-scrollbar__track:focus-visible::before {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -39,9 +48,19 @@
 .movie-scrollbar__track {
   z-index: 5;
   top: 54px;
-  right: 4px;
+  right: 1px;
   bottom: 16px;
-  width: 8px;
+  width: 16px;
+}
+
+.movie-scrollbar__track::before {
+  inset: 0 3px 0 5px;
+}
+
+.movie-scrollbar__thumb-hit-area,
+.movie-cast-scrollbar__thumb-hit-area {
+  position: absolute;
+  cursor: grab;
 }
 
 .movie-scrollbar__thumb,
@@ -49,23 +68,20 @@
   position: absolute;
   border-radius: var(--r-sm);
   background: var(--ink-3);
-  cursor: grab;
   transition: background var(--dur-fast) var(--ease);
 }
 
-.movie-scrollbar__thumb {
-  top: 0;
-  right: 1px;
-  width: 4px;
-  min-height: 36px;
+.movie-scrollbar__thumb-hit-area {
+  top: -7px;
+  right: 0;
+  width: 12px;
 }
 
-/* The thumb stays visually narrow. Its larger hit target catches near misses
-   before they reach the track and start a page action. */
-.movie-scrollbar__thumb::before {
-  position: absolute;
-  inset: -7px -4px;
-  content: "";
+.movie-scrollbar__thumb {
+  top: 7px;
+  right: 4px;
+  bottom: 7px;
+  width: 4px;
 }
 
 .movie-scrollbar__track:is(:hover, :focus-visible) .movie-scrollbar__thumb,
@@ -73,8 +89,8 @@
   background: var(--accent);
 }
 
-.movie-scrollbar__thumb:active,
-.movie-cast-scrollbar__thumb:active {
+.movie-scrollbar__thumb-hit-area:active,
+.movie-cast-scrollbar__thumb-hit-area:active {
   cursor: grabbing;
 }
 
@@ -96,22 +112,26 @@
 .movie-cast-scrollbar__track {
   z-index: 3;
   right: 30px;
-  bottom: 14px;
+  bottom: 10px;
   left: 30px;
-  height: 8px;
+  height: 16px;
+}
+
+.movie-cast-scrollbar__track::before {
+  inset: 4px 0;
+}
+
+.movie-cast-scrollbar__thumb-hit-area {
+  top: 1px;
+  left: -8px;
+  height: 12px;
 }
 
 .movie-cast-scrollbar__thumb {
-  top: 1px;
-  left: 0;
-  height: 4px;
-  min-width: 44px;
-}
-
-.movie-cast-scrollbar__thumb::before {
-  position: absolute;
-  inset: -4px -8px;
-  content: "";
+  top: 4px;
+  right: 8px;
+  bottom: 4px;
+  left: 8px;
 }
 
 @media (max-width: 700px) {

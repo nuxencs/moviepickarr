@@ -39,7 +39,10 @@ const SCROLL_AXES: Record<Orientation, ScrollAxis> = {
     scrollBy: (element, amount) => element.scrollBy({ top: amount }),
     scrollSize: (element) => element.scrollHeight,
     setPosition: (element, position) => element.scrollTo({ top: position }),
-    thumbStyle: (size, offset) => ({ height: size, transform: `translateY(${offset}px)` }),
+    thumbStyle: (size, offset) => ({
+      height: size + 14,
+      transform: `translateY(${offset}px)`,
+    }),
     trackSize: (element) => element.clientHeight,
     trackStart: (box) => box.top,
   },
@@ -52,7 +55,10 @@ const SCROLL_AXES: Record<Orientation, ScrollAxis> = {
     scrollBy: (element, amount) => element.scrollBy({ left: amount }),
     scrollSize: (element) => element.scrollWidth,
     setPosition: (element, position) => element.scrollTo({ left: position }),
-    thumbStyle: (size, offset) => ({ width: size, transform: `translateX(${offset}px)` }),
+    thumbStyle: (size, offset) => ({
+      transform: `translateX(${offset}px)`,
+      width: size + 16,
+    }),
     trackSize: (element) => element.clientWidth,
     trackStart: (box) => box.left,
   },
@@ -64,6 +70,8 @@ interface ScrollMetrics {
   thumbSize: number;
   valueNow: number;
 }
+
+const hitAreaClassName = (thumbClassName: string) => `${thumbClassName}-hit-area`;
 
 const EMPTY_METRICS: ScrollMetrics = {
   overflow: false,
@@ -90,7 +98,9 @@ function ScrollbarRail({
   const axis = SCROLL_AXES[orientation];
   const [metrics, setMetrics] = useState<ScrollMetrics>(EMPTY_METRICS);
   const trackRef = useRef<HTMLDivElement>(null);
+  const thumbHitAreaRef = useRef<HTMLDivElement>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
+  const suppressTrackClickRef = useRef(false);
   const viewportId = `movie-${orientation}-scroll-${useId().replace(/:/g, "")}`;
 
   const update = useCallback(() => {
@@ -150,12 +160,16 @@ function ScrollbarRail({
 
   useEffect(() => () => dragCleanupRef.current?.(), []);
 
-  const startThumbDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const startThumbDrag = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    suppressTrackClick = false,
+  ) => {
     const viewport = viewportRef.current;
     const track = trackRef.current;
     if (!viewport || !track) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    suppressTrackClickRef.current = suppressTrackClick;
     const startCoordinate = axis.coordinate(event);
     const startPosition = axis.position(viewport);
     const thumbRange = Math.max(1, axis.trackSize(track) - metrics.thumbSize);
@@ -170,6 +184,11 @@ function ScrollbarRail({
       window.removeEventListener("pointerup", cleanup);
       window.removeEventListener("pointercancel", cleanup);
       dragCleanupRef.current = null;
+      if (suppressTrackClick) {
+        window.setTimeout(() => {
+          suppressTrackClickRef.current = false;
+        }, 0);
+      }
     };
     dragCleanupRef.current?.();
     dragCleanupRef.current = cleanup;
@@ -217,6 +236,25 @@ function ScrollbarRail({
       aria-valuenow={metrics.valueNow}
       tabIndex={0}
       onKeyDown={onScrollbarKeyDown}
+      onPointerDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        // Firefox can retarget a press from the moving thumb to its stationary
+        // rail while the modal scales in. Recover only presses beside the thumb.
+        const hitArea = thumbHitAreaRef.current;
+        if (!hitArea) return;
+        const box = hitArea.getBoundingClientRect();
+        const coordinate = axis.coordinate(event);
+        const start = orientation === "vertical" ? box.top : box.left;
+        const end = orientation === "vertical" ? box.bottom : box.right;
+        if (coordinate < start - 4 || coordinate > end + 4) return;
+        startThumbDrag(event, true);
+      }}
+      onClickCapture={(event) => {
+        if (!suppressTrackClickRef.current) return;
+        suppressTrackClickRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onClick={(event) => {
         if (event.target !== event.currentTarget) return;
         const viewport = viewportRef.current;
@@ -228,10 +266,13 @@ function ScrollbarRail({
       }}
     >
       <div
-        className={thumbClassName}
+        ref={thumbHitAreaRef}
+        className={hitAreaClassName(thumbClassName)}
         style={axis.thumbStyle(metrics.thumbSize, metrics.thumbOffset)}
         onPointerDown={startThumbDrag}
-      />
+      >
+        <div className={thumbClassName} />
+      </div>
     </div>
   );
 }

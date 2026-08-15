@@ -133,8 +133,8 @@ test("movie details scrollbar has a forgiving drag target and complete controls"
   await page.mouse.down();
   expect(await viewport.evaluate((element) => element.scrollTop)).toBe(0);
   await page.mouse.move(nearThumbX, thumbMiddleY + 40);
-  await page.mouse.up();
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.mouse.up();
 
   await scrollbar.press("Home");
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
@@ -151,7 +151,10 @@ test("movie details scrollbar has a forgiving drag target and complete controls"
   await expect(scrollbar).toHaveAttribute("aria-valuenow", "0");
   const trackBox = await scrollbar.boundingBox();
   expect(trackBox).not.toBeNull();
-  await page.mouse.click(trackBox!.x + 1, trackBox!.y + trackBox!.height - 2);
+  await page.mouse.click(
+    trackBox!.x + trackBox!.width / 2,
+    trackBox!.y + trackBox!.height - 2,
+  );
   const trackDelta = await viewport.evaluate((element) => element.scrollTop);
   const pageStep = await viewport.evaluate((element) => element.clientHeight * 0.88);
   expect(trackDelta).toBeGreaterThan(0);
@@ -176,8 +179,8 @@ test("cast scrollbar has a forgiving drag target and complete controls", async (
   await page.mouse.down();
   expect(await viewport.evaluate((element) => element.scrollLeft)).toBe(0);
   await page.mouse.move(thumbMiddleX + 40, nearThumbY);
-  await page.mouse.up();
   await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  await page.mouse.up();
 
   await scrollbar.press("Home");
   await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBe(0);

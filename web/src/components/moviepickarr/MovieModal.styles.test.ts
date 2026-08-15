@@ -31,10 +31,10 @@ describe("the movie-modal hero contract", () => {
       /\.movie-scrollbar > \.moviemodal__scroll::-webkit-scrollbar\s*\{[^}]*display:\s*none/,
     );
     expect(scrollbarCSS).toMatch(
-      /\.movie-scrollbar__thumb::before\s*\{[^}]*inset:\s*-7px -4px/,
+      /\.movie-scrollbar__thumb-hit-area\s*\{[^}]*top:\s*-7px;[^}]*right:\s*0;[^}]*width:\s*12px/,
     );
     expect(scrollbarCSS).toMatch(
-      /\.movie-cast-scrollbar__thumb::before\s*\{[^}]*inset:\s*-4px -8px/,
+      /\.movie-cast-scrollbar__thumb-hit-area\s*\{[^}]*top:\s*1px;[^}]*left:\s*-8px;[^}]*height:\s*12px/,
     );
     expect(css).not.toContain(".moviemodal__scroll::-webkit-scrollbar");
   });

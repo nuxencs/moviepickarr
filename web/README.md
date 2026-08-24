@@ -1,6 +1,7 @@
 # moviepickarr web
 
-The React 19 + Vite + Tailwind v4 frontend. Package manager is **bun**.
+The React 19 + Vite + Tailwind v4 frontend. Package manager is **Bun 1.4+**.
+Dependency installs use Bun's isolated linker and shared global package store.
 
 ```bash
 bun install

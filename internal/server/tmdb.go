@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -234,7 +234,7 @@ func (c *tmdbClient) doRequestWithAdmission(
 
 		switch {
 		case resp.StatusCode == http.StatusOK:
-			err := json.NewDecoder(resp.Body).Decode(out)
+			err := json.UnmarshalRead(resp.Body, out)
 			// Drain the trailing bytes before Close so the keep-alive connection
 			// is pooled for the next back-to-back enrichment request rather than
 			// torn down and re-handshaked.

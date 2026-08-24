@@ -2,7 +2,8 @@ package radarr
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -21,7 +22,7 @@ type moviePayload struct {
 	QualityProfileID    int                `json:"qualityProfileId"`
 	Tags                []int              `json:"tags"`
 	MinimumAvailability string             `json:"minimumAvailability"`
-	AddOptions          *addOptionsPayload `json:"addOptions,omitempty"`
+	AddOptions          *addOptionsPayload `json:"addOptions,omitzero"`
 }
 
 func (c *HTTPClient) FindMovieByTMDB(ctx context.Context, tmdbID int) (*Movie, error) {
@@ -95,7 +96,7 @@ func (c *HTTPClient) SetMonitored(ctx context.Context, movieID int, monitored bo
 		return Movie{}, fmt.Errorf("%w: Radarr movie ID must be positive", ErrInvalidInput)
 	}
 	endpoint := "movie/" + strconv.Itoa(movieID)
-	var remote map[string]json.RawMessage
+	var remote map[string]jsontext.Value
 	if err := c.get(ctx, endpoint, nil, &remote); err != nil {
 		return Movie{}, err
 	}
@@ -103,7 +104,7 @@ func (c *HTTPClient) SetMonitored(ctx context.Context, movieID int, monitored bo
 	if err := json.Unmarshal(remote["id"], &remoteID); err != nil || remoteID != movieID {
 		return Movie{}, fmt.Errorf("%w: movie response ID does not match the request", ErrInvalidResponse)
 	}
-	remote["monitored"] = json.RawMessage(strconv.FormatBool(monitored))
+	remote["monitored"] = jsontext.Value(strconv.FormatBool(monitored))
 	var updated moviePayload
 	if err := c.put(ctx, endpoint, remote, &updated); err != nil {
 		return Movie{}, err

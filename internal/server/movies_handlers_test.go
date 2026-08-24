@@ -2,7 +2,8 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -133,8 +134,8 @@ func TestHandleGetPooledMovies_ShipsLeanTiles(t *testing.T) {
 		t.Fatalf("get pooled movies status = %d, want %d", resp.StatusCode, fiber.StatusOK)
 	}
 
-	var payload []map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	var payload []map[string]jsontext.Value
+	if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
 		t.Fatalf("decode pooled movies: %v", err)
 	}
 	if len(payload) != 1 {

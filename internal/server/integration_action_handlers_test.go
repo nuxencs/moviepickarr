@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"testing"
 	"time"
@@ -100,7 +100,7 @@ func TestHandleTMDBRunActions_StartsAndCooperativelyCancels(t *testing.T) {
 		t.Fatalf("start status = %d, want 202", start.StatusCode)
 	}
 	var started integrationRunResponse
-	if err := json.NewDecoder(start.Body).Decode(&started); err != nil {
+	if err := json.UnmarshalRead(start.Body, &started); err != nil {
 		t.Fatalf("decode start: %v", err)
 	}
 	if started.ID != 77 || started.InitiatedBy == nil || *started.InitiatedBy != 9 {

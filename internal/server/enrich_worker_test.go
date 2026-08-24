@@ -105,8 +105,7 @@ func TestRateLimiter_RejectsBurstBeyondPendingLimit(t *testing.T) {
 		cancel()
 		t.Fatal("burst did not reject an excess waiter")
 	}
-	var overload *tmdbRequestQueueFullError
-	if !errors.As(first, &overload) {
+	if _, ok := errors.AsType[*tmdbRequestQueueFullError](first); !ok {
 		cancel()
 		t.Fatalf("burst error = %v, want typed queue-full error", first)
 	}

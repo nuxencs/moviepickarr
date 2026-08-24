@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,7 +30,7 @@ func TestHandleTMDBSearch_UnavailableDoesNotExposeAdminConfiguration(t *testing.
 		t.Fatalf("status = %d, want 503", response.StatusCode)
 	}
 	var problem problemDetails
-	if err := json.NewDecoder(response.Body).Decode(&problem); err != nil {
+	if err := json.UnmarshalRead(response.Body, &problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
 	if problem.Title != "temporarily_unavailable" || problem.Detail != "Movie search is temporarily unavailable" {
@@ -49,7 +49,7 @@ func TestHandleTMDBSearch_CredentialUnavailableUsesGenericMemberError(t *testing
 		t.Fatalf("status = %d, want 503", response.StatusCode)
 	}
 	var problem problemDetails
-	if err := json.NewDecoder(response.Body).Decode(&problem); err != nil {
+	if err := json.UnmarshalRead(response.Body, &problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
 	if problem.Title != "temporarily_unavailable" || problem.Detail != "Movie search is temporarily unavailable" {
@@ -68,7 +68,7 @@ func TestHandleTMDBSearch_QueueSaturationUsesGenericMemberError(t *testing.T) {
 		t.Fatalf("status = %d, want 503", response.StatusCode)
 	}
 	var problem problemDetails
-	if err := json.NewDecoder(response.Body).Decode(&problem); err != nil {
+	if err := json.UnmarshalRead(response.Body, &problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
 	if problem.Title != "temporarily_unavailable" || problem.Detail != "Movie search is temporarily unavailable" {

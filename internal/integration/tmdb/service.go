@@ -2,7 +2,8 @@ package tmdb
 
 import (
 	"context"
-	"encoding/json"
+	jsonv1 "encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -259,7 +260,9 @@ func (s *Service) Save(ctx context.Context, draft SaveDraft) (ConfigView, error)
 	if err != nil {
 		return ConfigView{}, err
 	}
-	encoded, err := json.Marshal(admin)
+	// AdminConfig is persisted with durations in nanoseconds. Keep that storage
+	// contract while using the v2 codec and its stricter defaults elsewhere.
+	encoded, err := json.Marshal(admin, jsonv1.FormatDurationAsNano(true))
 	if err != nil {
 		return ConfigView{}, fmt.Errorf("encode TMDB Admin config: %w", err)
 	}
@@ -600,7 +603,7 @@ func (s *Service) load(ctx context.Context) (integration.ConfigRecord, AdminConf
 		return integration.ConfigRecord{}, AdminConfig{}, err
 	}
 	var admin AdminConfig
-	if err := json.Unmarshal(record.AdminConfig, &admin); err != nil {
+	if err := json.Unmarshal(record.AdminConfig, &admin, jsonv1.FormatDurationAsNano(true)); err != nil {
 		return integration.ConfigRecord{}, AdminConfig{}, fmt.Errorf("decode TMDB Admin config: %w", err)
 	}
 	return record, admin, nil

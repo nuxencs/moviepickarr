@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"testing"
@@ -25,7 +25,7 @@ func TestHandleCreateUser_ReturnsClaimSecretOnlyInDirectResponse(t *testing.T) {
 		t.Fatalf("create status = %d, want 201", resp.StatusCode)
 	}
 	var body createMemberResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
 	rawToken := tokenFromClaimURL(t, body.ClaimURL)
@@ -133,7 +133,7 @@ func TestHandleRestoreUser_DeliversClaimURLWithoutPostCommitRead(t *testing.T) {
 		t.Fatalf("restore with unavailable read pool = %d, want 200", resp.StatusCode)
 	}
 	var body createMemberResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode restore response: %v", err)
 	}
 	if body.ID != returning.ID {

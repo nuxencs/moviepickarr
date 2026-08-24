@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"strconv"
@@ -33,7 +33,7 @@ func (e *authTestEnv) createMember(t *testing.T, adminCookie, name string) (int,
 		t.Fatalf("create member status = %d, want 201", resp.StatusCode)
 	}
 	var body createMemberResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode create member: %v", err)
 	}
 	return body.ID, tokenFromClaimURL(t, body.ClaimURL)
@@ -56,7 +56,7 @@ func tokenFromClaimURL(t *testing.T, url string) string {
 func decodeClaim(t *testing.T, resp *http.Response) claimResponse {
 	t.Helper()
 	var cr claimResponse
-	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &cr); err != nil {
 		t.Fatalf("decode claim: %v", err)
 	}
 	return cr
@@ -103,7 +103,7 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 		t.Fatalf("me status = %d, want 200", me.StatusCode)
 	}
 	var identity meResponse
-	if err := json.NewDecoder(me.Body).Decode(&identity); err != nil {
+	if err := json.UnmarshalRead(me.Body, &identity); err != nil {
 		t.Fatalf("decode me: %v", err)
 	}
 	if identity.ID != memberID || identity.Username == nil || *identity.Username != "newbie" || !identity.HasLocalLogin {
@@ -160,7 +160,7 @@ func TestReplaceInvite_RevokesTheOldLink(t *testing.T) {
 		t.Fatalf("replacement status = %d, want 201", resp.StatusCode)
 	}
 	var replacement inviteResponse
-	if err := json.NewDecoder(resp.Body).Decode(&replacement); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &replacement); err != nil {
 		t.Fatalf("decode replacement: %v", err)
 	}
 	newToken := tokenFromClaimURL(t, replacement.ClaimURL)
@@ -224,7 +224,7 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 		t.Fatalf("issue status = %d, want 201", issue.StatusCode)
 	}
 	var inv inviteResponse
-	if err := json.NewDecoder(issue.Body).Decode(&inv); err != nil {
+	if err := json.UnmarshalRead(issue.Body, &inv); err != nil {
 		t.Fatalf("decode issue: %v", err)
 	}
 	token := tokenFromClaimURL(t, inv.ClaimURL)
@@ -429,7 +429,7 @@ func TestSelfServeLocalLogin_SetsFirstCredential(t *testing.T) {
 
 	me := e.request(t, http.MethodGet, "/api/v1/auth/me", rawToken, nil)
 	var identity meResponse
-	if err := json.NewDecoder(me.Body).Decode(&identity); err != nil {
+	if err := json.UnmarshalRead(me.Body, &identity); err != nil {
 		t.Fatalf("decode me: %v", err)
 	}
 	if identity.Username == nil || *identity.Username != "sso_user" || !identity.HasLocalLogin {
@@ -485,7 +485,7 @@ func (e *authTestEnv) invitesOverview(t *testing.T, cookie string) invitesOvervi
 		t.Fatalf("invites overview status = %d, want 200", resp.StatusCode)
 	}
 	var overview invitesOverviewResponse
-	if err := json.NewDecoder(resp.Body).Decode(&overview); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &overview); err != nil {
 		t.Fatalf("decode invites overview: %v", err)
 	}
 	return overview

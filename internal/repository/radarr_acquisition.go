@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,7 +16,7 @@ const radarrAcquisitionHandoffLease = 30 * time.Second
 
 type RadarrEffectiveConfiguration struct {
 	RootFolderPath      string              `json:"rootFolderPath,omitempty"`
-	QualityProfileID    int                 `json:"qualityProfileId,omitempty"`
+	QualityProfileID    int                 `json:"qualityProfileId,omitzero"`
 	QualityProfileName  string              `json:"qualityProfileName,omitempty"`
 	Tags                []RadarrTagSnapshot `json:"tags,omitempty"`
 	MinimumAvailability string              `json:"minimumAvailability,omitempty"`

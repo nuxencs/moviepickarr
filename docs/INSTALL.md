@@ -12,7 +12,7 @@ database are all embedded, so there is nothing else to set up.
 - An optional Radarr installation and API key. Radarr is not required for the
   selection workflow. When configured, it can arrange a file for each drawn
   movie before the next draw.
-- Either Docker, or Go 1.26+ and [Bun](https://bun.sh) to build from source.
+- Either Docker, or Go 1.27+ and [Bun](https://bun.sh) to build from source.
 
 ## Docker
 

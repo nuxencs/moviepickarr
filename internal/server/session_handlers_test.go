@@ -1,7 +1,7 @@
 package server
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,7 +49,7 @@ func (e *authTestEnv) sessions(t *testing.T, cookie string) []sessionResponse {
 		t.Fatalf("list sessions status = %d, want 200", resp.StatusCode)
 	}
 	var rows []sessionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &rows); err != nil {
 		t.Fatalf("decode sessions: %v", err)
 	}
 	return rows

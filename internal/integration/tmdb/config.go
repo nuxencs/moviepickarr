@@ -19,14 +19,14 @@ type EnvironmentConfig struct {
 }
 
 type AdminConfig struct {
-	Enabled         *bool          `json:"enabled,omitempty"`
-	CastLimit       *int           `json:"castLimit,omitempty"`
-	RefreshInterval *time.Duration `json:"refreshInterval,omitempty"`
-	TTL             *time.Duration `json:"ttl,omitempty"`
-	MinInterval     *time.Duration `json:"minInterval,omitempty"`
-	MaxRetries      *int           `json:"maxRetries,omitempty"`
-	Backoff         *time.Duration `json:"backoff,omitempty"`
-	BatchLimit      *int           `json:"batchLimit,omitempty"`
+	Enabled         *bool          `json:"enabled,omitzero"`
+	CastLimit       *int           `json:"castLimit,omitzero"`
+	RefreshInterval *time.Duration `json:"refreshInterval,omitzero"`
+	TTL             *time.Duration `json:"ttl,omitzero"`
+	MinInterval     *time.Duration `json:"minInterval,omitzero"`
+	MaxRetries      *int           `json:"maxRetries,omitzero"`
+	Backoff         *time.Duration `json:"backoff,omitzero"`
+	BatchLimit      *int           `json:"batchLimit,omitzero"`
 }
 
 type ResolvedConfig struct {

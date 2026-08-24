@@ -2,7 +2,7 @@ package radarr_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -71,9 +71,9 @@ func TestGrabReleaseResolvesOpaqueIDAndRequiresRejectedOverride(t *testing.T) {
 			return
 		}
 		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.UnmarshalRead(r.Body, &body)
 		grabs = append(grabs, body)
-		_ = json.NewEncoder(w).Encode(body)
+		_ = json.MarshalWrite(w, body)
 	}))
 	defer server.Close()
 
@@ -115,7 +115,7 @@ func TestGrabApprovedReleaseSendsOnlyRadarrIdentifiers(t *testing.T) {
 			_, _ = w.Write([]byte(`[{"guid":"approved-guid","indexerId":5,"title":"Approved","mappedMovieId":8,"approved":true}]`))
 			return
 		}
-		_ = json.NewDecoder(r.Body).Decode(&grab)
+		_ = json.UnmarshalRead(r.Body, &grab)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -146,7 +146,7 @@ func TestRejectedOverrideSerializesRequiredFieldsWhenLanguagesAreEmpty(t *testin
 			_, _ = w.Write([]byte(`[{"guid":"rejected-guid","indexerId":5,"title":"Rejected","mappedMovieId":8,"approved":false,"rejected":true}]`))
 			return
 		}
-		_ = json.NewDecoder(r.Body).Decode(&grab)
+		_ = json.UnmarshalRead(r.Body, &grab)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()

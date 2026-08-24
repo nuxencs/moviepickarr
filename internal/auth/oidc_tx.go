@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"time"
 )
@@ -41,7 +41,7 @@ type OIDCTx struct {
 	Nonce           string `json:"nonce"`
 	PKCEVerifier    string `json:"pkce_verifier"`
 	Intent          string `json:"intent"`
-	MemberID        int    `json:"member_id,omitempty"`
+	MemberID        int    `json:"member_id,omitzero"`
 	InviteTokenHash string `json:"invite_token_hash,omitempty"`
 	// IssuedAt is the seal timestamp (unix seconds) the TTL is measured from.
 	IssuedAt int64 `json:"iat"`

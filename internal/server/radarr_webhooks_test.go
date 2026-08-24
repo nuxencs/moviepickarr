@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +83,7 @@ func TestRadarrWebhookHTTPRejectsUnknownReasons(t *testing.T) {
 				t.Fatalf("status = %d, want %d", response.StatusCode, fiber.StatusUnprocessableEntity)
 			}
 			var problem radarrProblemResponse
-			if err := json.NewDecoder(response.Body).Decode(&problem); err != nil {
+			if err := json.UnmarshalRead(response.Body, &problem); err != nil {
 				t.Fatalf("decode problem: %v", err)
 			}
 			if len(problem.Issues) != 1 || problem.Issues[0].Field != "reasons" {

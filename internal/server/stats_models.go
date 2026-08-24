@@ -48,8 +48,8 @@ type statsFiltersEcho struct {
 	Genre         string              `json:"genre,omitempty"`
 	Actors        []statsFilterPerson `json:"actors,omitempty"`
 	Crew          []statsFilterPerson `json:"crew,omitempty"`
-	ReleaseYear   int                 `json:"releaseYear,omitempty"`
-	ReleaseDecade int                 `json:"releaseDecade,omitempty"`
+	ReleaseYear   int                 `json:"releaseYear,omitzero"`
+	ReleaseDecade int                 `json:"releaseDecade,omitzero"`
 }
 
 type statsResponse struct {

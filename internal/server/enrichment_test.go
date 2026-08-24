@@ -306,8 +306,7 @@ func TestEnrichOne_RateLimitBubbles(t *testing.T) {
 
 	svc, movies := newTestEnricher(m, tmdb)
 	_, err := svc.EnrichOne(context.Background(), 3)
-	var rl *tmdbRateLimitError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*tmdbRateLimitError](err); !ok {
 		t.Fatalf("expected rate-limit error to bubble, got %v", err)
 	}
 	if len(movies.applyCalls) != 0 {

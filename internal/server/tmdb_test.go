@@ -172,8 +172,7 @@ func TestDoRequest_RateLimitedExhausts(t *testing.T) {
 	defer srv.Close()
 
 	_, err := testClient(srv.URL).MovieDetails(context.Background(), 1)
-	var rl *tmdbRateLimitError
-	if !errors.As(err, &rl) {
+	if _, ok := errors.AsType[*tmdbRateLimitError](err); !ok {
 		t.Fatalf("expected *tmdbRateLimitError, got %v", err)
 	}
 	if calls != 2 { // initial + 1 retry (maxRetries=1)
@@ -189,8 +188,7 @@ func TestDoRequest_ServerErrorIsTransient(t *testing.T) {
 	defer srv.Close()
 
 	_, err := testClient(srv.URL).MovieDetails(context.Background(), 1)
-	var tr *tmdbTransientError
-	if !errors.As(err, &tr) {
+	if _, ok := errors.AsType[*tmdbTransientError](err); !ok {
 		t.Fatalf("expected *tmdbTransientError, got %v", err)
 	}
 }

@@ -2,7 +2,7 @@ package server
 
 import (
 	"database/sql"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 
 	"moviepickarr/internal/domain"

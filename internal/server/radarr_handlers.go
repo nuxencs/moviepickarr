@@ -27,10 +27,10 @@ type radarrAbandonmentReviewResponse struct {
 }
 
 type radarrIdentityResponse struct {
-	TMDBID int    `json:"tmdbId,omitempty"`
+	TMDBID int    `json:"tmdbId,omitzero"`
 	IMDbID string `json:"imdbId,omitempty"`
 	Title  string `json:"title,omitempty"`
-	Year   int    `json:"year,omitempty"`
+	Year   int    `json:"year,omitzero"`
 	Source string `json:"source,omitempty"`
 }
 
@@ -40,12 +40,12 @@ type radarrTagResponse struct {
 }
 
 type radarrTargetResponse struct {
-	PresetID            int64               `json:"presetId,omitempty"`
+	PresetID            int64               `json:"presetId,omitzero"`
 	PresetName          string              `json:"presetName,omitempty"`
-	InstanceID          int64               `json:"instanceId,omitempty"`
+	InstanceID          int64               `json:"instanceId,omitzero"`
 	InstanceName        string              `json:"instanceName,omitempty"`
 	RootFolderPath      string              `json:"rootFolderPath,omitempty"`
-	QualityProfileID    int                 `json:"qualityProfileId,omitempty"`
+	QualityProfileID    int                 `json:"qualityProfileId,omitzero"`
 	QualityProfileName  string              `json:"qualityProfileName,omitempty"`
 	Tags                []radarrTagResponse `json:"tags,omitempty"`
 	MinimumAvailability string              `json:"minimumAvailability,omitempty"`
@@ -54,7 +54,7 @@ type radarrTargetResponse struct {
 
 type radarrEffectiveConfigResponse struct {
 	RootFolderPath      string              `json:"rootFolderPath,omitempty"`
-	QualityProfileID    int                 `json:"qualityProfileId,omitempty"`
+	QualityProfileID    int                 `json:"qualityProfileId,omitzero"`
 	QualityProfileName  string              `json:"qualityProfileName,omitempty"`
 	Tags                []radarrTagResponse `json:"tags,omitempty"`
 	MinimumAvailability string              `json:"minimumAvailability,omitempty"`
@@ -82,25 +82,25 @@ type radarrAcquisitionResponse struct {
 	ID                    int64                               `json:"id"`
 	MovieID               int                                 `json:"movieId"`
 	Title                 string                              `json:"title"`
-	Year                  int                                 `json:"year,omitempty"`
+	Year                  int                                 `json:"year,omitzero"`
 	Status                string                              `json:"status"`
 	MutationState         string                              `json:"mutationState"`
 	ActionReason          string                              `json:"actionReason,omitempty"`
 	ActionMessage         string                              `json:"actionMessage,omitempty"`
-	Identity              *radarrIdentityResponse             `json:"identity,omitempty"`
-	Preset                *radarrTargetResponse               `json:"preset,omitempty"`
-	Target                *radarrTargetResponse               `json:"target,omitempty"`
+	Identity              *radarrIdentityResponse             `json:"identity,omitzero"`
+	Preset                *radarrTargetResponse               `json:"preset,omitzero"`
+	Target                *radarrTargetResponse               `json:"target,omitzero"`
 	TargetLocked          bool                                `json:"targetLocked"`
 	TargetPreviewedAt     string                              `json:"targetPreviewedAt,omitempty"`
 	TargetPreviewExisting bool                                `json:"targetPreviewExisting"`
 	PreviewReady          bool                                `json:"previewReady"`
-	RadarrMovieID         int                                 `json:"radarrMovieId,omitempty"`
+	RadarrMovieID         int                                 `json:"radarrMovieId,omitzero"`
 	Existing              bool                                `json:"existing"`
 	ExistingMovie         bool                                `json:"existingMovie"`
 	AdoptedExisting       bool                                `json:"adoptedExisting"`
-	EffectiveConfig       *radarrEffectiveConfigResponse      `json:"effectiveConfig,omitempty"`
+	EffectiveConfig       *radarrEffectiveConfigResponse      `json:"effectiveConfig,omitzero"`
 	ActiveQueue           bool                                `json:"activeQueue"`
-	LatestRelease         *radarrReleaseSummaryResponse       `json:"latestRelease,omitempty"`
+	LatestRelease         *radarrReleaseSummaryResponse       `json:"latestRelease,omitzero"`
 	ManualAttemptCount    int                                 `json:"manualAttemptCount"`
 	LatestFailure         string                              `json:"latestFailure,omitempty"`
 	AbandonmentReason     string                              `json:"abandonmentReason,omitempty"`
@@ -125,7 +125,7 @@ type radarrInstanceResponse struct {
 type radarrRootFolderResponse struct {
 	ID         int    `json:"id"`
 	Path       string `json:"path"`
-	FreeSpace  int64  `json:"freeSpace,omitempty"`
+	FreeSpace  int64  `json:"freeSpace,omitzero"`
 	Accessible bool   `json:"accessible"`
 }
 
@@ -182,16 +182,16 @@ type radarrIdentityResultResponse struct {
 	TMDBID int    `json:"tmdbId"`
 	IMDbID string `json:"imdbId,omitempty"`
 	Title  string `json:"title"`
-	Year   int    `json:"year,omitempty"`
+	Year   int    `json:"year,omitzero"`
 }
 
 type radarrReleaseResponse struct {
 	ID                string   `json:"id"`
 	Title             string   `json:"title"`
 	Quality           string   `json:"quality,omitempty"`
-	Size              int64    `json:"size,omitempty"`
-	AgeHours          float64  `json:"ageHours,omitempty"`
-	Peers             *int     `json:"peers,omitempty"`
+	Size              int64    `json:"size,omitzero"`
+	AgeHours          float64  `json:"ageHours,omitzero"`
+	Peers             *int     `json:"peers,omitzero"`
 	Protocol          string   `json:"protocol,omitempty"`
 	Indexer           string   `json:"indexer,omitempty"`
 	CustomFormats     []string `json:"customFormats,omitempty"`
@@ -775,8 +775,8 @@ func writeRadarrProblem(
 ) error {
 	c.Set(fiber.HeaderContentType, "application/problem+json")
 	return c.Status(status).JSON(radarrProblemResponse{
-		problemDetails: problemDetails{Type: "about:blank", Title: title, Status: status, Detail: detail},
-		Issues:         []radarrIssueResponse{{Field: issue.Field, Message: issue.Message}},
+		Type: "about:blank", Title: title, Status: status, Detail: detail,
+		Issues: []radarrIssueResponse{{Field: issue.Field, Message: issue.Message}},
 	})
 }
 

@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -181,7 +181,7 @@ func TestLogin_ValidRoundTripsToMe(t *testing.T) {
 		t.Fatalf("me status = %d, want 200", resp.StatusCode)
 	}
 	var me meResponse
-	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &me); err != nil {
 		t.Fatalf("decode me: %v", err)
 	}
 	if me.ID != id || me.DisplayName != "Alice" || me.Role != "admin" {
@@ -241,7 +241,7 @@ func TestAuthConfig_ReportsOIDCPresenceUnauthenticated(t *testing.T) {
 		t.Fatalf("config status = %d, want 200", off.StatusCode)
 	}
 	var cfg authConfigResponse
-	if err := json.NewDecoder(off.Body).Decode(&cfg); err != nil {
+	if err := json.UnmarshalRead(off.Body, &cfg); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
 	if cfg.OIDC {
@@ -252,7 +252,7 @@ func TestAuthConfig_ReportsOIDCPresenceUnauthenticated(t *testing.T) {
 	// provider is configured; the endpoint now advertises the SSO button.
 	e.h.oidcEnabled = true
 	on := e.request(t, http.MethodGet, "/api/v1/auth/config", "", nil)
-	if err := json.NewDecoder(on.Body).Decode(&cfg); err != nil {
+	if err := json.UnmarshalRead(on.Body, &cfg); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
 	if !cfg.OIDC {
@@ -271,7 +271,7 @@ func TestPosterWall_PublicAndEmptyWhenUnwarmed(t *testing.T) {
 		t.Fatalf("poster-wall status = %d, want 200", resp.StatusCode)
 	}
 	var paths []string
-	if err := json.NewDecoder(resp.Body).Decode(&paths); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &paths); err != nil {
 		t.Fatalf("decode poster-wall: %v", err)
 	}
 	if paths == nil {
@@ -360,7 +360,7 @@ func TestChangePassword_RotatesAndRevokes(t *testing.T) {
 		t.Fatalf("reset invite status = %d, want 201", issue.StatusCode)
 	}
 	var resetInvite inviteResponse
-	if err := json.NewDecoder(issue.Body).Decode(&resetInvite); err != nil {
+	if err := json.UnmarshalRead(issue.Body, &resetInvite); err != nil {
 		t.Fatalf("decode reset invite: %v", err)
 	}
 	resetToken := tokenFromClaimURL(t, resetInvite.ClaimURL)
@@ -589,7 +589,7 @@ func TestAdminDeleteLocalLogin(t *testing.T) {
 		t.Fatalf("reset invite status = %d, want 201", issue.StatusCode)
 	}
 	var resetInvite inviteResponse
-	if err := json.NewDecoder(issue.Body).Decode(&resetInvite); err != nil {
+	if err := json.UnmarshalRead(issue.Body, &resetInvite); err != nil {
 		t.Fatalf("decode reset invite: %v", err)
 	}
 	resetToken := tokenFromClaimURL(t, resetInvite.ClaimURL)

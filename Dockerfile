@@ -1,10 +1,11 @@
 # build web
-FROM oven/bun:latest@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS web-builder
+FROM oven/bun:1.4.0@sha256:5ff609364c049b54eb0ff560ec96319729a972078ef2c755d758f0c6ef89c2d6 AS web-builder
 
 WORKDIR /web
 
-COPY web/package.json web/bun.lockb ./
-RUN bun install --frozen-lockfile
+COPY web/package.json web/bun.lock web/bunfig.toml ./
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
 COPY web ./
 RUN bun run build

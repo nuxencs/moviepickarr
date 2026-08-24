@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "bun --bun vitest run",
     "e2e:server": "bun e2e/server.ts",
     "test:e2e": "bun run build && bun run test:e2e:run",
     "test:e2e:run": "playwright test"

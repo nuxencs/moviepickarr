@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -122,7 +122,7 @@ type whoamiBody struct {
 func decodeWhoami(t *testing.T, resp *http.Response) whoamiBody {
 	t.Helper()
 	var body whoamiBody
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode whoami: %v", err)
 	}
 	return body

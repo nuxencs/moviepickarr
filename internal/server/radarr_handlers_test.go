@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -88,7 +88,7 @@ func TestRadarrAttentionAndAcquisitionListStayConcealedUntilReveal(t *testing.T)
 	response := doAs(t, app, httptest.NewRequest(http.MethodGet, "/api/v1/integrations/radarr/acquisitions", nil), admin.ID, "admin")
 	defer response.Body.Close()
 	var concealed []radarrAcquisitionResponse
-	if err := json.NewDecoder(response.Body).Decode(&concealed); err != nil {
+	if err := json.UnmarshalRead(response.Body, &concealed); err != nil {
 		t.Fatalf("decode concealed list: %v", err)
 	}
 	if len(concealed) != 0 {
@@ -103,7 +103,7 @@ func TestRadarrAttentionAndAcquisitionListStayConcealedUntilReveal(t *testing.T)
 	response = doAs(t, app, httptest.NewRequest(http.MethodGet, "/api/v1/integrations/radarr/acquisitions", nil), admin.ID, "admin")
 	defer response.Body.Close()
 	var revealed []radarrAcquisitionResponse
-	if err := json.NewDecoder(response.Body).Decode(&revealed); err != nil {
+	if err := json.UnmarshalRead(response.Body, &revealed); err != nil {
 		t.Fatalf("decode revealed list: %v", err)
 	}
 	if len(revealed) != 1 || revealed[0].Title != "Arrival" || revealed[0].Status != "needs_preset" {
@@ -113,7 +113,7 @@ func TestRadarrAttentionAndAcquisitionListStayConcealedUntilReveal(t *testing.T)
 	response = doAs(t, app, httptest.NewRequest(http.MethodGet, "/api/v1/integrations", nil), admin.ID, "admin")
 	defer response.Body.Close()
 	var summaries []integrationSummaryResponse
-	if err := json.NewDecoder(response.Body).Decode(&summaries); err != nil {
+	if err := json.UnmarshalRead(response.Body, &summaries); err != nil {
 		t.Fatalf("decode integration summaries: %v", err)
 	}
 	if len(summaries) != 2 || summaries[1].ID != "radarr" || summaries[1].AttentionCount == nil || *summaries[1].AttentionCount != 1 || len(summaries[1].Operations) != 0 {
@@ -214,7 +214,7 @@ func TestRadarrRemoveInstanceReportsHardDeleteForUnusedSetup(t *testing.T) {
 		t.Fatalf("remove unused instance status = %d, want %d", response.StatusCode, fiber.StatusOK)
 	}
 	var result radarrRemoveResponse
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+	if err := json.UnmarshalRead(response.Body, &result); err != nil {
 		t.Fatalf("decode removal response: %v", err)
 	}
 	if result.Outcome != repository.RadarrOutcomeDeleted {
@@ -263,7 +263,7 @@ func TestRadarrRemovePresetReportsHardDeleteForUnusedSetup(t *testing.T) {
 		t.Fatalf("remove unused preset status = %d, want %d", response.StatusCode, fiber.StatusOK)
 	}
 	var result radarrRemoveResponse
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+	if err := json.UnmarshalRead(response.Body, &result); err != nil {
 		t.Fatalf("decode removal response: %v", err)
 	}
 	if result.Outcome != repository.RadarrOutcomeDeleted {
@@ -312,7 +312,7 @@ func TestRadarrRemovePresetHardDeletesArchivedUnusedSetup(t *testing.T) {
 		t.Fatalf("remove archived preset status = %d, want %d", response.StatusCode, fiber.StatusOK)
 	}
 	var result radarrRemoveResponse
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+	if err := json.UnmarshalRead(response.Body, &result); err != nil {
 		t.Fatalf("decode archived removal response: %v", err)
 	}
 	if result.Outcome != repository.RadarrOutcomeDeleted {
@@ -397,7 +397,7 @@ func TestRadarrRemovePresetReportsArchivedOutcomeForUsedSetup(t *testing.T) {
 		t.Fatalf("remove used preset status = %d, want %d", response.StatusCode, fiber.StatusOK)
 	}
 	var result radarrRemoveResponse
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+	if err := json.UnmarshalRead(response.Body, &result); err != nil {
 		t.Fatalf("decode removal response: %v", err)
 	}
 	if result.Outcome != repository.RadarrOutcomeArchived {
@@ -460,7 +460,7 @@ func TestRadarrWebhookHTTPWorkflowRequiresSavedVerificationBeforeEnable(t *testi
 		t.Fatalf("create webhook status = %d", response.StatusCode)
 	}
 	var created radarrWebhookResponse
-	if err := json.NewDecoder(response.Body).Decode(&created); err != nil {
+	if err := json.UnmarshalRead(response.Body, &created); err != nil {
 		t.Fatalf("decode created webhook: %v", err)
 	}
 	if created.Enabled || created.Verified || created.ID <= 0 || len(created.Reasons) != 1 {
@@ -477,7 +477,7 @@ func TestRadarrWebhookHTTPWorkflowRequiresSavedVerificationBeforeEnable(t *testi
 		t.Fatalf("test webhook status = %d", response.StatusCode)
 	}
 	var verified radarrWebhookResponse
-	if err := json.NewDecoder(response.Body).Decode(&verified); err != nil {
+	if err := json.UnmarshalRead(response.Body, &verified); err != nil {
 		t.Fatalf("decode tested webhook: %v", err)
 	}
 	if !verified.Verified || deliveries.Load() != 1 {
@@ -494,7 +494,7 @@ func TestRadarrWebhookHTTPWorkflowRequiresSavedVerificationBeforeEnable(t *testi
 		t.Fatalf("enable webhook status = %d", response.StatusCode)
 	}
 	var enabled radarrWebhookResponse
-	if err := json.NewDecoder(response.Body).Decode(&enabled); err != nil {
+	if err := json.UnmarshalRead(response.Body, &enabled); err != nil {
 		t.Fatalf("decode enabled webhook: %v", err)
 	}
 	if !enabled.Enabled || !enabled.Verified {
@@ -511,7 +511,7 @@ func TestRadarrWebhookHTTPWorkflowRequiresSavedVerificationBeforeEnable(t *testi
 		t.Fatalf("change webhook format status = %d", response.StatusCode)
 	}
 	var changed radarrWebhookResponse
-	if err := json.NewDecoder(response.Body).Decode(&changed); err != nil {
+	if err := json.UnmarshalRead(response.Body, &changed); err != nil {
 		t.Fatalf("decode changed webhook: %v", err)
 	}
 	if changed.Enabled || changed.Verified {
@@ -568,7 +568,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 		t.Fatalf("create instance status = %d", response.StatusCode)
 	}
 	var instance radarrInstanceResponse
-	if err := json.NewDecoder(response.Body).Decode(&instance); err != nil {
+	if err := json.UnmarshalRead(response.Body, &instance); err != nil {
 		t.Fatalf("decode instance: %v", err)
 	}
 	if instance.ID <= 0 || !instance.APIKeyConfigured || client.baseURL != "https://radarr.example.test" || client.apiKey != "write-only-key" {
@@ -582,7 +582,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 	), 1, "admin")
 	defer response.Body.Close()
 	var options radarrInstanceOptionsResponse
-	if err := json.NewDecoder(response.Body).Decode(&options); err != nil {
+	if err := json.UnmarshalRead(response.Body, &options); err != nil {
 		t.Fatalf("decode options: %v", err)
 	}
 	if len(options.RootFolders) != 1 || len(options.QualityProfiles) != 1 || len(options.Tags) != 1 {
@@ -599,7 +599,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 		t.Fatalf("create preset status = %d", response.StatusCode)
 	}
 	var preset radarrPresetResponse
-	if err := json.NewDecoder(response.Body).Decode(&preset); err != nil {
+	if err := json.UnmarshalRead(response.Body, &preset); err != nil {
 		t.Fatalf("decode preset: %v", err)
 	}
 	if preset.ID <= 0 || !preset.Valid || preset.QualityProfileName != "HD" || len(preset.Tags) != 1 {
@@ -628,7 +628,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 	response = doAs(t, app, httptest.NewRequest(http.MethodGet, "/api/v1/integrations/radarr/acquisitions", nil), admin.ID, "admin")
 	defer response.Body.Close()
 	var acquisitions []radarrAcquisitionResponse
-	if err := json.NewDecoder(response.Body).Decode(&acquisitions); err != nil {
+	if err := json.UnmarshalRead(response.Body, &acquisitions); err != nil {
 		t.Fatalf("decode acquisitions: %v", err)
 	}
 	if len(acquisitions) != 1 {
@@ -639,7 +639,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 	response = doAs(t, app, jsonReq(http.MethodPut, acquisitionPath+"/preset", `{"presetId":`+strconv.FormatInt(preset.ID, 10)+`}`), admin.ID, "admin")
 	defer response.Body.Close()
 	var preview radarrAcquisitionResponse
-	if err := json.NewDecoder(response.Body).Decode(&preview); err != nil {
+	if err := json.UnmarshalRead(response.Body, &preview); err != nil {
 		t.Fatalf("decode target preview: %v", err)
 	}
 	if response.StatusCode != fiber.StatusOK || !preview.PreviewReady || preview.TargetLocked || preview.TargetPreviewExisting {
@@ -649,7 +649,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 	response = doAs(t, app, httptest.NewRequest(http.MethodPost, acquisitionPath+"/confirm", nil), admin.ID, "admin")
 	defer response.Body.Close()
 	var confirmed radarrAcquisitionResponse
-	if err := json.NewDecoder(response.Body).Decode(&confirmed); err != nil {
+	if err := json.UnmarshalRead(response.Body, &confirmed); err != nil {
 		t.Fatalf("decode confirmed target: %v", err)
 	}
 	if response.StatusCode != fiber.StatusOK || !confirmed.TargetLocked || confirmed.Status != "needs_release" || confirmed.RadarrMovieID != 91 {
@@ -662,7 +662,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 	response = doAs(t, app, httptest.NewRequest(http.MethodPost, acquisitionPath+"/releases/search", nil), admin.ID, "admin")
 	defer response.Body.Close()
 	var releases []radarrReleaseResponse
-	if err := json.NewDecoder(response.Body).Decode(&releases); err != nil {
+	if err := json.UnmarshalRead(response.Body, &releases); err != nil {
 		t.Fatalf("decode releases: %v", err)
 	}
 	if len(releases) != 1 || releases[0].ID != "opaque-release" || !releases[0].GrabAllowed {
@@ -672,7 +672,7 @@ func TestRadarrHTTPSetupAndManualAcquisitionWorkflow(t *testing.T) {
 	response = doAs(t, app, jsonReq(http.MethodPost, acquisitionPath+"/releases/opaque-release/grab", `{"override":false}`), admin.ID, "admin")
 	defer response.Body.Close()
 	var grabbed radarrAcquisitionResponse
-	if err := json.NewDecoder(response.Body).Decode(&grabbed); err != nil {
+	if err := json.UnmarshalRead(response.Body, &grabbed); err != nil {
 		t.Fatalf("decode grabbed acquisition: %v", err)
 	}
 	if response.StatusCode != fiber.StatusOK || grabbed.Status != "queued" || !grabbed.ActiveQueue || grabbed.ManualAttemptCount != 1 {
@@ -703,7 +703,7 @@ func TestRadarrInstanceEndpointChangeRequiresExplicitAPIKey(t *testing.T) {
 		t.Fatalf("create instance status = %d", response.StatusCode)
 	}
 	var instance radarrInstanceResponse
-	if err := json.NewDecoder(response.Body).Decode(&instance); err != nil {
+	if err := json.UnmarshalRead(response.Body, &instance); err != nil {
 		_ = response.Body.Close()
 		t.Fatalf("decode instance: %v", err)
 	}
@@ -723,7 +723,7 @@ func TestRadarrInstanceEndpointChangeRequiresExplicitAPIKey(t *testing.T) {
 		t.Fatalf("endpoint change status = %d, want %d", response.StatusCode, fiber.StatusUnprocessableEntity)
 	}
 	var problem radarrProblemResponse
-	if err := json.NewDecoder(response.Body).Decode(&problem); err != nil {
+	if err := json.UnmarshalRead(response.Body, &problem); err != nil {
 		t.Fatalf("decode endpoint change problem: %v", err)
 	}
 	if len(problem.Issues) != 1 || problem.Issues[0].Field != "apiKey" {
@@ -846,7 +846,7 @@ func assertRadarrAttention(t *testing.T, app *fiber.App, want int) {
 	response := doAs(t, app, httptest.NewRequest(http.MethodGet, "/api/v1/integrations/radarr/attention", nil), 1, "admin")
 	defer response.Body.Close()
 	var body radarrAttentionResponse
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode attention: %v", err)
 	}
 	if response.StatusCode != fiber.StatusOK || body.Count != want {

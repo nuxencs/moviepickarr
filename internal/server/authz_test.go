@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,7 +25,7 @@ import (
 func problemCode(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	var p problemDetails
-	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &p); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
 	return p.Title

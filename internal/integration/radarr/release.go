@@ -170,10 +170,10 @@ func (c *HTTPClient) GrabRelease(ctx context.Context, request GrabReleaseRequest
 	payload := struct {
 		GUID           string             `json:"guid"`
 		IndexerID      int                `json:"indexerId"`
-		ShouldOverride *bool              `json:"shouldOverride,omitempty"`
-		MovieID        *int               `json:"movieId,omitempty"`
-		Quality        *qualityPayload    `json:"quality,omitempty"`
-		Languages      *[]languagePayload `json:"languages,omitempty"`
+		ShouldOverride *bool              `json:"shouldOverride,omitzero"`
+		MovieID        *int               `json:"movieId,omitzero"`
+		Quality        *qualityPayload    `json:"quality,omitzero"`
+		Languages      *[]languagePayload `json:"languages,omitzero"`
 	}{GUID: cached.guid, IndexerID: cached.indexer}
 	if cached.rejected {
 		override := true

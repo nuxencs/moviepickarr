@@ -17,8 +17,7 @@ const (
 )
 
 func sqliteErrCode(err error) int {
-	var se *sqlite.Error
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[*sqlite.Error](err); ok {
 		return se.Code()
 	}
 	return 0

@@ -14,7 +14,7 @@ type event struct {
 	// broker keeps no history.
 	Seq  uint64 `json:"seq"`
 	Type string `json:"type"`
-	Data any    `json:"data,omitempty"`
+	Data any    `json:"data,omitzero"`
 }
 
 type eventBroker struct {

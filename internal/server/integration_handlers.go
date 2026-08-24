@@ -18,7 +18,7 @@ type integrationSummaryResponse struct {
 	State          string                                `json:"state"`
 	Reason         string                                `json:"reason,omitempty"`
 	LatestActivity string                                `json:"latestActivity,omitempty"`
-	AttentionCount *int                                  `json:"attentionCount,omitempty"`
+	AttentionCount *int                                  `json:"attentionCount,omitzero"`
 	Operations     []integrationOperationSummaryResponse `json:"operations"`
 }
 
@@ -60,7 +60,7 @@ type tmdbIntegrationResponse struct {
 	Reason                 string                  `json:"reason,omitempty"`
 	Warnings               []tmdb.ConfigWarning    `json:"warnings"`
 	Settings               tmdbSettingsResponse    `json:"settings"`
-	LatestRun              *integrationRunResponse `json:"latestRun,omitempty"`
+	LatestRun              *integrationRunResponse `json:"latestRun,omitzero"`
 	LastCheckedAt          string                  `json:"lastCheckedAt,omitempty"`
 	LastConnectionTestedAt string                  `json:"lastConnectionTestedAt,omitempty"`
 	NextCheckAt            string                  `json:"nextCheckAt,omitempty"`
@@ -419,9 +419,9 @@ func writeTMDBProblem(
 ) error {
 	c.Set(fiber.HeaderContentType, "application/problem+json")
 	return c.Status(status).JSON(integrationProblemDetails{
-		problemDetails: problemDetails{Type: "about:blank", Title: title, Status: status, Detail: detail},
-		Issues:         issues,
-		Warnings:       warnings,
+		Type: "about:blank", Title: title, Status: status, Detail: detail,
+		Issues:   issues,
+		Warnings: warnings,
 	})
 }
 

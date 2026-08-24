@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -47,7 +47,7 @@ func TestHandleGetTMDBIntegration_ReturnsTypedWriteOnlySettings(t *testing.T) {
 			} `json:"castLimit"`
 		} `json:"settings"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.Revision != 1 || body.State != "disabled" {
@@ -99,7 +99,7 @@ func TestHandleGetTMDBIntegration_ReturnsCurrentOrLatestRun(t *testing.T) {
 			Status string `json:"status"`
 		} `json:"latestRun"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.LatestRun == nil || body.LatestRun.ID != started.ID || body.LatestRun.Status != "running" {
@@ -138,7 +138,7 @@ func TestHandleGetTMDBIntegration_PrefersActiveLibraryRunOverNewerMovieRun(t *te
 			ID int64 `json:"id"`
 		} `json:"latestRun"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.LatestRun == nil || body.LatestRun.ID != libraryRun.ID {
@@ -178,7 +178,7 @@ func TestHandleGetTMDBIntegration_ReturnsStatusTimestamps(t *testing.T) {
 		NextCheckAt            string `json:"nextCheckAt"`
 		LastSuccessfulRunAt    string `json:"lastSuccessfulRunAt"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.LastCheckedAt != checkedAt.Format(time.RFC3339) ||
@@ -212,7 +212,7 @@ func TestHandleListIntegrations_UsesConnectionCheckAsLatestActivity(t *testing.T
 			Name string `json:"name"`
 		} `json:"operations"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if len(body) != 2 || body[0].ID != "tmdb" || body[0].LatestActivity != checkedAt.Format(time.RFC3339) {
@@ -248,7 +248,7 @@ func TestHandleSaveTMDBIntegration_PersistsOneTypedDraft(t *testing.T) {
 		t.Fatalf("status = %d, want 200", response.StatusCode)
 	}
 	var body tmdbIntegrationResponse
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.Revision != 2 || body.Settings.CastLimit.Value != 30 {
@@ -335,7 +335,7 @@ func TestHandleTestTMDBConnection_UsesDraftWithoutSavingOrReturningSecret(t *tes
 		t.Fatalf("status = %d, want 200", response.StatusCode)
 	}
 	var body map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body["state"] != string(integration.StateConnected) || tester.config.APIKey != "draft-secret" || tester.config.CastLimit != 21 {

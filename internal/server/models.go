@@ -45,13 +45,13 @@ type leanMovieTile struct {
 	AddedAt         string `json:"addedAt"`
 	AddedByID       int    `json:"addedByID"`
 	AddedByName     string `json:"addedByName"`
-	AddedByArchived bool   `json:"addedByArchived,omitempty"`
+	AddedByArchived bool   `json:"addedByArchived,omitzero"`
 	WatchedAt       string `json:"watchedAt"`
 
 	// Stable external identities, exposed so the frontend can build links to
 	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).
 	// Omitted when the movie carries no such id.
-	TMDBID *int   `json:"tmdbId,omitempty"`
+	TMDBID *int   `json:"tmdbId,omitzero"`
 	IMDbID string `json:"imdbId,omitempty"`
 
 	// Enriched TMDB tile fields. All optional: a movie may not be enriched
@@ -61,9 +61,9 @@ type leanMovieTile struct {
 	// the image URL.
 	PosterPath  string   `json:"posterPath,omitempty"`
 	ReleaseDate string   `json:"releaseDate,omitempty"`
-	Runtime     int      `json:"runtime,omitempty"`
+	Runtime     int      `json:"runtime,omitzero"`
 	Genres      []string `json:"genres,omitempty"`
-	VoteAverage float64  `json:"voteAverage,omitempty"`
+	VoteAverage float64  `json:"voteAverage,omitzero"`
 }
 
 // fullMovie is the detail class: everything on the tile plus the draw
@@ -94,7 +94,7 @@ type fullMovie struct {
 	// the reel's confirm button. Revealed reports whether the draw was confirmed,
 	// so a reload after the reveal shows the result instead of re-opening the reel.
 	DrawClientID string `json:"drawClientId,omitempty"`
-	Revealed     bool   `json:"revealed,omitempty"`
+	Revealed     bool   `json:"revealed,omitzero"`
 
 	// Modal-only enriched metadata; raw TMDB path for the backdrop.
 	BackdropPath string `json:"backdropPath,omitempty"`

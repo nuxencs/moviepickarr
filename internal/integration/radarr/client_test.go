@@ -2,7 +2,7 @@ package radarr_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +36,7 @@ func TestHTTPClientVerifyAndCatalogUsesV3APIKeyAndReturnsTypedSetup(t *testing.T
 		}
 		delete(wantedPaths, r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(payload)
+		_ = json.MarshalWrite(w, payload)
 	}))
 	defer server.Close()
 
@@ -160,12 +160,12 @@ func TestHTTPClientFindsAddsAndGetsMoviesWithTypedAcquisitionModes(t *testing.T)
 			_, _ = w.Write([]byte(`{"id":8,"tmdbId":27205,"title":"Inception","hasFile":true,"minimumAvailability":"released"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/movie":
 			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			if err := json.UnmarshalRead(r.Body, &body); err != nil {
 				t.Errorf("decode add body: %v", err)
 			}
 			addBodies = append(addBodies, body)
 			body["id"] = len(addBodies) + 20
-			_ = json.NewEncoder(w).Encode(body)
+			_ = json.MarshalWrite(w, body)
 		default:
 			http.NotFound(w, r)
 		}
@@ -230,10 +230,10 @@ func TestHTTPClientSetMonitoredPreservesTheRemoteMovieConfiguration(t *testing.T
 		case http.MethodGet:
 			_, _ = w.Write([]byte(`{"id":8,"tmdbId":27205,"title":"Inception","monitored":false,"path":"/media/movies/Inception (2010)","rootFolderPath":"/media/movies","qualityProfileId":3,"tags":[4,5],"minimumAvailability":"released","customField":"preserve-me"}`))
 		case http.MethodPut:
-			if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
+			if err := json.UnmarshalRead(r.Body, &updated); err != nil {
 				t.Errorf("decode update: %v", err)
 			}
-			_ = json.NewEncoder(w).Encode(updated)
+			_ = json.MarshalWrite(w, updated)
 		default:
 			http.NotFound(w, r)
 		}
@@ -302,7 +302,7 @@ func TestHTTPClientStartsAndReadsTrackableMoviesSearchCommand(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodPost:
-			_ = json.NewDecoder(r.Body).Decode(&commandBody)
+			_ = json.UnmarshalRead(r.Body, &commandBody)
 			_, _ = w.Write([]byte(`{"id":31,"name":"MoviesSearch","status":"queued","queued":"2026-08-07T19:00:00Z"}`))
 		case http.MethodGet:
 			_, _ = w.Write([]byte(`{"id":31,"name":"MoviesSearch","status":"completed","message":"Completed","queued":"2026-08-07T19:00:00Z","started":"2026-08-07T19:00:01Z","ended":"2026-08-07T19:00:02Z"}`))

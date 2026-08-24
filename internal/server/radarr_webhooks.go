@@ -3,7 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -446,8 +446,7 @@ func radarrWebhookBackoff(attempt int) time.Duration {
 }
 
 func sanitizeWebhookError(err error) string {
-	var httpErr *radarrWebhookHTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*radarrWebhookHTTPError](err); ok {
 		return fmt.Sprintf("Webhook endpoint returned HTTP %d.", httpErr.Status)
 	}
 	if errors.Is(err, context.DeadlineExceeded) {

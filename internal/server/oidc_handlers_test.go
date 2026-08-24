@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -448,7 +448,7 @@ func TestOIDC_PasswordResetClaimDoesNotOfferOrStartSSO(t *testing.T) {
 		t.Fatalf("validate password reset claim = %d, want 200", validate.StatusCode)
 	}
 	var claim claimResponse
-	if err := json.NewDecoder(validate.Body).Decode(&claim); err != nil {
+	if err := json.UnmarshalRead(validate.Body, &claim); err != nil {
 		t.Fatalf("decode password reset claim: %v", err)
 	}
 	if claim.Mode != "reset" || claim.Options.OIDC {
@@ -596,7 +596,7 @@ func TestOIDC_RoutesAbsentWhenDisabled(t *testing.T) {
 		t.Fatalf("validate claim = %d, want 200", resp.StatusCode)
 	}
 	var cr claimResponse
-	if err := json.NewDecoder(resp.Body).Decode(&cr); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &cr); err != nil {
 		t.Fatalf("decode claim response: %v", err)
 	}
 	if cr.Options.OIDC {

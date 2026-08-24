@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -121,7 +121,7 @@ func TestHandleListIntegrationRuns_MapsFiltersAndReturnsDTO(t *testing.T) {
 		} `json:"runs"`
 		NextCursor string `json:"nextCursor"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(response.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if len(body.Runs) != 1 {

@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"testing"
@@ -62,7 +62,7 @@ func TestHandleGetRoster_ReturnsRows(t *testing.T) {
 		t.Fatalf("roster as admin: got %d, want 200", resp.StatusCode)
 	}
 	var rows []rosterMemberResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &rows); err != nil {
 		t.Fatalf("decode roster: %v", err)
 	}
 	if len(rows) != 3 {

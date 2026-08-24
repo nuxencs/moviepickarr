@@ -3,7 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -108,7 +108,7 @@ func TestMoviePayload_MarksArchivedAdder(t *testing.T) {
 	}
 
 	var body map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if archived, ok := body["addedByArchived"].(bool); !ok || !archived {
@@ -168,7 +168,7 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 			BackdropPath string `json:"backdropPath"`
 		} `json:"candidates"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	// The server owns the reveal timing: the payload carries the auto-reveal
@@ -363,7 +363,7 @@ func TestHandleGetRandomMovie_StampsServerNowForTheConfirmDeadline(t *testing.T)
 		RevealAt  string `json:"revealAt"`
 		ServerNow string `json:"serverNow"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	serverNow, err := time.Parse(time.RFC3339Nano, body.ServerNow)
@@ -522,7 +522,7 @@ func TestHandleGetRandomMovie_PublishesBeforeAutoRevealCanFire(t *testing.T) {
 			MovieID int `json:"movieID"`
 		} `json:"candidates"`
 	}
-	if err := json.NewDecoder(draw.resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(draw.resp.Body, &body); err != nil {
 		t.Fatalf("decode draw response: %v", err)
 	}
 	serverNow, err := time.Parse(time.RFC3339Nano, body.ServerNow)
@@ -1025,7 +1025,7 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 		var movies []struct {
 			MovieID int `json:"movieID"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&movies); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &movies); err != nil {
 			t.Fatalf("decode pool: %v", err)
 		}
 		ids := make([]int, 0, len(movies))
@@ -1046,7 +1046,7 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 				MovieID int `json:"movieID"`
 			} `json:"currentPool"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&members); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &members); err != nil {
 			t.Fatalf("decode members: %v", err)
 		}
 		var ids []int
@@ -1070,7 +1070,7 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 		var movie struct {
 			Status domain.MovieStatus `json:"status"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&movie); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &movie); err != nil {
 			t.Fatalf("decode movie detail: %v", err)
 		}
 		return movie.Status
@@ -1092,7 +1092,7 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 			PoolLocked     bool `json:"poolLocked"`
 			DrawInProgress bool `json:"drawInProgress"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &state); err != nil {
 			t.Fatalf("decode pool state: %v", err)
 		}
 		return state
@@ -1189,7 +1189,7 @@ func TestPoolIsFrozenAndStillCountsWhileADrawIsUnrevealed(t *testing.T) {
 		var problem struct {
 			Title string `json:"title"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&problem)
+		_ = json.UnmarshalRead(resp.Body, &problem)
 		return resp.StatusCode, problem.Title
 	}
 

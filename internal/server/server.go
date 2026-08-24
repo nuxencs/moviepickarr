@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -197,6 +198,12 @@ func Run(ctx context.Context, cfg Config) error {
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
+		JSONEncoder: func(value any) ([]byte, error) {
+			return json.Marshal(value)
+		},
+		JSONDecoder: func(data []byte, value any) error {
+			return json.Unmarshal(data, value)
+		},
 		// Cheap hardening: cap how long a (possibly half-open) client can hold a
 		// connection while sending its request or sitting idle between keep-alive
 		// requests. Deliberately NO WriteTimeout — it would sever the long-lived

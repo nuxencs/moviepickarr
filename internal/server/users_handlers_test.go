@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"testing"
@@ -23,7 +23,7 @@ func rosterHas(t *testing.T, app *fiber.App, memberID int) bool {
 	var roster []struct {
 		UserID int `json:"userID"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&roster); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &roster); err != nil {
 		t.Fatalf("decode roster: %v", err)
 	}
 	for _, r := range roster {
@@ -54,7 +54,7 @@ func TestHandleDeleteUser_HardDeleteReportsOutcome(t *testing.T) {
 	var body struct {
 		Outcome string `json:"outcome"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if body.Outcome != "deleted" {
@@ -89,7 +89,7 @@ func TestHandleDeleteUser_ArchiveReportsOutcome(t *testing.T) {
 	var body struct {
 		Outcome string `json:"outcome"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if body.Outcome != "archived" {
@@ -179,7 +179,7 @@ func TestHandleRestoreUser_ReactivatesAndReinvites(t *testing.T) {
 		UserID   int    `json:"userID"`
 		ClaimURL string `json:"claimUrl"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if body.UserID != member.ID {

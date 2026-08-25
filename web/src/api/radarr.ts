@@ -14,6 +14,7 @@ export type RadarrAcquisitionStatus =
   | "downloaded"
   | "action_needed"
   | "abandoned"
+  | "canceled"
   | string;
 
 export type RadarrActionReason =
@@ -90,6 +91,7 @@ export interface RadarrAcquisitionMilestones {
   grabbedAt?: string;
   downloadedAt?: string;
   abandonedAt?: string;
+  canceledAt?: string;
   updatedAt?: string;
 }
 
@@ -99,6 +101,8 @@ export interface RadarrAcquisition {
   title?: string;
   year?: number;
   status: RadarrAcquisitionStatus;
+  source?: "draw" | "wildcard" | string;
+  wildcardId?: number;
   actionReason?: RadarrActionReason;
   actionMessage?: string;
   mutationState: RadarrAcquisitionMutationState;

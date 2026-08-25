@@ -9,7 +9,7 @@ export interface CreditPerson {
 }
 
 // Where a movie sits in the app. Mirrors the server's domain.MovieStatus.
-export type MovieStatus = "pool" | "stash" | "current" | "watched";
+export type MovieStatus = "pool" | "stash" | "current" | "wildcard" | "watched";
 
 // The two statuses a member can move a movie between (POST /movies/:id/move).
 // Derived from MovieStatus so renaming a status breaks here too.
@@ -29,6 +29,9 @@ export interface MovieTile {
     // Omitted for active adders to keep list payloads unchanged.
     addedByArchived?: boolean;
     watchedAt?: string;
+    // Present for a watched wildcard. It identifies the Current draw that the
+    // detour belonged to without changing that draw's lifecycle.
+    wildcardOfMovieId?: number;
 
     // Stable external identities used to build IMDb / TMDB / Letterboxd links.
     tmdbId?: number;
@@ -78,6 +81,15 @@ export interface MovieDetail extends MovieTile {
 // omit candidates, in which case clients skip the reel.
 export interface MovieDrawPayload extends MovieDetail {
     candidates?: MovieTile[];
+}
+
+// The one Active wildcard, linked to the confirmed Current draw it holds while
+// it temporarily takes over the Hero. The movie is a full renderable record.
+export interface Wildcard {
+    id: number;
+    hostMovieId: number;
+    selectedAt: string;
+    movie: MovieDetail;
 }
 
 export interface User {

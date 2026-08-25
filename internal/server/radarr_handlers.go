@@ -75,6 +75,7 @@ type radarrAcquisitionMilestonesResponse struct {
 	GrabbedAt        string `json:"grabbedAt,omitempty"`
 	DownloadedAt     string `json:"downloadedAt,omitempty"`
 	AbandonedAt      string `json:"abandonedAt,omitempty"`
+	CanceledAt       string `json:"canceledAt,omitempty"`
 	UpdatedAt        string `json:"updatedAt,omitempty"`
 }
 
@@ -84,6 +85,8 @@ type radarrAcquisitionResponse struct {
 	Title                 string                              `json:"title"`
 	Year                  int                                 `json:"year,omitzero"`
 	Status                string                              `json:"status"`
+	Source                string                              `json:"source"`
+	WildcardID            int64                               `json:"wildcardId,omitzero"`
 	MutationState         string                              `json:"mutationState"`
 	ActionReason          string                              `json:"actionReason,omitempty"`
 	ActionMessage         string                              `json:"actionMessage,omitempty"`
@@ -862,11 +865,16 @@ func toRadarrWebhookResponse(destination repository.RadarrWebhookDestination) ra
 }
 
 func toRadarrAcquisitionResponse(acquisition repository.RadarrAcquisition) radarrAcquisitionResponse {
+	status := acquisition.Status
+	if status == "abandoned" && acquisition.CanceledAt != nil {
+		status = "canceled"
+	}
 	response := radarrAcquisitionResponse{
 		ID: acquisition.ID, MovieID: acquisition.MovieID, Title: acquisition.MovieTitle, Year: acquisition.MovieYear,
-		Status: acquisition.Status, MutationState: acquisition.MutationState,
-		ActionReason: acquisition.ActionReason,
-		TargetLocked: acquisition.TargetLocked(), RadarrMovieID: valueOrZero(acquisition.RadarrMovieID),
+		Status: status, Source: acquisition.Source, WildcardID: valueOrZero(acquisition.WildcardID),
+		MutationState: acquisition.MutationState,
+		ActionReason:  acquisition.ActionReason,
+		TargetLocked:  acquisition.TargetLocked(), RadarrMovieID: valueOrZero(acquisition.RadarrMovieID),
 		TargetPreviewedAt:     formatTime(acquisition.TargetPreviewedAt),
 		TargetPreviewExisting: acquisition.TargetPreviewExisting,
 		PreviewReady:          acquisition.TargetPreviewedAt != nil,
@@ -880,7 +888,8 @@ func toRadarrAcquisitionResponse(acquisition repository.RadarrAcquisition) radar
 			CreatedAt: formatTimeValue(acquisition.CreatedAt), RevealedAt: formatTime(acquisition.RevealedAt),
 			TargetSelectedAt: formatTime(acquisition.TargetSelectedAt), AddedAt: formatTime(acquisition.TargetLockedAt),
 			GrabbedAt: formatTime(acquisition.LatestReleaseSelectedAt), DownloadedAt: formatTime(acquisition.DownloadedAt),
-			AbandonedAt: formatTime(acquisition.AbandonedAt), UpdatedAt: formatTimeValue(acquisition.UpdatedAt),
+			AbandonedAt: formatTime(acquisition.AbandonedAt), CanceledAt: formatTime(acquisition.CanceledAt),
+			UpdatedAt: formatTimeValue(acquisition.UpdatedAt),
 		},
 	}
 	if acquisition.Status == "action_needed" {

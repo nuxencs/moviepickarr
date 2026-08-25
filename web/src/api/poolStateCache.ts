@@ -1,6 +1,6 @@
 import { MoviesKeys, SettingsKeys } from "@/api/query_keys";
 
-import type { MovieDetail, Settings } from "@/types/Response";
+import type { MovieDetail, Settings, Wildcard } from "@/types/Response";
 import type { SSEEvent, SSEEventType } from "@/types/SSEEvent";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -49,6 +49,16 @@ export function applyImmediateLifecycleState(
 
   if (event.type === "movie:watched") {
     const watched = event.data as MovieDetail | undefined;
+    if (typeof watched?.movieID === "number") {
+      queryClient.setQueryData<MovieDetail>(MoviesKeys.detail(watched.movieID), (movie) =>
+        movie ? { ...movie, ...watched } : movie,
+      );
+    }
+    return;
+  }
+
+  if (event.type === "wildcard:watched") {
+    const watched = (event.data as Wildcard | undefined)?.movie;
     if (typeof watched?.movieID === "number") {
       queryClient.setQueryData<MovieDetail>(MoviesKeys.detail(watched.movieID), (movie) =>
         movie ? { ...movie, ...watched } : movie,

@@ -734,6 +734,12 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	// delete and move are adder-only (403 not_adder, no admin override), enforced
 	// inside each handler.
 	v1.Post("/movies", h.handleAddMovie)
+	// Literal wildcard routes must precede the :movieID routes. In particular,
+	// DELETE /movies/wildcard would otherwise be parsed as a movie id.
+	v1.Get("/movies/wildcard", h.handleGetActiveWildcard)
+	v1.Post("/movies/wildcard", h.handleSelectWildcard)
+	v1.Delete("/movies/wildcard", h.handleCancelWildcard)
+	v1.Post("/movies/wildcard/watch", h.handleWatchWildcard)
 	v1.Put("/movies/:movieID", h.handleEditMovie)
 	v1.Delete("/movies/:movieID", h.handleDeleteMovie)
 	v1.Post("/movies/:movieID/move", h.handleMove)

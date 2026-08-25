@@ -34,10 +34,11 @@ type MovieRepo interface {
 type MovieStatus string
 
 const (
-	MovieStatusPool    MovieStatus = "pool"
-	MovieStatusStash   MovieStatus = "stash"
-	MovieStatusCurrent MovieStatus = "current"
-	MovieStatusWatched MovieStatus = "watched"
+	MovieStatusPool     MovieStatus = "pool"
+	MovieStatusStash    MovieStatus = "stash"
+	MovieStatusCurrent  MovieStatus = "current"
+	MovieStatusWildcard MovieStatus = "wildcard"
+	MovieStatusWatched  MovieStatus = "watched"
 )
 
 type Movie struct {
@@ -53,6 +54,41 @@ type Movie struct {
 	WatchedAt       *time.Time
 	TMDBID          *int    // stable TMDB identity (nullable)
 	IMDbID          *string // stable IMDb identity (nullable)
+	// WildcardOfMovieID identifies the Current draw preserved by this watched
+	// movie. It is nil for ordinary watched movies and while a Wildcard is active.
+	WildcardOfMovieID *int
+}
+
+type WildcardStatus string
+
+const (
+	WildcardStatusActive   WildcardStatus = "active"
+	WildcardStatusWatched  WildcardStatus = "watched"
+	WildcardStatusCanceled WildcardStatus = "canceled"
+)
+
+// WildcardSelection identifies either an existing movie or a new external
+// movie. ExistingMovieID is exclusive with the title and provider identities.
+type WildcardSelection struct {
+	ExpectedHostMovieID int
+	ExistingMovieID     *int
+	Title               string
+	TMDBID              *int
+	IMDbID              *string
+}
+
+type Wildcard struct {
+	ID                 int64
+	HostMovieID        int
+	Movie              *Movie
+	SelectedByID       *int
+	CanceledByID       *int
+	SourceStatus       MovieStatus
+	CreatedForWildcard bool
+	Status             WildcardStatus
+	SelectedAt         time.Time
+	WatchedAt          *time.Time
+	CanceledAt         *time.Time
 }
 
 // MovieMetadata holds TMDB-derived display data for a movie, stored 1:1 in the

@@ -786,6 +786,24 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
   backdrop). Its scrim/text are intentionally dark/white in both themes; only fix the
   genuinely-broken light overlays, not the hero's darkness.
 
+**Active wildcard detour.** After Reveal, `Choose wildcard` is a secondary hero
+action available to every member. Its capped browser searches the existing Pool
+and Stashes first and can also search TMDB, so a movie does not need to enter a
+member board before selection. One pending selection disables every result.
+
+An Active wildcard temporarily takes over the Hero's poster, backdrop, title,
+metadata, and primary Mark-as-watched action. A gold `Active wildcard` state in
+the eyebrow makes the lifecycle unmistakable. The confirmed movie remains
+visible as a compact `Current draw on hold · Title` line above the actions. Next
+up remains unchanged. The held title is a text-styled button that opens the
+existing history-backed movie detail modal, so the confirmed draw remains
+inspectable without changing either lifecycle. `Cancel wildcard` reuses the
+secondary action position normally occupied by `Choose wildcard` and opens a
+confirmation that explains the local-only Radarr effect. Watching or canceling
+the Wildcard restores the confirmed draw without advancing the turn. The
+wildcard takeover uses the same static Hero geometry and responsive composition
+as a confirmed draw.
+
 **Draw reel (slot-machine spin).** A draw first plays a slot-machine **reel**: a
 takeover overlay *inside* the hero footprint (`DrawReel.tsx`, `.drawreel*`) that scrolls
 a strip of pool-candidate posters past a centre reticle, decelerates onto the
@@ -908,12 +926,12 @@ Verified static: empty vs populated and a 173-char injected tagline all leave
 `eyebrowTop`, `meta top`, `actions top`, and hero height identical.
 
 On phones (≤700px) the hero stacks a 120px poster above the eyebrow → title →
-tagline → meta → actions. The body stretches to the full content width and keeps the
-18.5rem height reservation so the initial query shell and committed draw share a
-footprint. At 331px and below the reservation steps to 21rem because the action row
-wraps. These are floors, not caps: unusually long metadata or member names can still
-grow instead of clipping links or controls. The rest of the responsive system lives
-in §13.
+tagline → meta → held-draw state when present → actions. The body stretches to
+the full content width and keeps the 18.5rem height reservation so the initial
+query shell and committed movie share a footprint. At 331px and below the
+reservation steps to 21rem because the action row wraps. These are floors, not
+caps: unusually long metadata or member names can still grow instead of clipping
+links or controls. The rest of the responsive system lives in §13.
 
 On large screens (≥1728px) the hero steps *up*: `--hero-body-h` grows (18.5rem → 21rem,
 and the poster width tracks it via the `calc()` above), `.hero__inner` padding opens up,

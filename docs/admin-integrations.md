@@ -293,6 +293,12 @@ Admin view and webhook until Reveal. A restart can resume this pending record.
 If startup cannot restore the concealed record, boot fails before serving.
 The draw, Reveal, Watch, and next-draw workflows never wait for Radarr.
 
+Selecting an Active wildcard creates another durable Acquisition in the same
+transaction. It is visible immediately because a Wildcard has no Reveal phase.
+It then follows the same preset, target, handoff, recovery, and completion flow.
+Watching the Wildcard does not close it. Canceling the Wildcard closes the local
+requirement as Canceled without deleting or changing Radarr data or work.
+
 After Reveal, an Admin selects one preset. moviepickarr snapshots its instance,
 root folder, quality profile, tags, minimum availability, and mode. It resolves
 identity by stored TMDB ID first. If there is no TMDB ID, it resolves the stored
@@ -361,13 +367,15 @@ Acquisition.
 
 ## Radarr attention and history
 
-Every revealed Acquisition that is not Downloaded or Abandoned contributes to
-the persistent Admin attention count, including healthy automatic progress and
-Needs preset. The reminder is not dismissible. Marking the Current draw Watched
-does not clear it and does not block any movie workflow.
+Every visible Acquisition that is not Downloaded, Abandoned, or Canceled
+contributes to the persistent Admin attention count, including healthy
+automatic progress and Needs preset. The reminder is not dismissible. Marking
+the Current draw or a Wildcard Watched does not clear it and does not block any
+movie workflow.
 
-The Acquisitions section shows active work and searchable Downloaded or
-Abandoned history. Each detail keeps one compact summary per draw: identity and
+The Acquisitions section shows active work and searchable Downloaded,
+Abandoned, or Canceled history. Each detail keeps one compact summary per
+Current draw or Wildcard: identity and
 target snapshots, the effective configuration of an adopted movie, the latest
 selected release summary, attempt count, latest failure, milestones, and any
 abandonment reason. It does not store a full event log, every

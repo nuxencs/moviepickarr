@@ -39,14 +39,15 @@ type userResponse struct {
 // modal-only fields (backdrop, tagline, overview, credits) are structurally
 // absent: the modal lazy-loads the fullMovie from GET /movies/:id when it opens.
 type leanMovieTile struct {
-	ID              int    `json:"movieID"`
-	Title           string `json:"title"`
-	Link            string `json:"link"`
-	AddedAt         string `json:"addedAt"`
-	AddedByID       int    `json:"addedByID"`
-	AddedByName     string `json:"addedByName"`
-	AddedByArchived bool   `json:"addedByArchived,omitzero"`
-	WatchedAt       string `json:"watchedAt"`
+	ID                int    `json:"movieID"`
+	Title             string `json:"title"`
+	Link              string `json:"link"`
+	AddedAt           string `json:"addedAt"`
+	AddedByID         int    `json:"addedByID"`
+	AddedByName       string `json:"addedByName"`
+	AddedByArchived   bool   `json:"addedByArchived,omitzero"`
+	WatchedAt         string `json:"watchedAt"`
+	WildcardOfMovieID int    `json:"wildcardOfMovieId,omitzero"`
 
 	// Stable external identities, exposed so the frontend can build links to
 	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).
@@ -166,6 +167,9 @@ func toLeanTile(movie *domain.Movie, md *domain.MovieMetadata) leanMovieTile {
 		AddedByArchived: movie.AddedByArchived,
 		WatchedAt:       formatTime(movie.WatchedAt),
 		TMDBID:          movie.TMDBID,
+	}
+	if movie.WildcardOfMovieID != nil {
+		tile.WildcardOfMovieID = *movie.WildcardOfMovieID
 	}
 	if movie.IMDbID != nil {
 		tile.IMDbID = *movie.IMDbID

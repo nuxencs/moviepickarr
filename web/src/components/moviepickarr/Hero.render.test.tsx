@@ -29,7 +29,12 @@ import { renderWithProviders } from "@/test/providers";
 
 vi.mock("@/api/APIClient", () => ({
   APIClient: {
-    movies: { getCurrent: vi.fn(), getPool: vi.fn(), draw: vi.fn(), markWatched: vi.fn() },
+    board: { getAll: vi.fn() },
+    movies: {
+      get: vi.fn(() => new Promise<never>(() => {})),
+      getCurrent: vi.fn(), getPool: vi.fn(), getWildcard: vi.fn(), draw: vi.fn(),
+      markWatched: vi.fn(), watchWildcard: vi.fn(), cancelWildcard: vi.fn(),
+    },
     settings: { getNextUp: vi.fn() },
     auth: { me: vi.fn() },
   },
@@ -116,6 +121,7 @@ async function renderHero(movie: MovieDetail = drawn, strict = false) {
     seed: (client) => {
       queryClient = client;
       client.setQueryData(MoviesKeys.current(), movie);
+      client.setQueryData(MoviesKeys.wildcard(), null);
       client.setQueryData(MoviesKeys.listpool(), []);
       client.setQueryData(SettingsKeys.nextUp(), { id: 1, name: "Member 1" });
       client.setQueryData(SettingsKeys.poolLock(), {
@@ -182,7 +188,134 @@ describe("the hero's attribution", () => {
   });
 });
 
+describe("the hero's wildcard detour", () => {
+  it("holds Current actions until wildcard absence is confirmed", async () => {
+    vi.mocked(APIClient.movies.getWildcard).mockReturnValue(new Promise(() => {}));
+    await renderWithProviders(<Hero />, {
+      path: "/",
+      seed: (client) => {
+        client.setQueryData(MoviesKeys.current(), { ...drawn, revealed: true });
+        client.setQueryData(MoviesKeys.listpool(), []);
+        client.setQueryData(SettingsKeys.nextUp(), { id: 1, name: "Member 1" });
+        client.setQueryData(SettingsKeys.poolLock(), { poolLocked: false, drawInProgress: true });
+        client.setQueryData(AuthKeys.me(), session(1));
+      },
+    });
+
+    expect((await screen.findByRole("button", { name: "Mark as watched" })).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Choose wildcard" })).toBeNull();
+  });
+
+  it("lets the Active wildcard take over the Hero while keeping the Current draw on hold", async () => {
+    const { queryClient } = await renderHero({ ...drawn, revealed: true });
+
+    act(() => {
+      queryClient.setQueryData(MoviesKeys.wildcard(), {
+        id: 9,
+        hostMovieId: drawn.movieID,
+        selectedAt: "2026-08-25T18:00:00Z",
+        movie: {
+          ...drawn,
+          movieID: 77,
+          title: "Before Sunrise",
+          status: "wildcard",
+        },
+      });
+    });
+
+    expect(await screen.findByRole("heading", { name: "Before Sunrise" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Apocalypse Now" })).toBeNull();
+    expect(screen.getByText(/Active wildcard · added by/)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Apocalypse Now" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Mark as watched" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Cancel wildcard" })).not.toBeNull();
+    expect(screen.getByText("Your turn")).not.toBeNull();
+  });
+
+  it("opens the held Current draw in the movie detail modal", async () => {
+    const { queryClient } = await renderHero({ ...drawn, revealed: true });
+    act(() => {
+      queryClient.setQueryData(MoviesKeys.wildcard(), {
+        id: 9,
+        hostMovieId: drawn.movieID,
+        selectedAt: "2026-08-25T18:00:00Z",
+        movie: { ...drawn, movieID: 77, title: "Before Sunrise", status: "wildcard" },
+      });
+    });
+
+    await screen.findByRole("heading", { name: "Before Sunrise" });
+    fireEvent.click(screen.getByRole("button", { name: "Apocalypse Now" }));
+
+    expect(await screen.findByRole("dialog", { name: "Apocalypse Now" })).not.toBeNull();
+  });
+
+  it("closes a stale picker when another client selects the Active wildcard", async () => {
+    const { queryClient } = await renderHero({ ...drawn, revealed: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Choose wildcard" }));
+    expect(await screen.findByRole("dialog", { name: "Choose a wildcard" })).not.toBeNull();
+
+    act(() => {
+      queryClient.setQueryData(MoviesKeys.wildcard(), {
+        id: 9,
+        hostMovieId: drawn.movieID,
+        selectedAt: "2026-08-25T18:00:00Z",
+        movie: { ...drawn, movieID: 77, title: "Before Sunrise", status: "wildcard" },
+      });
+    });
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose a wildcard" })).toBeNull());
+  });
+
+  it("watches the wildcard without clearing the cached Current draw", async () => {
+    vi.mocked(APIClient.movies.watchWildcard).mockResolvedValueOnce({
+      id: 9,
+      hostMovieId: drawn.movieID,
+      selectedAt: "2026-08-25T18:00:00Z",
+      movie: { ...drawn, movieID: 77, title: "Before Sunrise", status: "watched" },
+    });
+    const { queryClient } = await renderHero({ ...drawn, revealed: true });
+    act(() => {
+      queryClient.setQueryData(MoviesKeys.wildcard(), {
+        id: 9,
+        hostMovieId: drawn.movieID,
+        selectedAt: "2026-08-25T18:00:00Z",
+        movie: { ...drawn, movieID: 77, title: "Before Sunrise", status: "wildcard" },
+      });
+    });
+
+    await screen.findByRole("heading", { name: "Before Sunrise" });
+    fireEvent.click(screen.getByRole("button", { name: "Mark as watched" }));
+    await waitFor(() => expect(APIClient.movies.watchWildcard).toHaveBeenCalledWith(9));
+    expect(queryClient.getQueryData(MoviesKeys.current())).toMatchObject({ movieID: drawn.movieID });
+  });
+});
+
 describe("the hero's artwork handoff", () => {
+  it("hands the Hero backdrop to an Active wildcard", async () => {
+    const images = controlImageDecodes();
+    const url = backdrop("/wildcard.jpg");
+    const { queryClient } = await renderHero({ ...drawn, backdropPath: undefined });
+
+    act(() => {
+      queryClient.setQueryData(MoviesKeys.wildcard(), {
+        id: 9,
+        hostMovieId: drawn.movieID,
+        selectedAt: "2026-08-25T18:00:00Z",
+        movie: {
+          ...drawn,
+          movieID: 77,
+          title: "Before Sunrise",
+          backdropPath: "/wildcard.jpg",
+          status: "wildcard",
+        },
+      });
+    });
+
+    await screen.findByRole("heading", { name: "Before Sunrise" });
+    await images.resolve(url);
+    await waitFor(() => expect(painted(url)).toBe(true));
+  });
+
   it("renders a known draw while its backdrop decode is still pending in Strict Mode", async () => {
     const images = controlImageDecodes();
     const url = backdrop("/slow.jpg");

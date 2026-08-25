@@ -10,8 +10,8 @@ database are all embedded, so there is nothing else to set up.
   API. The key is optional: without it the app still works, but movies show
   placeholder posters and the metadata stats stay empty.
 - An optional Radarr installation and API key. Radarr is not required for the
-  selection workflow. When configured, it can arrange a file for each drawn
-  movie before the next draw.
+  selection workflow. When configured, it can arrange a file for each Current
+  draw or selected Wildcard.
 - Either Docker, or Go 1.27+ and [Bun 1.4+](https://bun.sh) to build from source.
 
 ## Docker
@@ -120,8 +120,9 @@ The modes control only the initial grab:
   Radarr to grab it. moviepickarr then enables monitoring.
 - Automatic adds a new movie monitored and asks Radarr to search immediately.
 
-Only the drawn winner gets an Acquisition. The record is created with the draw
-and remains concealed until Reveal. After Reveal, an Admin selects one preset.
+Only a Current draw or selected Wildcard gets an Acquisition. A Current draw
+record remains concealed until Reveal. A Wildcard record is visible immediately.
+An Admin then selects one preset.
 If the exact movie already exists in that instance, moviepickarr adopts it and
 locks the target without another prompt. It preserves the movie's effective
 settings. If the movie has a file, the Acquisition completes immediately.
@@ -130,10 +131,10 @@ movie does not exist, the Admin reviews and confirms the exact target before
 moviepickarr adds it.
 
 The Admin and Radarr navigation show a persistent attention count until the
-selected instance reports a file or an Admin abandons the Acquisition with a
-reason. This does not block Reveal, Watch, or the next draw. Completed and
-abandoned entries remain in the Admin-only Acquisition history. They do not
-appear on the shared Runs page.
+selected instance reports a file, an Admin abandons the Acquisition with a
+reason, or the group cancels its Active wildcard. This does not block Reveal,
+Watch, or the next draw. Downloaded, Abandoned, and Canceled entries remain in
+the Admin-only Acquisition history. They do not appear on the shared Runs page.
 
 Admin > Integrations > Radarr > Webhooks can send actionable Acquisition states
 to multiple Generic or Discord destinations. Save a destination disabled, send

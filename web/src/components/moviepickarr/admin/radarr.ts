@@ -26,6 +26,7 @@ export const RADARR_STATUS_LABELS: Record<string, string> = {
   downloaded: "Downloaded",
   action_needed: "Action needed",
   abandoned: "Abandoned",
+  canceled: "Canceled",
 };
 
 export const RADARR_REASON_LABELS: Record<string, string> = {
@@ -97,7 +98,7 @@ export function acquisitionUpdatedAt(acquisition: RadarrAcquisition) {
 }
 
 export function acquisitionIsOpen(acquisition: RadarrAcquisition) {
-  return acquisition.status !== "downloaded" && acquisition.status !== "abandoned";
+  return acquisition.status !== "downloaded" && acquisition.status !== "abandoned" && acquisition.status !== "canceled";
 }
 
 export function acquisitionTitle(acquisition: RadarrAcquisition) {

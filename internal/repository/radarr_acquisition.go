@@ -83,6 +83,10 @@ type RadarrAcquisition struct {
 	AbandonedAt                *time.Time
 	AbandonedBy                *int
 	AbandonmentReason          string
+	Source                     string
+	WildcardID                 *int64
+	CanceledAt                 *time.Time
+	CanceledBy                 *int
 	CreatedAt                  time.Time
 	UpdatedAt                  time.Time
 }
@@ -142,7 +146,7 @@ const radarrAcquisitionSelect = `
 	       latest_failure_summary, latest_failure_at, queue_status, queue_summary,
 	       last_checked_at, next_check_at, queued_at, downloading_at, importing_at,
 	       downloaded_at, abandoned_at, abandoned_by, abandonment_reason,
-	       created_at, updated_at
+	       created_at, updated_at, source, wildcard_id, canceled_at, canceled_by
 	FROM radarr_acquisitions
 `
 
@@ -885,11 +889,11 @@ func scanRadarrAcquisition(row rowScanner) (RadarrAcquisition, error) {
 	var actionReason, imdbID, identitySource sql.NullString
 	var movieYear, tmdbID, overrideTMDBID, presetID, targetInstanceID sql.NullInt64
 	var targetRootID, targetQualityID, selectedBy, lockedBy, radarrMovieID sql.NullInt64
-	var automaticCommandID, releaseSelectedBy, abandonedBy sql.NullInt64
+	var automaticCommandID, releaseSelectedBy, abandonedBy, wildcardID, canceledBy sql.NullInt64
 	var actionStartedAt, revealedAt, targetSelectedAt, targetLockedAt sql.NullInt64
 	var previewedAt, automaticClaimedAt, automaticCompletedAt, releaseSelectedAt, failureAt sql.NullInt64
 	var lastCheckedAt, nextCheckAt, queuedAt, downloadingAt, importingAt sql.NullInt64
-	var downloadedAt, abandonedAt sql.NullInt64
+	var downloadedAt, abandonedAt, canceledAt sql.NullInt64
 	var presetName, targetInstanceName, targetRootPath, targetQualityName sql.NullString
 	var targetAvailability, targetMode, releaseTitle, releaseQuality sql.NullString
 	var failureSummary, abandonmentReason sql.NullString
@@ -913,6 +917,7 @@ func scanRadarrAcquisition(row rowScanner) (RadarrAcquisition, error) {
 		&acquisition.QueueStatus, &acquisition.QueueSummary, &lastCheckedAt,
 		&nextCheckAt, &queuedAt, &downloadingAt, &importingAt, &downloadedAt,
 		&abandonedAt, &abandonedBy, &abandonmentReason, &createdAt, &updatedAt,
+		&acquisition.Source, &wildcardID, &canceledAt, &canceledBy,
 	); err != nil {
 		return RadarrAcquisition{}, fmt.Errorf("scan Radarr acquisition: %w", err)
 	}
@@ -940,6 +945,8 @@ func scanRadarrAcquisition(row rowScanner) (RadarrAcquisition, error) {
 	acquisition.AutomaticSearchCommandID = nullIntPtr(automaticCommandID)
 	acquisition.LatestReleaseSelectedBy = nullIntPtr(releaseSelectedBy)
 	acquisition.AbandonedBy = nullIntPtr(abandonedBy)
+	acquisition.WildcardID = nullInt64Ptr(wildcardID)
+	acquisition.CanceledBy = nullIntPtr(canceledBy)
 	acquisition.AdoptedExisting = adoptedExisting == 1
 	acquisition.TargetPreviewExisting = previewExisting == 1
 	acquisition.LatestReleaseTitle = releaseTitle.String
@@ -966,6 +973,7 @@ func scanRadarrAcquisition(row rowScanner) (RadarrAcquisition, error) {
 	acquisition.ImportingAt = milliTimePtr(importingAt)
 	acquisition.DownloadedAt = milliTimePtr(downloadedAt)
 	acquisition.AbandonedAt = milliTimePtr(abandonedAt)
+	acquisition.CanceledAt = milliTimePtr(canceledAt)
 	if err := json.Unmarshal([]byte(targetTags), &acquisition.TargetTags); err != nil {
 		return RadarrAcquisition{}, fmt.Errorf("decode Radarr target tags: %w", err)
 	}

@@ -60,6 +60,16 @@ describe("the invalidation table", () => {
     }
   });
 
+  it("wildcard events refresh the detour without advancing the Current draw", () => {
+    for (const type of ["wildcard:selected", "wildcard:canceled", "wildcard:watched"] as const) {
+      const row = SSE_INVALIDATIONS[type];
+      expect(has(row, MoviesKeys.wildcard())).toBe(true);
+      expect(has(row, MoviesKeys.current())).toBe(false);
+      expect(has(row, SettingsKeys.nextUp())).toBe(false);
+    }
+    expect(has(SSE_INVALIDATIONS["wildcard:watched"], MoviesKeys.listwatched())).toBe(true);
+  });
+
   it.each(["user:created", "user:deleted"] as const)(
     "%s refreshes movie attribution and next-up after a roster change",
     (type) => {
@@ -82,6 +92,7 @@ describe("the invalidation table", () => {
       UsersKeys.list(),
       MoviesKeys.listpool(),
       MoviesKeys.current(),
+      MoviesKeys.wildcard(),
       MoviesKeys.listwatched(),
       MoviesKeys.details(),
       MoviesKeys.filterOptions(),
@@ -100,6 +111,7 @@ describe("resyncKeys", () => {
       UsersKeys.list(),
       MoviesKeys.listpool(),
       MoviesKeys.current(),
+      MoviesKeys.wildcard(),
       MoviesKeys.listwatched(),
       MoviesKeys.details(),
       MoviesKeys.filterOptions(),

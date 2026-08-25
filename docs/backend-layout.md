@@ -378,6 +378,10 @@
 - Migration `010` adds a partial `NOCASE` UNIQUE index on `movies.imdb_id`.
   Before creating it, the migration trims and lowercases ids, converts blanks
   to NULL, then resolves duplicates by keeping the id on the lowest movie id.
+- Migration `017` adds the `wildcard` movie status, one durable `wildcards`
+  history table, and partial unique indexes for one Current draw and one Active
+  wildcard. It also adds the Acquisition source, Wildcard link, and local
+  cancellation fields.
   Every other movie row and its metadata, credits, adder, status, and timestamps
   stay in place. The removed identifier is recorded in
   `movie_imdb_conflicts` with its canonical movie id. Runtime link extraction
@@ -575,6 +579,14 @@ auto-Reveal, and early Watch use the same durable transition. On restart, a
 concealed Current acquisition restores the active draw and keeps its original
 Reveal boundary. A legacy Current movie is backfilled as already revealed.
 
+`movie.Service.SelectWildcard` requires a revealed Current draw. It moves one
+existing Pool or Stash movie into Active wildcard state, or inserts a direct
+TMDB selection there, and creates a visible Acquisition in the same writer
+transaction. Watch records the host Current draw and leaves its Acquisition
+open. Cancel restores the movie and closes the local Acquisition as Canceled.
+It uses the existing terminal storage mechanics and does not send a Radarr
+mutation. Current draw Watch refuses while an Active wildcard exists.
+
 After Reveal, preset selection copies the instance, root folder, quality
 profile, tags, minimum availability, and mode into the Acquisition. Selection
 also performs a read-only Target review. The review resolves stored TMDB ID
@@ -632,8 +644,9 @@ startup and every 30 seconds. `hasFile` on the exact selected movie is the only
 Downloaded signal. Queue state maps to Queued, Downloading, or Importing. A
 running automatic command remains Waiting for Radarr. Queue and history failures
 become typed action-needed reasons only when Radarr has no active recovery work.
-Downloaded and Abandoned are terminal. Every other revealed status contributes
-to the persistent Admin attention count. Watch never closes an Acquisition.
+Downloaded, Abandoned, and Canceled are terminal. Every other visible status
+contributes to the persistent Admin attention count. Watch never closes an
+Acquisition.
 An identity mismatch on a locked remote movie becomes `identity_required`.
 Identity search and selection reject locked targets, so recovery must restore
 the exact Radarr movie or abandon the Acquisition.
@@ -675,7 +688,8 @@ KiB of response body. Webhook delivery never changes Acquisition state.
 Successful delivery rows are retained for 30 days. Resolved terminal failures
 are retained for 90 days. The webhook worker prunes once every 24 hours.
 
-Acquisition history retains one compact row per draw for the movie's lifetime.
+Acquisition history retains one compact row per Current draw or Wildcard for
+the movie's lifetime.
 Individual Radarr actions and reconciliation checks do not enter the shared
 Integration run ledger. The shared Runs page remains unchanged. Plex is
 deferred; see [`research/plex-availability.md`](research/plex-availability.md).

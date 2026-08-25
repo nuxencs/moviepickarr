@@ -266,6 +266,7 @@ function WatchedSection({
                     <Avatar name={movie.addedByName} size={20} />
                     <span className="t-date">{relativeDate(movie.watchedAt)}</span>
                   </span>
+                  {movie.wildcardOfMovieId && <span className="wildcard-mark">Wildcard</span>}
                 </div>
               </div>
             </article>
@@ -393,6 +394,7 @@ function WatchedRow({ movie, onOpen }: { movie: MovieTile; onOpen: () => void })
             <span className="wr-title">
               {movie.title}
               <Rating voteAverage={movie.voteAverage} />
+              {movie.wildcardOfMovieId && <span className="wildcard-mark">Wildcard</span>}
             </span>
             <span className="wr-sub">{sub}</span>
           </div>

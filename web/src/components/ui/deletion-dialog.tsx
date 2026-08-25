@@ -12,6 +12,7 @@ interface ConfirmDialogProps {
     description: string;
     confirmText?: string;
     cancelText?: string;
+    pendingText?: string;
 }
 
 /**
@@ -29,6 +30,7 @@ export const DeletionDialog: React.FC<ConfirmDialogProps> = ({
     description,
     confirmText = "Delete",
     cancelText = "Cancel",
+    pendingText = "Deleting…",
 }) => {
     if (!isOpen) {
         return null;
@@ -60,7 +62,7 @@ export const DeletionDialog: React.FC<ConfirmDialogProps> = ({
                             onClick={onConfirm}
                             disabled={pending}
                         >
-                            {pending ? "Deleting…" : confirmText}
+                            {pending ? pendingText : confirmText}
                         </button>
                     </div>
                 </>

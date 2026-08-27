@@ -34,7 +34,7 @@ RUN --network=none --mount=target=. \
 FROM alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runner
 
 LABEL org.opencontainers.image.source="https://github.com/nuxencs/moviepickarr"
-LABEL org.opencontainers.image.licenses="GPL-2.0-or-later"
+LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.base.name="alpine:latest"
 
 RUN apk --no-cache add ca-certificates curl tzdata jq

@@ -387,6 +387,21 @@ export function AccountPage() {
         </div>
       </section>
 
+      <section className="acc__section mg-rise" style={{ "--i": 4 } as CSSProperties}>
+        <h2 className="acc__label">Credits</h2>
+        <div className="acc-credit">
+          <a
+            className="acc-credit__brand"
+            href="https://www.themoviedb.org/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <img src="/tmdb-logo.svg" alt="TMDB" />
+          </a>
+          <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+        </div>
+      </section>
+
       {dialog === "change-password" && (
         <ChangePasswordDialog
           pending={changePassword.isPending}

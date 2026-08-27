@@ -55,6 +55,10 @@ Movies without data yet show a placeholder poster.
 - [`docs/PRODUCT.md`](docs/PRODUCT.md) and [`docs/DESIGN.md`](docs/DESIGN.md):
   product and design decisions.
 
----
+## Credits
 
-<sub>This product uses the TMDB API but is not endorsed or certified by TMDB.</sub>
+<a href="https://www.themoviedb.org/">
+  <img src="web/public/tmdb-logo.svg" alt="TMDB" width="180">
+</a>
+
+This product uses the TMDB API but is not endorsed or certified by TMDB.

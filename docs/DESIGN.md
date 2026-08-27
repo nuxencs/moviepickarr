@@ -198,7 +198,8 @@ old shadcn primitives.
   open into a flat, divided register only when the member chooses to review them. The
   register uses no per-device cards. Each remote action includes the browser and
   platform in its accessible name, and Log out everywhere remains a separate global
-  action inside the expanded management view.
+  action inside the expanded management view. The page ends with a Credits section
+  containing TMDB's approved logo and required API attribution notice.
 - Admin invite state stays with the member. There is no separate invite section above
   the roster. The Login cell quietly shows an open or expired generation beside the
   member's credentials, including a password-reset link for a credentialed member.

@@ -1,7 +1,7 @@
 /* Account settings surface: a narrow centered column, sections stacked top to
-   bottom (You / Sign-in / Signed-in devices). The current device stays visible;
-   other devices are disclosed on demand instead of filling the page. Colors come
-   from the global tokens (index.css); everything is namespaced under .acc*.
+   bottom (You / Sign-in / Signed-in devices / Credits). The current device stays
+   visible; other devices are disclosed on demand instead of filling the page.
+   Colors come from the global tokens (index.css); everything is namespaced under .acc*.
    Ported from the locked prototype direction (proto/auth-login-claim, Variant A
    "Settings page"). */
 
@@ -146,6 +146,38 @@
 }
 .acc__row .btn {
   flex: none;
+}
+
+/* ---------- Credits ---------- */
+.acc-credit {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.acc-credit__brand {
+  display: inline-flex;
+  width: 138px;
+  border-radius: var(--r-sm);
+}
+.acc-credit__brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.acc-credit__brand img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.acc-credit p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 /* ---------- Signed-in devices ----------
@@ -300,6 +332,10 @@
 }
 
 @media (max-width: 480px) {
+  .acc-credit {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
   .acc-device {
     grid-template-columns: 24px minmax(0, 1fr);
   }

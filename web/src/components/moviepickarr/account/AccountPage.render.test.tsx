@@ -332,3 +332,19 @@ describe("the device list", () => {
     expect(dialog()?.textContent).toContain("1 other device");
   });
 });
+
+describe("credits", () => {
+  it("shows TMDB's approved attribution in the account section", async () => {
+    await renderPage();
+
+    expect(screen.getByRole("heading", { name: "Credits" })).not.toBeNull();
+    const tmdb = screen.getByRole("link", { name: "TMDB" });
+    expect(tmdb.getAttribute("href")).toBe("https://www.themoviedb.org/");
+    expect(within(tmdb).getByRole("img", { name: "TMDB" }).getAttribute("src")).toBe(
+      "/tmdb-logo.svg",
+    );
+    expect(
+      screen.getByText("This product uses the TMDB API but is not endorsed or certified by TMDB."),
+    ).not.toBeNull();
+  });
+});

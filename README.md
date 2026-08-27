@@ -62,7 +62,3 @@ Movies without data yet show a placeholder poster.
 </a>
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
-
-## License
-
-moviepickarr is available under the [MIT License](LICENSE).

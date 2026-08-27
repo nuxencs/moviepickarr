@@ -83,6 +83,7 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 	var watchedAt sql.NullInt64
 	var tmdbID sql.NullInt64
 	var imdbID sql.NullString
+	var wildcardHostMovieID sql.NullInt64
 
 	if err := scanner.Scan(
 		&movie.ID,
@@ -95,6 +96,7 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 		&watchedAt,
 		&tmdbID,
 		&imdbID,
+		&wildcardHostMovieID,
 	); err != nil {
 		return nil, err
 	}
@@ -107,6 +109,10 @@ func scanMovie(scanner rowScanner) (*domain.Movie, error) {
 	}
 	if imdbID.Valid {
 		movie.IMDbID = &imdbID.String
+	}
+	if wildcardHostMovieID.Valid {
+		v := int(wildcardHostMovieID.Int64)
+		movie.WildcardOfMovieID = &v
 	}
 
 	return movie, nil
@@ -440,9 +446,11 @@ const movieSelect = `
 		u.archived_at IS NOT NULL,
 		m.watched_at,
 		m.tmdb_id,
-		m.imdb_id
+		m.imdb_id,
+		w.host_movie_id
 	FROM movies m
-	JOIN users u ON m.added_by_id = u.id`
+	JOIN users u ON m.added_by_id = u.id
+	LEFT JOIN wildcards w ON w.movie_id = m.id AND w.status = 'watched'`
 
 // queryMovies runs a movieSelect-based query and scans the full result set.
 func (d *SqliteMoviesRepository) queryMovies(ctx context.Context, query string, args ...any) ([]*domain.Movie, error) {
@@ -800,63 +808,13 @@ func (d *SqliteMoviesRepository) StartDraw(
 		return domain.ErrInvalidState
 	}
 
-	// Draw choreography needs millisecond precision. Radarr Acquisition times
-	// deliberately differ from the application's older epoch-second tables.
-	drawnEpoch := drawnAt.UTC().UnixMilli()
-	revealEpoch := revealAt.UTC().UnixMilli()
-	result, err = tx.ExecContext(ctx, `
-		INSERT INTO radarr_acquisitions (
-			movie_id,
-			status,
-			action_reason,
-			action_version,
-			movie_title,
-			movie_year,
-			tmdb_id,
-			imdb_id,
-			identity_source,
-			drawn_at,
-			reveal_at,
-			draw_client_id,
-			created_at,
-			updated_at
-		)
-		SELECT
-			m.id,
-			'needs_preset',
-			'preset_required',
-			0,
-			m.title,
-			CASE
-				WHEN substr(mm.release_date, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
-				 AND CAST(substr(mm.release_date, 1, 4) AS INTEGER) BETWEEN 1870 AND 2100
-				THEN CAST(substr(mm.release_date, 1, 4) AS INTEGER)
-				ELSE NULL
-			END,
-			m.tmdb_id,
-			m.imdb_id,
-			CASE
-				WHEN m.tmdb_id IS NOT NULL THEN 'tmdb'
-				WHEN m.imdb_id IS NOT NULL THEN 'imdb'
-				ELSE NULL
-			END,
-			?,
-			?,
-			?,
-			?,
-			?
-		FROM movies AS m
-		LEFT JOIN movie_metadata AS mm ON mm.movie_id = m.id
-		WHERE m.id = ? AND m.status = 'current'
-	`, drawnEpoch, revealEpoch, drawClientID, drawnEpoch, drawnEpoch, movieID)
-	if err != nil {
-		return err
-	}
-	affected, err = result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected != 1 {
+	if _, err = insertPendingAcquisitionTx(ctx, tx, pendingAcquisition{
+		MovieID:      movieID,
+		Source:       "draw",
+		DrawnAt:      drawnAt,
+		RevealAt:     revealAt,
+		DrawClientID: drawClientID,
+	}); err != nil {
 		return fmt.Errorf("%w: acquisition snapshot for current movie %d", domain.ErrNotFound, movieID)
 	}
 
@@ -1031,7 +989,14 @@ func (d *SqliteMoviesRepository) PromoteToPoolIfRoom(ctx context.Context, id, ma
 		WHERE id = ?
 			AND status = 'stash'
 			AND (
-				SELECT COUNT(*)
+				SELECT COUNT(*) + EXISTS (
+					SELECT 1
+					FROM wildcards AS w
+					JOIN movies AS wm ON wm.id = w.movie_id
+					WHERE w.status = 'active'
+					  AND w.source_status = 'pool'
+					  AND wm.added_by_id = movies.added_by_id
+				)
 				FROM movies AS p
 				WHERE p.added_by_id = movies.added_by_id AND p.status = 'pool'
 			) < ?
@@ -1083,9 +1048,19 @@ func (d *SqliteMoviesRepository) WatchCurrentAndAdvanceNextUp(
 		UPDATE movies
 		SET status = 'watched', watched_at = ?
 		WHERE status = 'current'
+		  AND NOT EXISTS (SELECT 1 FROM wildcards WHERE status = 'active')
 		RETURNING id
 	`, db.ToUnix(watchedAt)).Scan(&movieID)
 	if errors.Is(err, sql.ErrNoRows) {
+		var activeWildcard bool
+		if checkErr := tx.QueryRowContext(ctx,
+			"SELECT EXISTS(SELECT 1 FROM wildcards WHERE status = 'active')",
+		).Scan(&activeWildcard); checkErr != nil {
+			return nil, nil, false, checkErr
+		}
+		if activeWildcard {
+			return nil, nil, false, domain.ErrActiveWildcard
+		}
 		return nil, nil, false, domain.ErrNoCurrentDraw
 	}
 	if err != nil {

@@ -763,6 +763,23 @@ func TestRadarrAcquisitionDTOExposesPreviewAndLockedTargetState(t *testing.T) {
 	}
 }
 
+func TestRadarrAcquisitionDTOProjectsWildcardCancellation(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 25, 18, 0, 0, 0, time.UTC)
+	wildcardID := int64(12)
+	response := toRadarrAcquisitionResponse(repository.RadarrAcquisition{
+		ID: 21, MovieID: 30, MovieTitle: "Guest Night", Status: "abandoned",
+		Source: "wildcard", WildcardID: &wildcardID, CanceledAt: &now,
+		CreatedAt: now.Add(-time.Minute), UpdatedAt: now,
+	})
+	if response.Status != "canceled" || response.Source != "wildcard" || response.WildcardID != wildcardID {
+		t.Fatalf("canceled wildcard DTO = %+v", response)
+	}
+	if response.Milestones.CanceledAt == "" {
+		t.Fatal("canceled wildcard DTO omitted canceledAt")
+	}
+}
+
 func TestRadarrReleaseDTOContainsOnlySanitizedSelectionFields(t *testing.T) {
 	t.Parallel()
 	seeders := 14

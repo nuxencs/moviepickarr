@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User, Wildcard } from "@/types/Response";
 
 // Carries the HTTP status alongside the human-readable message so callers can
 // branch on it (the login page shows the uniform banner only for a 401, and
@@ -361,6 +361,19 @@ export const APIClient = {
                 body: { clientId: getClientId() },
             }),
         getCurrent: () => appClient.Get<MovieDetail | null>("api/v1/movies/current"),
+        getWildcard: () => appClient.Get<Wildcard | null>("api/v1/movies/wildcard"),
+        selectWildcard: (hostMovieID: number, movieID: number) =>
+            appClient.Post<Wildcard>("api/v1/movies/wildcard", {
+                body: { hostMovieId: hostMovieID, movieId: movieID },
+            }),
+        selectTMDBWildcard: (hostMovieID: number, title: string, tmdbID: number) =>
+            appClient.Post<Wildcard>("api/v1/movies/wildcard", {
+                body: { hostMovieId: hostMovieID, title, tmdbId: tmdbID },
+            }),
+        cancelWildcard: (wildcardID: number) => appClient.Delete<{ id: number; movieId: number }>(`api/v1/movies/wildcard?wildcardId=${wildcardID}`),
+        watchWildcard: (wildcardID: number) => appClient.Post<Wildcard>("api/v1/movies/wildcard/watch", {
+            body: { wildcardId: wildcardID },
+        }),
         // Confirm the draw — closes the reel for every client (via movie:revealed).
         reveal: () => appClient.Post<void>("api/v1/movies/current/reveal"),
         getWatched: () =>

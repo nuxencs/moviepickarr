@@ -87,6 +87,129 @@ func setupEditMovieTestWithDB(t *testing.T) (*handler, *fiber.App, *repository.S
 	return h, app, repository.NewSqliteUserRepository(dbConn), repository.NewSqliteMoviesRepository(dbConn), dbConn
 }
 
+func TestWildcardLifecycle_AnyMemberPreservesCurrentAndTurn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	first, err := userRepo.Create(ctx, "First")
+	if err != nil {
+		t.Fatalf("create first member: %v", err)
+	}
+	second, err := userRepo.Create(ctx, "Second")
+	if err != nil {
+		t.Fatalf("create second member: %v", err)
+	}
+	for _, title := range []string{"Current candidate", "Next candidate"} {
+		if _, err := movieRepo.Add(ctx, title, "pool", first.ID); err != nil {
+			t.Fatalf("seed pool: %v", err)
+		}
+	}
+
+	drawResp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"first"}`), first.ID, "member")
+	if drawResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("draw status = %d, want 200", drawResp.StatusCode)
+	}
+	var drawn drawnPayload
+	if err := json.UnmarshalRead(drawResp.Body, &drawn); err != nil {
+		t.Fatalf("decode draw: %v", err)
+	}
+	if err := drawResp.Body.Close(); err != nil {
+		t.Fatalf("close draw response: %v", err)
+	}
+
+	revealResp := doAs(t, app, httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil), first.ID, "member")
+	if revealResp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("reveal status = %d, want 204", revealResp.StatusCode)
+	}
+	if err := revealResp.Body.Close(); err != nil {
+		t.Fatalf("close reveal response: %v", err)
+	}
+
+	// Selection is a group action. The member who is not next may select a
+	// direct TMDB title that was not in any member's stash or pool.
+	selectResp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/wildcard", fmt.Sprintf(`{"hostMovieId":%d,"title":"Guest night","tmdbId":998877}`, drawn.ID)), second.ID, "member")
+	if selectResp.StatusCode != fiber.StatusCreated {
+		t.Fatalf("select wildcard status = %d, want 201", selectResp.StatusCode)
+	}
+	var selected wildcardResponse
+	if err := json.UnmarshalRead(selectResp.Body, &selected); err != nil {
+		t.Fatalf("decode selected wildcard: %v", err)
+	}
+	if err := selectResp.Body.Close(); err != nil {
+		t.Fatalf("close select response: %v", err)
+	}
+	if selected.HostMovieID != drawn.ID || selected.Movie.Status != domain.MovieStatusWildcard || selected.Movie.AddedByID != second.ID {
+		t.Fatalf("selected wildcard = %+v", selected)
+	}
+
+	watchResp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/wildcard/watch", fmt.Sprintf(`{"wildcardId":%d}`, selected.ID)), second.ID, "member")
+	if watchResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("watch wildcard status = %d, want 200", watchResp.StatusCode)
+	}
+	var watched wildcardResponse
+	if err := json.UnmarshalRead(watchResp.Body, &watched); err != nil {
+		t.Fatalf("decode watched wildcard: %v", err)
+	}
+	if err := watchResp.Body.Close(); err != nil {
+		t.Fatalf("close watch response: %v", err)
+	}
+	if watched.Movie.Status != domain.MovieStatusWatched || watched.Movie.WildcardOfMovieID != drawn.ID {
+		t.Fatalf("watched wildcard movie = %+v", watched.Movie)
+	}
+
+	current, err := movieRepo.GetCurrent(ctx)
+	if err != nil || current.ID != drawn.ID {
+		t.Fatalf("current after wildcard = %+v, err=%v, want %d", current, err, drawn.ID)
+	}
+	next, err := h.nextUpService.Get(ctx)
+	if err != nil || next.ID != first.ID {
+		t.Fatalf("next up after wildcard = %+v, err=%v, want %d", next, err, first.ID)
+	}
+
+	getResp := doAs(t, app, httptest.NewRequest(http.MethodGet, "/api/v1/movies/wildcard", nil), first.ID, "member")
+	if getResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("get wildcard status = %d, want 200", getResp.StatusCode)
+	}
+	var active *wildcardResponse
+	if err := json.UnmarshalRead(getResp.Body, &active); err != nil {
+		t.Fatalf("decode empty wildcard: %v", err)
+	}
+	if err := getResp.Body.Close(); err != nil {
+		t.Fatalf("close get response: %v", err)
+	}
+	if active != nil {
+		t.Fatalf("active wildcard after watch = %+v, want null", active)
+	}
+
+	stashed, err := movieRepo.Add(ctx, "Cancel me", "stash", second.ID)
+	if err != nil {
+		t.Fatalf("seed stash: %v", err)
+	}
+	selectResp = doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/wildcard", fmt.Sprintf(`{"hostMovieId":%d,"movieId":%d}`, drawn.ID, stashed.ID)), second.ID, "member")
+	if selectResp.StatusCode != fiber.StatusCreated {
+		t.Fatalf("select stashed wildcard status = %d, want 201", selectResp.StatusCode)
+	}
+	var cancelTarget wildcardResponse
+	if err := json.UnmarshalRead(selectResp.Body, &cancelTarget); err != nil {
+		t.Fatalf("decode cancel target: %v", err)
+	}
+	if err := selectResp.Body.Close(); err != nil {
+		t.Fatalf("close select response: %v", err)
+	}
+	cancelResp := doAs(t, app, httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/movies/wildcard?wildcardId=%d", cancelTarget.ID), nil), first.ID, "member")
+	if cancelResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("cancel wildcard status = %d code=%q, want 200", cancelResp.StatusCode, problemCode(t, cancelResp))
+	}
+	if err := cancelResp.Body.Close(); err != nil {
+		t.Fatalf("close cancel response: %v", err)
+	}
+	restored, err := movieRepo.FindByID(ctx, stashed.ID)
+	if err != nil || restored.Status != string(domain.MovieStatusStash) {
+		t.Fatalf("canceled wildcard movie = %+v, err=%v, want stash", restored, err)
+	}
+}
+
 func TestHandleGetPooledMovies_ShipsLeanTiles(t *testing.T) {
 	t.Parallel()
 

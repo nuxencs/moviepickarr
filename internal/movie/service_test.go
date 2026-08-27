@@ -181,6 +181,28 @@ func (r *testMovieRepo) ConcealedCurrentDraw(
 		nil
 }
 
+func (r *testMovieRepo) StartWildcard(
+	context.Context,
+	int,
+	domain.WildcardSelection,
+	time.Time,
+	bool,
+) (*domain.Wildcard, error) {
+	return nil, domain.ErrNoCurrentDraw
+}
+
+func (r *testMovieRepo) ActiveWildcard(context.Context) (*domain.Wildcard, error) {
+	return nil, domain.ErrNoActiveWildcard
+}
+
+func (r *testMovieRepo) CancelWildcard(context.Context, int, int64, time.Time) (*domain.Wildcard, error) {
+	return nil, domain.ErrNoActiveWildcard
+}
+
+func (r *testMovieRepo) WatchWildcard(context.Context, int64, time.Time) (*domain.Wildcard, error) {
+	return nil, domain.ErrNoActiveWildcard
+}
+
 func (r *testMovieRepo) UpdateStatusIf(context.Context, int, string, string) (int64, error) {
 	panic("unexpected call")
 }

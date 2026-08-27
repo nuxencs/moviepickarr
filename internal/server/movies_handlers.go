@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"moviepickarr/internal/domain"
@@ -550,6 +551,117 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
+	return c.Status(fiber.StatusOK).JSON(payload)
+}
+
+type wildcardResponse struct {
+	ID          int64     `json:"id"`
+	HostMovieID int       `json:"hostMovieId"`
+	SelectedAt  string    `json:"selectedAt"`
+	Movie       fullMovie `json:"movie"`
+}
+
+func (h *handler) wildcardResponse(c *fiber.Ctx, wildcard *domain.Wildcard) wildcardResponse {
+	meta := h.metaFor(c, []*domain.Movie{wildcard.Movie})
+	credits := h.creditsFor(c, []*domain.Movie{wildcard.Movie})
+	return wildcardResponse{
+		ID:          wildcard.ID,
+		HostMovieID: wildcard.HostMovieID,
+		SelectedAt:  formatTimeValue(wildcard.SelectedAt),
+		Movie:       toFullMovie(wildcard.Movie, meta[wildcard.Movie.ID], credits[wildcard.Movie.ID]),
+	}
+}
+
+func (h *handler) handleGetActiveWildcard(c *fiber.Ctx) error {
+	wildcard, err := h.movieService.ActiveWildcard(c.UserContext())
+	if errors.Is(err, domain.ErrNoActiveWildcard) {
+		return c.Status(fiber.StatusOK).JSON(nil)
+	}
+	if err != nil {
+		return writeError(c, err)
+	}
+	return c.Status(fiber.StatusOK).JSON(h.wildcardResponse(c, wildcard))
+}
+
+func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
+	var body struct {
+		HostMovieID int     `json:"hostMovieId"`
+		MovieID     *int    `json:"movieId"`
+		Title       string  `json:"title"`
+		TMDBID      *int    `json:"tmdbId"`
+		IMDbID      *string `json:"imdbId"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
+	}
+	if body.HostMovieID <= 0 {
+		return writeError(c, fmt.Errorf("%w: hostMovieId is required", domain.ErrInvalidInput))
+	}
+	if body.MovieID != nil && (sanitizeInput(body.Title) != "" || body.TMDBID != nil || body.IMDbID != nil) {
+		return writeError(c, fmt.Errorf("%w: movieId cannot be combined with movie identity fields", domain.ErrInvalidInput))
+	}
+
+	ctx := c.UserContext()
+	var wildcard *domain.Wildcard
+	err := h.runPoolStateCommand(func() error {
+		poolLocked, err := h.settingsService.GetPoolLock(ctx)
+		if err != nil {
+			return err
+		}
+		wildcard, err = h.movieService.SelectWildcard(ctx, actorMemberID(c), domain.WildcardSelection{
+			ExpectedHostMovieID: body.HostMovieID,
+			ExistingMovieID:     body.MovieID,
+			Title:               sanitizeInput(body.Title),
+			TMDBID:              body.TMDBID,
+			IMDbID:              body.IMDbID,
+		}, poolLocked)
+		return err
+	})
+	if err != nil {
+		return writeError(c, err)
+	}
+	if h.enrichRunner != nil {
+		h.enrichRunner.Enqueue(wildcard.Movie.ID)
+	}
+	payload := h.wildcardResponse(c, wildcard)
+	h.broker.Broadcast(event{Type: "wildcard:selected", Data: payload})
+	return c.Status(fiber.StatusCreated).JSON(payload)
+}
+
+func (h *handler) handleCancelWildcard(c *fiber.Ctx) error {
+	expectedWildcardID, err := strconv.ParseInt(c.Query("wildcardId"), 10, 64)
+	if err != nil || expectedWildcardID <= 0 {
+		return writeError(c, fmt.Errorf("%w: wildcardId is required", domain.ErrInvalidInput))
+	}
+	ctx := c.UserContext()
+	var wildcard *domain.Wildcard
+	err = h.runPoolStateCommand(func() error {
+		var err error
+		wildcard, err = h.movieService.CancelActiveWildcard(ctx, actorMemberID(c), expectedWildcardID)
+		return err
+	})
+	if err != nil {
+		return writeError(c, err)
+	}
+	payload := fiber.Map{"id": wildcard.ID, "movieId": wildcard.Movie.ID}
+	h.broker.Broadcast(event{Type: "wildcard:canceled", Data: payload})
+	return c.Status(fiber.StatusOK).JSON(payload)
+}
+
+func (h *handler) handleWatchWildcard(c *fiber.Ctx) error {
+	var body struct {
+		WildcardID int64 `json:"wildcardId"`
+	}
+	if err := c.BodyParser(&body); err != nil || body.WildcardID <= 0 {
+		return writeError(c, fmt.Errorf("%w: wildcardId is required", domain.ErrInvalidInput))
+	}
+	wildcard, err := h.movieService.MarkActiveWildcardWatched(c.UserContext(), body.WildcardID)
+	if err != nil {
+		return writeError(c, err)
+	}
+	h.invalidateStatsCache()
+	payload := h.wildcardResponse(c, wildcard)
+	h.broker.Broadcast(event{Type: "wildcard:watched", Data: payload})
 	return c.Status(fiber.StatusOK).JSON(payload)
 }
 

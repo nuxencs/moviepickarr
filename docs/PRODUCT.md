@@ -10,8 +10,7 @@ pool. The app draws a random movie from the pool, then tracks the watched
 history and stats. Movies are
 enriched with TMDB metadata (poster, backdrop, runtime, rating, genres, tagline,
 overview, external links, and cast/crew credits). An optional Radarr integration
-lets an Admin arrange the drawn winner's initial media file before the next
-draw.
+lets an Admin arrange the initial media file for a Current draw or Wildcard.
 
 ## Audience
 A handful of friends who know each other. Private, authenticated by obscurity,
@@ -19,7 +18,7 @@ not a public or marketing surface. Desktop-first, with a dedicated mobile/touch
 pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
 
 ## Primary surfaces (tabs)
-- Movies: the cinematic hero (current draw, actions, next up), the pool
+- Movies: the cinematic hero (Current draw, Active wildcard, actions, Next up), the pool
   grid, and the watched library (grid/list, searchable by title or adder). The
   Movies page stays browse-first; metadata drill-downs live on Stats. A movie's
   detail modal shows "Directed by / Written by" credit lines and a horizontally
@@ -51,11 +50,29 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   indicators, connection testing, manual refreshes, and current-run progress.
   Radarr owns Admin-only Acquisitions, multi-instance setup and presets, and
   Generic or Discord actionable webhooks. Its persistent attention badge remains
-  until the selected target reports a file or an Admin abandons the Acquisition.
+  until the selected target reports a file, an Admin abandons the Acquisition,
+  or the group cancels its Active wildcard.
   Runs lists finished integration operations only, with a lean summary and
   per-result details modal. Individual Radarr Acquisition work stays on the
   Radarr page and does not change Runs. Routine activity is available on demand.
   TMDB environment overrides stay visible and read-only.
+
+## Wildcard watches
+
+After Reveal, any member can select one Active wildcard from the existing Pool
+or Stashes, or directly from TMDB. An existing movie keeps its Adder. A direct
+TMDB selection uses the selecting member as its Adder. Selection creates a
+visible Pending acquisition immediately.
+
+The group must watch or cancel the Active wildcard before it can mark the
+Current draw Watched. Watching it adds the movie to the Watched library but does
+not close its Acquisition, complete the Current draw, or rotate Next up. The
+group can then select another Wildcard for the same Current draw, with no limit
+on sequential Wildcard watches.
+
+Cancellation restores an existing movie to its prior Pool or Stash, or puts a
+direct TMDB selection in its Adder's Stash. It closes only the local Acquisition
+requirement. It does not delete, stop, or change Radarr data or work.
 
 ## Design
 The full design system and the decisions behind it live in

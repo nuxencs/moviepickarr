@@ -1,4 +1,4 @@
-import { MovieDetail, MovieDrawPayload, Settings, User } from "@/types/Response";
+import { MovieDetail, MovieDrawPayload, Settings, User, Wildcard } from "@/types/Response";
 
 export type SSEEventType =
   | "user:created"
@@ -10,6 +10,9 @@ export type SSEEventType =
   | "movie:revealed"
   | "movie:watched"
   | "movie:updated"
+  | "wildcard:selected"
+  | "wildcard:canceled"
+  | "wildcard:watched"
   | "movies:enriched-batch"
   | "settings:pool-lock-changed"
   | "settings:next-up-changed";
@@ -76,6 +79,18 @@ export interface MovieWatchedEvent extends SSEEvent<MovieDetail> {
 
 export interface MovieUpdatedEvent extends SSEEvent<MovieDetail> {
   type: "movie:updated";
+}
+
+export interface WildcardSelectedEvent extends SSEEvent<Wildcard> {
+  type: "wildcard:selected";
+}
+
+export interface WildcardCanceledEvent extends SSEEvent<{ id: number; movieId: number }> {
+  type: "wildcard:canceled";
+}
+
+export interface WildcardWatchedEvent extends SSEEvent<Wildcard> {
+  type: "wildcard:watched";
 }
 
 // Coalesced signal: the enrichment worker finished a burst of movies and emits

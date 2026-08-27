@@ -26,6 +26,7 @@ import {
 } from "@/api/radarr";
 
 import {
+  acquisitionIsOpen,
   acquisitionPreviewReady,
   acquisitionTitle,
   acquisitionUsesExisting,
@@ -335,7 +336,7 @@ export function AdminRadarrAcquisitionPage() {
   const item = acquisition.data;
   const target = item.target ?? item.preset;
   const locked = item.targetLocked ?? Boolean(item.radarrMovieId);
-  const open = item.status !== "downloaded" && item.status !== "abandoned";
+  const open = acquisitionIsOpen(item);
   const checkingAdd = !locked && item.mutationState === "adding";
   const checkingGrab = locked && item.mutationState === "grabbing";
   const reason = item.status === "action_needed" || item.status === "needs_preset" || item.status === "needs_release"

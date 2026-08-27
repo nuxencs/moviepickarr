@@ -13,6 +13,7 @@ describe("Radarr Admin labels", () => {
     expect(acquisitionIsOpen({ id: 1, status: "needs_release", mutationState: "idle" })).toBe(true);
     expect(acquisitionIsOpen({ id: 2, status: "downloaded", mutationState: "idle" })).toBe(false);
     expect(acquisitionIsOpen({ id: 3, status: "abandoned", mutationState: "idle" })).toBe(false);
+    expect(acquisitionIsOpen({ id: 4, status: "canceled", mutationState: "idle" })).toBe(false);
   });
 
   it("provides readable labels for known and future remote states", () => {

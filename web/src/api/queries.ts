@@ -113,6 +113,12 @@ export const MoviesGetCurrentQueryOptions = () =>
     queryFn: () => APIClient.movies.getCurrent(),
   })
 
+export const MoviesGetWildcardQueryOptions = () =>
+  queryOptions({
+    queryKey: MoviesKeys.wildcard(),
+    queryFn: () => APIClient.movies.getWildcard(),
+  })
+
 export const MoviesGetWatchedQueryOptions = () =>
   queryOptions({
     queryKey: MoviesKeys.listwatched(),

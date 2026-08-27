@@ -73,6 +73,50 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   await expect(reel).toBeHidden();
   await expect(page.getByRole("button", { name: "Mark as watched" })).toBeVisible();
 
+  // A Wildcard is a group-owned detour. It can be watched without replacing
+  // this draw or moving Next up, and another can then be selected and canceled.
+  const currentTitle = await page.locator(".hero__title").textContent();
+  const nextUp = await page.locator(".hero__nextup").textContent();
+  await page.getByRole("button", { name: "Choose wildcard" }).click();
+  const picker = page.getByRole("dialog", { name: "Choose a wildcard" });
+  await expect(picker).toBeVisible();
+  const firstResult = picker.locator(".result").first();
+  const firstWildcardTitle = await firstResult.locator(".r-title").textContent();
+  expect(firstWildcardTitle).toBeTruthy();
+  await firstResult.hover();
+  await firstResult.getByRole("button", { name: "Choose" }).click();
+
+  const activeWildcard = page.getByText(/Active wildcard · added by/);
+  await expect(activeWildcard).toBeVisible();
+  await expect(page.locator(".hero__title")).toHaveText(firstWildcardTitle ?? "");
+  await expect(page.locator(".hero__nextup")).toHaveText(nextUp ?? "");
+  await expect(page.getByRole("button", { name: "Mark as watched" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Cancel wildcard" })).toBeVisible();
+
+  const heldDraw = page.locator(".hero__held-draw");
+  await heldDraw.getByRole("button", { name: currentTitle ?? "" }).click();
+  await expect(page.getByRole("dialog", { name: currentTitle ?? "" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog", { name: currentTitle ?? "" })).toBeHidden();
+  await expect(page.locator(".hero__title")).toHaveText(firstWildcardTitle ?? "");
+
+  await page.getByRole("button", { name: "Mark as watched" }).click();
+  await expect(activeWildcard).toBeHidden();
+  await expect(page.locator(".hero__title")).toHaveText(currentTitle ?? "");
+  await expect(page.locator(".hero__nextup")).toHaveText(nextUp ?? "");
+
+  await page.getByRole("button", { name: "Choose wildcard" }).click();
+  const secondResult = picker.locator(".result").first();
+  await secondResult.hover();
+  await secondResult.getByRole("button", { name: "Choose" }).click();
+  await expect(activeWildcard).toBeVisible();
+  await page.getByRole("button", { name: "Cancel wildcard" }).click();
+  const cancellation = page.getByRole("dialog", { name: "Cancel this wildcard?" });
+  await cancellation.getByRole("button", { name: "Cancel wildcard" }).click();
+  await expect(activeWildcard).toBeHidden();
+  await expect(page.locator(".hero__title")).toHaveText(currentTitle ?? "");
+  await expect(page.locator(".hero__nextup")).toHaveText(nextUp ?? "");
+
   // Restore a no-current-draw baseline for the next browser project.
   await page.getByRole("button", { name: "Mark as watched" }).click();
   await expect(page.getByRole("button", { name: "Draw random movie" })).toBeVisible();

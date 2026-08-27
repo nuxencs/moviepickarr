@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { EyeIcon, Loader2Icon, ShuffleIcon } from "lucide-react";
+import { AsteriskIcon, EyeIcon, Loader2Icon, RefreshCwIcon, ShuffleIcon, XIcon } from "lucide-react";
 import {
   type CSSProperties,
   useEffect,
@@ -15,6 +15,7 @@ import { setCachedDrawInProgress } from "@/api/poolStateCache";
 import {
   MoviesGetCurrentQueryOptions,
   MoviesGetPoolQueryOptions,
+  MoviesGetWildcardQueryOptions,
   SettingsGetNextUpQueryOptions,
 } from "@/api/queries";
 import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
@@ -24,12 +25,17 @@ import { drawAwaitingReveal } from "@/components/moviepickarr/drawMachine";
 import { DrawReel } from "@/components/moviepickarr/DrawReel";
 import { drawStore, resolveDrawEnv } from "@/components/moviepickarr/drawStore";
 import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/moviepickarr/lib";
+import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { drawLockedTip, revealLockedTip, useTurnGate, watchLockedTip } from "@/components/moviepickarr/turnGate";
+import { WildcardModal } from "@/components/moviepickarr/WildcardModal";
+import { DeletionDialog } from "@/components/ui/deletion-dialog";
 import { toast } from "@/components/ui/toast-api";
 
 import type { MovieDetail } from "@/types/Response";
+
+import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
 /** Stagger index for the draw-reveal; each slot settles a touch after the last. */
 const ri = (i: number) => ({ "--i": i }) as CSSProperties;
@@ -106,6 +112,9 @@ export function Hero() {
   const queryClient = useQueryClient();
   const { data: current, isLoading } = useQuery(MoviesGetCurrentQueryOptions());
   const { data: pooled } = useQuery(MoviesGetPoolQueryOptions());
+  const wildcardQuery = useQuery(MoviesGetWildcardQueryOptions());
+  const { data: wildcard } = wildcardQuery;
+  const wildcardStateKnown = wildcard !== undefined && !wildcardQuery.isError;
   const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());
   // The board-level turn gate: whether this viewer (admin, or the next-up
   // member) may run the draw → reveal → watch cycle. Drives the disabled +
@@ -140,6 +149,24 @@ export function Hero() {
   // settling straight on the next state.
   const [marking, setMarking] = useState(false);
   const [drawing, setDrawing] = useState(false);
+  const [wildcardPickerHostID, setWildcardPickerHostID] = useState<number | null>(null);
+  const [wildcardCancelID, setWildcardCancelID] = useState<number | null>(null);
+  const heldDrawModal = useMovieModal();
+
+  useEffect(() => {
+    if (
+      wildcardPickerHostID !== null
+      && (current?.movieID !== wildcardPickerHostID || wildcard != null)
+    ) {
+      setWildcardPickerHostID(null);
+    }
+  }, [current?.movieID, wildcard, wildcardPickerHostID]);
+
+  useEffect(() => {
+    if (wildcardCancelID !== null && wildcardStateKnown && wildcard?.id !== wildcardCancelID) {
+      setWildcardCancelID(null);
+    }
+  }, [wildcard?.id, wildcardCancelID, wildcardStateKnown]);
 
   const drawMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
@@ -183,6 +210,36 @@ export function Hero() {
     onError: (err) => {
       setMarking(false);
       onTurnError(err, "Failed to mark as watched");
+    },
+  });
+
+  const watchWildcardMutation = useMutation({
+    mutationFn: (wildcardID: number) => APIClient.movies.watchWildcard(wildcardID),
+    onSuccess: () => {
+      toast.success("Wildcard marked as watched");
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.wildcard() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.listwatched() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.details() });
+      void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.wildcard() });
+      toast.error("Failed to mark the wildcard as watched");
+    },
+  });
+
+  const cancelWildcardMutation = useMutation({
+    mutationFn: (wildcardID: number) => APIClient.movies.cancelWildcard(wildcardID),
+    onSuccess: () => {
+      setWildcardCancelID(null);
+      toast.success("Wildcard canceled");
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.wildcard() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
+      void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.wildcard() });
+      toast.error("Failed to cancel the wildcard");
     },
   });
 
@@ -295,7 +352,11 @@ export function Hero() {
     // the draw actually changes; the pool/seen deps just re-run the resume check.
   }, [isLoading, current, spinning, pooled, drawState.seen]);
 
-  const desiredArtwork = artworkDescriptor(shown);
+  // An Active wildcard temporarily owns the Hero's visual identity. The
+  // confirmed draw remains in `shown`, ready to return without advancing the
+  // round when the wildcard is watched or canceled.
+  const heroMovie = wildcard?.movie ?? shown;
+  const desiredArtwork = artworkDescriptor(heroMovie);
 
   // Swap a changed draw to its own procedural art before the browser paints.
   // Same-draw path changes intentionally keep the current decoded layer.
@@ -428,26 +489,45 @@ export function Hero() {
   // loading we render a quiet banner shell — no
   // placeholder copy ("Draw next movie") flashing before the real draw.
   const ready = revealId > 0;
-  const hue = hueOf(draw?.title ?? "moviepickarr");
+  const hue = hueOf(heroMovie?.title ?? "moviepickarr");
   const canDraw = !draw && (pooled?.length ?? 0) > 0;
+  const heroKey = wildcard ? `wildcard-${wildcard.id}` : `draw-${revealId}`;
 
   return (
+    <>
     <section className="hero" data-ready={revealId > 0 ? "" : undefined}>
       <Backdrop bg={artwork.bg} revision={artwork.revision} />
       <div className="hero__inner">
-        <div className="hero__poster" key={`p-${revealId}`} style={ri(0)}>
+        <div className="hero__poster" key={`p-${heroKey}`} style={ri(0)}>
           <Poster
-            title={draw?.title ?? "No draw yet"}
+            title={heroMovie?.title ?? "No draw yet"}
             hue={hue}
-            posterPath={draw?.posterPath}
-            showTitle={ready && !draw?.posterPath}
+            posterPath={heroMovie?.posterPath}
+            showTitle={ready && !heroMovie?.posterPath}
           />
         </div>
 
-        <div className="hero__body" key={`b-${revealId}`}>
-          <div className="hero__eyebrow eyebrow" style={ri(1)}>
+        <div className="hero__body" key={`b-${heroKey}`}>
+          <div className={`hero__eyebrow eyebrow${wildcard ? " hero__eyebrow--wildcard" : ""}`} style={ri(1)}>
             {!ready ? (
               ""
+            ) : wildcard ? (
+              <>
+                <AsteriskIcon />
+                Active wildcard · added by{" "}
+                {wildcard.movie.addedByArchived ? (
+                  <span className="hero__by">{wildcard.movie.addedByName}</span>
+                ) : (
+                  <Link
+                    to="/users"
+                    search={{ member: wildcard.movie.addedByID }}
+                    className="hero__by"
+                    title={`See ${possessive(wildcard.movie.addedByName)} board`}
+                  >
+                    {wildcard.movie.addedByName}
+                  </Link>
+                )}
+              </>
             ) : draw ? (
               <>
                 {/* The same way from a movie to whoever stashed it as the modal's
@@ -476,7 +556,7 @@ export function Hero() {
           </div>
 
           <h2 className="hero__title" style={ri(2)}>
-            {!ready ? "" : (draw?.title ?? "Draw next movie")}
+            {!ready ? "" : (heroMovie?.title ?? "Draw next movie")}
           </h2>
 
           {/* Tagline + meta slots are always rendered (reserved height in CSS) so
@@ -484,9 +564,9 @@ export function Hero() {
           <p className="hero__tag" style={ri(3)}>
             {!ready
               ? null
-              : draw?.tagline
-                ? `"${draw.tagline}"`
-                : draw
+              : heroMovie?.tagline
+                ? `"${heroMovie.tagline}"`
+                : heroMovie
                   ? null
                   : (pooled?.length ?? 0) > 0
                     ? "The pool is stocked. Spin for a random draw."
@@ -494,12 +574,38 @@ export function Hero() {
           </p>
 
           <div className="hero__meta" style={ri(4)}>
-            {ready && draw && <MetaChips movie={draw} links={externalLinks(draw)} />}
+            {ready && heroMovie && <MetaChips movie={heroMovie} links={externalLinks(heroMovie)} />}
           </div>
 
-          <div className="hero__actions" style={ri(5)}>
+          {ready && wildcard && draw && (
+            <div className="hero__held-draw" style={ri(5)}>
+              <span className="hero__held-label">Current draw on hold</span>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                className="hero__held-title"
+                onClick={() => heldDrawModal.open(draw)}
+                title={`View ${draw.title} details`}
+              >
+                {draw.title}
+              </button>
+            </div>
+          )}
+
+          <div className="hero__actions" style={ri(6)}>
             {ready &&
-              (marking || drawing ? (
+              (wildcard ? (
+                <button
+                  type="button"
+                  className="btn btn--accent"
+                  onClick={() => watchWildcardMutation.mutate(wildcard.id)}
+                  disabled={watchWildcardMutation.isPending || cancelWildcardMutation.isPending}
+                  aria-busy={watchWildcardMutation.isPending || undefined}
+                >
+                  {watchWildcardMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <EyeIcon />}
+                  {watchWildcardMutation.isPending ? "Marking…" : "Mark as watched"}
+                </button>
+              ) : marking || drawing ? (
                 // Held from the click until the transition settles (the watched draw
                 // leaves the hero, or the new draw is revealed), so the button never
                 // regresses to its resting label mid-transition. See `marking`/`drawing`.
@@ -515,8 +621,14 @@ export function Hero() {
                   type="button"
                   className="btn btn--accent"
                   onClick={() => watchMutation.mutate()}
-                  disabled={gate.locked}
-                  title={gate.locked ? watchLockedTip(gate) : undefined}
+                  disabled={gate.locked || !wildcardStateKnown || Boolean(wildcard)}
+                  title={wildcard
+                    ? "Watch or cancel the Active wildcard first."
+                    : !wildcardStateKnown
+                      ? "Checking for an Active wildcard."
+                      : gate.locked
+                        ? watchLockedTip(gate)
+                        : undefined}
                 >
                   <EyeIcon />
                   Mark as watched
@@ -533,6 +645,32 @@ export function Hero() {
                   Draw random movie
                 </button>
               ))}
+
+            {ready && draw && !spinning && wildcardStateKnown && !wildcard && (
+              <button type="button" className="btn btn--ghost hero__wildcard-open" onClick={() => setWildcardPickerHostID(draw.movieID)}>
+                <AsteriskIcon />
+                Choose wildcard
+              </button>
+            )}
+
+            {ready && draw && !spinning && wildcard && (
+              <button
+                type="button"
+                className="btn btn--ghost hero__wildcard-open"
+                onClick={() => setWildcardCancelID(wildcard.id)}
+                disabled={watchWildcardMutation.isPending || cancelWildcardMutation.isPending}
+              >
+                <XIcon />
+                Cancel wildcard
+              </button>
+            )}
+
+            {ready && draw && !spinning && !wildcardStateKnown && wildcardQuery.isError && (
+              <button type="button" className="btn btn--ghost hero__wildcard-open" onClick={() => void wildcardQuery.refetch()}>
+                <RefreshCwIcon />
+                Retry wildcard status
+              </button>
+            )}
 
             {ready && nextUp?.name && (
               <div className="hero__nextup">
@@ -556,5 +694,30 @@ export function Hero() {
         />
       )}
     </section>
+    {wildcardPickerHostID !== null && (
+      <WildcardModal hostMovieID={wildcardPickerHostID} onClose={() => setWildcardPickerHostID(null)} />
+    )}
+    {heldDrawModal.selected && (
+      <MovieModal
+        movie={draw?.movieID === heldDrawModal.selected.movieID ? draw : heldDrawModal.selected}
+        open={heldDrawModal.isOpen}
+        onRequestClose={heldDrawModal.close}
+        onClose={heldDrawModal.onClosed}
+      />
+    )}
+    <DeletionDialog
+      isOpen={wildcardCancelID !== null}
+      pending={cancelWildcardMutation.isPending}
+      onClose={() => setWildcardCancelID(null)}
+      onConfirm={() => {
+        if (wildcardCancelID !== null) cancelWildcardMutation.mutate(wildcardCancelID);
+      }}
+      title="Cancel this wildcard?"
+      description="The movie returns to its previous place. Its acquisition requirement closes, but moviepickarr does not remove anything from Radarr."
+      confirmText="Cancel wildcard"
+      pendingText="Canceling…"
+      cancelText="Keep wildcard"
+    />
+    </>
   );
 }

@@ -114,9 +114,15 @@ Admin action and does not purge movie data.
 ## Radarr Acquisition recovery
 
 Radarr Acquisition work is Admin-only and never blocks Reveal, Watch, or the
-next draw. The attention badge counts every revealed Acquisition that is not
-Downloaded or Abandoned. It is persistent and cannot be dismissed. Resolve it
-by completing the Acquisition or by abandoning it with a reason.
+next draw. The attention badge counts every visible Acquisition that is not
+Downloaded, Abandoned, or Canceled. It is persistent and cannot be dismissed.
+Resolve it by completing the Acquisition or by abandoning it with a reason.
+
+A member can instead cancel an Active wildcard. This marks its Acquisition
+Canceled and closes only moviepickarr's local requirement. It does not delete,
+stop, or change Radarr data or work. If remote work had started, inspect and
+manage it in Radarr. The Canceled Acquisition stays terminal and does not reopen
+from later Radarr observations.
 
 The Acquisition worker runs once at process start and then every 30 seconds. It
 checks at most 50 due locked targets per pass. Downloaded means that the exact
@@ -184,7 +190,8 @@ If the revision changes after this repeated review, the final update fails and
 the Admin must review the current state. Abandonment does not remove or change
 Radarr data and remains terminal if Radarr later imports a file.
 
-Acquisition history keeps one compact summary per draw for the movie's lifetime.
+Acquisition history keeps one compact summary per Current draw or Wildcard for
+the movie's lifetime.
 It is separate from the shared Runs page. Routine checks, release selections,
 and individual retry actions do not create Integration runs.
 

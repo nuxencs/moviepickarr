@@ -50,6 +50,16 @@ func writeError(c *fiber.Ctx, err error) error {
 		return writeProblem(c, fiber.StatusConflict, "current_draw_exists", err.Error())
 	case errors.Is(err, domain.ErrDrawInProgress):
 		return writeProblem(c, fiber.StatusConflict, "draw_in_progress", err.Error())
+	case errors.Is(err, domain.ErrNoActiveWildcard):
+		return writeProblem(c, fiber.StatusNotFound, "no_active_wildcard", err.Error())
+	case errors.Is(err, domain.ErrActiveWildcard):
+		return writeProblem(c, fiber.StatusConflict, "active_wildcard_exists", err.Error())
+	case errors.Is(err, domain.ErrDrawNotRevealed):
+		return writeProblem(c, fiber.StatusConflict, "draw_not_revealed", err.Error())
+	case errors.Is(err, domain.ErrCurrentDrawChanged):
+		return writeProblem(c, fiber.StatusConflict, "current_draw_changed", err.Error())
+	case errors.Is(err, domain.ErrWildcardChanged):
+		return writeProblem(c, fiber.StatusConflict, "wildcard_changed", err.Error())
 	case errors.Is(err, domain.ErrInvalidState):
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_state", err.Error())
 	case errors.Is(err, domain.ErrConflict):

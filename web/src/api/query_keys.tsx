@@ -34,6 +34,7 @@ export const MoviesKeys = {
     all: ["movies"] as const,
     listpool: () => [...MoviesKeys.all, "listpool"] as const,
     current: () => [...MoviesKeys.all, "current"] as const,
+    wildcard: () => [...MoviesKeys.all, "wildcard"] as const,
     listwatched: () => [...MoviesKeys.all, "listwatched"] as const,
     // Full enriched record (cast/crew/overview) lazy-loaded by the detail modal,
     // so the list payloads can ship lean. `details()` is the prefix used to

@@ -38,7 +38,7 @@ function AcquisitionRow({ acquisition }: { acquisition: RadarrAcquisition }) {
       >
         <span className="radarr-acquisition-row__identity">
           <strong>{acquisitionTitle(acquisition)}</strong>
-          <span>{acquisition.year ?? acquisition.identity?.year ?? "Year unavailable"}</span>
+          <span>{acquisition.source === "wildcard" ? "Wildcard" : "Current draw"} · {acquisition.year ?? acquisition.identity?.year ?? "Year unavailable"}</span>
         </span>
         <span className="radarr-acquisition-row__state">
           <strong data-status={acquisition.status}>{radarrStatusLabel(acquisition.status)}</strong>
@@ -78,6 +78,7 @@ export function AdminRadarrAcquisitionsPage() {
           acquisitionTitle(item),
           item.status,
           item.abandonmentReason,
+          item.source,
           targetName(item.target ?? item.preset),
         ]
           .filter(Boolean)
@@ -103,7 +104,7 @@ export function AdminRadarrAcquisitionsPage() {
           <div className="radarr-page__toolbar radarr-page__toolbar--overview">
             <div className="radarr-page__overview">
               <h3 id="radarr-action-required-title">Action required</h3>
-              <p>Drawn winners that need an Admin decision before Radarr can continue.</p>
+              <p>Current draws and wildcards that need an Admin decision before Radarr can continue.</p>
             </div>
             <span className="radarr-section__count" aria-label={`${actionRequired.length} ${actionRequired.length === 1 ? "acquisition requires" : "acquisitions require"} action`}>{actionRequired.length}</span>
           </div>

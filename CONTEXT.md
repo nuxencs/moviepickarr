@@ -187,6 +187,18 @@ The reel resting on the winner, awaiting confirmation. The scroll is over but
 the draw is not yet revealed: the drawer sees the OK countdown, everyone else
 waits for the reveal (the confirm, or the server's auto-reveal deadline).
 
+**Wildcard**:
+A movie the group agrees to watch while preserving a revealed Current draw for
+later. A Wildcard watch enters history without completing the Current draw or
+rotating Next up, and any number may occur during the same Current draw.
+
+**Active wildcard**:
+The one Wildcard selected while it waits to be watched or canceled. It
+temporarily takes over the Hero while the Current draw remains available as a
+held movie. It may come from anywhere in the app or directly from TMDB, and
+cancellation ends its Acquisition requirement without changing Radarr. The
+Current draw cannot be marked Watched until the Active wildcard is resolved.
+
 **Watched**:
 A movie the group has finished. Watched history is permanent; it never loses
 its adder and is never cascaded away.
@@ -230,13 +242,13 @@ collection boundary. The same movie can exist in more than one instance.
 _Avoid_: Radarr client
 
 **Acquisition**:
-The process of arranging a media file for a Current draw. It covers the initial
-grab, not ongoing maintenance of that movie's releases.
+The process of arranging a media file for a Current draw or Wildcard. It covers
+the initial grab, not ongoing maintenance of that movie's releases.
 _Avoid_: preparation, delivery
 
 **Pending acquisition**:
-A durable Acquisition created with a Current draw. It remains concealed until
-Reveal and waits for an Admin to select an Acquisition preset.
+A durable Acquisition waiting for an Admin to select an Acquisition preset. A
+Current draw conceals it until Reveal; a Wildcard exposes it when selected.
 _Avoid_: pending download, unassigned download
 
 **Acquisition preset**:
@@ -301,13 +313,19 @@ _Avoid_: integration run, event log
 
 **Acquisition reminder**:
 A persistent Admin attention item for an Acquisition that is neither Downloaded
-nor Abandoned.
+nor Abandoned nor Canceled.
 _Avoid_: notification, toast
 
 **Abandoned acquisition**:
 An Acquisition that an Admin explicitly ends without a file. It is a terminal
 state and includes the Admin's reason.
 _Avoid_: dismissed acquisition, cancelled download
+
+**Canceled acquisition**:
+A terminal Wildcard Acquisition that ended because the group canceled its
+Active wildcard. It needs no Admin reason and never deletes or changes Radarr
+data or work.
+_Avoid_: abandoned acquisition, canceled download
 
 **Acquisition webhook**:
 An outbound Generic or Discord notification for an Acquisition condition that

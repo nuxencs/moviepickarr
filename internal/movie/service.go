@@ -71,11 +71,25 @@ type drawLifecycleStore interface {
 	) (movieID int, drawnAt, revealAt time.Time, drawClientID string, found bool, err error)
 }
 
+type wildcardLifecycleStore interface {
+	StartWildcard(
+		ctx context.Context,
+		actorID int,
+		selection domain.WildcardSelection,
+		selectedAt time.Time,
+		poolLocked bool,
+	) (*domain.Wildcard, error)
+	ActiveWildcard(ctx context.Context) (*domain.Wildcard, error)
+	CancelWildcard(ctx context.Context, actorID int, expectedWildcardID int64, canceledAt time.Time) (*domain.Wildcard, error)
+	WatchWildcard(ctx context.Context, expectedWildcardID int64, watchedAt time.Time) (*domain.Wildcard, error)
+}
+
 type movieStore interface {
 	domain.MovieRepo
 	watchCurrentAndAdvanceNextUpStore
 	editMovieStore
 	drawLifecycleStore
+	wildcardLifecycleStore
 }
 
 // ActiveDraw records the most recent random draw so a reloading client, one
@@ -562,7 +576,38 @@ func cloneMovieSnapshot(movie *domain.Movie) *domain.Movie {
 		imdbID := *movie.IMDbID
 		cloned.IMDbID = &imdbID
 	}
+	if movie.WildcardOfMovieID != nil {
+		hostMovieID := *movie.WildcardOfMovieID
+		cloned.WildcardOfMovieID = &hostMovieID
+	}
 	return &cloned
+}
+
+func (s *Service) SelectWildcard(
+	ctx context.Context,
+	actorID int,
+	selection domain.WildcardSelection,
+	poolLocked bool,
+) (*domain.Wildcard, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.movieRepo.StartWildcard(ctx, actorID, selection, time.Now().UTC(), poolLocked)
+}
+
+func (s *Service) ActiveWildcard(ctx context.Context) (*domain.Wildcard, error) {
+	return s.movieRepo.ActiveWildcard(ctx)
+}
+
+func (s *Service) CancelActiveWildcard(ctx context.Context, actorID int, expectedWildcardID int64) (*domain.Wildcard, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.movieRepo.CancelWildcard(ctx, actorID, expectedWildcardID, time.Now().UTC())
+}
+
+func (s *Service) MarkActiveWildcardWatched(ctx context.Context, expectedWildcardID int64) (*domain.Wildcard, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.movieRepo.WatchWildcard(ctx, expectedWildcardID, time.Now().UTC())
 }
 
 // withHeldDraw puts a drawn-but-unrevealed movie back into a pool listing.

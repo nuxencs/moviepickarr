@@ -44,6 +44,8 @@ describe("drawInProgressForEvent", () => {
 
   it("leaves unrelated events alone", () => {
     expect(drawInProgressForEvent("movie:updated")).toBeUndefined();
+    expect(drawInProgressForEvent("wildcard:selected")).toBeUndefined();
+    expect(drawInProgressForEvent("wildcard:watched")).toBeUndefined();
   });
 });
 
@@ -165,5 +167,27 @@ describe("applyImmediateLifecycleState", () => {
     expect(detail?.status).toBe("watched");
     expect(detail?.overview).toBe("In space.");
     expect(client.getQueryData<{ drawInProgress: boolean }>(SettingsKeys.poolLock())?.drawInProgress).toBe(false);
+  });
+
+  it("merges a watched wildcard without closing the Current draw gate", () => {
+    const client = new QueryClient();
+    client.setQueryData(SettingsKeys.poolLock(), { poolLocked: false, drawInProgress: true });
+    client.setQueryData(["movies", "detail", 42], movie);
+
+    applyImmediateLifecycleState(client, {
+      seq: 3,
+      type: "wildcard:watched",
+      data: {
+        id: 8,
+        hostMovieId: 7,
+        selectedAt: "2026-08-25T18:00:00Z",
+        movie: { ...movie, status: "watched", wildcardOfMovieId: 7 },
+      },
+    });
+
+    const detail = client.getQueryData<MovieDetail>(["movies", "detail", 42]);
+    expect(detail?.status).toBe("watched");
+    expect(detail?.wildcardOfMovieId).toBe(7);
+    expect(client.getQueryData<{ drawInProgress: boolean }>(SettingsKeys.poolLock())?.drawInProgress).toBe(true);
   });
 });

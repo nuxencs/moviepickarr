@@ -73,6 +73,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     UsersKeys.list(),
     MoviesKeys.listpool(),
     MoviesKeys.current(),
+    MoviesKeys.wildcard(),
     MoviesKeys.listwatched(),
     MoviesKeys.details(),
     MoviesKeys.filterOptions(),
@@ -112,6 +113,28 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.details(),
     MoviesKeys.filterOptions(),
     SettingsKeys.poolLock(),
+    StatsKeys.all,
+  ],
+
+  "wildcard:selected": [
+    UsersKeys.list(),
+    MoviesKeys.listpool(),
+    MoviesKeys.wildcard(),
+    MoviesKeys.details(),
+  ],
+  "wildcard:canceled": [
+    UsersKeys.list(),
+    MoviesKeys.listpool(),
+    MoviesKeys.wildcard(),
+    MoviesKeys.details(),
+  ],
+  "wildcard:watched": [
+    UsersKeys.list(),
+    MoviesKeys.listpool(),
+    MoviesKeys.wildcard(),
+    MoviesKeys.listwatched(),
+    MoviesKeys.details(),
+    MoviesKeys.filterOptions(),
     StatsKeys.all,
   ],
 

@@ -10,13 +10,14 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// CreateMemberWithInvite inserts the member, claims an unresolved next-up
-// slot, and stores the first invite in one writer transaction. SQLite orders
-// concurrent creates on the single writer, so only the first committed member
-// can claim an empty or archived next-up pointer.
+// CreateMemberWithInvite inserts the member, claims an unresolved next-up slot
+// when the role is eligible, and stores the first invite in one writer
+// transaction. SQLite orders concurrent creates on the single writer, so only
+// the first eligible committed member can claim an unresolved pointer.
 func (d *SqliteAuthTransitionStore) CreateMemberWithInvite(
 	ctx context.Context,
 	name string,
+	role domain.Role,
 	invite domain.MemberInviteGeneration,
 ) (*domain.User, error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
@@ -26,9 +27,9 @@ func (d *SqliteAuthTransitionStore) CreateMemberWithInvite(
 	defer func() { _ = tx.Rollback() }()
 
 	result, err := tx.ExecContext(ctx, `
-		INSERT INTO users (name, created_at, updated_at)
-		VALUES (?, ?, ?)
-	`, name, db.ToUnix(invite.CreatedAt), db.ToUnix(invite.CreatedAt))
+		INSERT INTO users (name, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?)
+	`, name, role, db.ToUnix(invite.CreatedAt), db.ToUnix(invite.CreatedAt))
 	if err != nil {
 		if db.IsUniqueViolation(err) {
 			return nil, fmt.Errorf("%w: member name %q already exists", domain.ErrConflict, name)
@@ -40,19 +41,22 @@ func (d *SqliteAuthTransitionStore) CreateMemberWithInvite(
 		return nil, err
 	}
 
-	// The singleton normally exists from migration 001, but the upsert also
-	// repairs a missing row. Its WHERE keeps a resolvable active holder intact.
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO next_up (id, user_id)
-		VALUES (1, ?)
-		ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
-		WHERE NOT EXISTS (
-			SELECT 1
-			FROM users u
-			WHERE u.id = next_up.user_id AND u.archived_at IS NULL
-		)
-	`, userID); err != nil {
-		return nil, err
+	if role.IsTurnParticipant() {
+		// The singleton normally exists from migration 001, but the upsert also
+		// repairs a missing row. Its WHERE keeps a resolvable active participant
+		// intact. A Guest never claims the turn.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO next_up (id, user_id)
+			VALUES (1, ?)
+			ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM turn_participants u
+				WHERE u.id = next_up.user_id
+			)
+		`, userID); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := insertMemberInvite(ctx, tx, int(userID), invite); err != nil {

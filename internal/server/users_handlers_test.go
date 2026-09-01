@@ -128,7 +128,7 @@ func TestHandleDeleteUser_RefusesLastActiveAdmin(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create admin: %v", err)
 			}
-			if err := userRepo.SetRole(ctx, admin.ID, domain.RoleAdmin); err != nil {
+			if _, err := userRepo.SetRole(ctx, domain.RoleChange{MemberID: admin.ID, Role: domain.RoleAdmin}); err != nil {
 				t.Fatalf("promote admin: %v", err)
 			}
 			if tc.authored {

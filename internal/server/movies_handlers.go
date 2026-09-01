@@ -309,6 +309,11 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 	if body.Target != "pool" && body.Target != "stash" {
 		return writeError(c, fmt.Errorf("%w: target must be \"pool\" or \"stash\"", domain.ErrInvalidInput))
 	}
+	if body.Target == "pool" {
+		if ok, err := h.requireTurnParticipant(c); !ok {
+			return err
+		}
+	}
 
 	// Authorize before touching state: only the movie's adder may move it, with no
 	// admin override.
@@ -584,6 +589,9 @@ func (h *handler) handleGetActiveWildcard(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
+	if ok, err := h.requireTurnParticipant(c); !ok {
+		return err
+	}
 	var body struct {
 		HostMovieID int     `json:"hostMovieId"`
 		MovieID     *int    `json:"movieId"`
@@ -629,6 +637,9 @@ func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleCancelWildcard(c *fiber.Ctx) error {
+	if ok, err := h.requireTurnParticipant(c); !ok {
+		return err
+	}
 	expectedWildcardID, err := strconv.ParseInt(c.Query("wildcardId"), 10, 64)
 	if err != nil || expectedWildcardID <= 0 {
 		return writeError(c, fmt.Errorf("%w: wildcardId is required", domain.ErrInvalidInput))
@@ -649,6 +660,9 @@ func (h *handler) handleCancelWildcard(c *fiber.Ctx) error {
 }
 
 func (h *handler) handleWatchWildcard(c *fiber.Ctx) error {
+	if ok, err := h.requireTurnParticipant(c); !ok {
+		return err
+	}
 	var body struct {
 		WildcardID int64 `json:"wildcardId"`
 	}

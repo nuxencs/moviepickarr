@@ -28,7 +28,7 @@ import { backdropBg, backdropUrl, externalLinks, hueOf } from "@/components/movi
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { possessive } from "@/components/moviepickarr/possessive";
 import { Poster } from "@/components/moviepickarr/Poster";
-import { drawLockedTip, revealLockedTip, useTurnGate, watchLockedTip } from "@/components/moviepickarr/turnGate";
+import { drawLockedTip, guestWildcardTip, revealLockedTip, useTurnGate, watchLockedTip } from "@/components/moviepickarr/turnGate";
 import { WildcardModal } from "@/components/moviepickarr/WildcardModal";
 import { DeletionDialog } from "@/components/ui/deletion-dialog";
 import { toast } from "@/components/ui/toast-api";
@@ -129,7 +129,7 @@ export function Hero() {
     if (err instanceof ApiError && err.status === 403) {
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
-      toast.error("It's not your turn right now");
+      toast.error(err.message || "You cannot use this action right now");
       return;
     }
     toast.error(fallback);
@@ -598,8 +598,13 @@ export function Hero() {
                 <button
                   type="button"
                   className="btn btn--accent"
-                  onClick={() => watchWildcardMutation.mutate(wildcard.id)}
+                  onClick={() => {
+                    if (!gate.guest) watchWildcardMutation.mutate(wildcard.id);
+                  }}
                   disabled={watchWildcardMutation.isPending || cancelWildcardMutation.isPending}
+                  aria-disabled={gate.guest || undefined}
+                  aria-label={gate.guest ? `Mark as watched, ${guestWildcardTip}` : undefined}
+                  title={gate.guest ? guestWildcardTip : undefined}
                   aria-busy={watchWildcardMutation.isPending || undefined}
                 >
                   {watchWildcardMutation.isPending ? <Loader2Icon className="animate-spin mg-spin" /> : <EyeIcon />}
@@ -620,8 +625,12 @@ export function Hero() {
                 <button
                   type="button"
                   className="btn btn--accent"
-                  onClick={() => watchMutation.mutate()}
-                  disabled={gate.locked || !wildcardStateKnown || Boolean(wildcard)}
+                  onClick={() => {
+                    if (!gate.locked) watchMutation.mutate();
+                  }}
+                  disabled={!wildcardStateKnown || Boolean(wildcard)}
+                  aria-disabled={gate.locked || undefined}
+                  aria-label={gate.locked ? `Mark as watched, ${watchLockedTip(gate)}` : undefined}
                   title={wildcard
                     ? "Watch or cancel the Active wildcard first."
                     : !wildcardStateKnown
@@ -637,8 +646,12 @@ export function Hero() {
                 <button
                   type="button"
                   className="btn btn--accent"
-                  onClick={() => drawMutation.mutate()}
-                  disabled={!canDraw || gate.locked}
+                  onClick={() => {
+                    if (!gate.locked) drawMutation.mutate();
+                  }}
+                  disabled={!canDraw}
+                  aria-disabled={gate.locked || undefined}
+                  aria-label={gate.locked ? `Draw random movie, ${drawLockedTip(gate)}` : undefined}
                   title={gate.locked ? drawLockedTip(gate) : undefined}
                 >
                   <ShuffleIcon />
@@ -647,7 +660,16 @@ export function Hero() {
               ))}
 
             {ready && draw && !spinning && wildcardStateKnown && !wildcard && (
-              <button type="button" className="btn btn--ghost hero__wildcard-open" onClick={() => setWildcardPickerHostID(draw.movieID)}>
+              <button
+                type="button"
+                className="btn btn--ghost hero__wildcard-open"
+                onClick={() => {
+                  if (!gate.guest) setWildcardPickerHostID(draw.movieID);
+                }}
+                aria-disabled={gate.guest || undefined}
+                aria-label={gate.guest ? `Choose wildcard, ${guestWildcardTip}` : undefined}
+                title={gate.guest ? guestWildcardTip : undefined}
+              >
                 <AsteriskIcon />
                 Choose wildcard
               </button>
@@ -657,8 +679,13 @@ export function Hero() {
               <button
                 type="button"
                 className="btn btn--ghost hero__wildcard-open"
-                onClick={() => setWildcardCancelID(wildcard.id)}
+                onClick={() => {
+                  if (!gate.guest) setWildcardCancelID(wildcard.id);
+                }}
                 disabled={watchWildcardMutation.isPending || cancelWildcardMutation.isPending}
+                aria-disabled={gate.guest || undefined}
+                aria-label={gate.guest ? `Cancel wildcard, ${guestWildcardTip}` : undefined}
+                title={gate.guest ? guestWildcardTip : undefined}
               >
                 <XIcon />
                 Cancel wildcard

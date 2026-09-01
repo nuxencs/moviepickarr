@@ -35,6 +35,10 @@
 .adm-field {
   width: 220px;
 }
+.adm-rolefield {
+  width: 132px;
+  flex: none;
+}
 
 /* ---------- the table ---------- */
 .adm-tablewrap {
@@ -184,7 +188,14 @@
   .adm-add {
     flex-direction: column;
   }
+  /* The shared tablet rule gives the name field flex: 1 for a horizontal row.
+     Reset it when the form becomes a column, or its zero flex basis compresses
+     the control height. */
+  .adm-add .adm-field {
+    flex: none;
+  }
   .adm-add .adm-field,
+  .adm-add .adm-rolefield,
   .adm-add .btn {
     width: 100%;
   }
@@ -250,6 +261,10 @@
 .adm-tag--admin {
   background: color-mix(in oklab, var(--ink) 10%, transparent);
   color: var(--ink-2);
+}
+.adm-tag--guest {
+  border: 1px solid var(--line-2);
+  color: var(--ink-3);
 }
 .adm-role {
   font-size: 13px;

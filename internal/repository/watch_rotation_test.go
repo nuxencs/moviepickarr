@@ -95,6 +95,42 @@ func TestWatchCurrentAndAdvanceNextUp_SeedsThenRotatesFreshInstall(t *testing.T)
 	}
 }
 
+func TestWatchCurrentAndAdvanceNextUp_SkipsGuests(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	first, err := e.users.Create(e.ctx, "Ana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest, err := e.users.Create(e.ctx, "Guest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	last, err := e.users.Create(e.ctx, "Cai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: guest.ID, Role: domain.RoleGuest}); err != nil {
+		t.Fatalf("set guest role: %v", err)
+	}
+	if err := e.nextUp.Set(e.ctx, first.ID); err != nil {
+		t.Fatalf("set next up: %v", err)
+	}
+	if _, err := e.movies.Add(e.ctx, "Heat", "current", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.movies.Add(e.ctx, "Thief", "pool", first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	_, next, changed, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || next == nil || next.ID != last.ID {
+		t.Fatalf("handoff = changed=%v next=%+v, want %d", changed, next, last.ID)
+	}
+}
+
 func TestWatchCurrentAndAdvanceNextUp_HandsArchivedTurnToFirstActiveMember(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	departing, err := e.users.Create(e.ctx, "Departing")

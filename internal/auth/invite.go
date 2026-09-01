@@ -128,18 +128,22 @@ func (m *InviteManager) IssuePasswordReset(ctx context.Context, userID, createdB
 }
 
 // CreateMemberWithInvite commits a new placeholder, its initial next-up
-// assignment when needed, and its first claim generation together. The raw
-// token is returned only after that transaction commits.
+// assignment when eligible and needed, and its first claim generation
+// together. The raw token is returned only after that transaction commits.
 func (m *InviteManager) CreateMemberWithInvite(
 	ctx context.Context,
 	name string,
+	role domain.Role,
 	createdBy int,
 ) (*domain.User, string, error) {
+	if !role.Valid() {
+		return nil, "", fmt.Errorf("%w: invalid member role", domain.ErrInvalidInput)
+	}
 	invite, rawToken, err := m.newMemberInvite(createdBy)
 	if err != nil {
 		return nil, "", err
 	}
-	member, err := m.transitions.CreateMemberWithInvite(ctx, name, invite)
+	member, err := m.transitions.CreateMemberWithInvite(ctx, name, role, invite)
 	if err != nil {
 		return nil, "", err
 	}

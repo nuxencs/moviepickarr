@@ -42,6 +42,13 @@ describe("turnGate", () => {
     expect(gate.isSelf).toBe(false);
   });
 
+  it("locks a guest even if stale next-up data names them", () => {
+    const gate = turnGate(inputs({ role: "guest", meID: 1, nextUpID: 1 }));
+    expect(gate.canAct).toBe(false);
+    expect(gate.locked).toBe(true);
+    expect(gate.guest).toBe(true);
+  });
+
   it("marks a non-next-up member as not self", () => {
     const gate = turnGate(inputs({ meID: 2, nextUpID: 1 }));
     expect(gate.isSelf).toBe(false);
@@ -96,5 +103,12 @@ describe("locked tooltips", () => {
     expect(drawLockedTip(gate)).toBe("Waiting for the next-up member.");
     expect(revealLockedTip(gate)).toBe("Waiting for the next-up member.");
     expect(watchLockedTip(gate)).toBe("Waiting for the next-up member.");
+  });
+
+  it("explains the Guest restriction instead of naming the turn holder", () => {
+    const gate = turnGate(inputs({ role: "guest", meID: 2, nextUpID: 1 }));
+    expect(drawLockedTip(gate)).toBe("Guests can view the draw but cannot start one.");
+    expect(revealLockedTip(gate)).toBe("Guests can view the draw but cannot reveal it.");
+    expect(watchLockedTip(gate)).toBe("Guests can view the draw but cannot mark it watched.");
   });
 });

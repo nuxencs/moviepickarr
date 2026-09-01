@@ -509,7 +509,7 @@ func newHandlerChecked(pool *db.Pool, rootLog zerolog.Logger) (*handler, error) 
 		),
 		userService:        user.NewService(userRepo, nextUpRepo),
 		movieService:       movieService,
-		nextUpService:      nextup.NewService(nextUpRepo, userRepo),
+		nextUpService:      nextup.NewService(nextUpRepo),
 		settingsService:    settings.NewService(settingsRepo),
 		movieMetadata:      movieMetadataRepo,
 		movieCredits:       movieCreditsRepo,

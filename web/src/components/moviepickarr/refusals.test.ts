@@ -20,6 +20,14 @@ describe("refusalOf", () => {
     expect(refusalOf({ kind: "promote", ...open, poolFull: true })).toBe("full");
   });
 
+  it("refuses a Guest promotion but still permits demotion", () => {
+    expect(refusalOf({ kind: "promote", ...open, guest: true })).toBe("guest");
+    expect(refusalOf({ kind: "demote", ...open, guest: true })).toBeNull();
+    expect(actionLabel("promote", "guest")).toBe(
+      "Move to pool, guest role cannot add movies to the pool",
+    );
+  });
+
   it("never refuses a demote for a full pool: it is the way out of one", () => {
     expect(refusalOf({ kind: "demote", ...open, poolFull: true })).toBeNull();
   });

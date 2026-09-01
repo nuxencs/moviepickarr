@@ -209,6 +209,7 @@ export function AccountPage() {
             <div className="acc__idname">
               {actor.displayName}
               {actor.role === "admin" && <span className="acc-tag">Admin</span>}
+              {actor.role === "guest" && <span className="acc-tag">Guest</span>}
             </div>
             <div className="acc__idsub">
               {actor.username ? `@${actor.username}` : `Signed in with ${PROVIDER}`}

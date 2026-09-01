@@ -20,9 +20,19 @@ describes the action or system directly instead of naming the app as the actor.
 ### People
 
 **Member**:
-A person in the friend group. Has a personal stash and up to 3 movies in the
-pool.
+A person with access to the friend group's app. Has a personal stash. A member
+holds one app-owned role: Member, Guest, or Admin.
 _Avoid_: user (survives only in code)
+
+**Guest**:
+A member holding the guest role. Can browse the app and manage their own Stash.
+Can add, edit, delete, and demote movies. Cannot promote a movie to the Pool.
+Cannot run group decisions in the Hero. These decisions include Draw, Reveal,
+mark Watched, and all Wildcard actions. Never holds Next up.
+
+**Turn participant**:
+An active member holding the plain member or Admin role. Eligible for Next up
+and group-decision commands. Guests are not Turn participants.
 
 **Roster**:
 The current set of members. Former members can still appear in history as
@@ -37,24 +47,29 @@ the watched history and stats ("Added by").
 _Avoid_: picker, picked by, owner
 
 **Next up**:
-The member whose turn it is to run the draw workflow: draw, reveal, and mark the
-current draw watched. Enforced, not just shown in the hero: only the next-up
-member (or an admin) can draw, reveal, or mark watched. The turn holds on one
-member across the whole draw → reveal → watch cycle and rotates to the next
-member on watch, but only when the pool still has movies left and more than one
-member exists. The server serializes these three commands from authorization
-through lifecycle event publication. A watch therefore owns the outgoing turn
-until rotation and `movie:watched` are published. The watched movie and next-up
-handoff commit in one transaction; a failed handoff leaves the current draw and
-turn unchanged for retry.
+The Turn participant whose turn it is to run the draw workflow: draw, reveal,
+and mark the current draw watched. Enforced, not just shown in the hero: only
+the next-up member (or an admin) can draw, reveal, or mark watched. The turn
+holds on one member across the whole draw → reveal → watch cycle and rotates to
+the next Turn participant on watch, but only when the pool still has movies left
+and more than one Turn participant exists. The server serializes these three
+commands from authorization through lifecycle event publication. A watch
+therefore owns the outgoing turn until rotation and `movie:watched` are
+published. The watched movie and next-up handoff commit in one transaction. A
+failed handoff leaves the current draw and turn unchanged for retry.
+Changing the current Next up holder to Guest requires an explicit admin
+confirmation. The confirmed role change and handoff commit in one transaction.
+Promoting that Guest later makes them eligible again but does not restore the
+turn that was handed off.
 _Avoid_: next picker
 
 ### Identity
 
 **Admin**:
 A member holding the admin role: can create, delete/archive, and restore
-members, lock the pool, and manage integrations and settings. Every other member holds the plain member
-role. Role is app-owned and single-valued, never derived from a credential.
+members, lock the pool, and manage integrations and settings. Every other member
+holds the plain member or guest role. Role is app-owned and single-valued, never
+derived from a credential.
 
 **Local login**:
 A member's username and password credential. Optional: a member may have a local

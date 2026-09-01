@@ -32,11 +32,11 @@ func problemCode(t *testing.T, resp *http.Response) string {
 }
 
 // doAs issues req as the given member/role via the test actor headers.
-func doAs(t *testing.T, app *fiber.App, req *http.Request, memberID int, role string) *http.Response {
+func doAs(t *testing.T, app *fiber.App, req *http.Request, memberID int, role domain.Role) *http.Response {
 	t.Helper()
 	req.Header.Set(testMemberHeader, strconv.Itoa(memberID))
 	if role != "" {
-		req.Header.Set(testRoleHeader, role)
+		req.Header.Set(testRoleHeader, string(role))
 	}
 	resp, err := app.Test(req, -1)
 	if err != nil {
@@ -56,10 +56,10 @@ type asyncHTTPResult struct {
 	err  error
 }
 
-func startAs(app *fiber.App, req *http.Request, memberID int, role string) <-chan asyncHTTPResult {
+func startAs(app *fiber.App, req *http.Request, memberID int, role domain.Role) <-chan asyncHTTPResult {
 	req.Header.Set(testMemberHeader, strconv.Itoa(memberID))
 	if role != "" {
-		req.Header.Set(testRoleHeader, role)
+		req.Header.Set(testRoleHeader, string(role))
 	}
 
 	done := make(chan asyncHTTPResult, 1)
@@ -167,6 +167,63 @@ func TestAuthz_AdminOnlyActions(t *testing.T) {
 				t.Fatalf("expected code admin_required, got %q", code)
 			}
 		})
+	}
+}
+
+func TestAuthz_GuestCannotRunPoolOrHeroCommands(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+	guest, err := userRepo.Create(ctx, "Guest")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		req  *http.Request
+	}{
+		{"promote", jsonReq(http.MethodPost, "/api/v1/movies/999/move", `{"target":"pool"}`)},
+		{"draw", jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"guest"}`)},
+		{"reveal", jsonReq(http.MethodPost, "/api/v1/movies/current/reveal", ``)},
+		{"watch_current", jsonReq(http.MethodPost, "/api/v1/movies/current/watch", ``)},
+		{"select_wildcard", jsonReq(http.MethodPost, "/api/v1/movies/wildcard", `{"hostMovieId":1,"movieId":2}`)},
+		{"cancel_wildcard", jsonReq(http.MethodDelete, "/api/v1/movies/wildcard?wildcardId=1", ``)},
+		{"watch_wildcard", jsonReq(http.MethodPost, "/api/v1/movies/wildcard/watch", `{"wildcardId":1}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := doAs(t, app, tc.req, guest.ID, domain.RoleGuest)
+			if resp.StatusCode != fiber.StatusForbidden {
+				t.Fatalf("status = %d, want 403", resp.StatusCode)
+			}
+			if code := problemCode(t, resp); code != "guest_restricted" {
+				t.Fatalf("problem code = %q, want guest_restricted", code)
+			}
+		})
+	}
+
+	pooled, err := movieRepo.Add(ctx, "Heat", "pool", guest.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := doAs(t, app,
+		jsonReq(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", pooled.ID), `{"target":"stash"}`),
+		guest.ID,
+		domain.RoleGuest,
+	)
+	if resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("guest demote status = %d, want 204", resp.StatusCode)
+	}
+
+	resp = doAs(t, app,
+		jsonReq(http.MethodPost, "/api/v1/movies", `{"title":"Arrival","tmdbId":329865}`),
+		guest.ID,
+		domain.RoleGuest,
+	)
+	if resp.StatusCode != fiber.StatusCreated {
+		t.Fatalf("guest stash add status = %d, want 201", resp.StatusCode)
 	}
 }
 

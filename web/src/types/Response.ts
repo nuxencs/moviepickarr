@@ -107,6 +107,8 @@ export interface Settings {
     drawInProgress: boolean;
 }
 
+export type MemberRole = "member" | "guest" | "admin";
+
 // One row of the admin roster (GET /members/roster). Login state is
 // presence-derived server-side, never a stored flag: hasLocalLogin /
 // hasLinkedIdentity / invitePending are the existence of a credential / invite
@@ -119,7 +121,7 @@ export interface RosterMember {
     id: number;
     name: string;
     username?: string;
-    role: "member" | "admin";
+    role: MemberRole;
     archived: boolean;
     hasLocalLogin: boolean;
     hasLinkedIdentity: boolean;
@@ -173,7 +175,7 @@ export interface MeResponse {
     id: number;
     displayName: string;
     username: string | null;
-    role: "member" | "admin";
+    role: MemberRole;
     hasLocalLogin: boolean;
     hasLinkedIdentity: boolean;
 }

@@ -28,7 +28,7 @@ type MemberIdentity struct {
 	ID                int
 	DisplayName       string
 	Username          *string
-	Role              string
+	Role              Role
 	HasLocalLogin     bool
 	HasLinkedIdentity bool
 }

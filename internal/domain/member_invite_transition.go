@@ -20,7 +20,7 @@ type MemberInviteGeneration struct {
 // with a fresh onboarding invite. Both methods leave no partial member state
 // when any invite write fails.
 type MemberInviteTransitionStore interface {
-	CreateMemberWithInvite(ctx context.Context, name string, invite MemberInviteGeneration) (*User, error)
+	CreateMemberWithInvite(ctx context.Context, name string, role Role, invite MemberInviteGeneration) (*User, error)
 	RestoreMemberWithInvite(ctx context.Context, userID int, invite MemberInviteGeneration) (*User, error)
 }
 

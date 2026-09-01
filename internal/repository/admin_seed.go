@@ -24,7 +24,7 @@ func NewSqliteAdminSeedRepository(pool *db.Pool) *SqliteAdminSeedRepository {
 type adminSeedMatch struct {
 	id       int
 	name     string
-	role     string
+	role     domain.Role
 	archived bool
 	hasLogin bool
 }

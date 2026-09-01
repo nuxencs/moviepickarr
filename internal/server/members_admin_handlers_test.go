@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"moviepickarr/internal/domain"
+	"moviepickarr/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -40,7 +41,7 @@ func TestHandleGetRoster_ReturnsRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	if err := userRepo.SetRole(ctx, admin.ID, domain.RoleAdmin); err != nil {
+	if _, err := userRepo.SetRole(ctx, domain.RoleChange{MemberID: admin.ID, Role: domain.RoleAdmin}); err != nil {
 		t.Fatalf("promote admin: %v", err)
 	}
 	if _, err := userRepo.Create(ctx, "Priya"); err != nil {
@@ -98,7 +99,7 @@ func TestHandleSetRole_PromoteDemote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	if err := userRepo.SetRole(ctx, admin.ID, domain.RoleAdmin); err != nil {
+	if _, err := userRepo.SetRole(ctx, domain.RoleChange{MemberID: admin.ID, Role: domain.RoleAdmin}); err != nil {
 		t.Fatalf("promote admin: %v", err)
 	}
 	priya, err := userRepo.Create(ctx, "Priya")
@@ -156,6 +157,68 @@ func TestHandleSetRole_RejectsInvalidRole(t *testing.T) {
 	}
 }
 
+func TestHandleSetRole_RequiresAtomicTurnHandoffConfirmation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h, app, userRepo, _, pool := setupEditMovieTestWithDB(t)
+
+	admin, err := userRepo.Create(ctx, "Admin")
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	if _, err := userRepo.SetRole(ctx, domain.RoleChange{MemberID: admin.ID, Role: domain.RoleAdmin}); err != nil {
+		t.Fatalf("promote admin: %v", err)
+	}
+	target, err := userRepo.Create(ctx, "Target")
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	next, err := userRepo.Create(ctx, "Next")
+	if err != nil {
+		t.Fatalf("create next: %v", err)
+	}
+	nextUpRepo := repository.NewSqliteNextUpRepository(pool)
+	if err := nextUpRepo.Set(ctx, target.ID); err != nil {
+		t.Fatalf("set next up: %v", err)
+	}
+	client, _ := h.broker.Subscribe()
+	defer h.broker.Unsubscribe(client)
+
+	path := fmt.Sprintf("/api/v1/members/%d/role", target.ID)
+	resp := doAs(t, app, jsonReq(http.MethodPatch, path, `{"role":"guest"}`), admin.ID, "admin")
+	if resp.StatusCode != fiber.StatusConflict {
+		t.Fatalf("unconfirmed demotion: got %d, want 409", resp.StatusCode)
+	}
+	if code := problemCode(t, resp); code != "turn_handoff_confirmation_required" {
+		t.Fatalf("unconfirmed demotion code = %q", code)
+	}
+	select {
+	case broadcast := <-client:
+		t.Fatalf("unconfirmed demotion broadcast %+v", broadcast)
+	default:
+	}
+	if current, err := nextUpRepo.Get(ctx); err != nil || current.ID != target.ID {
+		t.Fatalf("unconfirmed demotion changed Next up: current=%+v err=%v", current, err)
+	}
+
+	resp = doAs(t, app, jsonReq(http.MethodPatch, path,
+		`{"role":"guest","confirmTurnHandoff":true}`), admin.ID, "admin")
+	if resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("confirmed demotion: got %d, want 204", resp.StatusCode)
+	}
+	roleEvent := <-client
+	if roleEvent.Type != "user:role-changed" {
+		t.Fatalf("first broadcast type = %q, want user:role-changed", roleEvent.Type)
+	}
+	turnEvent := <-client
+	if turnEvent.Type != "settings:next-up-changed" {
+		t.Fatalf("second broadcast type = %q, want settings:next-up-changed", turnEvent.Type)
+	}
+	if current, err := nextUpRepo.Get(ctx); err != nil || current.ID != next.ID {
+		t.Fatalf("confirmed demotion Next up: current=%+v err=%v, want %d", current, err, next.ID)
+	}
+}
+
 // Demoting the only admin is refused with 409 so the surface can warn instead of
 // stranding the roster with no admin.
 func TestHandleSetRole_LastAdminConflict(t *testing.T) {
@@ -167,7 +230,7 @@ func TestHandleSetRole_LastAdminConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create only admin: %v", err)
 	}
-	if err := userRepo.SetRole(ctx, only.ID, domain.RoleAdmin); err != nil {
+	if _, err := userRepo.SetRole(ctx, domain.RoleChange{MemberID: only.ID, Role: domain.RoleAdmin}); err != nil {
 		t.Fatalf("promote only admin: %v", err)
 	}
 

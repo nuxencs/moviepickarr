@@ -29,6 +29,7 @@ import type {
   InviteSummary,
   InvitesResponse,
   MeResponse,
+  MemberRole,
   RemoveResult,
   RosterMember,
 } from "@/types/Response";
@@ -45,6 +46,8 @@ const createPasswordResetInvite = vi.fn<(id: number) => Promise<InviteResult>>()
 const replaceInvite = vi.fn<(id: string) => Promise<InviteResult>>();
 const revokeInvite = vi.fn<(id: string) => Promise<void>>();
 const dismissInvite = vi.fn<(id: string) => Promise<void>>();
+const createMember = vi.fn<(name: string, role: MemberRole) => Promise<InviteResult>>();
+const setMemberRole = vi.fn<(id: number, role: MemberRole, confirmTurnHandoff: boolean) => Promise<void>>();
 
 vi.mock("@/api/APIClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/APIClient")>();
@@ -55,6 +58,9 @@ vi.mock("@/api/APIClient", async (importOriginal) => {
       members: {
         ...actual.APIClient.members,
         roster: () => listRoster(),
+        create: (name: string, role: MemberRole) => createMember(name, role),
+        setRole: (id: number, role: MemberRole, confirmTurnHandoff = false) =>
+          setMemberRole(id, role, confirmTurnHandoff),
         setLocalLogin: (id: number, u: string, p: string) => setLogin(id, u, p),
         remove: (id: number) => removeMember(id),
         createInvite: (id: number) => createInvite(id),
@@ -108,7 +114,10 @@ const admin: MeResponse = {
   hasLinkedIdentity: false,
 };
 
-async function renderSection(members: RosterMember[], items: InviteSummary[] = []) {
+async function renderSection(
+  members: RosterMember[],
+  items: InviteSummary[] = [],
+) {
   let queryClient: QueryClient | undefined;
   const overview = { serverNow: "2026-08-03T12:00:00Z", items };
   listRoster.mockResolvedValue(members);
@@ -163,6 +172,8 @@ beforeEach(() => {
   replaceInvite.mockResolvedValue({ claimUrl: "/claim/replaced" });
   revokeInvite.mockResolvedValue(undefined);
   dismissInvite.mockResolvedValue(undefined);
+  createMember.mockResolvedValue({ claimUrl: "/claim/new-member" });
+  setMemberRole.mockResolvedValue(undefined);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -240,6 +251,57 @@ describe("opening a ceremony from a member's row", () => {
     takeAction("Ada", "Unlink SSO");
 
     expect(dialog().textContent).toContain("Can't unlink SSO");
+  });
+});
+
+describe("member invitation", () => {
+  it("sends the selected starting role with the new member", async () => {
+    await renderSection([member()]);
+
+    fireEvent.change(screen.getByLabelText("New member name"), {
+      target: { value: "Visiting friend" },
+    });
+    fireEvent.change(screen.getByLabelText("Starting role"), {
+      target: { value: "guest" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add & create link" }));
+
+    await act(async () => {});
+    expect(createMember).toHaveBeenCalledWith("Visiting friend", "guest");
+    expect((screen.getByLabelText("Starting role") as HTMLSelectElement).value).toBe("member");
+  });
+});
+
+describe("role changes", () => {
+  it("confirms before the current Next up member becomes a guest", async () => {
+    setMemberRole.mockRejectedValueOnce(new ApiError(
+      409,
+      "making this member a Guest will hand Next up to the next eligible member",
+      "turn_handoff_confirmation_required",
+    ));
+    await renderSection([member()]);
+
+    takeAction("Cleo", "Make guest");
+    await act(async () => {});
+
+    expect(setMemberRole).toHaveBeenCalledWith(7, "guest", false);
+    expect(within(dialog()).getByRole("heading").textContent).toBe("Make Cleo a guest?");
+    expect(dialog().textContent).toContain("will not restore this turn");
+
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Make guest" }));
+    await act(async () => {});
+
+    expect(setMemberRole).toHaveBeenLastCalledWith(7, "guest", true);
+  });
+
+  it("changes a member who is not Next up without a confirmation", async () => {
+    await renderSection([member()]);
+
+    takeAction("Cleo", "Make guest");
+    await act(async () => {});
+
+    expect(setMemberRole).toHaveBeenCalledWith(7, "guest", false);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

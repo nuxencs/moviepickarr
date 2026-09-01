@@ -12,7 +12,7 @@ import { possessive } from "@/components/moviepickarr/possessive";
 
 export interface TurnGateInputs {
   /** The session actor's role, undefined while /auth/me is still loading. */
-  role: "member" | "admin" | undefined;
+  role: "member" | "guest" | "admin" | undefined;
   /** The session actor's member id, undefined while loading. */
   meID: number | undefined;
   /** The next-up member id; 0 (empty roster) or undefined (loading) means
@@ -38,6 +38,8 @@ export interface TurnGate {
    *  "Your turn" vs "<name>'s turn" hero label, so an admin who isn't next-up
    *  still reads the turn-holder's name. */
   isSelf: boolean;
+  /** The viewer holds the read-mostly Guest role. */
+  guest: boolean;
   /** The next-up member's name, "" when unresolved. */
   nextUpName: string;
 }
@@ -51,14 +53,16 @@ export interface TurnGate {
 export function turnGate(input: TurnGateInputs): TurnGate {
   const ready = input.role !== undefined && input.nextUpID !== undefined;
   const isAdmin = input.role === "admin";
+  const guest = input.role === "guest";
   const resolved = (input.nextUpID ?? 0) > 0;
   const isNextUp = resolved && input.meID !== undefined && input.meID === input.nextUpID;
-  const canAct = !ready || isAdmin || isNextUp;
+  const canAct = !guest && (!ready || isAdmin || isNextUp);
   return {
     canAct,
     locked: ready && !canAct,
     resolved,
     isSelf: isNextUp,
+    guest,
     nextUpName: input.nextUpName ?? "",
   };
 }
@@ -68,18 +72,24 @@ const WAITING_TIP = "Waiting for the next-up member.";
 
 /** Tooltip for the disabled Draw control. */
 export function drawLockedTip(gate: TurnGate): string {
+  if (gate.guest) return "Guests can view the draw but cannot start one.";
   return gate.resolved ? `It's ${possessive(gate.nextUpName)} turn to draw.` : WAITING_TIP;
 }
 
 /** Tooltip for the disabled Reveal (OK) control. */
 export function revealLockedTip(gate: TurnGate): string {
+  if (gate.guest) return "Guests can view the draw but cannot reveal it.";
   return gate.resolved ? `Only ${gate.nextUpName} can reveal this draw.` : WAITING_TIP;
 }
 
 /** Tooltip for the disabled Mark-watched control. */
 export function watchLockedTip(gate: TurnGate): string {
+  if (gate.guest) return "Guests can view the draw but cannot mark it watched.";
   return gate.resolved ? `Only ${gate.nextUpName} can mark this watched.` : WAITING_TIP;
 }
+
+/** Tooltip for Wildcard actions that Guests can observe but not run. */
+export const guestWildcardTip = "Guests can view Wildcards but cannot change them.";
 
 /** Live turn gate, read from the session actor + next-up queries. */
 export function useTurnGate(): TurnGate {

@@ -59,10 +59,14 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
 
 ## Wildcard watches
 
-After Reveal, any member can select one Active wildcard from the existing Pool
-or Stashes, or directly from TMDB. An existing movie keeps its Adder. A direct
-TMDB selection uses the selecting member as its Adder. Selection creates a
-visible Pending acquisition immediately.
+After Reveal, any Turn participant can select one Active wildcard from the
+existing Pool or Stashes, or directly from TMDB. An existing movie keeps its
+Adder. A direct TMDB selection uses the selecting member as its Adder. Selection
+creates a visible Pending acquisition immediately.
+
+Guests can browse the same app and manage their own Stash. They cannot promote
+movies to the Pool or hold Next up. They cannot use Draw or Reveal. They also
+cannot mark a Wildcard as Watched, select a Wildcard, or cancel a Wildcard.
 
 The group must watch or cancel the Active wildcard before it can mark the
 Current draw Watched. Watching it adds the movie to the Watched library but does

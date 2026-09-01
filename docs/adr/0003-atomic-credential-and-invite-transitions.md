@@ -58,10 +58,11 @@ credential write must retire or consume an invite:
   not broaden an existing reset link's claim options.
 - The break-glass admin seed retires an adopted member's current invite in the
   transaction that creates the local credential.
-- `CreateMemberWithInvite` inserts the placeholder, assigns it to `next_up`
-  only when no active holder resolves, inserts its first invite, and reads the
-  response member before commit. Concurrent creates queue on SQLite's writer,
-  so the first inserted member keeps an initially unresolved turn.
+- `CreateMemberWithInvite` inserts the placeholder, assigns an eligible role to
+  `next_up` only when no active holder resolves, inserts its first invite, and
+  reads the response member before commit. Concurrent creates queue on SQLite's
+  writer, so the first eligible inserted member keeps an initially unresolved
+  turn.
 - `RestoreMemberWithInvite` strips residual credentials, identities, sessions,
   and invites, clears `archived_at`, inserts a fresh invite, and reads the
   response member before commit.

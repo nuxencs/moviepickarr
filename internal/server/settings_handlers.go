@@ -58,7 +58,8 @@ func (h *handler) handleGetPoolLock(c *fiber.Ctx) error {
 func (h *handler) handleGetNextUp(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 
-	// Get self-seeds a fresh install; no rows means the roster is still empty.
+	// Get self-seeds a fresh install. No rows means no active Turn participant
+	// exists, which includes a Guest-only roster.
 	nextUp, err := h.nextUpService.Get(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

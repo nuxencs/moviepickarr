@@ -3,6 +3,7 @@ import { MovieDetail, MovieDrawPayload, Settings, User, Wildcard } from "@/types
 export type SSEEventType =
   | "user:created"
   | "user:deleted"
+  | "user:role-changed"
   | "movie:added"
   | "movie:deleted"
   | "movie:moved"

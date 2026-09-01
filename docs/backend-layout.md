@@ -18,8 +18,9 @@
   /members/:memberID/restore` re-strips any residual authentication rows,
   clears `archived_at`, and inserts a fresh invite in one transaction. `POST
   /members` likewise commits the member, an initial `next_up` assignment when
-  no active holder resolves, and its first invite together. Both prepare the
-  raw token outside the transaction, store only its hash, and return the member
+  no active holder resolves and the selected starting role is Member or Admin,
+  and its first invite together. A Guest invite never claims Next up. Both
+  prepare the raw token outside the transaction, store only its hash, and return the member
   projection plus the one-time `claimUrl` after commit. The membership reads
   filter `archived_at IS NULL` (`UserRepo.List` backs the roster and the
   rotation candidate list;
@@ -93,7 +94,8 @@
   The admin upsert writes the credential, retires any current invite, and, on a
   reset, revokes the member's sessions through the scoped auth transition store.
   It also holds the shared authz guards used across handlers: `requireAdmin`
-  (403 `admin_required`) and `requireNextUpOrAdmin` (403 `not_next_up`).
+  (403 `admin_required`), `requireTurnParticipant` (403 `guest_restricted`),
+  and `requireNextUpOrAdmin` (403 `not_next_up`).
   `/auth/login` is registered ahead of
   `requireSession` so it stays reachable without a session; it is still behind
   `csrfGuard`. Local credentials attached to an archived row are treated like
@@ -120,7 +122,8 @@
   /invites/:inviteID/dismiss` retires it only after expiry. A stale or
   wrong-state handle returns `409` without touching a replacement. `POST
   /members` (in `users_handlers.go`) atomically creates the placeholder, claims
-  an unresolved initial `next_up` slot, and issues the first invite. It returns
+  an unresolved initial `next_up` slot only for a Member or Admin, and issues
+  the first invite. A Guest starts outside the turn rotation. It returns
   the one-time `claimUrl` only in its direct response, never over SSE. The
   unauthenticated `GET /auth/claim/:token` returns display name, mode, and
   credential options, or `invite_invalid` 404 / `invite_used` 410. OIDC is an
@@ -157,8 +160,9 @@
   polymorphically); the repository ports in `internal/domain` remain the
   substitution seam for tests.
 - `internal/nextup`: owns next-up reads. `Get` self-seeds a fresh install with
-  the first roster member. Rotation-on-watch lives in the atomic movie-store
-  transition below because the handoff and watched movie must commit together.
+  the first active Turn participant. Rotation-on-watch lives in the atomic
+  movie-store transition below because the handoff and watched movie must
+  commit together.
 - `internal/auth`: shared auth primitives. `token.go` is the opaque-token
   generator + SHA-256 storage hash; `password.go` is the argon2id wrapper;
   `session.go` is the `SessionManager` deep module over the session store:
@@ -435,12 +439,18 @@ always the session member, never a path id: member-scoped routes carry no
   `GET /members/:memberID/pool` and `/stash`.
 - Status matrix: `401` not authenticated (from `requireSession`); `403` with a
   machine `code` in the problem `title` (`admin_required`, `not_next_up`,
-  `not_adder`) for authenticated-but-forbidden; `404` only for genuinely-missing
-  resources, never a permission mask.
+  `guest_restricted`, `not_adder`) for authenticated-but-forbidden; `409`
+  `turn_handoff_confirmation_required` when a role change would remove the
+  current Next up holder without explicit confirmation; `404` only for
+  genuinely-missing resources, never a permission mask.
 - Rules: reads are any-authenticated (`GET /members`, pool/stash, movies / pool /
   stats / settings reads, `/tmdb/search`). `PUT`/`DELETE /movies/:movieID` and
-  `/move` are **adder-only** (403 `not_adder`, no admin override). Draw / reveal /
-  watch are **next-up-or-admin** (403 `not_next_up`). Member
+  `/move` are **adder-only** (403 `not_adder`, no admin override). A move to the
+  Pool also requires a Turn participant (403 `guest_restricted`). A Guest can
+  still move their own pooled movie back to the Stash. Draw / reveal /
+  watch and every Wildcard command require a **Turn participant** first (403
+  `guest_restricted`); draw / reveal / Current watch are then
+  **next-up-or-admin** (403 `not_next_up`). Member
   create/delete/restore, pool-lock, local-login admin actions, invite creation
   (`POST /members/:memberID/invite`), exact-generation replacement/revoke/dismiss
   (`POST /invites/:inviteID/replacement`, `DELETE /invites/:inviteID`, `POST

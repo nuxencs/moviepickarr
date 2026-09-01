@@ -10,22 +10,23 @@ import (
 )
 
 type fakeNextUpRepo struct {
-	userID int // 0 = unset
-	users  *fakeUserRepo
+	userID   int // 0 = unset
+	eligible []*domain.User
 }
 
 func (r *fakeNextUpRepo) Get(_ context.Context) (*domain.User, error) {
 	if r.userID == 0 {
 		return nil, sql.ErrNoRows
 	}
-	for _, u := range r.users.list {
+	for _, u := range r.eligible {
 		if u.ID == r.userID {
 			c := *u
 			return &c, nil
 		}
 	}
-	// The stored next up left the roster; the singleton row still points at it.
-	return &domain.User{ID: r.userID, Name: "gone"}, nil
+	// The stored holder is no longer eligible. The real repository's join drops
+	// the pointer so the service runs its SetFirstEligible repair path.
+	return nil, sql.ErrNoRows
 }
 
 func (r *fakeNextUpRepo) Set(_ context.Context, userID int) error {
@@ -33,35 +34,57 @@ func (r *fakeNextUpRepo) Set(_ context.Context, userID int) error {
 	return nil
 }
 
-type fakeUserRepo struct {
-	list []*domain.User
+func (r *fakeNextUpRepo) SetFirstEligible(_ context.Context) (*domain.User, error) {
+	if len(r.eligible) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	r.userID = r.eligible[0].ID
+	copy := *r.eligible[0]
+	return &copy, nil
 }
 
-func (r *fakeUserRepo) List(_ context.Context) ([]*domain.User, error) { return r.list, nil }
-func (r *fakeUserRepo) FindByID(context.Context, int) (*domain.User, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeUserRepo) Create(context.Context, string) (*domain.User, error) {
-	panic("unexpected call")
-}
-
-func (r *fakeUserRepo) Remove(context.Context, int) (domain.RemoveOutcome, error) {
-	panic("unexpected call")
-}
-func (r *fakeUserRepo) Restore(context.Context, int) error { panic("unexpected call") }
-
-func roster(names ...string) *fakeUserRepo {
+func roster(names ...string) []*domain.User {
 	users := make([]*domain.User, len(names))
 	for i, n := range names {
 		users[i] = &domain.User{ID: i + 1, Name: n}
 	}
-	return &fakeUserRepo{list: users}
+	return users
 }
 
-func newTestService(users *fakeUserRepo, current int) (*Service, *fakeNextUpRepo) {
-	nextUpRepo := &fakeNextUpRepo{userID: current, users: users}
-	return NewService(nextUpRepo, users), nextUpRepo
+func newTestService(users []*domain.User, current int) (*Service, *fakeNextUpRepo) {
+	nextUpRepo := &fakeNextUpRepo{userID: current, eligible: users}
+	return NewService(nextUpRepo), nextUpRepo
+}
+
+func TestGetSeedsFirstEligibleParticipant(t *testing.T) {
+	users := roster("guest", "member")
+	repo := &fakeNextUpRepo{
+		eligible: users[1:],
+	}
+
+	nextUp, err := NewService(repo).Get(t.Context())
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if nextUp.ID != 2 || repo.userID != 2 {
+		t.Fatalf("seeded %+v with stored id %d, want eligible member 2", nextUp, repo.userID)
+	}
+}
+
+func TestGetRepairsIneligibleStoredHolder(t *testing.T) {
+	users := roster("guest", "member")
+	repo := &fakeNextUpRepo{
+		userID:   users[0].ID,
+		eligible: users[1:],
+	}
+
+	nextUp, err := NewService(repo).Get(t.Context())
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if nextUp.ID != 2 || repo.userID != 2 {
+		t.Fatalf("repaired to %+v with stored id %d, want eligible member 2", nextUp, repo.userID)
+	}
 }
 
 func TestGetSelfSeedsFreshInstall(t *testing.T) {

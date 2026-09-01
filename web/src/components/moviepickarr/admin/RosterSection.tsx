@@ -8,17 +8,21 @@ import {
   RotateCcwIcon,
   RotateCwIcon,
   ShieldIcon,
-  ShieldOffIcon,
   Trash2Icon,
   UnlinkIcon,
+  UserIcon,
   UsersIcon,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { APIClient, ApiError } from "@/api/APIClient";
 import { reconcileInviteSurfaces } from "@/api/inviteCache";
-import { InvitesQueryOptions, MeQueryOptions, RosterQueryOptions } from "@/api/queries";
-import { MoviesKeys, UsersKeys } from "@/api/query_keys";
+import {
+  InvitesQueryOptions,
+  MeQueryOptions,
+  RosterQueryOptions,
+} from "@/api/queries";
+import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 
 import { expiryLabel, inviteStatusAt, issuedLabel, nextInviteExpiryDelay, serverAlignedNow } from "@/components/moviepickarr/admin/invites";
 import { credLabel, isPlaceholder, unlinkWouldStrand } from "@/components/moviepickarr/admin/roster";
@@ -29,13 +33,14 @@ import {
   MemberIdentity,
   RemoveConfirm,
   SetLoginDialog,
+  TurnHandoffConfirm,
   UnlinkGuard,
 } from "@/components/moviepickarr/admin/RosterOverlays";
 import { plural } from "@/components/moviepickarr/lib";
 import { Menu, type MenuAction } from "@/components/moviepickarr/Menu";
 import { toast } from "@/components/ui/toast-api";
 
-import type { InviteStatus, InviteSummary, RosterMember } from "@/types/Response";
+import type { InviteStatus, InviteSummary, MemberRole, RosterMember } from "@/types/Response";
 
 import { timeAgo } from "@/lib/time";
 
@@ -68,7 +73,7 @@ const COLUMNS: RosterColumn[] = [
     key: "role",
     header: "Role",
     shed: true,
-    cell: (m) => <span className="adm-role">{m.role === "admin" ? "Admin" : "Member"}</span>,
+    cell: (m) => <span className="adm-role">{roleLabel(m.role)}</span>,
     summary: () => null,
   },
   {
@@ -95,6 +100,12 @@ const COLUMNS: RosterColumn[] = [
   },
 ];
 
+const roleLabel = (role: MemberRole): string =>
+  role === "admin" ? "Admin" : role === "guest" ? "Guest" : "Member";
+
+const roleWithArticle = (role: MemberRole): string =>
+  role === "admin" ? "an admin" : role === "guest" ? "a guest" : "a member";
+
 /** The shed columns' phone line, e.g. "38 movies · now". */
 const summaryOf = (m: RosterMember): string[] =>
   COLUMNS.filter((c) => c.shed)
@@ -114,6 +125,7 @@ type Dialog =
       purpose: "invite" | "password-reset";
     }
   | { kind: "remove"; member: RosterMember }
+  | { kind: "turn-handoff"; member: RosterMember }
   | { kind: "unlink-guard" }
   | { kind: "set-login"; member: RosterMember }
   | null;
@@ -330,17 +342,36 @@ export function RosterSection() {
   });
 
   const setRole = useMutation({
-    mutationFn: ({ member, role }: { member: RosterMember; role: "member" | "admin" }) =>
-      APIClient.members.setRole(member.id, role),
+    mutationFn: ({ member, role, confirmTurnHandoff = false }: {
+      member: RosterMember;
+      role: MemberRole;
+      confirmTurnHandoff?: boolean;
+    }) => APIClient.members.setRole(member.id, role, confirmTurnHandoff),
     onSuccess: (_res, { member, role }) => {
+      closeDialog();
       refresh();
       // Changing your own role changes your own nav (the admin Shield link, the
       // name tag), so refresh the session actor too, not just the roster row.
       if (me?.id === member.id) queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
-      toast.success(`${member.name} is now ${role === "admin" ? "an admin" : "a member"}`);
+      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
+      toast.success(`${member.name} is now ${roleWithArticle(role)}`);
     },
-    onError: fail("Couldn't change the role."),
+    onError: (err, { member, role, confirmTurnHandoff }) => {
+      if (
+        role === "guest"
+        && !confirmTurnHandoff
+        && err instanceof ApiError
+        && err.code === "turn_handoff_confirmation_required"
+      ) {
+        setDialog({ kind: "turn-handoff", member });
+        return;
+      }
+      fail("Couldn't change the role.")(err);
+    },
   });
+
+  const makeGuest = (member: RosterMember) =>
+    setRole.mutate({ member, role: "guest" });
 
   const setLogin = useMutation({
     mutationFn: ({ member, username, password }: { member: RosterMember; username: string; password: string }) =>
@@ -545,19 +576,29 @@ export function RosterSection() {
       }
     }
 
-    if (m.role === "admin") {
+    if (m.role !== "member") {
       actions.push({
-        icon: <ShieldOffIcon />,
-        label: "Remove admin",
+        icon: <UsersIcon />,
+        label: "Make member",
         // Demoting the only admin would strand the roster; the backend 409s, but
         // disable it here so the footgun isn't even offered.
-        disabled: activeAdmins <= 1,
+        disabled: setRole.isPending || (m.role === "admin" && activeAdmins <= 1),
         onSelect: () => setRole.mutate({ member: m, role: "member" }),
       });
-    } else {
+    }
+    if (m.role !== "guest") {
+      actions.push({
+        icon: <UserIcon />,
+        label: "Make guest",
+        disabled: setRole.isPending || (m.role === "admin" && activeAdmins <= 1),
+        onSelect: () => makeGuest(m),
+      });
+    }
+    if (m.role !== "admin") {
       actions.push({
         icon: <ShieldIcon />,
         label: "Make admin",
+        disabled: setRole.isPending,
         onSelect: () => setRole.mutate({ member: m, role: "admin" }),
       });
     }
@@ -714,6 +755,18 @@ export function RosterSection() {
           onClose={closeDialog}
         />
       )}
+      {dialog?.kind === "turn-handoff" && (
+        <TurnHandoffConfirm
+          member={dialog.member}
+          pending={setRole.isPending}
+          onConfirm={() => setRole.mutate({
+            member: dialog.member,
+            role: "guest",
+            confirmTurnHandoff: true,
+          })}
+          onClose={closeDialog}
+        />
+      )}
       {dialog?.kind === "unlink-guard" && <UnlinkGuard onClose={closeDialog} />}
       {dialog?.kind === "set-login" && (
         <SetLoginDialog
@@ -737,11 +790,14 @@ function AddMemberForm({
   onCreated: (name: string, claimUrl: string) => void | Promise<unknown>;
 }) {
   const [name, setName] = useState("");
+  const [role, setRole] = useState<MemberRole>("member");
 
   const createMember = useMutation({
-    mutationFn: (memberName: string) => APIClient.members.create(memberName),
-    onSuccess: (res, memberName) => {
+    mutationFn: ({ memberName, role }: { memberName: string; role: MemberRole }) =>
+      APIClient.members.create(memberName, role),
+    onSuccess: (res, { memberName }) => {
       setName("");
+      setRole("member");
       return onCreated(memberName, res.claimUrl);
     },
     onError: fail("Couldn't create the member."),
@@ -751,7 +807,7 @@ function AddMemberForm({
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed || createMember.isPending) return;
-    createMember.mutate(trimmed);
+    createMember.mutate({ memberName: trimmed, role });
   };
 
   return (
@@ -764,6 +820,18 @@ function AddMemberForm({
           placeholder="New member's name…"
           aria-label="New member name"
         />
+      </label>
+      <label className="field adm-rolefield">
+        <UserIcon />
+        <select
+          value={role}
+          onChange={(event) => setRole(event.target.value as MemberRole)}
+          aria-label="Starting role"
+        >
+          <option value="member">Member</option>
+          <option value="guest">Guest</option>
+          <option value="admin">Admin</option>
+        </select>
       </label>
       <button type="submit" className="btn btn--accent" disabled={!name.trim() || createMember.isPending}>
         <PlusIcon />

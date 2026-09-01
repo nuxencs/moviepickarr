@@ -95,12 +95,12 @@ function member(userID: number, pooled: number, stashed = 0, name = `Member ${us
   return { userID, name, currentPool, stash, createdAt: "2026-07-01T00:00:00Z" };
 }
 
-function session(id: number): MeResponse {
+function session(id: number, role: MeResponse["role"] = "member"): MeResponse {
   return {
     id,
     displayName: `Member ${id}`,
     username: null,
-    role: "member",
+    role,
     hasLocalLogin: true,
     hasLinkedIdentity: false,
   };
@@ -113,6 +113,7 @@ async function renderTab({
   drawInProgress = false,
   seedPoolState = true,
   meID,
+  role = "member",
   href = "/users",
 }: {
   users?: User[];
@@ -120,6 +121,7 @@ async function renderTab({
   drawInProgress?: boolean;
   seedPoolState?: boolean;
   meID?: number;
+  role?: MeResponse["role"];
   href?: `/users` | `/users?${string}`;
 }) {
   // Captured out of the seed so a test can push the roster the way SSE does.
@@ -133,7 +135,7 @@ async function renderTab({
       if (seedPoolState) {
         queryClient.setQueryData(SettingsKeys.poolLock(), { poolLocked: locked, drawInProgress });
       }
-      if (meID !== undefined) queryClient.setQueryData(AuthKeys.me(), session(meID));
+      if (meID !== undefined) queryClient.setQueryData(AuthKeys.me(), session(meID, role));
     },
   });
   return { client, router };
@@ -750,6 +752,17 @@ describe("a refused action", () => {
       "Move to pool, pool is full",
     ]);
     expect(actions().filter((a) => a.getAttribute("aria-disabled") === "true").length).toBe(2);
+  });
+
+  it("keeps a Guest's demotes live and explains why promotion is unavailable", async () => {
+    await renderTab({ users: roster, meID: 1, role: "guest" });
+
+    expect(named()).toEqual([
+      "Move back to stash",
+      "Move back to stash",
+      "Move to pool, guest role cannot add movies to the pool",
+      "Move to pool, guest role cannot add movies to the pool",
+    ]);
   });
 
   it("says round closed on a locked full pool, which used to report the full one", async () => {

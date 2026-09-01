@@ -43,7 +43,7 @@ type Login struct {
 // and the archived member. Archived marks the removed-but-attributed member.
 type Member struct {
 	Name     string
-	Role     string
+	Role     domain.Role
 	Archived bool
 	Login    *Login
 }

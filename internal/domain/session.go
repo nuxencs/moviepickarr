@@ -26,7 +26,7 @@ type Session struct {
 // takes effect on the next call without touching any session.
 type AuthSession struct {
 	Session
-	Role string
+	Role Role
 }
 
 // SessionRepo is the persistence port for the session store. Timestamps are

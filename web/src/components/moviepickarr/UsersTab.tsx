@@ -445,6 +445,7 @@ export function UsersTab() {
               isLocked={!!isLocked}
               drawInFlight={drawInFlight}
               poolStateKnown={poolStateKnown}
+              guest={me?.role === "guest"}
               onOpenSearch={() => setSearchUser(selected)}
               onOpen={open}
               lostFocus={paneLostFocus}
@@ -951,6 +952,7 @@ function StashPane({
   isLocked,
   drawInFlight,
   poolStateKnown,
+  guest,
   onOpenSearch,
   onOpen,
   lostFocus,
@@ -962,6 +964,7 @@ function StashPane({
   isOwnBoard: boolean;
   isLocked: boolean;
   poolStateKnown: boolean;
+  guest: boolean;
   /** Passed down whole rather than pre-judged: a draw does not refuse a promote,
    *  and refusalOf is the one place that decides so. */
   drawInFlight: boolean;
@@ -1332,6 +1335,7 @@ function StashPane({
                     locked={isLocked}
                     drawInFlight={drawInFlight}
                     poolStateKnown={poolStateKnown}
+                    guest={guest}
                     isOwnBoard={isOwnBoard}
                     onOpen={onOpen}
                     onPromote={onPromote}
@@ -1370,6 +1374,7 @@ const StashTile = memo(function StashTile({
   locked,
   drawInFlight,
   poolStateKnown,
+  guest,
   isOwnBoard,
   onOpen,
   onPromote,
@@ -1383,6 +1388,7 @@ const StashTile = memo(function StashTile({
   locked: boolean;
   drawInFlight: boolean;
   poolStateKnown: boolean;
+  guest: boolean;
   isOwnBoard: boolean;
   onOpen: (movie: MovieTile) => void;
   /** Stable pane callback into the board-owned request registry. */
@@ -1410,6 +1416,7 @@ const StashTile = memo(function StashTile({
             isLocked: locked,
             drawInFlight,
             poolFull,
+            guest,
             stateKnown: poolStateKnown,
           })}
           tabIndex={roving ? 0 : -1}

@@ -1,6 +1,10 @@
 package server
 
 import (
+	"errors"
+
+	"moviepickarr/internal/domain"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -11,16 +15,16 @@ import (
 // hard-delete (frees the name) or archive (keeps attribution) before committing.
 // lastSeenAt is the newest session touch, omitted for members who never had one.
 type rosterMemberResponse struct {
-	ID                int    `json:"id"`
-	Name              string `json:"name"`
-	Username          string `json:"username,omitempty"`
-	Role              string `json:"role"`
-	Archived          bool   `json:"archived"`
-	HasLocalLogin     bool   `json:"hasLocalLogin"`
-	HasLinkedIdentity bool   `json:"hasLinkedIdentity"`
-	InvitePending     bool   `json:"invitePending"`
-	MoviesAuthored    int    `json:"moviesAuthored"`
-	LastSeenAt        string `json:"lastSeenAt,omitempty"`
+	ID                int         `json:"id"`
+	Name              string      `json:"name"`
+	Username          string      `json:"username,omitempty"`
+	Role              domain.Role `json:"role"`
+	Archived          bool        `json:"archived"`
+	HasLocalLogin     bool        `json:"hasLocalLogin"`
+	HasLinkedIdentity bool        `json:"hasLinkedIdentity"`
+	InvitePending     bool        `json:"invitePending"`
+	MoviesAuthored    int         `json:"moviesAuthored"`
+	LastSeenAt        string      `json:"lastSeenAt,omitempty"`
 }
 
 // handleGetRoster returns the admin roster (admin only): every member, active and
@@ -56,10 +60,9 @@ func (h *handler) handleGetRoster(c *fiber.Ctx) error {
 }
 
 // handleSetRole promotes or demotes a member (admin only). Role is the app-owned
-// enum {member, admin}; the service validates it and the repo refuses demoting the
-// last admin (409) so the roster can never be left unmanageable. Role is read live
-// per request, so the change takes effect on the member's next call without
-// disturbing their sessions: nothing here revokes or rotates a token.
+// enum {member, guest, admin}. Demoting the Next up holder to Guest requires an
+// explicit retry because the same transaction also hands off the turn. The repo
+// refuses demoting the last admin. Sessions stay valid and read the live role.
 func (h *handler) handleSetRole(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -71,14 +74,40 @@ func (h *handler) handleSetRole(c *fiber.Ctx) error {
 	}
 
 	var body struct {
-		Role string `json:"role"`
+		Role               string `json:"role"`
+		ConfirmTurnHandoff bool   `json:"confirmTurnHandoff"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "invalid request body")
 	}
 
-	if err := h.userService.SetRole(c.UserContext(), memberID, body.Role); err != nil {
+	role, valid := domain.ParseRole(body.Role)
+	if !valid {
+		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "role must be member, guest, or admin")
+	}
+	result, err := h.userService.SetRole(c.UserContext(), domain.RoleChange{
+		MemberID:           memberID,
+		Role:               role,
+		ConfirmTurnHandoff: body.ConfirmTurnHandoff,
+	})
+	if errors.Is(err, domain.ErrTurnHandoffConfirmationRequired) {
+		return writeProblem(c, fiber.StatusConflict, "turn_handoff_confirmation_required", "making this member a Guest will hand Next up to the next eligible member")
+	}
+	if err != nil {
 		return writeError(c, err)
+	}
+	if result.Changed {
+		h.broker.Broadcast(event{Type: "user:role-changed", Data: fiber.Map{
+			"userID": memberID,
+			"role":   role,
+		}})
+	}
+	if result.TurnChanged {
+		payload := fiber.Map{"id": 0, "name": ""}
+		if result.NextUp != nil {
+			payload = fiber.Map{"id": result.NextUp.ID, "name": result.NextUp.Name}
+		}
+		h.broker.Broadcast(event{Type: "settings:next-up-changed", Data: payload})
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)

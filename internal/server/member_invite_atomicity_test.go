@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"moviepickarr/internal/auth"
+	"moviepickarr/internal/domain"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -54,6 +55,33 @@ func TestHandleCreateUser_ReturnsClaimSecretOnlyInDirectResponse(t *testing.T) {
 		}
 	default:
 		t.Fatal("create emitted no user:created broadcast")
+	}
+}
+
+func TestHandleCreateUser_PersistsSelectedGuestRole(t *testing.T) {
+	e := setupAuthApp(t)
+	_, adminCookie := e.adminSession(t)
+
+	resp := e.request(t, http.MethodPost, "/api/v1/members", adminCookie, map[string]string{
+		"name": "Visiting friend",
+		"role": string(domain.RoleGuest),
+	})
+	if resp.StatusCode != fiber.StatusCreated {
+		t.Fatalf("create guest status = %d, want 201", resp.StatusCode)
+	}
+	var body createMemberResponse
+	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+
+	var role string
+	if err := e.pool.Read.QueryRowContext(t.Context(),
+		"SELECT role FROM users WHERE id = ?", body.ID,
+	).Scan(&role); err != nil {
+		t.Fatal(err)
+	}
+	if role != string(domain.RoleGuest) {
+		t.Fatalf("created role = %q, want guest", role)
 	}
 }
 

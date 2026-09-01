@@ -59,7 +59,7 @@ func TestSeedAdminProbeDoesNotMutate(t *testing.T) {
 				).Scan(&role); err != nil {
 					t.Fatalf("read role: %v", err)
 				}
-				if role != domain.RoleMember {
+				if role != string(domain.RoleMember) {
 					t.Fatalf("probe changed role to %q, want member", role)
 				}
 			}

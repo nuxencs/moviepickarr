@@ -251,7 +251,7 @@ func TestUserRepo_Remove_RefusesLastActiveAdmin(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create root: %v", err)
 			}
-			if err := e.users.SetRole(e.ctx, root.ID, domain.RoleAdmin); err != nil {
+			if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: root.ID, Role: domain.RoleAdmin}); err != nil {
 				t.Fatalf("promote root: %v", err)
 			}
 			e.seedLogin(t, root.ID, "root-"+tc.name)
@@ -286,7 +286,7 @@ func TestUserRepo_Remove_ConcurrentAdminsPreservesOne(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
-		if err := e.users.SetRole(e.ctx, member.ID, domain.RoleAdmin); err != nil {
+		if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: member.ID, Role: domain.RoleAdmin}); err != nil {
 			t.Fatalf("promote %s: %v", name, err)
 		}
 		admins[i] = member
@@ -607,14 +607,14 @@ func TestUserRepo_SetRole_PromoteAndDemote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	if err := e.users.SetRole(e.ctx, root.ID, domain.RoleAdmin); err != nil {
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: root.ID, Role: domain.RoleAdmin}); err != nil {
 		t.Fatalf("promote root: %v", err)
 	}
 	priya, err := e.users.Create(e.ctx, "Priya")
 	if err != nil {
 		t.Fatalf("create priya: %v", err)
 	}
-	if err := e.users.SetRole(e.ctx, priya.ID, domain.RoleAdmin); err != nil {
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: priya.ID, Role: domain.RoleAdmin}); err != nil {
 		t.Fatalf("promote priya: %v", err)
 	}
 
@@ -624,12 +624,69 @@ func TestUserRepo_SetRole_PromoteAndDemote(t *testing.T) {
 	}
 
 	// Two admins remain, so demoting one is allowed.
-	if err := e.users.SetRole(e.ctx, priya.ID, domain.RoleMember); err != nil {
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: priya.ID, Role: domain.RoleMember}); err != nil {
 		t.Fatalf("demote priya: %v", err)
 	}
 	byID = rosterByID(t, mustRoster(t, e))
 	if byID[priya.ID].Role != domain.RoleMember {
 		t.Fatalf("priya role = %q, want member after demote", byID[priya.ID].Role)
+	}
+}
+
+func TestUserRepo_SetRole_GuestHandsOffNextUp(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	members := make([]*domain.User, 0, 3)
+	for _, name := range []string{"Ana", "Ben", "Cai"} {
+		member, err := e.users.Create(e.ctx, name)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		members = append(members, member)
+	}
+	if err := e.nextUp.Set(e.ctx, members[1].ID); err != nil {
+		t.Fatalf("set next up: %v", err)
+	}
+
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{
+		MemberID: members[1].ID,
+		Role:     domain.RoleGuest,
+	}); !errors.Is(err, domain.ErrTurnHandoffConfirmationRequired) {
+		t.Fatalf("unconfirmed handoff: got %v, want confirmation required", err)
+	}
+	if next, err := e.nextUp.Get(e.ctx); err != nil || next.ID != members[1].ID {
+		t.Fatalf("unconfirmed handoff changed Next up: next=%+v err=%v", next, err)
+	}
+	if role := rosterByID(t, mustRoster(t, e))[members[1].ID].Role; role != domain.RoleMember {
+		t.Fatalf("unconfirmed handoff changed role to %q", role)
+	}
+
+	result, err := e.users.SetRole(e.ctx, domain.RoleChange{
+		MemberID:           members[1].ID,
+		Role:               domain.RoleGuest,
+		ConfirmTurnHandoff: true,
+	})
+	if err != nil {
+		t.Fatalf("make current holder guest: %v", err)
+	}
+	if !result.Changed || !result.TurnChanged || result.NextUp == nil || result.NextUp.ID != members[2].ID {
+		t.Fatalf("handoff result = %+v, want next member %d", result, members[2].ID)
+	}
+	next, err := e.nextUp.Get(e.ctx)
+	if err != nil {
+		t.Fatalf("get next up: %v", err)
+	}
+	if next.ID != members[2].ID {
+		t.Fatalf("next up = %d, want %d", next.ID, members[2].ID)
+	}
+
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: members[0].ID, Role: domain.RoleGuest}); err != nil {
+		t.Fatalf("make first member guest: %v", err)
+	}
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: members[2].ID, Role: domain.RoleGuest, ConfirmTurnHandoff: true}); err != nil {
+		t.Fatalf("make last participant guest: %v", err)
+	}
+	if _, err := e.nextUp.Get(e.ctx); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("guest-only roster next up: got %v, want sql.ErrNoRows", err)
 	}
 }
 
@@ -641,12 +698,14 @@ func TestUserRepo_SetRole_RefusesLastAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	if err := e.users.SetRole(e.ctx, root.ID, domain.RoleAdmin); err != nil {
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: root.ID, Role: domain.RoleAdmin}); err != nil {
 		t.Fatalf("promote root: %v", err)
 	}
 
-	if err := e.users.SetRole(e.ctx, root.ID, domain.RoleMember); !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("demote last admin: got %v, want ErrConflict", err)
+	for _, role := range []domain.Role{domain.RoleMember, domain.RoleGuest} {
+		if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: root.ID, Role: role}); !errors.Is(err, domain.ErrConflict) {
+			t.Fatalf("change last admin to %s: got %v, want ErrConflict", role, err)
+		}
 	}
 	// The role is unchanged after the refused demotion.
 	byID := rosterByID(t, mustRoster(t, e))
@@ -659,7 +718,7 @@ func TestUserRepo_SetRole_RefusesLastAdmin(t *testing.T) {
 // member's role is frozen (they are off the active roster).
 func TestUserRepo_SetRole_MissingOrArchived(t *testing.T) {
 	e := setupUserRemoveEnv(t)
-	if err := e.users.SetRole(e.ctx, 4242, domain.RoleAdmin); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: 4242, Role: domain.RoleAdmin}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("set role on missing member: got %v, want ErrNotFound", err)
 	}
 
@@ -673,7 +732,7 @@ func TestUserRepo_SetRole_MissingOrArchived(t *testing.T) {
 	if _, err := e.users.Remove(e.ctx, dana.ID); err != nil {
 		t.Fatalf("archive dana: %v", err)
 	}
-	if err := e.users.SetRole(e.ctx, dana.ID, domain.RoleAdmin); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: dana.ID, Role: domain.RoleAdmin}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("set role on archived member: got %v, want ErrNotFound", err)
 	}
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+import { AuthKeys, MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
 import { invalidationsFor, resyncKeys, SSE_INVALIDATIONS } from "@/hooks/sseInvalidations";
 
@@ -85,6 +85,18 @@ describe("the invalidation table", () => {
       }
     },
   );
+
+  it("refreshes identity, roster, board, and turn after a role change", () => {
+    const row = SSE_INVALIDATIONS["user:role-changed"];
+    for (const key of [
+      AuthKeys.me(),
+      UsersKeys.list(),
+      UsersKeys.roster(),
+      SettingsKeys.nextUp(),
+    ]) {
+      expect(has(row, key)).toBe(true);
+    }
+  });
 
   it("an enrichment burst refreshes every cache embedding enriched fields", () => {
     const row = SSE_INVALIDATIONS["movies:enriched-batch"];

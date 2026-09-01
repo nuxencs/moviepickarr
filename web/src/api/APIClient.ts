@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, MeResponse, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User, Wildcard } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, MeResponse, MemberRole, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User, Wildcard } from "@/types/Response";
 
 // Carries the HTTP status alongside the human-readable message so callers can
 // branch on it (the login page shows the uniform banner only for a 401, and
@@ -7,11 +7,13 @@ import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResp
 // `err.message` consumers are unaffected.
 export class ApiError extends Error {
     readonly status: number;
+    readonly code?: string;
 
-    constructor(status: number, message: string) {
+    constructor(status: number, message: string, code?: string) {
         super(message);
         this.name = "ApiError";
         this.status = status;
+        this.code = code;
     }
 }
 
@@ -144,6 +146,7 @@ export async function HttpClient<T = unknown>(
         }
 
         let reason = "";
+        let code: string | undefined;
         if (isJSON) {
             const json = await response.json();
             // problem+json carries the human-readable text in "detail"
@@ -155,13 +158,16 @@ export async function HttpClient<T = unknown>(
             } else if (typeof json.title === "string" && json.title.length) {
                 reason = json.title as string;
             }
+            if (typeof json.title === "string" && json.title.length) {
+                code = json.title as string;
+            }
         }
 
         // A server-provided reason is written for humans (e.g. "conflict:
         // movie is already in the library") — surface it as the message
         // directly; components toast err.message verbatim.
         if (reason.length) {
-            return Promise.reject(new ApiError(response.status, reason));
+            return Promise.reject(new ApiError(response.status, reason, code));
         }
 
         const statusText = response.statusText.length
@@ -269,11 +275,14 @@ export const APIClient = {
         roster: () => appClient.Get<RosterMember[]>("api/v1/members/roster"),
         // Create a placeholder + issue its first claim link in one step; the claim
         // URL is response-only (never broadcast) and shown once.
-        create: (name: string) =>
-            appClient.Post<InviteResult>("api/v1/members", { body: { name } }),
-        // Promote/demote. 409 when it would demote the last admin.
-        setRole: (memberID: number, role: "member" | "admin") =>
-            appClient.Patch<void>(`api/v1/members/${memberID}/role`, { body: { role } }),
+        create: (name: string, role: MemberRole) =>
+            appClient.Post<InviteResult>("api/v1/members", { body: { name, role } }),
+        // Promote/demote. A Next up holder needs an explicit confirmed retry
+        // before a Guest transition can hand off the turn.
+        setRole: (memberID: number, role: MemberRole, confirmTurnHandoff = false) =>
+            appClient.Patch<void>(`api/v1/members/${memberID}/role`, {
+                body: { role, confirmTurnHandoff },
+            }),
         // Create the first current invite generation. Existing generations are
         // replaced through their immutable handle below.
         createInvite: (memberID: number) =>

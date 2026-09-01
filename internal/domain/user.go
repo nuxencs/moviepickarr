@@ -23,10 +23,49 @@ const (
 
 // Role is the app-owned member role. It is single-valued and never derived
 // from a credential (link-state is), so the two axes stay independent.
+type Role string
+
 const (
-	RoleMember = "member"
-	RoleAdmin  = "admin"
+	RoleMember Role = "member"
+	RoleGuest  Role = "guest"
+	RoleAdmin  Role = "admin"
 )
+
+// ParseRole converts an HTTP or fixture value into the closed app-owned enum.
+func ParseRole(value string) (Role, bool) {
+	role := Role(value)
+	return role, role.Valid()
+}
+
+// Valid reports whether role belongs to the app-owned role enum.
+func (r Role) Valid() bool {
+	return r == RoleMember || r == RoleGuest || r == RoleAdmin
+}
+
+// IsTurnParticipant reports whether the role may hold Next up and run group
+// decision commands. Guests can curate their stash but do not participate in
+// the draw workflow or Wildcards.
+func (r Role) IsTurnParticipant() bool {
+	return r == RoleMember || r == RoleAdmin
+}
+
+// RoleChange is one requested membership transition. ConfirmTurnHandoff is a
+// deliberate second step when the target still owns Next up. The repository
+// checks that fact and changes both records in one transaction.
+type RoleChange struct {
+	MemberID           int
+	Role               Role
+	ConfirmTurnHandoff bool
+}
+
+// RoleChangeResult reports committed, externally visible effects. NextUp is
+// populated only when the transition moved the turn to another participant.
+// A nil NextUp with TurnChanged means the roster has no eligible participant.
+type RoleChangeResult struct {
+	Changed     bool
+	TurnChanged bool
+	NextUp      *User
+}
 
 // RosterMember is one row of the admin roster: identity plus the presence-derived
 // facts the admin surface renders. Link-state is never a stored flag: HasLocalLogin
@@ -41,7 +80,7 @@ type RosterMember struct {
 	// exists (the same row HasLocalLogin is derived from). Empty for members with
 	// no password credential.
 	Username          string
-	Role              string
+	Role              Role
 	Archived          bool
 	HasLocalLogin     bool
 	HasLinkedIdentity bool
@@ -61,11 +100,15 @@ type RosterRepo interface {
 	Roster(ctx context.Context) ([]*RosterMember, error)
 	// SetRole changes an active member's role. Demoting the last remaining admin
 	// is refused with ErrConflict so the roster can never be left with no admin;
-	// a missing or archived member returns ErrNotFound. Setting the role a member
+	// changing the current Next up holder to Guest without confirmation returns
+	// ErrTurnHandoffConfirmationRequired and changes nothing. A confirmed change
+	// moves Next up in the same transaction. RoleChangeResult reports the effects
+	// that the caller must publish after commit. A missing or archived member
+	// returns ErrNotFound. Setting the role a member
 	// already holds is a no-op success. Sessions are untouched: role is read live
 	// per request, so the change reflects on the member's next call without a
 	// re-login.
-	SetRole(ctx context.Context, id int, role string) error
+	SetRole(ctx context.Context, change RoleChange) (RoleChangeResult, error)
 }
 
 type UserRepo interface {

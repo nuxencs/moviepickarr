@@ -43,6 +43,7 @@ export function MemberIdentity({
           {member.name}
           {isSelf && <span className="adm-tag adm-tag--you">You</span>}
           {member.role === "admin" && <span className="adm-tag adm-tag--admin">Admin</span>}
+          {member.role === "guest" && <span className="adm-tag adm-tag--guest">Guest</span>}
         </div>
         <div className="adm-id__sub">
           {member.username ? `@${member.username}` : "no username"}
@@ -213,6 +214,52 @@ export function RemoveConfirm({
               disabled={pending}
             >
               {pending ? "Removing…" : isDelete ? "Delete member" : "Archive member"}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// A current Turn participant relinquishes the turn when they become a Guest.
+// Make that durable consequence explicit before the role change commits.
+export function TurnHandoffConfirm({
+  member,
+  pending,
+  onConfirm,
+  onClose,
+}: {
+  member: RosterMember;
+  pending: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      label={`Make ${member.name} a guest?`}
+      onClose={onClose}
+      className="modal--form"
+      dismissible={!pending}
+    >
+      {(close) => (
+        <div className="adm-sheet adm-confirm">
+          <span className="adm-confirm__icon" data-tone="warn">
+            <TriangleAlertIcon />
+          </span>
+          <h3 className="adm-modal__title">Make {member.name} a guest?</h3>
+          <p className="adm-modal__sub">
+            {member.name} is currently Next up. Making {member.name} a Guest passes the
+            turn to the next eligible member. Changing {member.name} back to Member later
+            will not restore this turn.
+          </p>
+
+          <div className="adm-modal__actions">
+            <button type="button" className="btn btn--ghost" onClick={close} disabled={pending}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn--accent" onClick={onConfirm} disabled={pending}>
+              {pending ? "Changing…" : "Make guest"}
             </button>
           </div>
         </div>

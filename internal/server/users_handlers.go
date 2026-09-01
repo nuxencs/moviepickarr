@@ -89,6 +89,7 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 
 	var body struct {
 		Name string `json:"name"`
+		Role string `json:"role"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
@@ -98,12 +99,20 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 	if name == "" {
 		return writeError(c, fmt.Errorf("%w: name is required", domain.ErrInvalidInput))
 	}
+	role := sanitizeInput(body.Role)
+	if role == "" {
+		role = string(domain.RoleMember)
+	}
+	parsedRole, valid := domain.ParseRole(role)
+	if !valid {
+		return writeError(c, fmt.Errorf("%w: invalid member role", domain.ErrInvalidInput))
+	}
 
 	ctx := c.UserContext()
-	// Onboarding is one lifecycle write: the placeholder, initial next-up
-	// assignment, and first invite commit together. The raw claim token is kept
-	// outside persistence and returned only by this direct response.
-	createdUser, rawToken, err := h.invites.CreateMemberWithInvite(ctx, name, actorMemberID(c))
+	// Onboarding is one lifecycle write: the placeholder, eligible initial
+	// next-up assignment, and first invite commit together. The raw claim token
+	// is kept outside persistence and returned only by this direct response.
+	createdUser, rawToken, err := h.invites.CreateMemberWithInvite(ctx, name, parsedRole, actorMemberID(c))
 	if err != nil {
 		return writeError(c, err)
 	}

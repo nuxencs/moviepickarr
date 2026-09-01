@@ -22,7 +22,7 @@ import type { MovieStatus } from "@/types/Response";
 export type ActionKind = "promote" | "demote";
 
 /** Why the action is refused, or null when it isn't. */
-export type Refusal = "unavailable" | "drawing" | "locked" | "full";
+export type Refusal = "unavailable" | "guest" | "drawing" | "locked" | "full";
 
 const VERB: Record<ActionKind, string> = {
   promote: "Move to pool",
@@ -31,6 +31,7 @@ const VERB: Record<ActionKind, string> = {
 
 const REASON: Record<Refusal, string> = {
   unavailable: "round state unavailable",
+  guest: "guest role cannot add movies to the pool",
   drawing: "a draw is in progress",
   // The same words the status line uses for the same flag, from the same
   // constant, so the line and the control cannot describe the round differently.
@@ -53,6 +54,7 @@ export function refusalOf({
   isLocked,
   drawInFlight,
   poolFull,
+  guest = false,
   stateKnown = true,
 }: {
   kind: ActionKind;
@@ -60,9 +62,12 @@ export function refusalOf({
   drawInFlight: boolean;
   /** Only ever read for a promote: demoting is the way out of a full pool. */
   poolFull: boolean;
+  /** Guests can curate a Stash and demote, but cannot promote. */
+  guest?: boolean;
   /** False while the server-owned round gates are missing or refreshing. */
   stateKnown?: boolean;
 }): Refusal | null {
+  if (kind === "promote" && guest) return "guest";
   if (!stateKnown) return "unavailable";
   // A draw freezes the pool and nothing else, identically across all three
   // tiles so that no per-tile difference singles out the held winner. The stash

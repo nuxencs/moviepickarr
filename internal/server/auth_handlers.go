@@ -45,8 +45,19 @@ func (h *handler) writeInternal(c *fiber.Ctx, err error, msg string) error {
 // local-login routes gate on this inline until the per-route authz reshape
 // lands a shared admin middleware.
 func (h *handler) isAdmin(c *fiber.Ctx) bool {
-	role, _ := c.Locals(localsRole).(string)
-	return role == "admin"
+	return roleFromLocals(c) == domain.RoleAdmin
+}
+
+func roleFromLocals(c *fiber.Ctx) domain.Role {
+	switch value := c.Locals(localsRole).(type) {
+	case domain.Role:
+		return value
+	case string:
+		role, _ := domain.ParseRole(value)
+		return role
+	default:
+		return ""
+	}
 }
 
 // requireAdmin writes the 403 an admin-only route returns to a non-admin and
@@ -58,11 +69,24 @@ func (h *handler) requireAdmin(c *fiber.Ctx) (bool, error) {
 	return false, writeProblem(c, fiber.StatusForbidden, "admin_required", "admin role required")
 }
 
+// requireTurnParticipant refuses group-decision commands for Guests. The role
+// is checked on the server even when the client has already disabled the
+// control, so a stale or crafted request cannot alter the Pool or Hero state.
+func (h *handler) requireTurnParticipant(c *fiber.Ctx) (bool, error) {
+	if roleFromLocals(c).IsTurnParticipant() {
+		return true, nil
+	}
+	return false, writeProblem(c, fiber.StatusForbidden, "guest_restricted", "guest role cannot perform this action")
+}
+
 // requireNextUpOrAdmin gates the draw → reveal → watch cycle: only the member
 // whose turn it is, or an admin, may run the draw. Anyone else gets 403
 // not_next_up. Because the rotation advances only on watch, the same member
 // holds the turn across the whole cycle.
 func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
+	if ok, err := h.requireTurnParticipant(c); !ok {
+		return false, err
+	}
 	if h.isAdmin(c) {
 		return true, nil
 	}
@@ -159,12 +183,12 @@ func (h *handler) handleAuthConfig(c *fiber.Ctx) error {
 // meResponse is the GET /auth/me projection. Username serializes as null (not
 // omitted) when the member has no local login, matching the spec's username|null.
 type meResponse struct {
-	ID                int     `json:"id"`
-	DisplayName       string  `json:"displayName"`
-	Username          *string `json:"username"`
-	Role              string  `json:"role"`
-	HasLocalLogin     bool    `json:"hasLocalLogin"`
-	HasLinkedIdentity bool    `json:"hasLinkedIdentity"`
+	ID                int         `json:"id"`
+	DisplayName       string      `json:"displayName"`
+	Username          *string     `json:"username"`
+	Role              domain.Role `json:"role"`
+	HasLocalLogin     bool        `json:"hasLocalLogin"`
+	HasLinkedIdentity bool        `json:"hasLinkedIdentity"`
 }
 
 // handleMe returns the current session actor's identity plus its

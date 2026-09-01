@@ -101,19 +101,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function session(id: number): MeResponse {
+function session(id: number, role: MeResponse["role"] = "admin"): MeResponse {
   return {
     id,
     displayName: `Member ${id}`,
     username: null,
-    role: "admin",
+    role,
     hasLocalLogin: true,
     hasLinkedIdentity: false,
   };
 }
 
 /** The banner on the Movies page with a draw already up. */
-async function renderHero(movie: MovieDetail = drawn, strict = false) {
+async function renderHero(
+  movie: MovieDetail = drawn,
+  strict = false,
+  role: MeResponse["role"] = "admin",
+) {
   let queryClient: QueryClient | undefined;
   if (strict) configure({ reactStrictMode: true });
   const view = await renderWithProviders(<Hero />, {
@@ -128,7 +132,7 @@ async function renderHero(movie: MovieDetail = drawn, strict = false) {
         poolLocked: false,
         drawInProgress: true,
       });
-      client.setQueryData(AuthKeys.me(), session(1));
+      client.setQueryData(AuthKeys.me(), session(1, role));
     },
   });
   if (strict) configure({ reactStrictMode: false });
@@ -185,6 +189,36 @@ describe("the hero's attribution", () => {
           ?.drawInProgress,
       ).toBe(false),
     );
+  });
+});
+
+describe("Guest Hero permissions", () => {
+  it("keeps group commands visible but unavailable", async () => {
+    vi.mocked(APIClient.movies.markWatched).mockClear();
+    await renderHero(drawn, false, "guest");
+
+    const watch = await screen.findByRole("button", { name: /^Mark as watched/ });
+    const wildcard = screen.getByRole("button", { name: /^Choose wildcard/ });
+    expect(watch.hasAttribute("disabled")).toBe(false);
+    expect(watch.getAttribute("aria-disabled")).toBe("true");
+    expect(watch.getAttribute("aria-label")).toContain(
+      "Guests can view the draw but cannot mark it watched.",
+    );
+    expect(watch.getAttribute("title")).toBe(
+      "Guests can view the draw but cannot mark it watched.",
+    );
+    expect(wildcard.hasAttribute("disabled")).toBe(false);
+    expect(wildcard.getAttribute("aria-disabled")).toBe("true");
+    expect(wildcard.getAttribute("aria-label")).toContain(
+      "Guests can view Wildcards but cannot change them.",
+    );
+    expect(wildcard.getAttribute("title")).toBe(
+      "Guests can view Wildcards but cannot change them.",
+    );
+    fireEvent.click(watch);
+    fireEvent.click(wildcard);
+    expect(APIClient.movies.markWatched).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

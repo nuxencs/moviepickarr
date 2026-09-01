@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"moviepickarr/internal/domain"
 )
@@ -90,13 +89,12 @@ func (s *Service) Roster(ctx context.Context) ([]*domain.RosterMember, error) {
 	return s.userRepo.Roster(ctx)
 }
 
-// SetRole changes an active member's role after validating it against the
-// app-owned enum. The repo enforces the last-admin guard; role is read live per
-// request, so the change reflects on the member's next call without touching
-// their sessions.
-func (s *Service) SetRole(ctx context.Context, id int, role string) error {
-	if role != domain.RoleMember && role != domain.RoleAdmin {
-		return fmt.Errorf("%w: role must be %q or %q", domain.ErrInvalidInput, domain.RoleMember, domain.RoleAdmin)
+// SetRole changes an active member's role. The repository atomically checks a
+// required turn-handoff confirmation, changes the role, and moves Next up when
+// needed. Sessions remain valid because authorization reads the live role.
+func (s *Service) SetRole(ctx context.Context, change domain.RoleChange) (domain.RoleChangeResult, error) {
+	if change.MemberID <= 0 || !change.Role.Valid() {
+		return domain.RoleChangeResult{}, domain.ErrInvalidInput
 	}
-	return s.userRepo.SetRole(ctx, id, role)
+	return s.userRepo.SetRole(ctx, change)
 }

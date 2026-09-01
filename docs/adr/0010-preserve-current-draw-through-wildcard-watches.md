@@ -18,10 +18,11 @@ to reverse remote Radarr state.
 ## Decision
 
 Store each Wildcard as a durable record linked to its host Current draw. Allow
-one Active wildcard for the whole group. Any authenticated member can select,
-watch, or cancel it. The Current draw cannot be marked Watched until the Active
-wildcard is watched or canceled. This keeps the host relationship valid and
-prevents the turn from moving while the detour is unresolved.
+one Active wildcard for the whole group. Any Turn participant can select, watch,
+or cancel it. A Guest can observe it but cannot run those commands. The Current
+draw cannot be marked Watched until the Active wildcard is watched or canceled.
+This keeps the host relationship valid and prevents the turn from moving while
+the detour is unresolved.
 
 Each command carries the Current draw or Active wildcard ID that the member saw.
 The repository compares that expected ID inside the lifecycle transaction. A

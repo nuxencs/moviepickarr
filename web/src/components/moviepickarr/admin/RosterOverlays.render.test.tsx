@@ -31,6 +31,7 @@ import {
   InviteReveal,
   RemoveConfirm,
   SetLoginDialog,
+  TurnHandoffConfirm,
 } from "@/components/moviepickarr/admin/RosterOverlays";
 
 import type { RosterMember } from "@/types/Response";
@@ -115,6 +116,41 @@ describe("RemoveConfirm", () => {
 
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeNull();
+  });
+});
+
+describe("TurnHandoffConfirm", () => {
+  it("states that returning to Member will not restore the turn", () => {
+    render(
+      <TurnHandoffConfirm
+        member={member({ name: "Cleo" })}
+        pending={false}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("dialog").textContent).toContain(
+      "Changing Cleo back to Member later will not restore this turn.",
+    );
+  });
+
+  it("pins the dialog while the role change is pending", () => {
+    const onClose = vi.fn();
+    render(
+      <TurnHandoffConfirm
+        member={member()}
+        pending
+        onConfirm={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    expect(button("Changing…").hasAttribute("disabled")).toBe(true);
+    expect(button("Cancel").hasAttribute("disabled")).toBe(true);
+    fireEvent.keyDown(document, { key: "Escape" });
+    runExit();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

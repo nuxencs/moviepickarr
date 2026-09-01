@@ -36,6 +36,7 @@ func TestMemberInviteTransition_CreateRollsBackMemberAndNextUpWhenInviteFails(t 
 	_, err := NewSqliteAuthTransitionStore(e.pool).CreateMemberWithInvite(
 		e.ctx,
 		"Rollback",
+		domain.RoleMember,
 		memberInviteGeneration(e, "create-rollback"),
 	)
 	if err == nil {
@@ -81,6 +82,7 @@ func TestMemberInviteTransition_ConcurrentInitialCreatesKeepFirstCreatedNextUp(t
 			member, err := store.CreateMemberWithInvite(
 				e.ctx,
 				fmt.Sprintf("Concurrent %d", i),
+				domain.RoleMember,
 				memberInviteGeneration(e, fmt.Sprintf("concurrent-%d", i)),
 			)
 			results <- result{member: member, err: err}
@@ -118,6 +120,40 @@ func TestMemberInviteTransition_ConcurrentInitialCreatesKeepFirstCreatedNextUp(t
 	}
 	if inviteCount != 2 {
 		t.Fatalf("concurrent invite count = %d, want 2", inviteCount)
+	}
+}
+
+func TestMemberInviteTransition_GuestDoesNotClaimNextUp(t *testing.T) {
+	e := setupInviteRepo(t)
+	store := NewSqliteAuthTransitionStore(e.pool)
+
+	guest, err := store.CreateMemberWithInvite(
+		e.ctx,
+		"Guest",
+		domain.RoleGuest,
+		memberInviteGeneration(e, "guest"),
+	)
+	if err != nil {
+		t.Fatalf("create guest: %v", err)
+	}
+	participant, err := store.CreateMemberWithInvite(
+		e.ctx,
+		"Participant",
+		domain.RoleMember,
+		memberInviteGeneration(e, "participant"),
+	)
+	if err != nil {
+		t.Fatalf("create participant: %v", err)
+	}
+
+	var nextUpID int
+	if err := e.pool.Read.QueryRowContext(e.ctx,
+		"SELECT user_id FROM next_up WHERE id = 1",
+	).Scan(&nextUpID); err != nil {
+		t.Fatal(err)
+	}
+	if nextUpID != participant.ID || nextUpID == guest.ID {
+		t.Fatalf("next up = %d, want participant %d", nextUpID, participant.ID)
 	}
 }
 

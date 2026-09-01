@@ -15,7 +15,7 @@
  * on first paint; the backend requireAdmin is the backstop for a non-admin who
  * clicks during that window.
  */
-export function canLockPool(role: "member" | "admin" | undefined): boolean {
+export function canLockPool(role: "member" | "guest" | "admin" | undefined): boolean {
   return role === undefined || role === "admin";
 }
 

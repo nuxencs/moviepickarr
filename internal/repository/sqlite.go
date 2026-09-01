@@ -195,7 +195,7 @@ func (d *SqliteUserRepository) Remove(ctx context.Context, id int) (domain.Remov
 
 	// Existence is the movies-join's problem otherwise, so check it up front: a
 	// missing member is a 404, not a silent no-op.
-	var role string
+	var role domain.Role
 	var archivedAt sql.NullInt64
 	if err := tx.QueryRowContext(ctx,
 		"SELECT role, archived_at FROM users WHERE id = ?", id,
@@ -376,51 +376,112 @@ func (d *SqliteUserRepository) Roster(ctx context.Context) ([]*domain.RosterMemb
 	return members, rows.Err()
 }
 
-// SetRole changes an active member's role under one write transaction so the
-// last-admin guard can't race a concurrent demotion. It reads the current role
-// (skipping archived members, whose role is frozen), short-circuits a no-op when
-// the role already matches, and refuses a demotion that would empty the admin set
-// so the roster is never left unmanageable. role is validated by the caller.
-func (d *SqliteUserRepository) SetRole(ctx context.Context, id int, role string) error {
+// SetRole changes an active member's role under one write transaction. The
+// last-admin guard, required turn-handoff confirmation, role update, and turn
+// move all use the same snapshot. A stale client therefore cannot bypass the
+// confirmation or confirm a handoff that was no longer needed.
+func (d *SqliteUserRepository) SetRole(ctx context.Context, change domain.RoleChange) (domain.RoleChangeResult, error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return domain.RoleChangeResult{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var current string
+	var current domain.Role
+	var createdAt int64
 	err = tx.QueryRowContext(ctx,
-		"SELECT role FROM users WHERE id = ? AND archived_at IS NULL", id,
-	).Scan(&current)
+		"SELECT role, created_at FROM users WHERE id = ? AND archived_at IS NULL", change.MemberID,
+	).Scan(&current, &createdAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: user id %d", domain.ErrNotFound, id)
+			return domain.RoleChangeResult{}, fmt.Errorf("%w: user id %d", domain.ErrNotFound, change.MemberID)
 		}
-		return err
+		return domain.RoleChangeResult{}, err
 	}
-	if current == role {
-		return nil
+	if current == change.Role {
+		return domain.RoleChangeResult{}, nil
 	}
 
-	if role == domain.RoleMember {
+	if current == domain.RoleAdmin && change.Role != domain.RoleAdmin {
 		var admins int
 		if err := tx.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM users WHERE role = ? AND archived_at IS NULL",
 			domain.RoleAdmin,
 		).Scan(&admins); err != nil {
-			return err
+			return domain.RoleChangeResult{}, err
 		}
 		if admins <= 1 {
-			return fmt.Errorf("%w: cannot demote the last admin", domain.ErrConflict)
+			return domain.RoleChangeResult{}, fmt.Errorf("%w: cannot demote the last admin", domain.ErrConflict)
+		}
+	}
+
+	if change.Role == domain.RoleGuest && !change.ConfirmTurnHandoff {
+		var holdsTurn int
+		if err := tx.QueryRowContext(ctx,
+			"SELECT EXISTS(SELECT 1 FROM next_up WHERE id = 1 AND user_id = ?)",
+			change.MemberID,
+		).Scan(&holdsTurn); err != nil {
+			return domain.RoleChangeResult{}, err
+		}
+		if holdsTurn == 1 {
+			return domain.RoleChangeResult{}, domain.ErrTurnHandoffConfirmationRequired
 		}
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE users SET role = ?, updated_at = unixepoch() WHERE id = ?", role, id,
+		"UPDATE users SET role = ?, updated_at = unixepoch() WHERE id = ?", change.Role, change.MemberID,
 	); err != nil {
-		return err
+		return domain.RoleChangeResult{}, err
 	}
-	return tx.Commit()
+
+	result := domain.RoleChangeResult{Changed: true}
+	if change.Role == domain.RoleGuest {
+		// If the outgoing participant holds Next up, hand it to the next active
+		// participant in roster order, wrapping once. A guest-only roster leaves
+		// the singleton explicitly empty.
+		handoff, err := tx.ExecContext(ctx, `
+			UPDATE next_up
+			SET user_id = (
+				SELECT candidate.id
+				FROM turn_participants candidate
+				ORDER BY
+				  CASE WHEN candidate.created_at > ?
+				         OR (candidate.created_at = ? AND candidate.id > ?)
+				       THEN 0 ELSE 1 END,
+				  candidate.created_at,
+				  candidate.id
+				LIMIT 1
+			)
+			WHERE id = 1 AND user_id = ?
+		`, createdAt, createdAt, change.MemberID, change.MemberID)
+		if err != nil {
+			return domain.RoleChangeResult{}, err
+		}
+		rows, err := handoff.RowsAffected()
+		if err != nil {
+			return domain.RoleChangeResult{}, err
+		}
+		if rows > 0 {
+			result.TurnChanged = true
+			nextUp, err := scanUser(tx.QueryRowContext(ctx, `
+				SELECT u.id, u.name, u.created_at, u.updated_at
+				FROM next_up n
+				JOIN users u ON u.id = n.user_id
+				WHERE n.id = 1
+			`))
+			switch {
+			case err == nil:
+				result.NextUp = nextUp
+			case errors.Is(err, sql.ErrNoRows):
+			default:
+				return domain.RoleChangeResult{}, err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.RoleChangeResult{}, err
+	}
+	return result, nil
 }
 
 type SqliteMoviesRepository struct {
@@ -1090,8 +1151,7 @@ func (d *SqliteMoviesRepository) WatchCurrentAndAdvanceNextUp(
 	if poolRemains {
 		rows, queryErr := tx.QueryContext(ctx, `
 			SELECT id, name, created_at, updated_at
-			FROM users
-			WHERE archived_at IS NULL
+			FROM turn_participants
 			ORDER BY created_at ASC, id ASC
 		`)
 		if queryErr != nil {
@@ -1201,7 +1261,7 @@ func (d *SqliteNextUpRepository) Get(ctx context.Context) (*domain.User, error) 
 			u.created_at,
 			u.updated_at
 		FROM next_up n
-		JOIN users u ON n.user_id = u.id AND u.archived_at IS NULL
+		JOIN turn_participants u ON n.user_id = u.id
 		WHERE n.id = 1
 		LIMIT 1
 	`
@@ -1226,6 +1286,38 @@ func (d *SqliteNextUpRepository) Set(ctx context.Context, userID int) error {
 	}
 
 	return nil
+}
+
+// SetFirstEligible selects and stores the oldest active Turn participant. It is
+// the self-heal path for an empty pointer, an archived holder, or a legacy
+// pointer to a Guest.
+func (d *SqliteNextUpRepository) SetFirstEligible(ctx context.Context) (*domain.User, error) {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	user, err := scanUser(tx.QueryRowContext(ctx, `
+		SELECT id, name, created_at, updated_at
+		FROM turn_participants
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1
+	`))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO next_up (id, user_id)
+		VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
+	`, user.ID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 type SqliteSettingsRepository struct {

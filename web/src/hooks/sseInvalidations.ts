@@ -18,7 +18,7 @@
    animating, which is why "movie:drawn" does not list the pool here.
    ============================================================ */
 
-import { MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
+import { AuthKeys, MoviesKeys, SettingsKeys, StatsKeys, UsersKeys } from "@/api/query_keys";
 
 import type { SSEEventType } from "@/types/SSEEvent";
 
@@ -49,6 +49,12 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.filterOptions(),
     SettingsKeys.nextUp(),
     StatsKeys.all,
+  ],
+  "user:role-changed": [
+    AuthKeys.me(),
+    UsersKeys.list(),
+    UsersKeys.roster(),
+    SettingsKeys.nextUp(),
   ],
 
   "movie:added": [UsersKeys.list(), MoviesKeys.listpool()],

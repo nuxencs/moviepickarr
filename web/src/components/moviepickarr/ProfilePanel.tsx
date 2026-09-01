@@ -102,7 +102,9 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
             <div className="profile__idtext">
               <div className="profile__idname">
                 <span className="profile__idnametext">{me.displayName}</span>
-                <span className="profile__tag">{me.role === "admin" ? "Admin" : "Member"}</span>
+                <span className="profile__tag">
+                  {me.role === "admin" ? "Admin" : me.role === "guest" ? "Guest" : "Member"}
+                </span>
               </div>
               {me.username && <div className="profile__idsub">@{me.username}</div>}
             </div>

@@ -409,14 +409,14 @@
     white-space: nowrap; line-height: 1;
   }
   .btn svg { width: 17px; height: 17px; flex: none; }
-  .btn:active { transform: translateY(1px) scale(0.99); }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn:active:not([aria-disabled="true"]) { transform: translateY(1px) scale(0.99); }
+  .btn:disabled, .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
   .btn--accent { background: var(--accent); color: var(--accent-ink); }
-  .btn--accent:hover:not(:disabled) { filter: brightness(1.06); }
+  .btn--accent:hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(1.06); }
   .btn--ghost { background: color-mix(in oklab, var(--surface-3) 70%, transparent); color: var(--ink); border-color: var(--line); }
-  .btn--ghost:hover:not(:disabled) { background: var(--surface-3); border-color: var(--line-2); }
+  .btn--ghost:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-3); border-color: var(--line-2); }
   .btn--danger { background: var(--danger); color: var(--danger-ink); }
-  .btn--danger:hover:not(:disabled) { filter: brightness(1.06); }
+  .btn--danger:hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(1.06); }
   .btn--sm { height: var(--control-h-sm); padding: 0 13px; font-size: 13px; }
   .btn--sm svg { width: 15px; height: 15px; }
 

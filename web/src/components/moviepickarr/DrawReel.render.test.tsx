@@ -8,7 +8,7 @@
    through what a member sees: the label, the Skip control, and the OK confirm.
    ============================================================ */
 
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SpinDescriptor } from "@/components/moviepickarr/drawMachine";
@@ -147,6 +147,22 @@ describe("coming back to the Movies tab", () => {
 });
 
 describe("the confirm bar", () => {
+  it("keeps a refused reveal focusable and inert", () => {
+    const { onConfirm } = renderReel({
+      phase: "settled",
+      canReveal: false,
+      revealTip: "It is Bea's turn.",
+    });
+
+    const confirm = screen.getByRole("button", { name: /^OK/ });
+    expect(confirm.hasAttribute("disabled")).toBe(false);
+    expect(confirm.getAttribute("aria-disabled")).toBe("true");
+    expect(confirm.getAttribute("aria-label")).toBe("OK, It is Bea's turn.");
+    expect(confirm.getAttribute("title")).toBe("It is Bea's turn.");
+    fireEvent.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it("runs out exactly when the server reveals", () => {
     renderReel();
     advance(SPIN_MS + 200);

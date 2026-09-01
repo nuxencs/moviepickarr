@@ -276,31 +276,30 @@ export function DrawReel({ spin, phase, canReveal, revealTip, onScrollDone, onCo
           <button type="button" className="drawreel__skip" ref={skipRef} onClick={skip}>
             Skip
           </button>
-        ) : canReveal ? (
-          <button type="button" className="btn btn--accent drawreel__ok" ref={confirmRef} onClick={onConfirm}>
+        ) : (
+          <button
+            type="button"
+            className="btn btn--accent drawreel__ok"
+            ref={confirmRef}
+            onClick={() => {
+              if (canReveal) onConfirm();
+            }}
+            aria-disabled={!canReveal || undefined}
+            aria-label={!canReveal ? `OK, ${revealTip}` : undefined}
+            title={!canReveal ? revealTip : undefined}
+          >
             {/* The fill counts down to the server's reveal deadline: its
                 duration comes from the spin, not the --dur-confirm token. Shown
                 only to the client that drew — the countdown is the drawer's cue;
                 a turn-eligible admin (or the member's other tab) still confirms,
                 just without the countdown they didn't start. */}
-            {spin.mine && (
+            {canReveal && spin.mine && (
               <span
                 className="drawreel__ok-fill"
                 style={{ animationDuration: `${confirmMs}ms` }}
                 aria-hidden="true"
               />
             )}
-            <span className="drawreel__ok-label">OK</span>
-          </button>
-        ) : (
-          // Spectators see the reveal control disabled (not hidden), naming the
-          // member whose turn it is — no countdown fill, since only they close it.
-          <button
-            type="button"
-            className="btn btn--accent drawreel__ok"
-            disabled
-            title={revealTip}
-          >
             <span className="drawreel__ok-label">OK</span>
           </button>
         )}

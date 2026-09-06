@@ -1,14 +1,39 @@
 import { redirect } from "@tanstack/react-router";
 
 import { ApiError } from "@/api/APIClient";
+import { clearPrincipalCache } from "@/api/principalCache";
+import { MeQueryOptions } from "@/api/queries";
 
-// Route-level auth guards. They run in a route's beforeLoad, before the page
-// renders, so the redirect decision is made off the resolved /me rather than
-// after the component has already painted. Both take the /me fetch as a thunk so
-// the decision logic is unit-testable without a router or a live session.
+import type { QueryClient } from "@tanstack/react-query";
 
 /**
- * Gate for the authenticated app layout. A resolved /me lets the page render; a
+ * First entry waits for a session. Later navigation uses the cached principal
+ * while a fresh check runs in the background. QueryClient shares an in-flight
+ * check across rapid navigation and cancels it when the principal cache clears.
+ */
+export function requireAppSession(queryClient: QueryClient, onExpired: () => void) {
+  const options = MeQueryOptions();
+  const cached = queryClient.getQueryData(options.queryKey);
+  const pending = queryClient.fetchQuery({ ...options, staleTime: 0 });
+  if (!cached) {
+    return requireSession(() => pending, () => clearPrincipalCache(queryClient));
+  }
+
+  const query = queryClient.getQueryCache().find({ queryKey: options.queryKey, exact: true });
+  void pending.catch(async (error: unknown) => {
+    if (!(error instanceof ApiError) || error.status !== 401) return;
+    if (queryClient.getQueryCache().find({ queryKey: options.queryKey, exact: true }) !== query) return;
+
+    // Remove this session synchronously so only one waiter handles expiry.
+    // A response from an old, removed query must not clear a new principal.
+    queryClient.removeQueries({ queryKey: options.queryKey, exact: true });
+    await clearPrincipalCache(queryClient);
+    onExpired();
+  });
+}
+
+/**
+ * Gate for an uncached session. A resolved /me lets the page render; a
  * 401 (no/expired session) redirects to /login before any 401-riddled chrome is
  * painted. A non-401 failure (network, 5xx) falls through so the page surfaces
  * its own load-error state instead of masquerading as logged-out.

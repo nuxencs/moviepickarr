@@ -7,7 +7,7 @@ import {
   stripSearchParams,
 } from "@tanstack/react-router";
 
-import { redirectIfSignedIn, requireSession } from "@/api/authGuard";
+import { redirectIfSignedIn, requireAppSession } from "@/api/authGuard";
 import { clearPrincipalCache } from "@/api/principalCache";
 import { MeQueryOptions } from "@/api/queries";
 import { queryClient } from "@/api/QueryClient";
@@ -31,12 +31,8 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootShell,
 });
 
-// The auth gates below run on every route entry, so they must read a *fresh*
-// session, not the 60s-stale /me the global staleTime hands back on tab nav (see
-// QueryClient). staleTime: 0 forces a revalidation each time, so a session that
-// died server-side redirects on the next navigation instead of trusting a cached
-// success and painting the chrome behind a wall of 401s. /me is a cheap session
-// lookup, not one of the heavy SQLite reads that staleTime exists to spare.
+// Login always checks the server before redirecting an already signed-in member.
+// App navigation instead revalidates a cached principal in the background.
 const resolveMe = (queryClient: QueryClient) =>
   queryClient.fetchQuery({ ...MeQueryOptions(), staleTime: 0 });
 
@@ -46,13 +42,12 @@ const resolveMe = (queryClient: QueryClient) =>
 const appLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "_app",
-  // Auth gate for every app page: a dead/absent session bounces to /login before
-  // the chrome paints behind a wall of 401s (see requireSession).
+  // First entry waits for auth; later switches do not wait on the network.
+  // A background 401 clears private state before replacing the current route.
   beforeLoad: ({ context }) =>
-    requireSession(
-      () => resolveMe(context.queryClient),
-      () => clearPrincipalCache(context.queryClient),
-    ),
+    requireAppSession(context.queryClient, () => {
+      void router.navigate({ to: "/login", replace: true });
+    }),
   component: AppLayout,
 });
 

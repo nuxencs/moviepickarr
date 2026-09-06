@@ -123,6 +123,23 @@ done | jq -s 'add as $x | [.[] | .results[] | select(.adult|not) |
   > internal/devfixtures/data/movies.json
 ```
 
+## Session checks during navigation
+
+The first authenticated page load waits for `/api/v1/auth/me`. Once a principal
+is cached, route changes use it immediately and check the session in the
+background. Rapid navigation shares an in-flight check. Login still waits for
+a fresh check before redirecting an already signed-in member.
+
+A background 401 clears private query and mutation data, then replaces the
+current route with Login. Cached content can remain visible until that check
+finishes. Network errors and 5xx responses do not sign the member out. Server
+authorization still applies to every protected request.
+
+The guard lives in `web/src/api/authGuard.ts`. Its focused tests cover cache
+clearing and late responses after a principal change. The production browser
+regressions in `web/e2e/navigation-session.spec.ts` hold the session response
+while checking navigation, expiry, and first-load behavior.
+
 ## Stack
 
 - Backend: [Go](https://go.dev) with the [Fiber](https://gofiber.io) web

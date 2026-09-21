@@ -1,59 +1,45 @@
-# moviepickarr
+<h1 align="center">moviepickarr</h1>
 
-moviepickarr is a small, self-hosted web app for a group of friends who choose
-movies together. Each member keeps a personal stash of movies, promotes up to 3 of
-them into a shared pool, and the app draws the next movie from the pool at
-random. Watched movies land in a shared library with stats on top.
+<p align="center">A self-hosted app for choosing your next movie together.</p>
 
-It is private by design: you run it yourself and share the link with your
-friends. There is no public signup.
-
-## How it works
-
-1. Stash: each member keeps a personal list of movies they want to watch.
-   Movies are added via [TMDB](https://www.themoviedb.org/) search, which also
-   supplies posters and details.
-2. Pool: each member promotes up to 3 movies from their stash into the shared
-   pool.
-3. Draw: the app draws one movie from the pool at random.
-4. Watched: mark the current draw as watched and it moves into the watched
-   library, together with who added it and the watch date.
-5. Stats: watch counts per member, activity by weekday and hour, top genres,
-   most-watched directors and actors.
-
-## The tabs
-
-- Movies: the current draw with its poster and details, the button that draws
-  the next movie, the shared pool, and the watched library (searchable by title
-  or by who added a movie). Every movie opens a detail view with its overview,
-  credits and a cast strip.
-- Members: everyone in the group, each with their pool slots and a searchable
-  stash. New movies are added here.
-- Stats: the watch history over a selectable time window. A member leaderboard,
-  weekday and hourly activity, hours watched, average rating, top genres,
-  most-watched directors and actors, and a release-decades timeline. The whole
-  page can be filtered by genre, release year or decade, adder, and specific
-  actors or crew.
-- Admin: member and invite management, TMDB configuration, connection testing,
-  manual refresh actions, and integration run history. Deployment environment
-  values remain authoritative over settings saved in the app.
-
-Movie data comes from TMDB and is fetched in the background: posters,
-backdrops, runtimes, ratings, genres, taglines, overviews, cast and crew.
-Movies without data yet show a placeholder poster.
+<div align="center">
+  <a href="docs/SCREENSHOTS.md">
+    <img src="docs/assets/movies.webp" alt="The Movies tab with the current draw, shared pool, and watched library" width="100%">
+  </a>
+</div>
 
 ## Documentation
 
-- [`docs/INSTALL.md`](docs/INSTALL.md): how to run it, with Docker or from
-  source, and all configuration options.
-- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md): developer setup and the tech
-  stack.
-- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): auth cutover and loosening a forward-auth
-  proxy in front of the app, plus integration-key recovery.
-- [`docs/admin-integrations.md`](docs/admin-integrations.md): Admin integration
-  settings, runtime behavior, API, and run history.
-- [`docs/PRODUCT.md`](docs/PRODUCT.md) and [`docs/DESIGN.md`](docs/DESIGN.md):
-  product and design decisions.
+- [Installation](docs/INSTALL.md): run with Docker or from source and configure
+  your instance.
+- [Screenshot gallery](docs/SCREENSHOTS.md): explore the Movies, Members, movie
+  details, and Stats views.
+- [Administration and integrations](docs/admin-integrations.md): configure TMDB
+  and Radarr, test connections, and review integration activity.
+- [Operations and recovery](docs/RUNBOOK.md): authentication, reverse proxy
+  changes, and integration-key recovery.
+- [Development](docs/DEVELOPMENT.md): developer setup, tests, and the tech stack.
+- [Product](docs/PRODUCT.md) and [design](docs/DESIGN.md): the decisions behind
+  the app.
+
+## Features
+
+- **Personal stashes**: search TMDB and keep your own list of movies to watch.
+- **Shared pool**: promote up to three movies from your stash into the group's
+  pool for the next draw.
+- **Random draws**: take turns drawing the next movie from the pool, with an
+  animated reel that reveals the result.
+- **Watched library**: keep a shared watch history with dates and who added each
+  movie. Browse posters or a list, and search by title or member.
+- **Movie details**: posters, backdrops, overviews, runtime, ratings, genres,
+  credits, and cast from TMDB.
+- **Watch stats**: explore member counts, watch activity, top genres, release
+  decades, and most-watched directors and actors. Filter by time range, genre,
+  release year, member, actors, or crew.
+- **Group administration**: manage members and invites, lock the pool, configure
+  integrations, and review run history.
+- **Private by design**: host it yourself and invite your friends. No public
+  signup.
 
 ## Credits
 

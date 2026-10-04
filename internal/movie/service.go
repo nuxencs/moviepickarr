@@ -122,7 +122,8 @@ type DrawConfig struct {
 	// StartTimer runs fn once after d. Nil uses time.AfterFunc.
 	StartTimer func(d time.Duration, fn func()) (stop func())
 	// OnRevealed runs exactly once per draw, after its next-up handoff commits.
-	// The server wires it to the movie:revealed broadcast.
+	// The server wires it to the movie:revealed and settings:next-up-changed
+	// broadcasts.
 	OnRevealed func(Reveal)
 	// OnRevealError observes a failed durable Reveal; the draw stays unrevealed.
 	OnRevealError func(error)
@@ -348,6 +349,8 @@ func (s *Service) poolLimitLocked(ctx context.Context, id int) (int, error) {
 // whether a real transition happened. During an unrevealed draw every pool tile
 // refuses alike, so a failed demotion cannot reveal which movie was drawn.
 func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
+	// Hold the lock through the status flip so a draw cannot select from a pool
+	// this demotion is about to change.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

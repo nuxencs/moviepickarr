@@ -127,7 +127,8 @@ func NewSqliteUserRepository(pool *db.Pool) *SqliteUserRepository {
 }
 
 func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.User, error) {
-	// Archived members are off the roster; only Restore reads them.
+	// Archived members are off the roster here. Roster, Remove, and Restore
+	// read them directly.
 	query := "SELECT id, name, created_at, updated_at FROM users WHERE id = ? AND archived_at IS NULL"
 
 	user, err := scanUser(d.pool.Read.QueryRowContext(ctx, query, id))

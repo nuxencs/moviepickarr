@@ -303,7 +303,9 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 	}
 
 	// The service moves atomically, so duplicates are no-ops and promotions
-	// cannot overshoot the cap. Only a real move (changed) broadcasts.
+	// cannot overshoot the cap. Only a real move (changed) broadcasts. The payload
+	// is ids only: clients refetch, so no fallible read runs inside the
+	// pool-state lock after the commit.
 	err = h.runPoolStateCommand(func() error {
 		poolLocked, err := h.settingsService.GetPoolLock(ctx)
 		if err != nil {

@@ -38,8 +38,8 @@ type OIDCTx struct {
 	IssuedAt int64 `json:"iat"`
 }
 
-// OIDCTxCodec seals the tx cookie with AES-256-GCM. The key is random per
-// process unless MPA_OIDC_TX_SECRET is set, so a restart drops in-flight flows.
+// OIDCTxCodec seals the tx cookie with AES-256-GCM. The default random key
+// drops in-flight flows on restart; MPA_OIDC_TX_SECRET keeps the key stable.
 type OIDCTxCodec struct {
 	aead cipher.AEAD
 	now  func() time.Time

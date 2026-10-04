@@ -374,8 +374,7 @@ func (r *enrichRunner) markProcessing(movieID int) integration.RunTrigger {
 	return claim.trigger
 }
 
-// finishAttempt atomically consumes one requested rerun (keeping the claim) or
-// releases the claim, so a concurrent Enqueue lands on exactly one side.
+// attemptFinish is the outcome of finishAttempt.
 type attemptFinish int
 
 const (
@@ -384,6 +383,8 @@ const (
 	attemptRerunQueued
 )
 
+// finishAttempt atomically consumes one requested rerun (keeping the claim) or
+// releases the claim, so a concurrent Enqueue lands on exactly one side.
 func (r *enrichRunner) finishAttempt(
 	movieID int,
 	allowRerun bool,

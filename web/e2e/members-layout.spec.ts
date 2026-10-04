@@ -130,4 +130,18 @@ test.describe("Members pushed layout", () => {
     await expect(page.locator('.mem[data-pushed="true"] .mem-pane')).toBeVisible();
     expect(await scrollOwners()).toEqual(["body"]);
   });
+
+  test("the push is a hard cut under reduced motion (#307)", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/users");
+    await expect(page.locator(".mem")).toBeVisible();
+
+    await page.locator('.mem-row[data-active="true"] .mem-tostash').click();
+    await expect(page.locator('.mem[data-pushed="true"] .mem-pane')).toBeVisible();
+    await expect(page.locator(".mem-rail-screen")).toBeHidden();
+    const transitions = await page
+      .locator(".mem-rail-screen, .mem-pane")
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).transitionProperty));
+    expect(transitions).toEqual(["none", "none"]);
+  });
 });

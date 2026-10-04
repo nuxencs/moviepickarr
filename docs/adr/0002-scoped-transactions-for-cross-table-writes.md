@@ -41,6 +41,11 @@ depends on this operation through a consumer-side interface.
 This is the scoped unit-of-work seam requested by #157. It completes the
 watch-and-rotate part of that issue.
 
+[ADR 0011](0011-rotate-next-up-on-reveal.md) moves the rotation from watch to
+Reveal. The handoff now commits with `RevealDrawAndAdvanceNextUp`, or with
+`WatchCurrentDraw` when an early watch is the Reveal. The scoped transaction
+pattern is unchanged.
+
 The movie-add flow from #157 does not need the cross-table seam. Its title,
 stash status, adder, and stable identity land in one `INSERT`, so a uniqueness
 failure leaves no partial row. The concrete repository wraps that insert and

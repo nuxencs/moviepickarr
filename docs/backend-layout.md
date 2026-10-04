@@ -160,9 +160,9 @@
   polymorphically); the repository ports in `internal/domain` remain the
   substitution seam for tests.
 - `internal/nextup`: owns next-up reads. `Get` self-seeds a fresh install with
-  the first active Turn participant. Rotation-on-watch lives in the atomic
-  movie-store transition below because the handoff and watched movie must
-  commit together.
+  the first active Turn participant. Rotation-on-reveal lives in the atomic
+  movie-store transitions below because the handoff and the Reveal must commit
+  together.
 - `internal/auth`: shared auth primitives. `token.go` is the opaque-token
   generator + SHA-256 storage hash; `password.go` is the argon2id wrapper;
   `session.go` is the `SessionManager` deep module over the session store:
@@ -233,15 +233,19 @@
   bound to the movie and draw generation; stale, duplicate, and post-shutdown
   calls do nothing.
   `RevealCurrentDraw` is the once-per-draw flip fired by the drawer's confirm or
-  the timer. An early watch performs the same flip before it clears the active
-  draw, but only after `WatchCurrentAndAdvanceNextUp` commits the watched movie
-  and next-up handoff. A failed transaction leaves `ActiveDraw` and its timer
-  intact and publishes no lifecycle event. All successful paths call the
-  `OnRevealed` hook exactly once. The HTTP handler's `drawCommandMu` serializes
-  draw, reveal, and watch from next-up
-  authorization through synchronous lifecycle event publication. Watch keeps that
-  command lock through next-up rotation, so an outgoing holder cannot start the next
-  draw with stale authorization. The server serializes `RevealAt`/`ServerNow` into
+  the timer. It commits the Reveal and next-up handoff together through
+  `RevealDrawAndAdvanceNextUp`. An early watch performs the same flip before it
+  clears the active draw, but only after `WatchCurrentDraw` commits the watched
+  movie and, because that watch is the Reveal, the next-up handoff. A watch of
+  an already revealed draw does not rotate. A failed transaction leaves
+  `ActiveDraw` and its timer intact and publishes no lifecycle event. All
+  successful paths call the `OnRevealed` hook exactly once with a `Reveal`
+  carrying the new next-up member, and the server broadcasts `movie:revealed`
+  then `settings:next-up-changed`. The HTTP handler's `drawCommandMu` serializes
+  draw, reveal, and watch from next-up authorization through synchronous
+  lifecycle event publication. A reveal or early watch keeps that command lock
+  through next-up rotation, so an outgoing holder cannot start the next command
+  with stale authorization. The server serializes `RevealAt`/`ServerNow` into
   every draw payload so clients
   time their confirm countdown off `revealAt − serverNow` (skew-immune) and broadcasts
   `movie:drawn` / `movie:revealed`. It also owns the pool *view*: `Pooled`,
@@ -306,10 +310,10 @@
   claims, retry outcomes, health warnings, and delivery retention.
 
 - `internal/repository/sqlite.go`: SQLite repository implementations. Its
-  `WatchCurrentAndAdvanceNextUp` store operation runs the conditional current
-  update, post-watch pool existence check, and optional handoff on one writer
-  transaction. It skips roster and raw next-up reads when no pooled movie
-  remains. See ADR 0002.
+  `RevealDrawAndAdvanceNextUp` and `WatchCurrentDraw` store operations commit
+  the Reveal or watched update and the optional next-up handoff on one writer
+  transaction. `WatchCurrentDraw` rotates only when the watch is the draw's
+  Reveal. See ADR 0002 and ADR 0011.
 - `internal/repository/movie_metadata.go`: `movie_metadata` repository (upsert / get / batch-get-by-ids / needs-enrichment).
 - `internal/repository/movie_enrichment.go`: guarded, transaction-bound
   identity + metadata + credits enrichment write.

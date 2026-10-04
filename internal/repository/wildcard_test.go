@@ -19,7 +19,7 @@ func revealedCurrentForWildcard(t *testing.T, e *userRemoveEnv, memberID int) *d
 	if err := e.movies.StartDraw(e.ctx, movie.ID, drawnAt, drawnAt.Add(time.Second), "drawer"); err != nil {
 		t.Fatalf("start draw: %v", err)
 	}
-	if err := e.movies.RevealDraw(e.ctx, movie.ID, drawnAt.Add(time.Second)); err != nil {
+	if _, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, movie.ID, drawnAt.Add(time.Second)); err != nil {
 		t.Fatalf("reveal draw: %v", err)
 	}
 	return movie
@@ -35,10 +35,11 @@ func TestWildcardWatchPreservesCurrentDrawAndNextUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	host := revealedCurrentForWildcard(t, e, first.ID)
+	// Set the turn after the Reveal, which already rotated it once.
 	if err := e.nextUp.Set(e.ctx, first.ID); err != nil {
 		t.Fatal(err)
 	}
-	host := revealedCurrentForWildcard(t, e, first.ID)
 
 	tmdbID := 550
 	selectedAt := time.Date(2026, 8, 25, 20, 0, 0, 0, time.UTC)
@@ -174,7 +175,7 @@ func TestWildcardRequiresRevealAndRespectsPoolLock(t *testing.T) {
 	if !errors.Is(err, domain.ErrDrawNotRevealed) {
 		t.Fatalf("start before Reveal error = %v", err)
 	}
-	if err := e.movies.RevealDraw(e.ctx, host.ID, time.Now().UTC()); err != nil {
+	if _, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, host.ID, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	_, err = e.movies.StartWildcard(e.ctx, member.ID, domain.WildcardSelection{ExpectedHostMovieID: host.ID, ExistingMovieID: &pooled.ID}, time.Now().UTC(), true)
@@ -201,7 +202,7 @@ func TestCurrentWatchWaitsForActiveWildcard(t *testing.T) {
 	if _, err := e.movies.StartWildcard(e.ctx, member.ID, domain.WildcardSelection{ExpectedHostMovieID: host.ID, ExistingMovieID: &stash.ID}, time.Now().UTC(), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC()); !errors.Is(err, domain.ErrActiveWildcard) {
+	if _, _, err := e.movies.WatchCurrentDraw(e.ctx, time.Now().UTC(), false); !errors.Is(err, domain.ErrActiveWildcard) {
 		t.Fatalf("watch Current with Active wildcard error = %v", err)
 	}
 	current, err := e.movies.GetCurrent(e.ctx)

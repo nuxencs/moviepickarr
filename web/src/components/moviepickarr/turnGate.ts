@@ -1,6 +1,7 @@
-// The next-up turn gate: who may run the draw → reveal → watch cycle. Mirrors
-// the backend requireNextUpOrAdmin rule (an admin, or the member whose turn it
-// is) so the board disables the three controls for everyone else instead of
+// The next-up turn gate: who may mark the current draw watched, draw, and reveal
+// that draw (the turn passes on reveal). Mirrors the backend
+// requireNextUpOrAdmin rule (an admin, or the member whose turn it is) so the
+// board disables the three controls for everyone else instead of
 // hiding them — the turn stays legible. The rule is a pure function of the
 // session actor and the next-up member, unit-tested without rendering; the hook
 // at the bottom wires it to the two queries.

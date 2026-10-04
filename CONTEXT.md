@@ -47,16 +47,17 @@ the watched history and stats ("Added by").
 _Avoid_: picker, picked by, owner
 
 **Next up**:
-The Turn participant whose turn it is to run the draw workflow: draw, reveal,
-and mark the current draw watched. Enforced, not just shown in the hero: only
-the next-up member (or an admin) can draw, reveal, or mark watched. The turn
-holds on one member across the whole draw → reveal → watch cycle and rotates to
-the next Turn participant on watch, but only when the pool still has movies left
-and more than one Turn participant exists. The server serializes these three
-commands from authorization through lifecycle event publication. A watch
-therefore owns the outgoing turn until rotation and `movie:watched` are
-published. The watched movie and next-up handoff commit in one transaction. A
-failed handoff leaves the current draw and turn unchanged for retry.
+The Turn participant whose turn it is to run the draw workflow: mark the
+previous Current draw watched, then draw and reveal the next one. Enforced, not
+just shown in the hero: only the next-up member (or an admin) can draw, reveal,
+or mark watched. The turn rotates to the next Turn participant on Reveal (the
+drawer's confirm, the auto-reveal deadline, or an early watch), when more than
+one Turn participant exists. It rotates even when the draw emptied the pool,
+because the next member still owes that watch. The server serializes these three
+commands from authorization through lifecycle event publication, so a reveal or
+early watch owns the outgoing turn until rotation and its events are published.
+The Reveal and next-up handoff commit in one transaction. A failed handoff
+leaves the draw unrevealed and the turn unchanged for retry.
 Changing the current Next up holder to Guest requires an explicit admin
 confirmation. The confirmed role change and handoff commit in one transaction.
 Promoting that Guest later makes them eligible again but does not restore the

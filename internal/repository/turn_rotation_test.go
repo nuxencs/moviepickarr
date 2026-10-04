@@ -9,7 +9,46 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-func TestWatchCurrentAndAdvanceNextUp_RotatesValidHolder(t *testing.T) {
+// startTestDraw pools a movie for adderID and draws it, so it holds the
+// concealed Acquisition a Reveal needs.
+func startTestDraw(t *testing.T, e *userRemoveEnv, title string, adderID int) *domain.Movie {
+	t.Helper()
+	movie, err := e.movies.Add(e.ctx, title, "pool", adderID)
+	if err != nil {
+		t.Fatalf("add pooled movie %q: %v", title, err)
+	}
+	drawnAt := time.Now().UTC().Truncate(time.Millisecond)
+	if err := e.movies.StartDraw(e.ctx, movie.ID, drawnAt, drawnAt.Add(time.Minute), "drawer"); err != nil {
+		t.Fatalf("StartDraw %q: %v", title, err)
+	}
+	return movie
+}
+
+func createTestMembers(t *testing.T, e *userRemoveEnv, names ...string) []*domain.User {
+	t.Helper()
+	members := make([]*domain.User, 0, len(names))
+	for _, name := range names {
+		member, err := e.users.Create(e.ctx, name)
+		if err != nil {
+			t.Fatalf("create member %q: %v", name, err)
+		}
+		members = append(members, member)
+	}
+	return members
+}
+
+func assertStoredNextUp(t *testing.T, e *userRemoveEnv, wantID int) {
+	t.Helper()
+	stored, err := e.nextUp.Get(e.ctx)
+	if err != nil {
+		t.Fatalf("get stored next up: %v", err)
+	}
+	if stored.ID != wantID {
+		t.Fatalf("stored next up = %d, want %d", stored.ID, wantID)
+	}
+}
+
+func TestRevealDrawAndAdvanceNextUp_RotatesValidHolder(t *testing.T) {
 	tests := []struct {
 		name       string
 		holder     int
@@ -22,212 +61,187 @@ func TestWatchCurrentAndAdvanceNextUp_RotatesValidHolder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := setupUserRemoveEnv(t)
-			members := make([]*domain.User, 0, 3)
-			for _, name := range []string{"Ana", "Ben", "Cai"} {
-				member, err := e.users.Create(e.ctx, name)
-				if err != nil {
-					t.Fatalf("create member %q: %v", name, err)
-				}
-				members = append(members, member)
-			}
+			members := createTestMembers(t, e, "Ana", "Ben", "Cai")
 			if err := e.nextUp.Set(e.ctx, members[tt.holder].ID); err != nil {
 				t.Fatalf("set next up: %v", err)
 			}
-			if _, err := e.movies.Add(e.ctx, "Heat", "current", members[0].ID); err != nil {
-				t.Fatalf("add current movie: %v", err)
-			}
-			if _, err := e.movies.Add(e.ctx, "Thief", "pool", members[0].ID); err != nil {
-				t.Fatalf("add pooled movie: %v", err)
-			}
+			drawn := startTestDraw(t, e, "Heat", members[0].ID)
 
-			_, next, changed, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC())
+			next, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, drawn.ID, time.Now().UTC())
 			if err != nil {
-				t.Fatalf("watch and rotate: %v", err)
+				t.Fatalf("reveal and rotate: %v", err)
 			}
-			if !changed || next == nil || next.ID != members[tt.wantHolder].ID {
-				t.Fatalf(
-					"handoff = changed=%v next=%+v, want member %d",
-					changed,
-					next,
-					members[tt.wantHolder].ID,
-				)
+			if next == nil || next.ID != members[tt.wantHolder].ID {
+				t.Fatalf("handoff = %+v, want member %d", next, members[tt.wantHolder].ID)
 			}
+			assertStoredNextUp(t, e, members[tt.wantHolder].ID)
 		})
 	}
 }
 
-func TestWatchCurrentAndAdvanceNextUp_SeedsThenRotatesFreshInstall(t *testing.T) {
+func TestRevealDrawAndAdvanceNextUp_SeedsThenRotatesFreshInstall(t *testing.T) {
 	e := setupUserRemoveEnv(t)
-	first, err := e.users.Create(e.ctx, "Ana")
-	if err != nil {
-		t.Fatalf("create first member: %v", err)
-	}
-	second, err := e.users.Create(e.ctx, "Ben")
-	if err != nil {
-		t.Fatalf("create second member: %v", err)
-	}
-	current, err := e.movies.Add(e.ctx, "Heat", "current", first.ID)
-	if err != nil {
-		t.Fatalf("add current movie: %v", err)
-	}
-	if _, err := e.movies.Add(e.ctx, "Thief", "pool", first.ID); err != nil {
-		t.Fatalf("add pooled movie: %v", err)
-	}
+	members := createTestMembers(t, e, "Ana", "Ben")
+	drawn := startTestDraw(t, e, "Heat", members[0].ID)
 
-	watchedAt := time.Date(2026, 7, 30, 20, 0, 0, 0, time.UTC)
-	watched, next, changed, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, watchedAt)
+	next, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, drawn.ID, time.Now().UTC())
 	if err != nil {
-		t.Fatalf("watch and rotate: %v", err)
+		t.Fatalf("reveal and rotate: %v", err)
 	}
-	if watched.ID != current.ID || watched.Status != "watched" || watched.WatchedAt == nil {
-		t.Fatalf("watched movie = %+v, want movie %d watched", watched, current.ID)
+	if next == nil || next.ID != members[1].ID {
+		t.Fatalf("handoff = %+v, want member %d", next, members[1].ID)
 	}
-	if !changed || next == nil || next.ID != second.ID {
-		t.Fatalf("handoff = changed=%v next=%+v, want member %d", changed, next, second.ID)
-	}
-
-	stored, err := e.nextUp.Get(e.ctx)
-	if err != nil {
-		t.Fatalf("get stored next up: %v", err)
-	}
-	if stored.ID != second.ID {
-		t.Fatalf("stored next up = %d, want %d", stored.ID, second.ID)
-	}
+	assertStoredNextUp(t, e, members[1].ID)
 }
 
-func TestWatchCurrentAndAdvanceNextUp_SkipsGuests(t *testing.T) {
+func TestRevealDrawAndAdvanceNextUp_SkipsGuests(t *testing.T) {
 	e := setupUserRemoveEnv(t)
-	first, err := e.users.Create(e.ctx, "Ana")
-	if err != nil {
-		t.Fatal(err)
-	}
-	guest, err := e.users.Create(e.ctx, "Guest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	last, err := e.users.Create(e.ctx, "Cai")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: guest.ID, Role: domain.RoleGuest}); err != nil {
+	members := createTestMembers(t, e, "Ana", "Guest", "Cai")
+	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: members[1].ID, Role: domain.RoleGuest}); err != nil {
 		t.Fatalf("set guest role: %v", err)
 	}
-	if err := e.nextUp.Set(e.ctx, first.ID); err != nil {
+	if err := e.nextUp.Set(e.ctx, members[0].ID); err != nil {
 		t.Fatalf("set next up: %v", err)
 	}
-	if _, err := e.movies.Add(e.ctx, "Heat", "current", first.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.movies.Add(e.ctx, "Thief", "pool", first.ID); err != nil {
-		t.Fatal(err)
-	}
+	drawn := startTestDraw(t, e, "Heat", members[0].ID)
 
-	_, next, changed, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC())
+	next, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, drawn.ID, time.Now().UTC())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reveal and rotate: %v", err)
 	}
-	if !changed || next == nil || next.ID != last.ID {
-		t.Fatalf("handoff = changed=%v next=%+v, want %d", changed, next, last.ID)
+	if next == nil || next.ID != members[2].ID {
+		t.Fatalf("handoff = %+v, want member %d", next, members[2].ID)
 	}
 }
 
-func TestWatchCurrentAndAdvanceNextUp_HandsArchivedTurnToFirstActiveMember(t *testing.T) {
+func TestRevealDrawAndAdvanceNextUp_HandsArchivedTurnToFirstActiveMember(t *testing.T) {
 	e := setupUserRemoveEnv(t)
-	departing, err := e.users.Create(e.ctx, "Departing")
-	if err != nil {
-		t.Fatalf("create departing member: %v", err)
-	}
-	firstActive, err := e.users.Create(e.ctx, "First active")
-	if err != nil {
-		t.Fatalf("create first active member: %v", err)
-	}
-	if _, err := e.users.Create(e.ctx, "Second active"); err != nil {
-		t.Fatalf("create second active member: %v", err)
-	}
+	members := createTestMembers(t, e, "Departing", "First active", "Second active")
+	departing, firstActive := members[0], members[1]
 	if err := e.nextUp.Set(e.ctx, departing.ID); err != nil {
 		t.Fatalf("set departing member next up: %v", err)
 	}
-	if _, err := e.movies.Add(e.ctx, "Heat", "current", departing.ID); err != nil {
-		t.Fatalf("add current movie: %v", err)
-	}
-	if _, err := e.movies.Add(e.ctx, "Thief", "pool", firstActive.ID); err != nil {
-		t.Fatalf("add pooled movie: %v", err)
-	}
+	drawn := startTestDraw(t, e, "Heat", departing.ID)
 	if outcome, err := e.users.Remove(e.ctx, departing.ID); err != nil || outcome != domain.OutcomeArchived {
 		t.Fatalf("archive departing member: outcome=%q err=%v", outcome, err)
 	}
 
-	_, next, changed, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC())
+	next, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, drawn.ID, time.Now().UTC())
 	if err != nil {
-		t.Fatalf("watch and rotate: %v", err)
+		t.Fatalf("reveal and rotate: %v", err)
 	}
-	if !changed || next == nil || next.ID != firstActive.ID {
-		t.Fatalf("handoff = changed=%v next=%+v, want first active member %d", changed, next, firstActive.ID)
+	if next == nil || next.ID != firstActive.ID {
+		t.Fatalf("handoff = %+v, want first active member %d", next, firstActive.ID)
 	}
 }
 
-func TestWatchCurrentAndAdvanceNextUp_KeepsTurnWhenPoolIsEmpty(t *testing.T) {
+// The next member still owes the watch of the last pooled movie, so an empty
+// pool does not hold the turn back.
+func TestRevealDrawAndAdvanceNextUp_RotatesWhenPoolIsEmpty(t *testing.T) {
 	e := setupUserRemoveEnv(t)
-	first, err := e.users.Create(e.ctx, "Ana")
-	if err != nil {
-		t.Fatalf("create first member: %v", err)
-	}
-	if _, err := e.users.Create(e.ctx, "Ben"); err != nil {
-		t.Fatalf("create second member: %v", err)
-	}
-	if err := e.nextUp.Set(e.ctx, first.ID); err != nil {
+	members := createTestMembers(t, e, "Ana", "Ben")
+	if err := e.nextUp.Set(e.ctx, members[0].ID); err != nil {
 		t.Fatalf("set next up: %v", err)
 	}
-	if _, err := e.movies.Add(e.ctx, "Heat", "current", first.ID); err != nil {
-		t.Fatalf("add current movie: %v", err)
+	drawn := startTestDraw(t, e, "Heat", members[0].ID)
+	if pooled, err := e.movies.CountByStatus(e.ctx, "pool"); err != nil || pooled != 0 {
+		t.Fatalf("pool after draw = %d, err=%v, want empty", pooled, err)
 	}
 
-	_, next, changed, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC())
+	next, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, drawn.ID, time.Now().UTC())
 	if err != nil {
-		t.Fatalf("watch without handoff: %v", err)
+		t.Fatalf("reveal and rotate: %v", err)
 	}
-	if changed || next != nil {
-		t.Fatalf("handoff = changed=%v next=%+v, want no change", changed, next)
+	if next == nil || next.ID != members[1].ID {
+		t.Fatalf("handoff = %+v, want member %d", next, members[1].ID)
 	}
-
-	stored, err := e.nextUp.Get(e.ctx)
-	if err != nil {
-		t.Fatalf("get stored next up: %v", err)
-	}
-	if stored.ID != first.ID {
-		t.Fatalf("stored next up = %d, want %d", stored.ID, first.ID)
-	}
+	assertStoredNextUp(t, e, members[1].ID)
 }
 
-func TestWatchCurrentAndAdvanceNextUp_KeepsTurnWithOneMember(t *testing.T) {
+func TestRevealDrawAndAdvanceNextUp_KeepsTurnWithOneMember(t *testing.T) {
 	e := setupUserRemoveEnv(t)
-	only, err := e.users.Create(e.ctx, "Only")
-	if err != nil {
-		t.Fatalf("create member: %v", err)
-	}
+	only := createTestMembers(t, e, "Only")[0]
 	if err := e.nextUp.Set(e.ctx, only.ID); err != nil {
 		t.Fatalf("set next up: %v", err)
 	}
-	if _, err := e.movies.Add(e.ctx, "Heat", "current", only.ID); err != nil {
-		t.Fatalf("add current movie: %v", err)
+	drawn := startTestDraw(t, e, "Heat", only.ID)
+
+	next, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, drawn.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("reveal without handoff: %v", err)
 	}
-	if _, err := e.movies.Add(e.ctx, "Thief", "pool", only.ID); err != nil {
-		t.Fatalf("add pooled movie: %v", err)
+	if next != nil {
+		t.Fatalf("handoff = %+v, want no change", next)
+	}
+	assertStoredNextUp(t, e, only.ID)
+}
+
+func TestRevealDrawAndAdvanceNextUp_RollsBackRevealWhenHandoffFails(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	members := createTestMembers(t, e, "Ana", "Ben")
+	if err := e.nextUp.Set(e.ctx, members[0].ID); err != nil {
+		t.Fatalf("set next up: %v", err)
+	}
+	drawn := startTestDraw(t, e, "Heat", members[0].ID)
+	if _, err := e.pool.Write.ExecContext(e.ctx, `
+		CREATE TRIGGER fail_next_up_rotation
+		BEFORE UPDATE ON next_up
+		BEGIN
+		    SELECT RAISE(ABORT, 'rotation unavailable');
+		END
+	`); err != nil {
+		t.Fatalf("create rotation failure trigger: %v", err)
 	}
 
-	_, next, changed, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC())
-	if err != nil {
-		t.Fatalf("watch without handoff: %v", err)
+	if _, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, drawn.ID, time.Now().UTC()); err == nil {
+		t.Fatal("Reveal succeeded despite handoff failure")
 	}
-	if changed || next != nil {
-		t.Fatalf("handoff = changed=%v next=%+v, want no change", changed, next)
+	if _, _, _, _, found, err := e.movies.ConcealedCurrentDraw(e.ctx); err != nil || !found {
+		t.Fatalf("failed handoff exposed the draw: found=%v err=%v", found, err)
+	}
+	assertStoredNextUp(t, e, members[0].ID)
+}
+
+// Watching rotates only when it is also the draw's Reveal. A revealed draw
+// already handed the turn on.
+func TestWatchCurrentDraw_RotatesOnlyWhenItRevealsDraw(t *testing.T) {
+	tests := []struct {
+		name        string
+		revealsDraw bool
+		wantHolder  int
+	}{
+		{name: "already revealed", revealsDraw: false, wantHolder: 0},
+		{name: "reveals draw", revealsDraw: true, wantHolder: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupUserRemoveEnv(t)
+			members := createTestMembers(t, e, "Ana", "Ben")
+			if err := e.nextUp.Set(e.ctx, members[0].ID); err != nil {
+				t.Fatalf("set next up: %v", err)
+			}
+			drawn := startTestDraw(t, e, "Heat", members[0].ID)
+
+			watched, next, err := e.movies.WatchCurrentDraw(e.ctx, time.Now().UTC().Add(time.Second), tt.revealsDraw)
+			if err != nil {
+				t.Fatalf("watch: %v", err)
+			}
+			if watched.ID != drawn.ID || watched.Status != "watched" || watched.WatchedAt == nil {
+				t.Fatalf("watched movie = %+v, want movie %d watched", watched, drawn.ID)
+			}
+			if tt.revealsDraw != (next != nil) {
+				t.Fatalf("handoff = %+v, want handoff=%v", next, tt.revealsDraw)
+			}
+			assertStoredNextUp(t, e, members[tt.wantHolder].ID)
+		})
 	}
 }
 
-func TestWatchCurrentAndAdvanceNextUp_RequiresCurrentMovie(t *testing.T) {
+func TestWatchCurrentDraw_RequiresCurrentMovie(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 
-	_, _, _, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, time.Now().UTC())
+	_, _, err := e.movies.WatchCurrentDraw(e.ctx, time.Now().UTC(), false)
 	if !errors.Is(err, domain.ErrNoCurrentDraw) {
 		t.Fatalf("watch without current movie: got %v, want ErrNoCurrentDraw", err)
 	}
@@ -393,8 +407,8 @@ func TestStartDrawSnapshotsConcealedAcquisitionAndDefersWebhookUntilReveal(t *te
 		t.Fatalf("create delivery failure trigger: %v", err)
 	}
 	revealedAtTime := revealAt.Add(time.Second)
-	if err := e.movies.RevealDraw(e.ctx, movie.ID, revealedAtTime); err == nil {
-		t.Fatal("RevealDraw succeeded despite webhook outbox failure")
+	if _, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, movie.ID, revealedAtTime); err == nil {
+		t.Fatal("RevealDrawAndAdvanceNextUp succeeded despite webhook outbox failure")
 	}
 	if err := e.pool.Read.QueryRowContext(e.ctx, `
 		SELECT revealed_at, action_version
@@ -410,10 +424,10 @@ func TestStartDrawSnapshotsConcealedAcquisitionAndDefersWebhookUntilReveal(t *te
 		t.Fatalf("drop delivery failure trigger: %v", err)
 	}
 
-	if err := e.movies.RevealDraw(e.ctx, movie.ID, revealedAtTime); err != nil {
+	if _, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, movie.ID, revealedAtTime); err != nil {
 		t.Fatalf("RevealDraw: %v", err)
 	}
-	if err := e.movies.RevealDraw(e.ctx, movie.ID, revealedAtTime.Add(time.Second)); err != nil {
+	if _, err := e.movies.RevealDrawAndAdvanceNextUp(e.ctx, movie.ID, revealedAtTime.Add(time.Second)); err != nil {
 		t.Fatalf("idempotent RevealDraw: %v", err)
 	}
 	var (
@@ -516,7 +530,7 @@ func TestWatchRollsBackMovieWhenEarlyRevealFails(t *testing.T) {
 		t.Fatalf("create Reveal failure trigger: %v", err)
 	}
 
-	if _, _, _, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, drawnAt.Add(2*time.Second)); err == nil {
+	if _, _, err := e.movies.WatchCurrentDraw(e.ctx, drawnAt.Add(2*time.Second), true); err == nil {
 		t.Fatal("Watch succeeded despite early Reveal failure")
 	}
 	stored, err := e.movies.FindByID(e.ctx, movie.ID)
@@ -558,8 +572,8 @@ func TestWatchRevealsAcquisitionAndQueuesWebhook(t *testing.T) {
 	}
 
 	watchedAt := drawnAt.Add(10 * time.Second)
-	if _, _, _, err := e.movies.WatchCurrentAndAdvanceNextUp(e.ctx, watchedAt); err != nil {
-		t.Fatalf("WatchCurrentAndAdvanceNextUp: %v", err)
+	if _, _, err := e.movies.WatchCurrentDraw(e.ctx, watchedAt, true); err != nil {
+		t.Fatalf("WatchCurrentDraw: %v", err)
 	}
 	var (
 		revealedAt    sql.NullInt64

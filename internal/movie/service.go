@@ -31,13 +31,14 @@ const (
 	maxAutoRevealRetries = 3
 )
 
-// watchCurrentAndAdvanceNextUpStore is the consumer-side port for the one
-// lifecycle transition whose durable state crosses movies and next_up.
-type watchCurrentAndAdvanceNextUpStore interface {
-	WatchCurrentAndAdvanceNextUp(
+// watchCurrentDrawStore is the consumer-side port for watching the Current
+// draw. A watch that reveals the draw also commits the next-up handoff.
+type watchCurrentDrawStore interface {
+	WatchCurrentDraw(
 		ctx context.Context,
 		watchedAt time.Time,
-	) (watched *domain.Movie, next *domain.User, changed bool, err error)
+		revealsDraw bool,
+	) (watched *domain.Movie, next *domain.User, err error)
 }
 
 // editMovieStore is the transaction-bound edit command. Ownership, watched
@@ -55,9 +56,9 @@ type editMovieStore interface {
 
 // drawLifecycleStore owns the durable half of Draw and Reveal. StartDraw commits
 // the movie's pool -> current transition and its concealed Pending acquisition
-// together. RevealDraw persists the visibility boundary before any in-memory
-// flip or client publication. ConcealedCurrentDraw restores a draw whose process
-// was restarted before Reveal.
+// together. RevealDrawAndAdvanceNextUp persists the visibility boundary and the
+// next-up handoff before any in-memory flip or client publication.
+// ConcealedCurrentDraw restores a draw whose process was restarted before Reveal.
 type drawLifecycleStore interface {
 	StartDraw(
 		ctx context.Context,
@@ -65,7 +66,7 @@ type drawLifecycleStore interface {
 		drawnAt, revealAt time.Time,
 		drawClientID string,
 	) error
-	RevealDraw(ctx context.Context, movieID int, revealedAt time.Time) error
+	RevealDrawAndAdvanceNextUp(ctx context.Context, movieID int, revealedAt time.Time) (next *domain.User, err error)
 	ConcealedCurrentDraw(
 		ctx context.Context,
 	) (movieID int, drawnAt, revealAt time.Time, drawClientID string, found bool, err error)
@@ -86,7 +87,7 @@ type wildcardLifecycleStore interface {
 
 type movieStore interface {
 	domain.MovieRepo
-	watchCurrentAndAdvanceNextUpStore
+	watchCurrentDrawStore
 	editMovieStore
 	drawLifecycleStore
 	wildcardLifecycleStore
@@ -115,6 +116,13 @@ type ActiveDraw struct {
 	Revealed bool
 }
 
+// Reveal is one committed Reveal: the draw it flipped, plus the member the turn
+// passed to (nil when the turn stayed put).
+type Reveal struct {
+	ActiveDraw
+	NextUp *domain.User
+}
+
 // DrawResult is the complete publication snapshot of one successful draw.
 // Candidates is the exact pool that was eligible before the winner became
 // current. ActiveDraw is copied from the same lock boundary, so callers never
@@ -139,9 +147,10 @@ type DrawConfig struct {
 	// deadline by hand.
 	StartTimer func(d time.Duration, fn func()) (stop func())
 	// OnRevealed observes every reveal flip (manual confirm, auto-reveal, or an
-	// early watch) exactly once per draw. The server wires it to the
-	// movie:revealed broadcast so every client closes its reel off one frame.
-	OnRevealed func(ActiveDraw)
+	// early watch) exactly once per draw, after its next-up handoff commits. The
+	// server wires it to the movie:revealed and settings:next-up-changed
+	// broadcasts so every client closes its reel off one frame.
+	OnRevealed func(Reveal)
 	// OnRevealError observes a failed durable Reveal. The active draw stays
 	// unrevealed and no OnRevealed callback runs. Nil is allowed.
 	OnRevealError func(error)
@@ -787,27 +796,27 @@ func (s *Service) StartAutoReveal(movieID int, generation uint64) {
 	s.armAutoRevealLocked(generation)
 }
 
-// MarkCurrentAsWatchedAndAdvanceNextUp persists the watched movie and next-up
-// handoff atomically. The active draw stays untouched until that transaction
-// commits, so a failed handoff remains retryable and emits no reveal.
-func (s *Service) MarkCurrentAsWatchedAndAdvanceNextUp(
-	ctx context.Context,
-) (watched *domain.Movie, next *domain.User, changed bool, err error) {
+// MarkCurrentAsWatched persists the watched movie. Watching an unrevealed draw
+// is also its Reveal, so that path commits the next-up handoff in the same
+// transaction. The active draw stays untouched until that transaction commits,
+// so a failed watch remains retryable and emits no reveal.
+func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error) {
 	// Hold the draw mutex across the durable transition and its in-memory
 	// counterpart. The timer may wait here, but can never reveal a transaction
 	// that later rolls back.
 	s.mu.Lock()
-	watched, next, changed, err = s.movieRepo.WatchCurrentAndAdvanceNextUp(ctx, time.Now().UTC())
+	revealsDraw := s.activeDraw != nil && !s.activeDraw.Revealed
+	watched, next, err := s.movieRepo.WatchCurrentDraw(ctx, time.Now().UTC(), revealsDraw)
 	if err != nil {
 		s.mu.Unlock()
-		return nil, nil, false, err
+		return nil, err
 	}
 
 	revealed := s.finishWatchLocked()
 	s.mu.Unlock()
 
-	s.notifyWatchReveal(revealed)
-	return watched, next, changed, nil
+	s.notifyWatchReveal(revealed, next)
+	return watched, nil
 }
 
 // finishWatchLocked applies the process-local half of a committed watch.
@@ -826,9 +835,9 @@ func (s *Service) finishWatchLocked() *ActiveDraw {
 	return revealed
 }
 
-func (s *Service) notifyWatchReveal(revealed *ActiveDraw) {
+func (s *Service) notifyWatchReveal(revealed *ActiveDraw, next *domain.User) {
 	if revealed != nil && s.drawCfg.OnRevealed != nil {
-		s.drawCfg.OnRevealed(*revealed)
+		s.drawCfg.OnRevealed(Reveal{ActiveDraw: *revealed, NextUp: next})
 	}
 }
 
@@ -889,7 +898,8 @@ func (s *Service) revealActive(ctx context.Context, gen uint64, requireGen bool)
 	// The durable boundary comes first. If it fails, the draw stays held and
 	// clients receive no Reveal publication. A failed auto-reveal retires its
 	// spent one-shot timer and schedules a bounded retry.
-	if err := s.movieRepo.RevealDraw(ctx, s.activeDraw.MovieID, time.Now().UTC()); err != nil {
+	next, err := s.movieRepo.RevealDrawAndAdvanceNextUp(ctx, s.activeDraw.MovieID, time.Now().UTC())
+	if err != nil {
 		if requireGen {
 			s.retryAutoRevealLocked(gen)
 		}
@@ -903,7 +913,7 @@ func (s *Service) revealActive(ctx context.Context, gen uint64, requireGen bool)
 	// Notify outside the lock: OnRevealed re-enters broker/handler code.
 	s.mu.Unlock()
 	if s.drawCfg.OnRevealed != nil {
-		s.drawCfg.OnRevealed(ap)
+		s.drawCfg.OnRevealed(Reveal{ActiveDraw: ap, NextUp: next})
 	}
 	return ap, true, nil
 }

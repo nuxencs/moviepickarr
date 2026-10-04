@@ -162,9 +162,10 @@ func TestWildcardLifecycle_AnyMemberPreservesCurrentAndTurn(t *testing.T) {
 	if err != nil || current.ID != drawn.ID {
 		t.Fatalf("current after wildcard = %+v, err=%v, want %d", current, err, drawn.ID)
 	}
+	// The Reveal already passed the turn to Second; the Wildcard watch keeps it.
 	next, err := h.nextUpService.Get(ctx)
-	if err != nil || next.ID != first.ID {
-		t.Fatalf("next up after wildcard = %+v, err=%v, want %d", next, err, first.ID)
+	if err != nil || next.ID != second.ID {
+		t.Fatalf("next up after wildcard = %+v, err=%v, want %d", next, err, second.ID)
 	}
 
 	getResp := doAs(t, app, httptest.NewRequest(http.MethodGet, "/api/v1/movies/wildcard", nil), first.ID, "member")

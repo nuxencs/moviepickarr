@@ -128,7 +128,7 @@ func (e *radarrRepositoryTestEnv) reveal(t *testing.T, acquisitionID int64) {
 	if err != nil {
 		t.Fatalf("get concealed acquisition: %v", err)
 	}
-	if err := e.base.movies.RevealDraw(
+	if _, err := e.base.movies.RevealDrawAndAdvanceNextUp(
 		e.base.ctx,
 		acquisition.MovieID,
 		e.now.Add(17*time.Second),
@@ -880,7 +880,7 @@ func TestRadarrDueAcquisitionsRotatesRowsWithoutNextCheckTime(t *testing.T) {
 		).Scan(&acquisitionID); err != nil {
 			t.Fatalf("read %s acquisition: %v", title, err)
 		}
-		if err := e.base.movies.RevealDraw(e.base.ctx, movie.ID, drawnAt.Add(17*time.Second)); err != nil {
+		if _, err := e.base.movies.RevealDrawAndAdvanceNextUp(e.base.ctx, movie.ID, drawnAt.Add(17*time.Second)); err != nil {
 			t.Fatalf("reveal %s: %v", title, err)
 		}
 		selected, err := e.radarr.SelectAcquisitionPreset(

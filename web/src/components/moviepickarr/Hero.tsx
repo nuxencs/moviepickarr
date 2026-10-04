@@ -117,7 +117,7 @@ export function Hero() {
   const wildcardStateKnown = wildcard !== undefined && !wildcardQuery.isError;
   const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());
   // The board-level turn gate: whether this viewer (admin, or the next-up
-  // member) may run the draw → reveal → watch cycle. Drives the disabled +
+  // member) may run the watch → draw → reveal turn. Drives the disabled +
   // tooltip treatment on the action buttons and the reel's reveal control.
   const gate = useTurnGate();
 

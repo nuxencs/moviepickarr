@@ -419,6 +419,58 @@ func seedPoolAndDraw(t *testing.T, app *fiber.App, movieRepo *repository.SqliteM
 	}
 }
 
+// The auto-reveal deadline has no requesting member, but it still ends the
+// drawer's turn: clients hear the Reveal, then the handoff.
+func TestAutoRevealPassesTurnAndPublishesHandoff(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+	first, err := userRepo.Create(ctx, "First")
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	second, err := userRepo.Create(ctx, "Second")
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	for _, title := range []string{"Drive", "Collateral"} {
+		if _, err := movieRepo.Add(ctx, title, "pool", first.ID); err != nil {
+			t.Fatalf("seed pool: %v", err)
+		}
+	}
+
+	timer := &injectedAutoRevealTimer{started: make(chan func(), 1)}
+	h.movieService.Close()
+	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
+		StartTimer: timer.start,
+		OnRevealed: revealBroadcaster(h.broker),
+	})
+
+	resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"first"}`), first.ID, "member")
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("draw status = %d, want 200", resp.StatusCode)
+	}
+	client, _ := h.broker.Subscribe()
+	t.Cleanup(func() { h.broker.Unsubscribe(client) })
+
+	(<-timer.started)()
+
+	var events []event
+	for len(client) > 0 {
+		events = append(events, <-client)
+	}
+	if len(events) != 2 || events[0].Type != "movie:revealed" || events[1].Type != "settings:next-up-changed" {
+		t.Fatalf("events after auto-reveal = %+v, want movie:revealed then settings:next-up-changed", events)
+	}
+	if turn, ok := events[1].Data.(map[string]any); !ok || turn["id"] != second.ID {
+		t.Fatalf("handoff payload = %+v, want member %d", events[1].Data, second.ID)
+	}
+	if up, err := h.nextUpService.Get(ctx); err != nil || up.ID != second.ID {
+		t.Fatalf("next up after auto-reveal = %+v, err=%v, want %d", up, err, second.ID)
+	}
+}
+
 type injectedAutoRevealTimer struct {
 	started chan func()
 	starts  int
@@ -793,7 +845,7 @@ func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) 
 		t.Fatalf("watch status = %d, want 500", resp.StatusCode)
 	}
 	logged := logOutput.String()
-	if !strings.Contains(logged, "watching the current movie and advancing next up failed") {
+	if !strings.Contains(logged, "watching the current movie failed") {
 		t.Fatalf("watch failure log missing operation: %q", logged)
 	}
 	if !strings.Contains(logged, "forced next-up rotation failure") {

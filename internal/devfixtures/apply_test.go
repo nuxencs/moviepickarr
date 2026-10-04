@@ -3,6 +3,8 @@ package devfixtures
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -182,40 +184,66 @@ func TestIsEmpty(t *testing.T) {
 	}
 }
 
-func TestWipeResetsToEmptyAndReseedsIdentically(t *testing.T) {
+// A reset must rebuild the schema, not only the rows. A local file can carry
+// objects from an unmerged migration that reused a version number, and the
+// version-only migration ledger never repairs them.
+func TestRemoveDBDropsSchemaDrift(t *testing.T) {
 	ctx := context.Background()
-	pool := migratedPool(t)
-	now := time.Now()
+	path := filepath.Join(t.TempDir(), "drifted.db")
 
-	applyRealPlan(t, pool, now)
-
-	tx, err := pool.Write.BeginTx(ctx, nil)
+	pool, err := db.OpenSQLite(path)
 	if err != nil {
-		t.Fatalf("begin: %v", err)
+		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := Wipe(ctx, tx); err != nil {
-		_ = tx.Rollback()
-		t.Fatalf("wipe: %v", err)
+	if err := db.RunMigrations(ctx, pool.Write); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("commit: %v", err)
+	applyRealPlan(t, pool, time.Now())
+	for _, stmt := range []string{
+		"CREATE TABLE stray_draft (id INTEGER PRIMARY KEY)",
+		"DROP VIEW turn_participants",
+	} {
+		if _, err := pool.Write.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("drift (%s): %v", stmt, err)
+		}
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 
-	empty, err := IsEmpty(ctx, pool.Read)
+	if err := RemoveDB(path); err != nil {
+		t.Fatalf("RemoveDB: %v", err)
+	}
+	for _, f := range []string{path, path + "-wal", path + "-shm"} {
+		if _, err := os.Stat(f); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s still exists after RemoveDB (stat err %v)", f, err)
+		}
+	}
+	if err := RemoveDB(path); err != nil {
+		t.Fatalf("RemoveDB on a missing file: %v", err)
+	}
+
+	fresh, err := db.OpenSQLite(path)
 	if err != nil {
-		t.Fatalf("IsEmpty: %v", err)
+		t.Fatalf("reopen: %v", err)
 	}
-	if !empty {
-		t.Fatal("wipe left rows behind")
+	t.Cleanup(func() { _ = fresh.Close() })
+	if err := db.RunMigrations(ctx, fresh.Write); err != nil {
+		t.Fatalf("migrate fresh: %v", err)
 	}
-
-	// Reseed after wipe: ids restart from 1 because the sequence was reset.
-	applyRealPlan(t, pool, now)
-	var minID int
-	if err := pool.Read.QueryRowContext(ctx, "SELECT MIN(id) FROM users").Scan(&minID); err != nil {
-		t.Fatalf("min id: %v", err)
+	var stray, view int
+	if err := fresh.Read.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM sqlite_master WHERE name = 'stray_draft'),
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'view' AND name = 'turn_participants')
+	`).Scan(&stray, &view); err != nil {
+		t.Fatalf("read schema: %v", err)
 	}
-	if minID != 1 {
-		t.Errorf("first member id = %d after reseed, want 1 (sequence not reset)", minID)
+	if stray != 0 || view != 1 {
+		t.Fatalf("fresh schema: stray_draft=%d turn_participants=%d, want 0 and 1", stray, view)
+	}
+	empty, err := IsEmpty(ctx, fresh.Read)
+	if err != nil || !empty {
+		t.Fatalf("fresh DB empty = %v (err %v), want true", empty, err)
 	}
 }

@@ -3,7 +3,9 @@ package devfixtures
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"moviepickarr/internal/auth"
@@ -30,31 +32,15 @@ func IsEmpty(ctx context.Context, q querier) (bool, error) {
 	return n == 0, nil
 }
 
-// Wipe clears all developer data inside tx so a reset reloads from empty.
-//
-// Deletes run child-before-parent because foreign_keys is ON and movies.added_by
-// is ON DELETE RESTRICT (deleting a member with movies would otherwise error).
-// The autoincrement high-water marks for users and movies are reset too, so a
-// reseed always produces the same ids: the determinism the fixtures promise.
-// The next_up singleton row is kept (its user_id is nulled) and pool_locked is
-// left for Apply to set, matching the post-migration baseline.
-func Wipe(ctx context.Context, tx *sql.Tx) error {
-	stmts := []string{
-		"DELETE FROM movie_credits",
-		"DELETE FROM movie_metadata",
-		"DELETE FROM movies",
-		"DELETE FROM sessions",
-		"DELETE FROM invites",
-		"DELETE FROM oidc_identities",
-		"DELETE FROM local_accounts",
-		"UPDATE next_up SET user_id = NULL WHERE id = 1",
-		"DELETE FROM users",
-		"DELETE FROM people",
-		"DELETE FROM sqlite_sequence WHERE name IN ('users', 'movies')",
-	}
-	for _, s := range stmts {
-		if _, err := tx.ExecContext(ctx, s); err != nil {
-			return fmt.Errorf("wipe (%s): %w", s, err)
+// RemoveDB deletes the SQLite file at path and its -wal and -shm sidecars, so
+// a reset migrates a new file. Wiping rows instead would keep schema drift: the
+// migration ledger records only version numbers, so objects from a draft that
+// reused a number are never repaired. Missing files are not an error. The
+// .integration.key file is kept.
+func RemoveDB(path string) error {
+	for _, f := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", f, err)
 		}
 	}
 	return nil

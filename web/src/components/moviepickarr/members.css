@@ -514,8 +514,6 @@
   .mem-wallbox { --mem-headh: 77px; }
 }
 
-/* ---- the push, below 761 (Members.styles.test.ts slices on this banner) */
-
 /* Below 761px two columns become two screens (#236): the rail, and the
    member's stash pushed over it by `stash` in the URL. The screen comes from
    the media query and data-pushed, never a JS width; UsersTab mirrors the
@@ -728,8 +726,6 @@
     display: none;
   }
 }
-
-/* ---- the loading skeleton (Members.styles.test.ts slices on this banner) */
 
 /* Skeleton-only rules (#239). The skeleton renders the page's own
    containers, so everything above already applies. */

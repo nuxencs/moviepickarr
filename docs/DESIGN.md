@@ -1128,7 +1128,8 @@ What each does:
   navigation, which is the second thing `UsersTab` reads the media query for.
 - **900** — navigation moves to a fixed **bottom tab bar** (below); the stat strip drops
   6 columns → 3, and the stats two-column sections (weekday | hourly, genres | decades)
-  collapse to one.
+  collapse to one. The Admin index becomes a horizontal strip above the content. It
+  uses `not all and (min-width: 901px)` for the same fractional-width reason as 760.
 
 **Large screens.** The UI keeps its normal type, control, and spacing scale. Real surfaces
 grow instead. `--page-max` grows the shell, nav, and hero continuously from 1240px to a

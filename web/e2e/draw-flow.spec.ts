@@ -20,6 +20,15 @@ async function takeTurn(page: Page) {
 
 /** Hero height and where its actions sit at desktop, both phone tiers, and 320px. A pick must change neither (#305, #357). */
 async function heroGeometry(page: Page) {
+  // The reveal entrance translates the actions for about a second, and boundingBox includes transforms.
+  await page.locator(".hero").evaluate((hero) =>
+    Promise.all(
+      hero
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
   const geometry: Record<number, { height: number; actionsTop: number }> = {};
   for (const width of [1280, 430, 390, 320]) {
     await page.setViewportSize({ width, height: 720 });

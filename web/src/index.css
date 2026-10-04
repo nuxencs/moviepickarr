@@ -25,8 +25,8 @@
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
-  /* easeOutCubic: easeOutQuad lands abruptly, an expo stalls a long spin. Keep in step
-     with DrawReel.tsx's resume math (1 - (1-t)^3). */
+  /* easeOutCubic: easeOutQuad lands abruptly, an expo stalls a long spin. drawSpin.ts
+     parses this; keep its no-DOM fallback in step. */
   --ease-reel: cubic-bezier(0.33, 1, 0.68, 1);
 
   /* duration: fast = pointer, base = state + overlays, slow = load + charts */
@@ -35,7 +35,7 @@
   --dur-slow: 0.4s;
   --dur-reveal: 0.6s;
   --dur-spin: 6.5s; /* timed to land on the jingle's payoff */
-  --dur-confirm: 10s; /* read by DrawReel's auto-reveal timer */
+  --dur-confirm: 10s; /* default OK-fill length; DrawReel sets the real one from revealAt */
   --dur: var(--dur-base); /* legacy alias; prefer the scale above */
   --stagger: 0.055s; /* per-index step for cascaded entrances */
   --poster-zoom: 1.06;
@@ -730,7 +730,7 @@
     transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
   .drawreel__skip:hover { color: #fff; background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.34); }
-  /* The fill is the --dur-confirm countdown; DrawReel auto-confirms off the same token. */
+  /* The fill counts down to the server's reveal deadline (inline duration from DrawReel). */
   .drawreel__ok { position: relative; overflow: hidden; min-width: 132px; justify-content: center; }
   .drawreel__ok-fill {
     position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
@@ -964,7 +964,7 @@
   .movietile:hover .movietile__title,
   .movietile:focus-visible .movietile__title { color: var(--accent); }
 
-  /* useFlipRail sets data-flip-enter/exit and glides survivors with inline transforms. */
+  /* useFlipRail sets data-flip-enter and the glide transforms; callers set data-flip-exit. */
   .movierail .movietile[data-flip-enter],
   .peoplerail .peoplecard[data-flip-enter],
   .bar-rows .barrow[data-flip-enter],

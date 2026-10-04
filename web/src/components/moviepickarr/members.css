@@ -24,8 +24,8 @@
 }
 .mem__shell--with-head {
   /* The 30px section head plus its 22px margin, which sit inside the
-     fixed-height board. Only loaded rail screens own the head; the skeleton
-     has none. */
+     fixed-height board. Only loaded rail screens hold the head inside the
+     shell; the skeleton's head sits above it. */
   --mem-head-space: 52px;
 }
 .mem-rail-screen,

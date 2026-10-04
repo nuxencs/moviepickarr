@@ -47,8 +47,8 @@ export interface MovieDetail extends MovieTile {
     drawnAt?: string;
     revealAt?: string;
     serverNow?: string;
-    // Only the drawing client shows the confirm button. revealed lets a reload after
-    // the reveal skip the reel (see drawSpin).
+    // drawClientId decides which browser shows the confirm countdown fill. revealed
+    // lets a reload after the reveal skip the reel (see drawMachine).
     drawClientId?: string;
     revealed?: boolean;
     // Modal-only, optional while enrichment is pending.

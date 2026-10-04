@@ -384,8 +384,9 @@ export function MovieModal({
 
                   <div className="moviemodal__credits moviemodal__by">
                     <span>
-                      {/* Replace, as the chips do (#238). Archived adders have
-                          no board to link. */}
+                      {/* Replace, as the chips do (#238): a push would leave Back
+                          on an entry with no modal. Archived adders have no
+                          board to link. */}
                       Added by{" "}
                       {m.addedByArchived ? (
                         <span className="moviemodal__person">{m.addedByName}</span>

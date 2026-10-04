@@ -1,5 +1,5 @@
-/* Anonymous per-browser id sent with a draw; only the initiator shows the reel's
-   confirm button. Kept in localStorage so a mid-confirm reload keeps that button. */
+/* Anonymous per-browser id sent with a draw. It decides spin.mine, so only the drawing
+   browser shows the countdown fill; localStorage keeps it across a mid-confirm reload. */
 
 const KEY = "mp-client-id";
 

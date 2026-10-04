@@ -13,41 +13,26 @@ import { lockPageScroll } from "@/lib/scrollPolicy";
 
 interface ModalProps {
   onClose: () => void;
-  /** Accessible name matching the dialog's visible heading. */
   label: string;
   /**
-   * The parent's intent. Flipping it to false starts the exit motion, with
-   * `onClose` following once the motion ends. Only a modal whose open-ness
-   * lives outside React needs it (the movie modal, which reads a history
-   * entry); a dialog the parent mounts and unmounts leaves it alone.
+   * False starts the exit motion; `onClose` follows when it ends. Only for a
+   * modal whose open state lives outside React (the movie modal's history entry).
    */
   open?: boolean;
   /**
-   * Where Esc / veil-click / the render-prop `close` go instead of dismissing
-   * the surface directly. Passed alongside `open` by a modal that can't close
-   * itself, so all four gestures (those three plus browser Back) take one
-   * path. Fires at most once per open interval: each request pops a history
-   * entry, and a second would pop the entry behind the modal. Restoring `open`
-   * starts a new interval and gives it one request of its own.
+   * Replaces direct dismissal for Esc, veil-click and `close`, so they take the
+   * same path as browser Back. Fires at most once per open interval: a second
+   * request would pop the history entry behind the modal.
    */
   onRequestClose?: () => void;
-  /** Extra class on the `.modal` surface (e.g. `modal--movie` for a narrower width). */
   className?: string;
-  /**
-   * When false, Esc / veil-click / the render-prop `close` are inert. Used to pin
-   * a dialog open mid-save so a dismiss can't race the success-close (which would
-   * otherwise toggle the dialog back open). Defaults to true.
-   */
+  /** False pins the dialog open mid-save: dismiss must not race the success-close. */
   dismissible?: boolean;
   /**
-   * Cap the surface at the window height and scroll inside it instead of letting the
-   * veil scroll. The surface stays centered at any content length and chrome outside
-   * the scrolling part stays put. Children lay out as a flex column: put the region
-   * that should scroll in a `.modal__scroll` and leave a close X or head beside it.
-   * Off by default, since short dialogs should keep sizing to their content.
+   * Cap the surface at the window height and scroll inside a `.modal__scroll`
+   * child instead of the veil. Children lay out as a flex column.
    */
   capped?: boolean;
-  /** Render-prop receiving a `close` that plays the exit animation before unmounting. */
   children: (close: () => void) => ReactNode;
 }
 
@@ -60,8 +45,7 @@ interface ModalLayer {
   openerAncestors: HTMLElement[];
 }
 
-/** Modal surfaces on screen, oldest first. Menus share dismissal ownership but
- * do not hide the dialog that owns them, so this stack stays modal-only. */
+/** Modal surfaces, oldest first. Modal-only: a menu does not hide its dialog. */
 const modalLayers: ModalLayer[] = [];
 
 function focusTarget(target: HTMLElement | null | undefined): boolean {
@@ -98,14 +82,8 @@ function syncModalLayers() {
 }
 
 /**
- * Portalled modal shell with matching enter AND exit animations, Esc / veil-click
- * dismissal, page-owner scroll lock, and a focus trap (focus moves in on open, cycles
- * inside, and returns to the opener on close) so it behaves like a real dialog.
- *
- * A Modal opened from inside another Modal portals in as a sibling, not a
- * descendant, so all three of those gestures are gated on being the topmost
- * surface (#220): Escape reaches one dialog, the veil under the top dialog is
- * inert, and Tab cycles the dialog on top instead of the one behind it.
+ * Portalled modal shell with exit motion, scroll lock and a focus trap. Nested
+ * Modals portal in as siblings, so Esc, veil and Tab gate on the topmost (#220).
  */
 export function Modal({
   onClose,
@@ -127,9 +105,7 @@ export function Modal({
   const previousOpenRef = useRef(open);
   const surfaceRef = useRef<HTMLDivElement>(null);
 
-  // Mounting is parent-controlled, so only the closing phase is used: the
-  // exit motion plays, then onClosed tells the parent to unmount. Focus
-  // returns to the opener in the unmount cleanup below, not via the machine.
+  // Only the closing phase is used. Focus returns in the unmount cleanup below.
   const { closing, show, dismiss, isTopmost } = useDismissible({
     parentMounted: true,
     onClosed: () => onCloseRef.current(),
@@ -137,8 +113,7 @@ export function Modal({
 
   const requestClose = useCallback(() => {
     if (!dismissibleRef.current) return;
-    // Hand the close to the parent when it owns one, and let the exit come
-    // back as `open: false`. Otherwise dismiss here, the way it always was.
+    // A parent-owned close comes back as `open: false`.
     if (onRequestCloseRef.current) {
       if (requestedRef.current) return;
       requestedRef.current = true;
@@ -148,31 +123,23 @@ export function Modal({
     dismiss();
   }, [dismiss]);
 
-  // Esc and the veil are gestures aimed at whatever is on top; the render-prop
-  // `close` is not, so it stays a straight programmatic close (a nested confirm
-  // has to be able to close the dialog it was opened from).
+  // Not for the render-prop `close`: a nested confirm must close its parent.
   const requestCloseFromGesture = useCallback(() => {
     if (!isTopmost()) return;
     requestClose();
   }, [isTopmost, requestClose]);
 
-  // A veil dismissal runs on the release, not the press, so the tail of the
-  // gesture stays on the veil instead of landing on whatever the veil was
-  // covering. Both halves have to be the veil's own: a press that started on
-  // the surface (dragging a selection out of the dialog) or a release over it
-  // is not a dismissal.
+  // Dismiss on release, so the click does not land on what the veil covered.
+  // Press and release must both hit the veil: a selection drag is no dismissal.
   const veilPressRef = useRef(false);
 
   const onVeilMouseDown = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
-    // A tall dialog leaves the veil scrollable, and its scrollbar reports the
-    // veil as the target. Dragging that is a scroll, not a dismissal, and it
-    // needs its own default.
+    // The veil's scrollbar reports the veil as target; dragging it is a scroll.
     const veil = e.currentTarget;
     const onScrollbar =
       e.nativeEvent.offsetX > veil.clientWidth || e.nativeEvent.offsetY > veil.clientHeight;
     veilPressRef.current = e.target === veil && !onScrollbar;
-    // The word-selection default of this press belongs to the page behind the
-    // veil, and it takes focus off the dialog. Neither is wanted here.
+    // Stops text selection behind the veil and focus leaving the dialog.
     if (veilPressRef.current) e.preventDefault();
   }, []);
 
@@ -186,9 +153,8 @@ export function Modal({
     [requestCloseFromGesture],
   );
 
-  // Reopening during the exit keeps this exact surface and its captured opener.
-  // Cancel before paint so neither the closing frame nor its old timer can win,
-  // then give the restored open interval one close request of its own.
+  // Reopening during the exit keeps this surface and its opener. Cancel before
+  // paint so neither the closing frame nor its old timer wins.
   useLayoutEffect(() => {
     const wasOpen = previousOpenRef.current;
     previousOpenRef.current = open;
@@ -197,9 +163,7 @@ export function Modal({
     show();
   }, [open, show]);
 
-  // The parent withdrawing `open` is the other way in, and the only one a
-  // browser Back can take: by the time the popstate lands the state is
-  // already gone, so the motion has to run off its removal, not before it.
+  // Browser Back drops the state before popstate lands, so exit runs after it.
   useEffect(() => {
     if (!open) dismiss();
   }, [open, dismiss]);
@@ -217,8 +181,7 @@ export function Modal({
       openerAncestors.push(ancestor);
     }
 
-    // Move focus into the dialog: prefer the first form field (so a form dialog
-    // lands on its input, not the close X); otherwise the surface itself.
+    // A form dialog lands on its input, not the close X.
     (surface.querySelector<HTMLElement>("input,textarea,select") ?? surface).focus({
       preventScroll: true,
     });
@@ -234,9 +197,8 @@ export function Modal({
       if (at === -1) return;
       const wasTopmost = at === modalLayers.length - 1;
 
-      // If a whole nested stack leaves in one commit, React may clean up its
-      // parent before its child. Carry the parent's opener through any child
-      // that would otherwise try to focus a control in the detached surface.
+      // A nested stack leaving in one commit can clean up parent before child:
+      // pass this opener to any child whose opener is in the detached surface.
       for (let i = at + 1; i < modalLayers.length; i++) {
         const above = modalLayers[i];
         if (above.opener && surface.contains(above.opener)) {
@@ -259,8 +221,7 @@ export function Modal({
   useLayoutEffect(() => {
     const surface = surfaceRef.current;
     const onKey = (e: KeyboardEvent) => {
-      // The listener is on `document`, so every mounted Modal hears this key.
-      // Only the one on top answers it.
+      // Every mounted Modal hears this document listener.
       if (!isTopmost()) return;
       if (e.key === "Escape") {
         requestClose();
@@ -287,8 +248,7 @@ export function Modal({
       }
     };
 
-    // Scroll ownership changes layout and compositor state. Lock before the
-    // first dialog frame so bounded routes never paint an unlocked interval.
+    // Lock before the first dialog frame so no frame paints unlocked.
     const unlockScroll = lockPageScroll();
     document.addEventListener("keydown", onKey);
     return () => {

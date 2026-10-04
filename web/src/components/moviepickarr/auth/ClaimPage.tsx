@@ -19,8 +19,7 @@ import { claimTerminalFromError, validateClaimForm } from "@/components/moviepic
 
 import type { ClaimInfo } from "@/types/Response";
 
-// The collapsed no-longer-valid state (expired / revoked / unknown token). A
-// dead end: the only recovery is an admin issuing a fresh invite out of band.
+// A dead end: only an admin can issue a fresh invite.
 function InvalidScreen() {
   return (
     <div className="auth__form auth__msg">
@@ -35,9 +34,7 @@ function InvalidScreen() {
   );
 }
 
-// A transient failure (server error, dropped connection) — distinct from the
-// dead-invite state so we never tell a member their invite is gone when it's
-// really just a hiccup. Offers a retry rather than sending them to an admin.
+// Distinct from InvalidScreen: never tell a member a hiccup killed their invite.
 function ErrorScreen({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="auth__form auth__msg">
@@ -56,8 +53,6 @@ function ErrorScreen({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-// The distinct already-set-up state: this member can already log in, so point
-// them at the login page rather than leaving them on a dead claim form.
 function AlreadyScreen({ onGoToLogin }: { onGoToLogin: () => void }) {
   return (
     <div className="auth__form auth__msg">
@@ -104,8 +99,7 @@ function ClaimForm({ token, claim }: { token: string; claim: ClaimInfo }) {
     submit.mutate();
   };
 
-  // Local validation wins the error slot; otherwise surface a submit failure
-  // (most often an invite consumed or expired between load and submit).
+  // Local validation wins; a submit failure is often an invite used up mid-form.
   const error = formError
     ? formError
     : submit.error
@@ -198,8 +192,6 @@ export function ClaimPage() {
   }
 
   if (claim.error) {
-    // 404 → no longer valid; 410 → already set up; anything else (5xx, network)
-    // is a transient error the member can retry, not a dead invite.
     const terminal = claimTerminalFromError(claim.error);
     return (
       <AuthFrame>

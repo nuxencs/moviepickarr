@@ -12,21 +12,16 @@ import {
 } from "@/lib/sound";
 
 /**
- * Owns the draw-sound on/off preference (mirrored to localStorage by the sound
- * engine) and performs the one-time autoplay unlock. The reel plays the jingle
- * itself (see DrawReel) — this provider just gates it and primes playback so
- * SSE-driven clients, which never click Draw, can still play once the visitor
- * has interacted with the page.
+ * Gates the draw sound and does the one-time autoplay unlock, so SSE-driven
+ * clients that never click Draw can still play the jingle (DrawReel plays it).
  */
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [soundEnabled, setEnabled] = useState<boolean>(() => isSoundEnabled());
   const [volume, setVol] = useState<number>(() => getVolume());
 
   useEffect(() => {
-    // Start loading the asset now so the first draw's jingle is ready in time.
     preloadJingle();
-    // Unlock on the first user gesture anywhere, then detach — autoplay policy
-    // only needs to be satisfied once per session.
+    // Autoplay policy needs one user gesture per session.
     const unlock = () => {
       unlockAudio();
       window.removeEventListener("pointerdown", unlock);
@@ -51,9 +46,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setVol(getVolume()); // read back the clamped, persisted value
   }, []);
 
-  // The volume slider fires setVolume on every drag tick, so the context value
-  // has to keep a stable identity while the state behind it is unchanged.
-  // Otherwise every useAudio() consumer re-renders for the whole drag.
+  // Stable identity, or every useAudio() consumer re-renders per slider drag tick.
   const value = useMemo(
     () => ({ soundEnabled, toggleSound, volume, setVolume }),
     [soundEnabled, toggleSound, volume, setVolume],

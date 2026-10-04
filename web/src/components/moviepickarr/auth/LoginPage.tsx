@@ -27,7 +27,6 @@ function BannerRow({ banner }: { banner: Banner | null }) {
 export function LoginPage() {
   const navigate = useNavigate({ from: "/login" });
   const queryClient = useQueryClient();
-  // The OIDC callback lands back here with a ?error= bucket on failure.
   const { error: oidcError } = useSearch({ from: "/login" });
 
   const config = useQuery(AuthConfigQueryOptions());
@@ -35,8 +34,7 @@ export function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
-  // The already-signed-in bounce lives in the route's beforeLoad (see router.tsx):
-  // resolving /me before render means a live session never paints the form.
+  // The already-signed-in bounce lives in the route's beforeLoad (router.tsx).
 
   const login = useMutation({
     mutationFn: () => APIClient.auth.login(username.trim(), password),
@@ -46,8 +44,7 @@ export function LoginPage() {
     },
   });
 
-  // A submit failure wins the banner slot (it is the member's most recent
-  // action); otherwise show the OIDC redirect notice, if any.
+  // A submit failure is the most recent action, so it wins over the OIDC notice.
   const banner: Banner | null = login.error
     ? bannerForLoginError(login.error)
     : bannerForOidcError(oidcError);

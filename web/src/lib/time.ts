@@ -1,9 +1,3 @@
-// Time formatting shared across surfaces. Lives here rather than beside one of
-// them because two unrelated features render the same "when did this last
-// happen" line: the admin roster's last-active column and the account page's
-// session list. The admin invites section reads the other direction too, so both
-// come off one unit table.
-
 const UNITS: [limit: number, secs: number, name: string][] = [
   [60, 1, "second"],
   [3600, 60, "minute"],
@@ -14,8 +8,7 @@ const UNITS: [limit: number, secs: number, name: string][] = [
   [Infinity, 31557600, "year"],
 ];
 
-/** The largest whole unit for a span in seconds ("3 days"), unsigned and with
- *  no direction word: both callers below supply their own. */
+/** The largest whole unit for a span in seconds ("3 days"), with no direction word. */
 function span(secs: number): string {
   for (const [limit, per, name] of UNITS) {
     if (secs < limit) {
@@ -26,11 +19,7 @@ function span(secs: number): string {
   return "";
 }
 
-/**
- * A compact "time ago" for a timestamp. Returns "" for a missing or unparseable
- * one (a member who never logged in) so the caller can render a dash. "now"
- * under a minute, otherwise the largest whole unit ("3 days ago").
- */
+/** A compact "3 days ago". Returns "" for a missing or unparseable timestamp. */
 export function timeAgo(iso: string | undefined, now: number = Date.now()): string {
   if (!iso) return "";
   const then = Date.parse(iso);
@@ -42,11 +31,8 @@ export function timeAgo(iso: string | undefined, now: number = Date.now()): stri
 }
 
 /**
- * How long is left until a future timestamp ("3 days"), the inverse of timeAgo
- * and without the direction word, so a caller composes "expires in 3 days".
- * Returns "" for a missing, unparseable, already-past, or under-a-minute one:
- * there is no honest number to state in any of those cases, and the caller
- * words the edge itself rather than being handed "0 minutes".
+ * Time left until a timestamp ("3 days"), with no direction word. Returns "" for
+ * a missing, unparseable, past or under-a-minute one, not "0 minutes".
  */
 export function timeUntil(iso: string | undefined, now: number = Date.now()): string {
   if (!iso) return "";

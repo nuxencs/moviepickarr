@@ -1,18 +1,11 @@
-/* ============================================================
-   moviepickarr — shared helpers: TMDB image URLs, procedural
-   poster/backdrop art, deterministic hues, formatting.
-   ============================================================ */
-
 import type { MovieTile } from "@/types/Response";
 
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
-/** Full TMDB poster URL from a raw poster_path, or null if absent. */
 export function posterUrl(path?: string | null, size: "w154" | "w185" | "w342" | "w500" = "w342"): string | null {
   return path ? `${TMDB_IMG}/${size}${path}` : null;
 }
 
-/** Responsive poster candidates for compact slots, or null if absent. */
 export function posterSrcSet(path?: string | null): string | null {
   const compact = posterUrl(path, "w154");
   const medium = posterUrl(path, "w185");
@@ -23,24 +16,22 @@ export function posterSrcSet(path?: string | null): string | null {
     : null;
 }
 
-/** Full TMDB backdrop URL from a raw backdrop_path, or null if absent. */
 export function backdropUrl(path?: string | null, size: "w1280" | "w780" = "w1280"): string | null {
   return path ? `${TMDB_IMG}/${size}${path}` : null;
 }
 
-/** Full TMDB profile (headshot) URL from a raw profile_path, or null if absent. */
 export function profileUrl(path?: string | null, size: "w185" | "h632" = "w185"): string | null {
   return path ? `${TMDB_IMG}/${size}${path}` : null;
 }
 
-/** Deterministic 0..360 hue from a string (stable per title). */
+/** Deterministic 0..360 hue, stable per string. */
 export function hueOf(str: string): number {
   let h = 0;
   for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
   return h;
 }
 
-/** Procedural duotone "alt-poster" gradient (2:3) — used when no real poster. */
+/** Procedural 2:3 poster art for movies with no real poster. */
 export function posterBg(hue: number): string {
   const h2 = (hue + 28) % 360;
   return [
@@ -50,7 +41,7 @@ export function posterBg(hue: number): string {
   ].join(", ");
 }
 
-/** Wide cinematic backdrop gradient (16:9) — used when no real backdrop. */
+/** Procedural 16:9 backdrop for movies with no real backdrop. */
 export function backdropBg(hue: number): string {
   const h2 = (hue + 34) % 360;
   return [
@@ -60,12 +51,12 @@ export function backdropBg(hue: number): string {
   ].join(", ");
 }
 
-/** "1 movie" / "3 movies" — count plus a count-aware noun (default plural adds "s"). */
+/** "1 movie" / "3 movies". */
 export function plural(count: number, noun: string, pluralForm?: string): string {
   return `${count} ${count === 1 ? noun : pluralForm ?? `${noun}s`}`;
 }
 
-/** Up-to-two-letter initials from a name, e.g. "Hauptmann Schubert" -> "HS". */
+/** "Hauptmann Schubert" -> "HS". */
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -73,19 +64,17 @@ export function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** Diagonal hue-derived gradient used for square avatars. */
 export function avatarBg(hue: number): string {
   return `linear-gradient(150deg, hsl(${hue} 55% 48%), hsl(${(hue + 30) % 360} 60% 32%))`;
 }
 
-/** Release year from a TMDB release_date ("YYYY-MM-DD"), or undefined. */
 export function yearOf(releaseDate?: string): number | undefined {
   if (!releaseDate) return undefined;
   const y = parseInt(releaseDate.slice(0, 4), 10);
   return Number.isNaN(y) ? undefined : y;
 }
 
-/** "2h 16m" / "92m" from a runtime in minutes, or undefined if 0/absent. */
+/** "2h 16m" / "92m". */
 export function runtimeLabel(runtime?: number): string | undefined {
   if (!runtime || runtime <= 0) return undefined;
   const h = Math.floor(runtime / 60);
@@ -107,7 +96,6 @@ export function relativeDate(iso?: string): string {
 
 const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "Mon D" date + "HH:MM" time, for the watched-list right column. */
 export function dateTimeParts(iso?: string): { date: string; time: string } {
   if (!iso) return { date: "", time: "" };
   const d = new Date(iso);
@@ -116,39 +104,27 @@ export function dateTimeParts(iso?: string): { date: string; time: string } {
   return { date, time };
 }
 
-/** Full date ("Jul 22, 2026") for the record lines in the detail modal, where a
- *  relative date ("3d ago") reads as news rather than as a fact about the record. */
+/** "Jul 22, 2026": a record line reads as news with a relative date. */
 export function fullDate(iso?: string): string {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Rounded TMDB rating ("8.2") or undefined when unrated. */
 export function ratingLabel(voteAverage?: number): string | undefined {
   if (!voteAverage || voteAverage <= 0) return undefined;
   return voteAverage.toFixed(1);
 }
 
-/* ---- Stats filters (the drill-down state of the Stats tab; matching
-   happens server-side in the stats endpoint) ---- */
-
-/**
- * One selected person filter. The name rides along with the id so the chip
- * stays readable even when the person later drops out of the option list
- * (their last movie moved/deleted under an SSE refetch).
- */
+/** The name keeps the chip readable after the person drops out of the options. */
 export interface PersonFilter {
   id: number;
   name: string;
 }
 
 /**
- * Active stats filters; null/empty = "any". `year` matches an exact release
- * year and `decade` a release decade (its floor, e.g. 1990 ⇒ 1990–1999); the
- * two are mutually exclusive — setting one clears the other. The people lists
- * are any-of within a list and AND-ed across filters — `actors` match cast
- * credits, `crew` matches crew credits (any whitelisted job, so a director also
- * matches through their writer credits).
+ * Stats filters, matched server-side; null/empty means "any". `year` and
+ * `decade` (its floor year) are mutually exclusive. People lists are any-of
+ * within a list, AND across lists; `crew` matches any whitelisted job.
  */
 export interface MovieFilters {
   genre: string | null;
@@ -156,11 +132,9 @@ export interface MovieFilters {
   crew: PersonFilter[];
   year: number | null;
   decade: number | null;
-  /** Adders of the movie — any-of, matched against `addedByID`. */
   adders: PersonFilter[];
 }
 
-/** The everything-passes filter state — handy as `useState` initial value. */
 export const NO_FILTERS: MovieFilters = {
   genre: null,
   actors: [],
@@ -170,7 +144,6 @@ export const NO_FILTERS: MovieFilters = {
   adders: [],
 };
 
-/** Whether any filter is set (drives the stats empty copy). */
 export function hasActiveFilters(filters: MovieFilters): boolean {
   return (
     filters.genre !== null ||
@@ -182,7 +155,6 @@ export function hasActiveFilters(filters: MovieFilters): boolean {
   );
 }
 
-/** A filterable person (a cast or crew member). */
 export interface PersonOption {
   id: number;
   name: string;
@@ -193,20 +165,10 @@ export interface FilterOptions {
   actors: PersonOption[];
   crew: PersonOption[];
   years: number[];
-  /** The members who added the movies, by id, sorted A→Z by name. */
+  /** Sorted A-Z by name. */
   adders: PersonOption[];
 }
 
-// Filter options are now derived server-side (GET /movies/filter-options) and
-// typed as FilterOptions above — the watched list ships lean (no embedded
-// credits), so they can no longer be rebuilt from a cached movie list here.
-
-/**
- * External links for a movie, derived from its stable ids. Letterboxd resolves
- * via /tmdb/{id} (preferred) or /imdb/{id}. Only links with a backing id are
- * returned, in a stable order.
- */
-/** TMDB person page URL from a TMDB person id. */
 export function tmdbPersonUrl(personId: number): string {
   return `https://www.themoviedb.org/person/${personId}`;
 }

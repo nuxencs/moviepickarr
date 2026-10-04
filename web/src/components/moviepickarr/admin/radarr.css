@@ -1,6 +1,4 @@
-/* Radarr is an Admin work register, not a second dashboard. Flat sections,
-   divided rows, and the existing MG controls keep infrastructure secondary to
-   the movie that needs attention. */
+/* An Admin work register, not a second dashboard. */
 
 .radarr-workspace {
   min-width: 0;

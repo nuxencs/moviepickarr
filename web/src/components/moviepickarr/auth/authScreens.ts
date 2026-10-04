@@ -1,7 +1,3 @@
-// Pure decision logic behind the login and claim screens. The components stay
-// thin: they render whatever these helpers return. Everything here takes its
-// inputs as data (an error, a status, form fields) and reads no DOM, so it is
-// unit-tested directly (authScreens.test.ts) the way drawMachine is.
 import type { ClaimMode } from "@/types/Response";
 
 export type BannerTone = "error" | "warn";
@@ -11,16 +7,13 @@ export interface Banner {
   text: string;
 }
 
-// The one uniform 401 copy — identical whether the username is unknown, the
-// password is wrong, or the account is soft-locked. One string, on purpose: the
-// login form must not become an account-enumeration oracle (spec §security).
+// One string for unknown user, wrong password and lockout, so the form is no
+// account-enumeration oracle.
 export const UNIFORM_401 = "That username and password don't match.";
 
 const OIDC_GENERIC = "SSO sign-in didn't complete. Please try again.";
 
-// Structural status read so this module needs no import from the API layer (and
-// stays trivially testable). ApiError carries a numeric `status`; anything else
-// (a plain Error, a network failure) reads as undefined.
+// Structural read, so this module needs no import from the API layer.
 function statusOf(err: unknown): number | undefined {
   if (typeof err === "object" && err !== null && "status" in err) {
     const s = (err as { status: unknown }).status;
@@ -29,10 +22,8 @@ function statusOf(err: unknown): number | undefined {
   return undefined;
 }
 
-// The OIDC callback lands back on /login with a ?error= bucket (never JSON).
-// Only oidc_unlinked gets the warn tone (signed in fine, but no member is
-// linked yet — an actionable "ask an admin" case); every other bucket is a
-// generic try-again error. No error param means no banner.
+// Maps the OIDC callback's ?error= bucket on /login. Only oidc_unlinked is
+// actionable ("ask an admin"), so only it gets the warn tone.
 export function bannerForOidcError(error: string | null | undefined): Banner | null {
   if (!error) return null;
   if (error === "oidc_unlinked") {
@@ -44,8 +35,7 @@ export function bannerForOidcError(error: string | null | undefined): Banner | n
   return { tone: "error", text: OIDC_GENERIC };
 }
 
-// After a failed login POST: a 401 is the uniform bad-credentials/lockout case;
-// any other failure (5xx, network) is a try-again error, not "wrong password".
+// Only a 401 means bad credentials; anything else is a try-again error.
 export function bannerForLoginError(err: unknown): Banner {
   if (statusOf(err) === 401) {
     return { tone: "error", text: UNIFORM_401 };
@@ -53,9 +43,7 @@ export function bannerForLoginError(err: unknown): Banner {
   return { tone: "error", text: "Something went wrong. Please try again." };
 }
 
-// The claim-validate error buckets. A 404 is the collapsed no-longer-valid
-// state (expired / revoked / unknown token); a 410 is the distinct already-set-up
-// state; anything else is an unexpected failure the page reports generically.
+// 404: expired, revoked or unknown token. 410: already set up.
 export type ClaimTerminal = "invalid" | "already" | "error";
 
 export function claimTerminalFromError(err: unknown): ClaimTerminal {
@@ -69,10 +57,7 @@ export function claimTerminalFromError(err: unknown): ClaimTerminal {
   }
 }
 
-// Username charset + password bounds mirror the server (charset 3-32
-// [a-zA-Z0-9._-]; password min 8, max 128). Validating client-side keeps the
-// obvious mistakes (mismatch, too short) off the wire; the server stays the
-// source of truth and a slipped-through value still 400s.
+// Mirror the server's rules; the server stays the source of truth.
 export const USERNAME_RE = /^[a-zA-Z0-9._-]{3,32}$/;
 export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
@@ -84,9 +69,8 @@ export interface ClaimFormInput {
   confirm: string;
 }
 
-// Returns the first blocking problem as human copy, or null when the form is
-// submittable. Username is only checked for placeholder claims (a reset keeps
-// the existing username).
+// First blocking problem as copy, or null. A reset keeps its username, so only
+// placeholder claims check it.
 export function validateClaimForm(input: ClaimFormInput): string | null {
   if (input.mode === "placeholder" && !USERNAME_RE.test(input.username.trim())) {
     return "Pick a username 3 to 32 characters long, using letters, numbers, dots, dashes or underscores.";

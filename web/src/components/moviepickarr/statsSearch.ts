@@ -8,24 +8,20 @@ import type {
 
 import type { StatsWindow } from "@/types/Response";
 
-/** Windows reachable from the stats UI. The StatsWindow type also allows
- *  24h/90d, but no preset renders them — unknown values fall back to 30d. */
+/** Windows the stats UI renders; StatsWindow also allows 24h and 90d. */
 const WINDOWS: StatsWindow[] = ["7d", "30d", "1y", "all-time", "custom"];
 const DEFAULT_WINDOW: StatsWindow = "30d";
 
-/** Mirrors FilterBar's MAX_SELECTED / the backend statsMaxPeopleFilterIDs cap;
- *  longer id lists are rejected server-side, so the URL is capped on parse too. */
+/** In step with FilterBar MAX_SELECTED and backend statsMaxPeopleFilterIDs. */
 const MAX_PEOPLE = 25;
 
 /**
- * The entire Stats view, encoded in the URL so every filter is shareable,
- * deep-linkable, and survives reload + back/forward. Sentinel "empty" values
- * ("" / 0 / []) are stripped from the URL by stripSearchParams, so the default
- * view stays a clean `/stats`.
+ * The entire Stats view as URL search. Empty sentinels ("", 0, []) are
+ * stripped by stripSearchParams, so the default view stays `/stats`.
  */
 export interface StatsSearch {
   win: StatsWindow;
-  /** Custom-range bounds (local YYYY-MM-DD); only used when win === "custom". */
+  /** Local YYYY-MM-DD, read only when win is "custom". */
   start: string;
   end: string;
   genre: string;
@@ -37,12 +33,8 @@ export interface StatsSearch {
 }
 
 /**
- * The wire-facing stats filter selection: exactly what GET /stats filters by,
- * in id form. ONE value travels from the URL search through the query key to
- * the request (see StatsGetQueryOptions, whose canonical serializer feeds
- * both). Adding a filter dimension means extending this type, the codec
- * here, the chip, and the wire field, instead of threading a new positional
- * parameter through every layer.
+ * What GET /stats filters by. One value travels from the URL through the
+ * query key to the request (see StatsGetQueryOptions).
  */
 export interface StatsFilters {
   genre?: string;
@@ -50,11 +42,10 @@ export interface StatsFilters {
   crewIds?: number[];
   addedByIds?: number[];
   releaseYear?: number;
-  /** Decade floor (1990 ⇒ 1990–1999); mutually exclusive with releaseYear. */
+  /** Decade floor year; mutually exclusive with releaseYear. */
   decade?: number;
 }
 
-/** Project the URL search onto the wire filter value (empty → undefined). */
 export function statsFiltersFromSearch(search: StatsSearch): StatsFilters {
   return {
     genre: search.genre || undefined,
@@ -66,7 +57,7 @@ export function statsFiltersFromSearch(search: StatsSearch): StatsFilters {
   };
 }
 
-/** Default value of every param — also the strip-from-URL target (router.tsx). */
+/** Also the stripSearchParams target in router.tsx. */
 export const statsSearchDefaults: StatsSearch = {
   win: DEFAULT_WINDOW,
   start: "",
@@ -84,26 +75,20 @@ const posInt = (v: unknown): number => {
   return Number.isInteger(n) && n > 0 ? n : 0;
 };
 
-/** Coerce a search value (a parsed array, or a comma string from a hand-edited
- *  URL) into a sorted, de-duplicated, capped id list — matching idListKey's
- *  canonical form so equivalent filters share one cache entry + history URL. */
+/** Sorted, de-duplicated, capped: idListKey's canonical form, so equal
+ *  filters share one cache entry and URL. Accepts a comma string too. */
 function idList(v: unknown): number[] {
   const raw = Array.isArray(v) ? v : typeof v === "string" && v ? v.split(",") : [];
   const ids = raw.map(Number).filter((n) => Number.isInteger(n) && n > 0);
   return [...new Set(ids)].sort((a, b) => a - b).slice(0, MAX_PEOPLE);
 }
 
-/**
- * Total, never-throwing validator — TanStack Router runs it on every navigation
- * and its return type is the route's typed search. Always returns a full object
- * (with defaults) so deep links and empty URLs resolve cleanly.
- */
+/** Total, never-throwing validator for the route's search. */
 export function validateStatsSearch(search: Record<string, unknown>): StatsSearch {
   const win = WINDOWS.includes(search.win as StatsWindow)
     ? (search.win as StatsWindow)
     : DEFAULT_WINDOW;
-  // year and decade are mutually exclusive (the UI invariant); if a crafted URL
-  // sets both, keep the exact year and drop the decade.
+  // A crafted URL can set both year and decade: the exact year wins.
   const year = posInt(search.year);
   const decade = year ? 0 : posInt(search.decade);
   return {
@@ -119,15 +104,14 @@ export function validateStatsSearch(search: Record<string, unknown>): StatsSearc
   };
 }
 
-/** Local-date YYYY-MM-DD (NOT toISOString, which shifts the day across timezones). */
+/** Local-date YYYY-MM-DD; toISOString would shift the day across timezones. */
 export function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Parse a local YYYY-MM-DD back to local midnight; null if malformed. Uses the
- *  numeric constructor (not new Date(str), which parses as UTC). */
+/** Local midnight, or null if malformed. new Date(str) would parse as UTC. */
 function parseYmd(s: string): Date | null {
   if (!YMD.test(s)) return null;
   const [y, m, d] = s.split("-").map(Number);
@@ -137,15 +121,13 @@ function parseYmd(s: string): Date | null {
     : null;
 }
 
-/** The custom day-range the URL carries, or null when unset/incomplete. */
 export function rangeFromSearch(search: StatsSearch): DayRange | null {
   const start = parseYmd(search.start);
   const end = parseYmd(search.end);
   return start && end ? { start, end } : null;
 }
 
-/** Resolve id lists to {id, name} chips using the cached watched-derived
- *  options; falls back to the bare id until the watched list loads. */
+/** Falls back to the bare id as name until the options load. */
 function people(ids: number[], options: PersonOption[]): PersonFilter[] {
   return ids.map((id) => ({
     id,
@@ -153,7 +135,6 @@ function people(ids: number[], options: PersonOption[]): PersonFilter[] {
   }));
 }
 
-/** Build the MovieFilters the FilterBar + rails render from the URL search. */
 export function filtersFromSearch(search: StatsSearch, options: FilterOptions): MovieFilters {
   return {
     genre: search.genre || null,
@@ -165,7 +146,6 @@ export function filtersFromSearch(search: StatsSearch, options: FilterOptions): 
   };
 }
 
-/** Serialize a FilterBar MovieFilters change back into URL search params. */
 export function filtersToSearch(
   f: MovieFilters,
 ): Pick<StatsSearch, "genre" | "actors" | "crew" | "adders" | "year" | "decade"> {

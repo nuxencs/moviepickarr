@@ -122,11 +122,7 @@ export function EditMovieDialog({
             <div className="top">
               <div>
                 <h3>Edit movie</h3>
-                {/* Two readings, not one with a clause bolted on: without the
-                    watched date the list is a pair and takes "and", not a
-                    trailing comma. The movie modal opens this dialog on movies
-                    that have no watched date (#237), so that branch is drawn
-                    now. */}
+                {/* Two strings: without the watched date the list is a pair (#237). */}
                 <p>{allowWatchedAtEdit ? "Update the title, link, and watched date." : "Update the title and link."}</p>
               </div>
               <button type="button" className="iconbtn" onClick={close} aria-label="Close" disabled={isSaving}>

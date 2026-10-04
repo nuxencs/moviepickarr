@@ -12,8 +12,7 @@ import { toast } from "@/components/ui/toast-api";
 import type { TMDBMovie } from "@/types/Response";
 
 interface SearchModalProps {
-  // The board is self-service: adds always land in the session member's stash,
-  // so this carries only the name for display copy, not a target member id.
+  // Display only: adds always land in the session member's stash.
   userName: string;
   onClose: () => void;
 }
@@ -50,8 +49,7 @@ export function SearchModal({ userName, onClose }: SearchModalProps) {
     }
   };
 
-  // A single shared add request is in flight at a time, scoped to one result
-  // card by id; SSE refreshes the affected caches, so no mutation wrapper needed.
+  // One add in flight at a time; SSE refreshes the caches, so no mutation wrapper.
   const handleAdd = async (movie: TMDBMovie, close: () => void) => {
     if (pendingId !== null) return;
     setPendingId(movie.id);

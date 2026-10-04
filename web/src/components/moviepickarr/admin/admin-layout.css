@@ -181,9 +181,7 @@
   padding: 0 4px 64px;
 }
 
-/* Shared Admin loading/error rows and Modal content primitives. These live in
-   the shell so every nested Admin route can render correctly when opened
-   directly. */
+/* In the shell so every nested Admin route renders when opened directly. */
 
 .adm-state {
   padding: 48px 16px;

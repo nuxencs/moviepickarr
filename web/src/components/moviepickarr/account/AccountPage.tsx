@@ -40,8 +40,6 @@ import { useLogout } from "@/hooks/useLogout";
 
 import "@/components/moviepickarr/account/account.css";
 
-// Only one ceremony is ever open, so a single tag drives the modal switch rather
-// than a pile of booleans.
 type Dialog = "change-password" | "set-password" | "logout-all" | "unlink-guard" | null;
 
 export function AccountPage() {
@@ -51,16 +49,14 @@ export function AccountPage() {
   const config = useQuery(AuthConfigQueryOptions());
 
   const [dialog, setDialog] = useState<Dialog>(null);
-  // Server-side failure copy for the open credential dialog (a wrong current
-  // password, a taken username), shown inline in the dialog rather than a toast.
+  // Server failure copy, shown inline in the open dialog rather than a toast.
   const [dialogError, setDialogError] = useState<string | null>(null);
 
   // useSearch keys off the route id (/_app/settings under the pathless layout);
   // useNavigate keys off the URL (/settings). Hence the two spellings.
   const { linked, error: oidcError } = useSearch({ from: "/_app/settings" });
-  // Consume the OIDC-link redirect result exactly once, then strip the params so
-  // a refresh or a back-nav doesn't re-toast. The ref keys on the raw params so
-  // React's double-invoked dev effect fires the toast a single time.
+  // Toast the OIDC-link result once, then strip the params. The ref survives
+  // React's double-invoked dev effect.
   const handledLink = useRef<string | null>(null);
   useEffect(() => {
     const result = linkResultFromSearch(linked, oidcError);
@@ -101,8 +97,7 @@ export function AccountPage() {
       toast.success("Password changed. Your other devices were signed out.");
     },
     onError: (err) => {
-      // A wrong current password comes back as the uniform 401; everything else
-      // is a genuine failure. Keep the dialog open with the reason inline.
+      // A wrong current password is the uniform 401.
       if (err instanceof ApiError && err.status === 401) {
         setDialogError("Your current password is incorrect.");
         return;
@@ -130,10 +125,7 @@ export function AccountPage() {
       toast.success(`${PROVIDER} unlinked.`);
     },
     onError: (err) => {
-      // The server 409s when this is the actor's only credential. If the client
-      // guard was stale (a password removed in another tab), route that 409 into
-      // the same "set a password first" dialog the guard shows, rather than a
-      // bare toast, so the backstop gives the same guidance as the pre-check.
+      // Only credential: a stale client guard (another tab) gets the same dialog.
       if (err instanceof ApiError && err.status === 409) {
         openDialog("unlink-guard");
         return;
@@ -142,7 +134,6 @@ export function AccountPage() {
     },
   });
 
-  // Both sessions rows: false ends this device, true ends every session.
   const logout = useLogout();
 
   const sessions = useQuery(SessionsQueryOptions());
@@ -156,9 +147,7 @@ export function AccountPage() {
       toast.success(`Signed out of ${s.device}`);
     },
     onError: async (err, s) => {
-      // A 404 means that device was already gone (swept, or signed out
-      // elsewhere): the list the member clicked was stale, so refresh it and
-      // say what happened rather than reporting a failure they can't act on.
+      // 404: the device was already gone and the list was stale.
       await queryClient.invalidateQueries({ queryKey: AuthKeys.sessions() });
       if (err instanceof ApiError && err.status === 404) {
         toast.success(`${s.device} was already signed out`);
@@ -178,9 +167,7 @@ export function AccountPage() {
     return <p className="acc-state">Loading your account…</p>;
   }
   if (!me.data) {
-    // A 401 never reaches here: the _app route's beforeLoad redirects a
-    // logged-out member to /login before the page renders. So this is a genuine
-    // load failure (network, 5xx) rather than a missing session.
+    // Not a 401: the _app route's beforeLoad already redirected to /login.
     return <p className="acc-state">Couldn&apos;t load your account. Try again in a moment.</p>;
   }
 
@@ -199,8 +186,7 @@ export function AccountPage() {
         <p>Manage your sign-in methods.</p>
       </header>
 
-      {/* You — read-only identity. Naming is an admin concern; the username is
-          stable, so there is no rename control here. */}
+      {/* Read-only: naming is an admin concern. */}
       <section className="acc__section mg-rise" style={{ "--i": 1 } as CSSProperties}>
         <h2 className="acc__label">You</h2>
         <div className="acc__identity">
@@ -218,7 +204,6 @@ export function AccountPage() {
         </div>
       </section>
 
-      {/* Sign-in methods */}
       <section className="acc__section mg-rise" style={{ "--i": 2 } as CSSProperties}>
         <h2 className="acc__label">Sign-in</h2>
 
@@ -252,9 +237,7 @@ export function AccountPage() {
           </div>
         )}
 
-        {/* SSO — the whole row is absent (not disabled) when no provider is
-            configured, mirroring how the login SSO button is gone rather than
-            greyed. */}
+        {/* Absent, not disabled, with no provider (as on the login page). */}
         {oidcConfigured &&
           (hasSSO ? (
             <div className="acc__row">
@@ -296,9 +279,7 @@ export function AccountPage() {
           ))}
       </section>
 
-      {/* The current device stays visible. Other devices are progressive
-          disclosure: the count is enough for the common case, while the full
-          revoke register appears only when the member chooses to manage it. */}
+      {/* Other devices are progressive disclosure: the count, then the register. */}
       <section className="acc__section mg-rise" style={{ "--i": 3 } as CSSProperties}>
         <h2 className="acc__label">Signed-in devices</h2>
 

@@ -38,14 +38,10 @@ import type { MovieDetail } from "@/types/Response";
 
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
-/** Stagger index for the draw-reveal; each slot settles a touch after the last. */
+/** Stagger index for the draw-reveal. */
 const ri = (i: number) => ({ "--i": i }) as CSSProperties;
 
-/**
- * Two-layer backdrop crossfade. Each painted-art revision adds a decoded layer,
- * fades it in over the outgoing layer with a slow settle-scale, then prunes the
- * old one. Reduced-motion collapses the fade to an instant swap.
- */
+/** Two-layer backdrop crossfade: each revision fades in over the outgoing layer, then prunes it. */
 function Backdrop({ bg, revision }: { bg: string; revision: number }) {
   const [layers, setLayers] = useState<{ id: number; bg: string }[]>(() => [{ id: revision, bg }]);
   const prev = useRef(revision);
@@ -53,7 +49,6 @@ function Backdrop({ bg, revision }: { bg: string; revision: number }) {
   useLayoutEffect(() => {
     if (revision === prev.current) return;
     prev.current = revision;
-    // Keep at most the outgoing layer plus the incoming one.
     setLayers((ls) => [...ls.slice(-1), { id: revision, bg }]);
   }, [revision, bg]);
 
@@ -74,14 +69,11 @@ function Backdrop({ bg, revision }: { bg: string; revision: number }) {
   );
 }
 
-// Stable senders for the reel. Module scope, so a Hero re-render never resets
-// DrawReel's internal state via a changed prop identity; the draw machine
-// behind them owns dedup and reveal-once, so duplicate sends are silent.
+// Module scope, so a Hero re-render never resets DrawReel via a changed prop identity.
 const reportScrollDone = () => drawStore.send({ type: "SCROLL_DONE" });
 const confirmDraw = () => drawStore.send({ type: "CONFIRM", source: "local" });
 
-/** Names why a Turn skip bounced. The server refuses a moved turn, an
- *  unrevealed draw, and a roster with one Turn participant. */
+/** Names why a Turn skip bounced. */
 function skipErrorMessage(err: unknown): string {
   if (!(err instanceof ApiError)) return "Failed to skip the turn";
   switch (err.code) {
@@ -120,11 +112,7 @@ interface ArtworkTarget {
   pending?: Promise<void>;
 }
 
-/**
- * Full-bleed cinematic banner for the current draw (Movies tab only).
- * Absorbs the old next-up panel: it carries the Mark-Watched / Draw-Random
- * actions and the next-up chip.
- */
+/** Full-bleed banner for the current draw, with the turn actions and the next-up chip. */
 export function Hero() {
   const queryClient = useQueryClient();
   const { data: current, isLoading } = useQuery(MoviesGetCurrentQueryOptions());
@@ -133,19 +121,12 @@ export function Hero() {
   const { data: wildcard } = wildcardQuery;
   const wildcardStateKnown = wildcard !== undefined && !wildcardQuery.isError;
   const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());
-  // Server-owned: true from movie:drawn until movie:revealed. The drawer owns an
-  // unrevealed draw's turn, so the Turn skip waits for it (409 is the backstop).
+  // The drawer owns an unrevealed draw's turn, so the Turn skip waits for the reveal (409 is the backstop).
   const { data: poolState } = useQuery(SettingsGetPoolStateQueryOptions());
   const drawUnrevealed = poolState === undefined || poolState.drawInProgress;
-  // The board-level turn gate: whether this viewer (the next-up member) may run
-  // the watch → draw → reveal turn. Drives the disabled + tooltip treatment on
-  // the action buttons and the reel's reveal control, and the admin Turn skip.
   const gate = useTurnGate();
 
-  // The backstop for a lost race: the turn passed (or the roster changed)
-  // between render and click, so the backend answers 403 not_next_up. Refresh
-  // the actor + next-up so the board re-gates, and name why the action bounced
-  // instead of the generic failure toast.
+  // Lost race: the turn passed between render and click (403 not_next_up). Refresh so the board re-gates.
   const onTurnError = (err: unknown, fallback: string): void => {
     if (err instanceof ApiError && err.status === 403) {
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
@@ -156,18 +137,12 @@ export function Hero() {
     toast.error(fallback);
   };
 
-  // The draw machine drives the reel: phase + spin descriptor come from the
-  // store singleton, fed by useSSE (movie:drawn / movie:revealed) and the draw
-  // mutation below. The machine owns dedup, resume, and reveal-once.
+  // Fed by useSSE and the draw mutation; the machine owns dedup, resume, and reveal-once.
   const drawState = useSyncExternalStore(drawStore.subscribe, drawStore.getState);
   const spinning = drawState.phase !== "idle";
 
-  // Held from the moment the action button is clicked until the hero has actually
-  // moved on. The POST resolves (and isPending drops) before the transition lands —
-  // for `marking`, before the current-draw refetch; for `drawing`, before the reel
-  // takes over (set in an effect, a frame later) or the no-reel refetch commits — so
-  // without these the button flashes back to its resting label in that gap instead of
-  // settling straight on the next state.
+  // Held from click until the hero moves on: isPending drops before the transition
+  // lands, so without these the button flashes back to its resting label.
   const [marking, setMarking] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [wildcardPickerHostID, setWildcardPickerHostID] = useState<number | null>(null);
@@ -193,17 +168,11 @@ export function Hero() {
 
   const drawMutation = useMutation({
     mutationFn: () => APIClient.movies.getRandom(),
-    // Hold the button busy from the click; released only once the new draw is
-    // revealed (see the `drawing` effect below).
     onMutate: () => setDrawing(true),
     onSuccess: (movie) => {
       setCachedDrawInProgress(queryClient, true);
-      // No toast here — the reel itself is the draw feedback; a "Movie drawn"
-      // toast popping while the reel is still spinning just competes with it.
-      // Fallback if the clicker's own SSE event drops: feed the machine from
-      // the response (which carries its own candidates). The machine dedups
-      // against the SSE event by drawnAt and owns the pool-refresh timing
-      // (held until the reel lands; immediate when no reel will play).
+      // No toast: the reel is the feedback. Feeding the machine here covers a dropped
+      // SSE event; it dedups against the SSE event by drawnAt.
       drawStore.send({ type: "DRAWN", movie });
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
@@ -216,16 +185,11 @@ export function Hero() {
 
   const watchMutation = useMutation({
     mutationFn: () => APIClient.movies.markWatched(),
-    // Hold the button busy from the click; released only once the watched draw
-    // actually leaves the hero (see the `marking` effect below).
     onMutate: () => setMarking(true),
     onSuccess: () => {
       toast.success("Marked as watched");
       setCachedDrawInProgress(queryClient, false);
-      // Clear the current draw ourselves instead of waiting on the SSE
-      // movie:watched round-trip — keeps the hero transition snappy and self-
-      // sufficient if the stream lags. (The SSE event still re-invalidates; the
-      // duplicate refetch is a harmless no-op once current is already null.)
+      // Do not wait on the SSE movie:watched round-trip, so a lagging stream cannot stall the hero.
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.listpool() });
       void queryClient.invalidateQueries({ queryKey: UsersKeys.list() });
@@ -289,20 +253,13 @@ export function Hero() {
     source: "initial",
     bg: backdropBg(hueOf("moviepickarr")),
   }));
-  // Keeps one decode alive across Strict Mode's effect replay. Object identity
-  // also prevents an older promise from painting after the source changes.
+  // Keeps one decode alive across Strict Mode's effect replay; object identity stops a stale promise painting.
   const artworkTarget = useRef<ArtworkTarget | null>(null);
-  // The last draw committed to the hero, so an unrelated refetch re-running
-  // the commit effect can't replay the reveal (see the sameDraw guard below).
   const committed = useRef<MovieDetail | null | undefined>(undefined);
 
-  // Reveal handoff: the machine bumps commitSeq once the winner's backdrop has
-  // decoded, in the SAME store update that drops the reel (phase → idle).
-  // Committing during render (React's adjust-state-on-change pattern) keeps
-  // the reel unmount and the hero reveal in one paint: no placeholder frame
-  // leaks through. Initialized to the current seq so a Hero remount (tab
-  // switch) never replays a reveal that already committed. The assignments are
-  // idempotent, so a re-invoked render pass is harmless.
+  // The machine bumps commitSeq in the same update that drops the reel. Committing
+  // during render keeps the reel unmount and the reveal in one paint. Seeded from
+  // the current seq so a remount (tab switch) never replays a committed reveal.
   const [seenCommitSeq, setSeenCommitSeq] = useState(drawState.commitSeq);
   if (drawState.commitSeq !== seenCommitSeq) {
     setSeenCommitSeq(drawState.commitSeq);
@@ -318,9 +275,7 @@ export function Hero() {
     committed.current = current;
     setShown(next);
     setRevealId((n) => n + 1);
-    // The machine already proved the draw payload's backdrop paintable. Reuse
-    // it when the current query still agrees; a changed path falls through to
-    // the normal fallback + decode path below.
+    // Reuse the backdrop the machine already decoded when the current query still agrees.
     artworkTarget.current =
       reuseDecodedBackdrop || !nextArtwork.url
         ? { source: nextArtwork.source, settled: true }
@@ -336,21 +291,15 @@ export function Hero() {
     }));
   }
 
-  // Commit known content without waiting on the network. Artwork has its own
-  // decoded handoff below, so a slow or failed image cannot leave the title and
-  // actions blank. While the reel spins, it still owns the transition.
+  // Commit content without waiting on artwork, so a slow image cannot leave the title blank.
   useEffect(() => {
     if (isLoading) return;
     if (spinning) return; // the reel owns the transition; commit waits for the land
 
     const next = current ?? null;
 
-    // Reload mid-spin: hand the pending draw to the machine before committing,
-    // so the winner never flashes ahead of the reel. The machine dedups draws
-    // it already handled (drawState.seen). The reveal-pending check needs only
-    // `current`; building the reel needs the pool, so hold the commit until
-    // the pool has loaded. An already-revealed draw is still sent: the
-    // machine marks it handled and the commit below shows the result directly.
+    // Reload mid-spin: hand the draw to the machine first so the winner never flashes
+    // ahead of the reel. Building the reel needs the pool, so wait for it.
     if (next?.drawnAt && !drawState.seen.includes(next.drawnAt)) {
       if (drawAwaitingReveal(next, resolveDrawEnv())) {
         if (pooled === undefined) return;
@@ -360,23 +309,15 @@ export function Hero() {
       drawStore.send({ type: "RESUME", current: next, pool: pooled ?? [] });
     }
 
-    // Only (re)reveal when the draw IDENTITY changes. Comparing object reference
-    // (relying on TanStack structural sharing) is too fragile: the current-draw
-    // endpoint stamps a fresh `serverNow` on every request, so a no-op refetch —
-    // the SSE resync on tab refocus, or an enrichment update — returns a
-    // structurally-different object for the SAME draw. That churns the reference
-    // and would replay the whole reveal (backdrop crossfade + staggered content)
-    // on every tab switch. Key on drawnAt + movieID, which are stable for a given
-    // draw, instead. `committed.current === undefined` means nothing has committed
-    // yet — distinct from a committed empty state (null).
+    // Key the reveal on drawnAt + movieID, not object identity: every response carries
+    // a fresh `serverNow`, so a no-op refetch would replay the reveal on each refocus.
+    // `undefined` means nothing committed yet, distinct from a committed empty (null).
     const sameDraw =
       committed.current !== undefined &&
       (current?.drawnAt ?? null) === (committed.current?.drawnAt ?? null) &&
       (current?.movieID ?? null) === (committed.current?.movieID ?? null);
     if (sameDraw) {
-      // Same draw, possibly churned metadata: refresh the shown object so any
-      // late-arriving fields land, but DON'T bump revealId — the hero must stay
-      // static across tab switches and never re-animate for an unchanged draw.
+      // Take late-arriving fields, but do not bump revealId: no re-animation for an unchanged draw.
       committed.current = current;
       setShown(next);
       return;
@@ -385,19 +326,14 @@ export function Hero() {
     committed.current = current;
     setShown(next);
     setRevealId((n) => n + 1);
-    // The sameDraw guard above stops this from replaying the reveal on no-op
-    // refetches (serverNow churn, enrichment, resync), so it re-animates only when
-    // the draw actually changes; the pool/seen deps just re-run the resume check.
+    // The pool/seen deps only re-run the resume check.
   }, [isLoading, current, spinning, pooled, drawState.seen]);
 
-  // An Active wildcard temporarily owns the Hero's visual identity. The
-  // confirmed draw remains in `shown`, ready to return without advancing the
-  // round when the wildcard is watched or canceled.
+  // An Active wildcard takes over the Hero; the draw stays in `shown` for when it ends.
   const heroMovie = wildcard?.movie ?? shown;
   const desiredArtwork = artworkDescriptor(heroMovie);
 
-  // Swap a changed draw to its own procedural art before the browser paints.
-  // Same-draw path changes intentionally keep the current decoded layer.
+  // Swap a changed draw to its procedural art before paint; a same-draw path change keeps the decoded layer.
   useLayoutEffect(() => {
     if (isLoading || spinning) return;
     setArtwork((previous) => {
@@ -424,14 +360,10 @@ export function Hero() {
     desiredArtwork.fallback,
   ]);
 
-  // A remote source does not depend on fallback colour. Keeping this null for
-  // remote art lets metadata-only title changes leave an in-flight decode alone.
+  // Null for remote art, so a title-only change leaves an in-flight decode alone.
   const desiredArtworkFallback = desiredArtwork.url ? null : desiredArtwork.fallback;
 
-  // Decode controls only the painted art. A new draw gets its own procedural
-  // fallback immediately so old artwork is not shown under new content. A path
-  // update for the same draw keeps the current layer until its replacement is
-  // paintable. The source key is stable across metadata-only refetches.
+  // Paint remote art only once decoded. The source key is stable across metadata-only refetches.
   useEffect(() => {
     if (isLoading || spinning) return;
 
@@ -508,24 +440,16 @@ export function Hero() {
     desiredArtworkFallback,
   ]);
 
-  // Release the marking busy-state once the watched draw has left the hero (shown
-  // cleared by the commit effect above), so the action button goes Marking… → Draw
-  // random movie with no flash back to "Mark as watched" in between.
   useEffect(() => {
     if (marking && !shown) setMarking(false);
   }, [marking, shown]);
 
-  // Mirror of the above for the draw flow: release the drawing busy-state once the
-  // new draw is revealed (shown set), so the button goes Drawing… → Mark as watched
-  // with no flash back to "Draw random movie" in the pre-reel frame or the no-reel gap.
   useEffect(() => {
     if (drawing && shown) setDrawing(false);
   }, [drawing, shown]);
 
   const draw = shown;
-  // False until the first draw (or confirmed-empty) has committed. While
-  // loading we render a quiet banner shell — no
-  // placeholder copy ("Draw next movie") flashing before the real draw.
+  // False until the first commit, so no placeholder copy flashes before the real draw.
   const ready = revealId > 0;
   const hue = hueOf(heroMovie?.title ?? "moviepickarr");
   const canDraw = !draw && (pooled?.length ?? 0) > 0;
@@ -568,12 +492,7 @@ export function Hero() {
               </>
             ) : draw ? (
               <>
-                {/* The same way from a movie to whoever stashed it as the modal's
-                    attribution (#238). A push, not a replace: the entry it
-                    leaves is the Movies page's own, so Back comes back to the
-                    draw. The modal replaces because the entry it leaves is the
-                    modal's, and nothing here is holding one. An archived adder
-                    keeps the credit but has no active board to link to. */}
+                {/* A push, unlike the modal's replace, so Back returns to the draw (#238). */}
                 Current draw · added by{" "}
                 {draw.addedByArchived ? (
                   <span className="hero__by">{draw.addedByName}</span>
@@ -597,8 +516,7 @@ export function Hero() {
             {!ready ? "" : (heroMovie?.title ?? "Draw next movie")}
           </h2>
 
-          {/* Tagline + meta slots are always rendered (reserved height in CSS) so
-              the banner never re-lays-out as the draw / its metadata changes. */}
+          {/* Always rendered (reserved height in CSS) so the banner never re-lays-out. */}
           <p className="hero__tag" style={ri(3)}>
             {!ready
               ? null
@@ -649,17 +567,12 @@ export function Hero() {
                   {watchWildcardMutation.isPending ? "Marking…" : "Mark as watched"}
                 </button>
               ) : marking || drawing ? (
-                // Held from the click until the transition settles (the watched draw
-                // leaves the hero, or the new draw is revealed), so the button never
-                // regresses to its resting label mid-transition. See `marking`/`drawing`.
                 <button type="button" className="btn btn--accent" disabled aria-busy="true">
                   <Loader2Icon className="animate-spin mg-spin" />
                   {marking ? "Marking…" : "Drawing…"}
                 </button>
               ) : draw ? (
-                // Stays visible for spectators, disabled with a tooltip naming
-                // the next-up member, so the turn reads instead of the control
-                // vanishing (the backend not_next_up is the backstop).
+                // Disabled, not hidden, for spectators, so the tooltip names whose turn it is.
                 <button
                   type="button"
                   className="btn btn--accent"
@@ -741,9 +654,7 @@ export function Hero() {
               <div className="hero__nextup">
                 <Avatar name={nextUp.name} size={30} />
                 <div className="nm">{gate.isSelf ? "Your turn" : `${possessive(gate.nextUpName)} turn`}</div>
-                {/* Admin-only and hidden, not disabled, for everyone else. The
-                    confirm pins itself while pending, so the trigger stays
-                    enabled and can take focus back when the dialog closes. */}
+                {/* Stays enabled while the confirm is pending so it can take focus back on close. */}
                 {gate.canSkip && !spinning && !drawUnrevealed && (
                   <button
                     type="button"

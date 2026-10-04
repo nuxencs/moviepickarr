@@ -1,7 +1,5 @@
-/* A stable, anonymous per-browser id. Sent with a draw so the server can tag the
-   draw with its initiator; only that client shows the reel's confirm button. It
-   lives in localStorage so it survives reloads — the drawer keeps the button (and
-   the right to close the reel for everyone) even after refreshing mid-confirm. */
+/* Anonymous per-browser id sent with a draw; only the initiator shows the reel's
+   confirm button. Kept in localStorage so a mid-confirm reload keeps that button. */
 
 const KEY = "mp-client-id";
 

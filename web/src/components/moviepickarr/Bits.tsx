@@ -14,12 +14,7 @@ import { statsSearchDefaults } from "@/components/moviepickarr/statsSearch";
 
 import type { MovieTile } from "@/types/Response";
 
-/**
- * Square, hue-derived initials avatar. Hue defaults to a hash of the name.
- * An optional `src` photo (TMDB headshot) layers over the initials gradient,
- * falling back to the initials when missing or failing to load — the size
- * contract is identical either way.
- */
+/** Initials avatar; an optional `src` photo layers over it. */
 export function Avatar({
   name,
   size = 28,
@@ -37,9 +32,7 @@ export function Avatar({
   const imgRef = useRef<HTMLImageElement>(null);
   const showImg = Boolean(src) && src !== failedSrc;
 
-  // Sync `loaded` from a cached headshot's `complete` before paint, and reset on
-  // a source change, so the photo crossfades in over the initials instead of
-  // popping. Members without a photo never enter the loading state.
+  // Read a cached photo's `complete` before paint so it crossfades, not pops.
   useLayoutEffect(() => {
     const img = imgRef.current;
     setLoaded(Boolean(img?.complete && img.naturalWidth > 0));
@@ -51,9 +44,7 @@ export function Avatar({
       className={`avatar${loading ? " avatar--loading" : ""}`}
       style={{ ["--s" as string]: `${size}px`, backgroundImage: avatarBg(h) }}
     >
-      {/* The initials are art, not text: they are a fallback for a photo that
-          is itself decorative (alt=""), and every call site writes the name
-          next to them. Spoken, they turn each one into "AD Ada". */}
+      {/* Every call site writes the name beside it; spoken, it reads "AD Ada". */}
       <span aria-hidden="true">{initialsOf(name)}</span>
       {showImg && (
         <img
@@ -71,7 +62,6 @@ export function Avatar({
   );
 }
 
-/** Mono rating with a star; dimmed star for low scores. Renders null when unrated. */
 export function Rating({ voteAverage }: { voteAverage?: number }) {
   const label = ratingLabel(voteAverage);
   if (!label) return null;
@@ -84,7 +74,6 @@ export function Rating({ voteAverage }: { voteAverage?: number }) {
   );
 }
 
-/** A small avatar + name tag used as a tile sublabel. */
 export function AdderTag({ name, size = 20 }: { name: string; size?: number }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
@@ -94,12 +83,7 @@ export function AdderTag({ name, size = 20 }: { name: string; size?: number }) {
   );
 }
 
-/**
- * year · runtime · rating | genre chips | external links, in mono. Each piece
- * is omitted when the underlying metadata is absent. A vertical rule divides
- * the rating facts from the genres, and the genres from the optional links.
- * `links` is opt-in (the hero passes them; the modal renders its own block).
- */
+/** year · runtime · rating | genres | links; each piece omitted when absent. */
 export function MetaChips({
   movie,
   links = [],
@@ -108,12 +92,8 @@ export function MetaChips({
   movie: MovieTile;
   links?: { label: string; href: string }[];
   /**
-   * Navigate over the current history entry instead of stacking on it. The
-   * movie modal sets it because its own entry is what the chips are leaving
-   * (see useMovieModalHistory): the navigation consumes that entry, which
-   * both closes the modal and keeps the stack flat. Popping it separately
-   * would race the chip's own navigation, and on /stats (a same-route search
-   * change that keeps the modal mounted) the pop could land back on it.
+   * Set by the movie modal: the chip replaces the modal's history entry (see
+   * useMovieModalHistory). A separate pop would race the chip's navigation.
    */
   replace?: boolean;
 }) {
@@ -136,8 +116,6 @@ export function MetaChips({
   return (
     <div className="metachips">
       {year && (
-        // Release year deep-links to stats filtered to that year, mirroring the
-        // genre chips below. Runtime/rating stay static — they aren't filters.
         <Link
           to="/stats"
           search={{ ...statsSearchDefaults, year }}
@@ -157,8 +135,6 @@ export function MetaChips({
 
       {genres.length > 0 && hasFacts && <span className="metasep" aria-hidden="true" />}
       {genres.map((g) => (
-        // Deep-link to the Stats tab pre-filtered by this genre. stripSearchParams
-        // trims the spread defaults, so the URL is just /stats?genre=<g>.
         <Link
           key={g}
           to="/stats"

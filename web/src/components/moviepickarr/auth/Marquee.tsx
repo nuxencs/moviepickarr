@@ -9,12 +9,7 @@ import {
 } from "@/components/moviepickarr/auth/posterWall";
 import { posterUrl } from "@/components/moviepickarr/lib";
 
-/** The cinematic left panel shared by the login and claim screens. Decorative
- *  only (aria-hidden): a tilted, layered-depth wall of movie posters the form
- *  column does not depend on. Real posters come from the public poster-wall
- *  endpoint (popularity order, centre-fanned so #1 sits at the visual middle);
- *  the gradient stand-ins fill any empty slot and stand in for the whole wall
- *  whenever the fetch is empty, still loading, or errored, so it never breaks. */
+/** Decorative poster wall for the login and claim screens. */
 export function Marquee() {
   const wall = useQuery(PosterWallQueryOptions());
   const tiles = posterWall(wall.data ?? []);
@@ -42,10 +37,8 @@ export function Marquee() {
                       alt=""
                       loading="lazy"
                       decoding="async"
-                      // Decorative wall, so no per-image loading state or the
-                      // Poster crossfade: the gradient underlay already covers
-                      // the pre-load frame. On a 404, drop the broken image so
-                      // the underlay shows through instead of an empty box.
+                      // No Poster crossfade: the gradient underlay covers the
+                      // pre-load frame and shows through on a 404.
                       onError={(e) => {
                         e.currentTarget.style.display = "none";
                       }}

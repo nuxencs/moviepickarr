@@ -10,10 +10,9 @@ export function documentScrollOwner(doc: Document = document): HTMLElement {
 }
 
 /**
- * Measure the gutter that the body actually reserves. A forced overflow probe
- * can disagree with `scrollbar-gutter: stable`, especially in headless Chromium
- * and overlay-scrollbar environments. Fixed chrome must follow the applied body
- * geometry because bounded routes temporarily remove that exact gutter.
+ * Measures the gutter the body reserves. A forced overflow probe can disagree
+ * with `scrollbar-gutter: stable` (headless Chromium, overlay scrollbars), and
+ * bounded routes remove this exact gutter.
  */
 export function installDocumentScrollPolicy(doc: Document = document): number {
   const width = doc.body.offsetWidth - doc.body.clientWidth;
@@ -31,15 +30,11 @@ export function documentOffsetTop(
   );
 }
 
-/** Route changes start the shared body owner at its top. */
 export function resetDocumentScroll(doc: Document = document): void {
   documentScrollOwner(doc).scrollTop = 0;
 }
 
-/**
- * Lock every page-level owner as one nested operation. Modal-owned scrollers
- * are not marked with data-page-scroll-owner and remain available.
- */
+/** Locks every page-level owner (nestable). Unmarked modal scrollers stay scrollable. */
 export function lockPageScroll(doc: Document = document): () => void {
   if (lockCount++ === 0) {
     const owners = [

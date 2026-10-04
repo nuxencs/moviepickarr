@@ -5,8 +5,7 @@ import { documentOffsetTop, documentScrollOwner } from "@/lib/scrollPolicy";
 /** Resolved track list, lane count and gaps of a CSS grid, plus its offset from
  *  the body document owner's content origin (the virtualizer's scrollMargin). */
 export interface GridMetrics {
-  /** The container's resolved `grid-template-columns`, replayed verbatim onto
-   *  each virtual row so the row's tracks can't drift from the container's. */
+  /** Replayed verbatim onto each virtual row so its tracks cannot drift. */
   template: string;
   lanes: number;
   columnGap: number;
@@ -24,10 +23,8 @@ const px = (value: string) => {
 };
 
 /**
- * Read a grid's resolved geometry. The track list comes back from the browser
- * already resolved to pixel widths, so `repeat(auto-fill, minmax(…))` and its
- * media-query overrides stay in the stylesheet — nothing about the breakpoints
- * is duplicated here. A non-grid container ("none") reads as a single lane.
+ * Reads a grid's resolved geometry, so breakpoints stay in the stylesheet only.
+ * A non-grid container reads as a single lane.
  */
 export function readGridMetrics(style: {
   gridTemplateColumns: string;
@@ -51,16 +48,11 @@ const same = (a: GridMetrics, b: GridMetrics) =>
   a.rowGap === b.rowGap &&
   a.offsetTop === b.offsetTop;
 
-/** Absolute placement of one virtualized row inside its sizing container. */
 export function virtualRowStyle(offset: number): CSSProperties {
   return { position: "absolute", top: offset, left: 0, width: "100%" };
 }
 
-/**
- * Track a grid container's lane count, gaps and document offset, re-reading on
- * any resize of the container or of the page above it (the pool grid grows and
- * shrinks over SSE, which moves the watched grid down the page).
- */
+/** Re-reads on resize of the container or of the page above it (#root). */
 export function useGridMetrics(ref: RefObject<HTMLElement | null>): GridMetrics {
   const [metrics, setMetrics] = useState<GridMetrics>(EMPTY);
 

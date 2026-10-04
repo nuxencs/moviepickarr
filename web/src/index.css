@@ -2,11 +2,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ============================================================
-   moviepickarr — design tokens
-   Geist (UI) + Geist Mono (data) + Hubot Sans (display).
-   Dark-primary, light included. Fixed gold accent.
-   ============================================================ */
+/* Design tokens. Dark is primary; the gold accent is fixed in both themes. */
 
 :root {
   /* type */
@@ -14,7 +10,7 @@
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --font-display: "Hubot Sans", "Geist", ui-sans-serif, system-ui, sans-serif;
 
-  /* radius / motion — kept tight & squared */
+  /* radius: tight and squared */
   --r-sm: 2px;
   --r-md: 3px;
   --r-lg: 4px;
@@ -25,32 +21,27 @@
   --control-h: 42px;
   --control-h-lg: 46px;
 
-  /* easing — entrances decelerate, exits accelerate away, the draw-reveal is a confident expo */
+  /* easing: entrances decelerate, exits accelerate away, the draw-reveal is an expo */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-reveal: cubic-bezier(0.16, 1, 0.3, 1);
-  /* Reel glide: a higher-order ease-out (easeOutCubic) so the deceleration itself
-     tapers off and the reel floats to a stop — easeOutQuad's linear velocity falloff
-     braked at a constant rate and read as a slightly abrupt landing. Still short of
-     --ease-reveal's expo, whose front-loading would visually stall a long spin within
-     ~1s. Mirror the curve order in DrawReel.tsx's resume math (1 − (1−t)³). */
+  /* easeOutCubic: easeOutQuad lands abruptly, an expo stalls a long spin. Keep in step
+     with DrawReel.tsx's resume math (1 - (1-t)^3). */
   --ease-reel: cubic-bezier(0.33, 1, 0.68, 1);
 
-  /* duration scale — fast = pointer feedback, base = state change + overlay entrances,
-     slow = page/section load + chart grow, reveal = the hero draw-reveal */
+  /* duration: fast = pointer, base = state + overlays, slow = load + charts */
   --dur-fast: 0.14s;
   --dur-base: 0.22s;
   --dur-slow: 0.4s;
-  --dur-reveal: 0.6s; /* the cinematic draw-reveal (backdrop crossfade + content settle) */
-  --dur-spin: 6.5s; /* the slot-machine draw reel — scroll + decelerate onto the winner, timed to land on the jingle's payoff */
-  --dur-confirm: 10s; /* the settled reel's confirm countdown (OK button fill); read in DrawReel for the auto-reveal timer */
-  --dur: var(--dur-base); /* legacy alias — prefer the scale above */
-  --stagger: 0.055s; /* per-index step for cascaded entrances (draw-reveal slots, .mg-rise, auth column) */
-  --poster-zoom: 1.06; /* hover/focus zoom for poster + avatar tiles, scaled inside their clipped frame */
-  --poster-zoom-press: 1.03; /* the :active press, eased back from the hover zoom */
+  --dur-reveal: 0.6s;
+  --dur-spin: 6.5s; /* timed to land on the jingle's payoff */
+  --dur-confirm: 10s; /* read by DrawReel's auto-reveal timer */
+  --dur: var(--dur-base); /* legacy alias; prefer the scale above */
+  --stagger: 0.055s; /* per-index step for cascaded entrances */
+  --poster-zoom: 1.06;
+  --poster-zoom-press: 1.03;
 
-  /* Compact movie rails keep one shared target. Wrapping poster grids resolve
-     their own tracks against the width of the surface they occupy. */
+  /* Shared target for compact rails; wrapping grids size their own tracks. */
   --poster-general: clamp(144px, 6.4vw, 164px);
   --document-scrollbar-width: 0px;
 
@@ -62,7 +53,7 @@
   --modal-form-max: 460px;
   --modal-block-max: clamp(900px, 72dvh, 1320px);
 
-  /* accent — gold (fixed) */
+  /* accent: fixed gold */
   --accent: oklch(0.82 0.13 84);
   --accent-soft: oklch(0.82 0.13 84 / 0.16);
   --accent-line: oklch(0.82 0.13 84 / 0.42);
@@ -129,11 +120,7 @@
   color-scheme: light;
 }
 
-/* ============================================================
-   Tailwind theme — expose MG tokens as utilities, and remap the
-   shadcn `--color-*` aliases that Radix `ui/*` primitives use onto
-   the new palette so dropdowns/popovers/dialogs blend in.
-   ============================================================ */
+/* Tailwind theme: MG tokens as utilities, shadcn `--color-*` aliases remapped onto the palette. */
 @theme inline {
   --font-display: var(--font-display);
   --font-mono: var(--font-mono);
@@ -193,8 +180,8 @@
     padding: 0;
   }
 
-  /* The body is the one standard document owner. Its stable native gutter keeps
-     short and long routes aligned without forcing a visible scrollbar. */
+  /* The body is the one document scroll owner (scrollPolicy.ts). Its stable gutter
+     aligns short and long routes. */
   html {
     height: 100%;
     overflow: hidden;
@@ -213,8 +200,7 @@
     scrollbar-gutter: stable;
   }
 
-  /* These surfaces own their own vertical movement. Remove the unused body
-     gutter while they are active and let their named owners reserve geometry. */
+  /* Self-scrolling surfaces drop the body gutter; their own owners reserve it. */
   body:has(.auth) {
     --document-frame-offset: var(--document-scrollbar-width);
     overflow-y: hidden;
@@ -247,7 +233,6 @@
 
 }
 
-/* keyframes */
 @keyframes mg-fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes mg-fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mg-fadeOut { from { opacity: 1; } to { opacity: 0; } }
@@ -265,28 +250,21 @@
   from { background-color: rgba(5,6,10,0.62); backdrop-filter: blur(8px); }
   to { background-color: rgba(5,6,10,0); backdrop-filter: blur(0); }
 }
-/* Stat bars grow from baseline to the value the element already encodes (the implicit
-   keyframe `to` is the element's resting width / height). REQUIRES `backwards` on
-   any consumer with a positive animation-delay, else the pre-delay frame shows the
-   resting (full) value instead of the empty start. */
+/* The implicit `to` is the resting size. A consumer with a positive delay REQUIRES
+   `backwards`, or the pre-delay frame shows the full value. */
 @keyframes mg-growBfill { from { width: 0; } }
 @keyframes mg-growHcol { from { height: 0; } }
-/* Draw-reveal: the incoming backdrop fades up with a slow settle-scale; each
-   content slot fades + lifts into place. Transform/opacity only (no reflow). */
+/* Draw-reveal: transform/opacity only, no reflow. */
 @keyframes mg-bgReveal { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
 @keyframes mg-revealDraw { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-/* ============================================================
-   moviepickarr components (ported from the design prototype)
-   ============================================================ */
+/* ---- Components ---- */
 @layer components {
   .mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
   .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
 
-  /* Off-screen for eyes, present for screen readers. Must stay the clip-rect
-     recipe: display:none and visibility:hidden both pull the node out of the
-     accessibility tree, which would quietly turn any live region wearing this
-     class into dead code. */
+  /* Must stay the clip-rect recipe: display:none or visibility:hidden would drop
+     live regions using this class from the accessibility tree. */
   .vis-hidden {
     position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
     overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
@@ -307,25 +285,19 @@
   /* Overscan the image beneath the clipped frame. Fractional grid columns can
      otherwise expose a one-device-pixel seam when the hover scale settles. */
   .poster__img { position: absolute; inset: -1px; width: calc(100% + 2px); max-width: none; height: calc(100% + 2px); object-fit: cover; z-index: 0; transition: opacity var(--dur) var(--ease), transform var(--dur-fast) var(--ease); }
-  /* Until the photo loads, the duotone backdrop shows through (img faded out)
-     under a shimmer sweep; the photo then crossfades in over the duotone. */
+  /* The duotone shows under a shimmer until the photo loads and crossfades in. */
   .poster--loading .poster__img { opacity: 0; }
   .poster__shimmer {
     position: absolute; inset: 0; z-index: 2; pointer-events: none;
     background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.10) 50%, transparent 75%);
     animation: mg-shimmer 1.4s ease-in-out infinite;
   }
-  /* translateX from fully off-left to fully off-right so the highlight band is
-     out of view at BOTH keyframe ends — the infinite loop never flashes when it
-     snaps back to the start. */
+  /* Fully off-left to fully off-right, so the loop never flashes on restart. */
   @keyframes mg-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
   @media (prefers-reduced-motion: reduce) { .poster__shimmer { animation: none; } }
 
-  /* Skeleton placeholder block — a surface tile with the same shimmer sweep the
-     posters use, so route/data loading states show the page's shape instead of a
-     bare "Loading…" line. Reuses mg-shimmer; honors reduced-motion. Fill and
-     sweep are tokens because both flip with the theme, unlike the sibling
-     shimmers that sweep an opaque duotone. */
+  /* Skeleton fill and sweep are tokens because both flip with the theme, unlike the
+     poster shimmers over an opaque duotone. */
   .skel { position: relative; overflow: hidden; background: var(--skel-bg); border-radius: var(--r-sm); }
   .skel::after {
     content: ""; position: absolute; inset: 0; pointer-events: none;
@@ -365,16 +337,14 @@
   /* The "·" glyph (matching the eyebrow dot), not a CSS circle, for one dot style. */
   .metachip--dot::before { content: "·"; margin-right: 8px; color: var(--ink-3); }
   .genrechip { font-size: 12px; padding: 3px 9px; border-radius: var(--r-sm); border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap; }
-  /* Genre chips deep-link to filtered stats — give the anchor a clear clickable
-     affordance while keeping the resting pill identical to the static chip. */
+  /* Linked genre chips rest identical to static ones. */
   a.genrechip { text-decoration: none; cursor: pointer; transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease); }
   .genrechip--link:hover, .genrechip--link:focus-visible { color: var(--ink); border-color: var(--accent-line); background: var(--accent-soft); }
   .genrechip--link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .metasep { width: 1px; height: 13px; border-radius: 99px; background: var(--line-2); margin: 0 2px; }
   .metalink { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); text-decoration: none; white-space: nowrap; transition: color var(--dur-fast) var(--ease); }
   .metalink:hover { color: var(--accent); }
-  /* The year fact deep-links to filtered stats; mirror the metalink color-shift
-     affordance rather than a pill so the mono facts run stays calm. */
+  /* A color shift, not a pill, keeps the mono facts run calm. */
   a.metachip { text-decoration: none; cursor: pointer; }
   .metachip--link:hover, .metachip--link:focus-visible { color: var(--accent); }
   .metachip--link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -387,11 +357,8 @@
     font-family: var(--font-mono); font-weight: 600; font-size: calc(var(--s) * 0.36);
     color: #fff; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16); letter-spacing: 0;
   }
-  /* Optional photo (TMDB headshot) layered over the initials gradient — the
-     initials stay underneath as the loading/error fallback. */
+  /* The initials stay underneath as the loading/error fallback. */
   .avatar__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity var(--dur) var(--ease); }
-  /* Headshot crossfades in over the initials; a shimmer sweeps while it loads
-     (reuses the poster's mg-shimmer keyframe). */
   .avatar--loading .avatar__img { opacity: 0; }
   .avatar__shimmer {
     position: absolute; inset: 0; pointer-events: none;
@@ -438,12 +405,9 @@
   .sec-title { display: flex; align-items: baseline; gap: 11px; }
   .sec-title h2 { margin: 0; font-family: var(--font-display); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
   .sec-count { font-family: var(--font-mono); font-size: 14px; color: var(--ink-3); font-weight: 500; }
-  /* The second span of a head reporting a count AND round state (Members). It
-     steps down from .sec-count's 14px because two mono spans at one size on one
-     baseline read as a run-on string (DESIGN.md §4). Pair with .mono. */
+  /* Smaller than .sec-count: two same-size mono spans read as one string (DESIGN.md §4). */
   .sec-status { font-size: 12px; color: var(--ink-3); letter-spacing: 0.01em; white-space: nowrap; }
-  /* Below the tablet step the line is allowed to wrap rather than push the
-     head wider than the page (760, not 900: at 900 there's still room). */
+  /* 760, not 900: at 900 the line still fits. */
   @media (max-width: 760px) {
     .sec-status { white-space: normal; }
   }
@@ -470,8 +434,7 @@
     font-size: 12px; line-height: 1.4; animation: mg-fadeIn var(--dur-fast) var(--ease);
   }
 
-  /* Shared integration checkbox label. TMDB and Radarr both use this control,
-     so its themed native input belongs in the app-wide component layer. */
+  /* Shared by TMDB and Radarr, so it lives in the app-wide layer. */
   .int-toggle {
     display: inline-flex; min-height: var(--control-h-sm); align-items: center; gap: 9px;
     color: var(--ink-2); font-size: 13px;
@@ -494,9 +457,7 @@
   .seg button[data-active="true"] { background: var(--surface-3); color: var(--ink); box-shadow: var(--shadow-sm); }
 
   /* ---- Filter bar (FilterBar.tsx) ---- */
-  /* Chip-trigger selects whose dropdown reuses the .mg-menu surface (below).
-     The chip is a wrapper around two real buttons — trigger + clear X — so
-     both stay keyboard-reachable without nesting buttons. */
+  /* The chip wraps two real buttons (trigger + clear) so both stay keyboard-reachable. */
   .filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .filterchip {
     display: inline-flex; align-items: stretch; overflow: hidden;
@@ -523,24 +484,17 @@
   .filterchip[data-active="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--ink); }
   .filterchip[data-active="true"] > button:hover:not(:disabled) { background: var(--accent-soft); }
   .filterchip > .filterchip__clear { flex: none; border-left: 1px solid var(--accent-line); padding: 0 7px; }
-  /* Positioning context for the dropdown. Separate from the chip so the chip
-     keeps its overflow:hidden corner clip while the menu (a child of the wrap)
-     escapes it. The menu anchors here in CSS rather than via a portal, keeping
-     the trigger and surface in one coordinate space without JS placement. */
+  /* Separate from the chip so the menu escapes the chip's corner clip. CSS
+     anchoring, not a portal, so no JS placement. */
   .filterchip-wrap { position: relative; display: inline-flex; }
-  /* Name the trigger (not the clear X) as the dropdown's anchor, scoped per
-     chip via the inherited --chip-anchor ident. */
+  /* The trigger, not the clear X, is the anchor; --chip-anchor scopes it per chip. */
   @supports (anchor-name: --a) {
     .filterchip > button:not(.filterchip__clear) { anchor-name: var(--chip-anchor); }
   }
 
-  /* ============================================================
-     Layout: nav · hero · tabs
-     ============================================================ */
+  /* ---- Layout: nav, hero, tabs ---- */
   .shell { max-width: var(--page-max); margin: 0 auto; padding: 40px 32px 110px; }
-  /* Bottom padding is spelled out rather than folded into the shorthand: every
-     width in this block is also under the 900 bar breakpoint, so the clearance
-     belongs here instead of depending on which block the cascade reads last. */
+  /* Separate padding-bottom so the bar clearance does not depend on cascade order. */
   @media (max-width: 700px) { .shell { padding: 28px 18px; padding-bottom: calc(76px + env(safe-area-inset-bottom)); } }
 
   /* Keep the navigation inside the body's scroll paint plane. Safari can place
@@ -550,14 +504,11 @@
     margin-inline-end: var(--document-frame-offset);
     background: color-mix(in oklab, var(--bg) 94%, transparent);
   }
-  /* The content stays inside the stable document frame, but its decorative
-     divider crosses the reserved native gutter and reaches the viewport edge. */
+  /* The divider crosses the reserved gutter to the viewport edge. */
   .nav::after { content: ""; position: absolute; left: 0; bottom: 0; width: 100vw; border-bottom: 1px solid var(--line); pointer-events: none; }
   .nav__inner { max-width: var(--page-max); margin: 0 auto; padding: 0 32px; height: 62px; display: flex; align-items: center; gap: 30px; }
   @media (max-width: 700px) { .nav__inner { padding: 0 18px; gap: 16px; } }
-  /* The wordmark (an <h1>) is a home control: its inner link returns to the
-     Movies tab from anywhere. The link can't wrap the <h1>, so the heading
-     wraps the link and the layout/type live on the link. */
+  /* A link cannot wrap the <h1>, so the heading wraps the link and styles live on the link. */
   .wordmark { margin: 0; flex: none; }
   .wordmark__home {
     display: inline-flex; align-items: center; gap: 11px;
@@ -587,17 +538,12 @@
   }
   .tab:hover { color: var(--ink-2); }
   .tab[data-active="true"] { color: var(--ink); }
-  /* Single shared underline; left/width are set inline per active tab (NavBar.tsx)
-     and the slide between tabs is the transition below. */
+  /* left/width are set inline per active tab (NavBar.tsx). */
   .tab__ink { position: absolute; bottom: -1px; height: 2px; background: var(--accent); transition: left var(--dur) var(--ease), width var(--dur) var(--ease); }
   .nav .iconbtn { border: 1px solid var(--line); }
-  /* The avatar/profile trigger, pinned to the right edge of the bar. */
   .nav__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
-  /* Draw-sound control: mute toggle, a full-width volume slider with its
-     percentage, and a jingle audition button, rendered inline inside the
-     profile panel's Preferences section (VolumeControl.tsx). The panel owns
-     open/close, so there's no popover here. */
+  /* Draw-sound control inside the profile panel (VolumeControl.tsx). */
   .volume { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
   .volume__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .volume__label { font-size: 13.5px; color: var(--ink-2); }
@@ -608,12 +554,9 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Profile: the top-right avatar and the panel it toggles (ProfilePanel.tsx).
-     Anchored top-right and width-capped to the viewport so it never overflows on
-     phones, where the avatar sits in the same top bar. */
+  /* ProfilePanel.tsx. The panel is width-capped so it never overflows on phones. */
   .profile { position: relative; display: flex; }
-  /* Radius matches the Avatar (var(--r-sm)) so the focus outline and the
-     open-state ring hug the rounded-square photo instead of drawing a circle. */
+  /* Matches the Avatar radius so the focus and open rings hug the photo. */
   .profile__trigger {
     display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer;
     border-radius: var(--r-sm); transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
@@ -639,8 +582,7 @@
   .profile__idtext { min-width: 0; }
   .profile__idname { display: flex; align-items: center; gap: 8px; }
   .profile__idnametext { font-size: 15px; font-weight: 640; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Role pill; mirrors account/.acc-tag but lives here so the panel doesn't
-     depend on the account page's stylesheet being loaded. */
+  /* Mirrors .acc-tag, so the panel does not depend on the account stylesheet. */
   .profile__tag {
     flex: none; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
     padding: 2px 6px; border-radius: 999px; line-height: 1;
@@ -671,8 +613,7 @@
   /* ---- Hero ---- */
   .hero { --hero-body-h: 18.5rem; position: relative; overflow: hidden; isolation: isolate; border-bottom: 1px solid var(--line); animation: mg-fadeIn var(--dur-slow) var(--ease); }
   .hero__bg-stack { position: absolute; inset: 0; z-index: 0; }
-  /* One constant scrim sits above the crossfading image layers so a crossfade
-     never doubles the darkening. */
+  /* One constant scrim above the crossfading layers, so a crossfade never doubles the darkening. */
   .hero__bg-stack::after {
     content: ""; position: absolute; inset: 0; z-index: 1;
     background:
@@ -680,57 +621,43 @@
       linear-gradient(0deg, var(--bg), transparent 60%);
   }
   .hero__bgimg { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; }
-  /* The incoming backdrop layer; the initial layer carries no --enter and just paints. */
   .hero__bgimg--enter { animation: mg-bgReveal var(--dur-reveal) var(--ease-reveal) both; }
   .hero__inner { position: relative; z-index: 1; max-width: var(--page-max); margin: 0 auto; display: flex; gap: 34px; padding: 56px 32px 60px; align-items: flex-start; }
-  /* Width derived from the body's static height (--hero-body-h, §7) and the 2/3
-     poster ratio, so the poster's bottom edge lines up with the pinned action
-     button — and it tracks the height automatically at the large-screen step. */
+  /* From --hero-body-h (§7) and the 2/3 ratio, so the poster's bottom aligns with the actions. */
   .hero__poster { width: calc(var(--hero-body-h) * 2 / 3); flex: none; }
   .hero__poster .poster { box-shadow: 0 34px 64px -26px rgba(0,0,0,0.85); }
-  /* Reserved-height column: top group (eyebrow + title) stays anchored at the top,
-     the tagline/meta/actions group is pushed to the bottom via margin-top:auto.
-     min-height holds the expected worst case (2-line title + 2-line tagline) so
-     common draws do not resize the banner. Longer content can still grow. */
+  /* min-height fits a 2-line title + 2-line tagline, so common draws do not resize the banner. */
   .hero__body { flex: 1; min-width: 0; color: #fff; display: flex; flex-direction: column; min-height: var(--hero-body-h); }
   .hero__eyebrow { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,0.7); }
   .hero__eyebrow--wildcard { color: var(--accent); }
   .hero__eyebrow--wildcard svg { width: 14px; height: 14px; flex: none; }
-  /* The adder's name carries the emphasis: brighter + heavier than the rest of
-     the eyebrow line, so attribution reads at a glance without new chrome. It
-     is also the way to their board (#238), and at full white it has no brighter
-     state to move to — so the hover is an underline, where the chips below it
-     lift from 84% to white. The focus ring is the chips' (accent, 2px). */
+  /* Links to the adder's board (#238). Already full white, so hover underlines instead. */
   .hero__by { color: #fff; font-weight: 700; text-decoration: none; }
   a.hero__by:hover, a.hero__by:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
   a.hero__by:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
   .hero__title { margin: 13px 0 0; font-family: var(--font-display); font-size: clamp(32px, 4.6vw, 54px); font-weight: 700; line-height: 0.98; letter-spacing: -0.02em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  /* Pushed to the bottom (margin-top:auto) and locked to a 2-line slot so
-     short and long taglines occupy identical height. */
+  /* A fixed 2-line slot, so short and long taglines take the same height. */
   .hero__tag { margin: auto 0 0; font-size: 15px; line-height: 1.4; color: rgba(255,255,255,0.74); max-width: 56ch; font-style: italic; min-height: 2.8em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .hero__meta { margin-top: 14px; min-height: 26px; }
   .hero__meta .metachip, .hero__meta .rating { color: rgba(255,255,255,0.84); }
   .hero__meta .genrechip { color: rgba(255,255,255,0.84); border-color: rgba(255,255,255,0.28); }
-  /* Hero text stays light on the cinematic backdrop regardless of theme, so the
-     chip hover keeps a light treatment rather than the page-level ink tokens. */
+  /* Hero text stays light on the backdrop in both themes, so no ink tokens here. */
   .hero__meta .genrechip--link:hover, .hero__meta .genrechip--link:focus-visible { color: #fff; border-color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.14); }
   .hero__meta .metasep { background: rgba(255,255,255,0.28); }
   .hero__meta .metalink { color: rgba(255,255,255,0.84); }
   .hero__meta .metalink:hover { color: #fff; }
   .hero__meta .metachip--link:hover, .hero__meta .metachip--link:focus-visible { color: #fff; }
   .hero__actions { margin-top: 26px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  /* Draw-reveal: poster + each text slot fade-settle into place, lightly
-     staggered, on the keyed remount when the draw changes (or clears). The §7
-     fixed box means nothing reflows; reduced-motion zeroes duration AND delay. */
+  /* Runs on the keyed remount per draw. The §7 fixed box means nothing reflows;
+     reduced motion zeroes duration AND delay. */
   .hero[data-ready] :is(.hero__poster, .hero__eyebrow, .hero__title, .hero__tag, .hero__meta, .hero__actions) {
     animation: mg-revealDraw var(--dur-reveal) var(--ease-reveal) both;
     animation-delay: calc(var(--i, 0) * var(--stagger));
   }
   .hero__nextup { display: flex; align-items: center; gap: 11px; margin-left: 10px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,0.2); color: #fff; }
   .hero__nextup .nm { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
-  /* Admin Turn skip: a bare icon that reads as part of the chip. A fixed 30px box
-     (the avatar's size) keeps it on the chip's row at 375px, so the hero stays
-     static (§7); a coarse pointer gets a larger hit area, not a larger box. */
+  /* Fixed 30px box keeps it on the chip's row at 375px (§7); coarse pointers get a
+     larger hit area, not a larger box. */
   .hero .hero__skip { position: relative; width: 30px; height: 30px; margin-left: -5px; color: rgba(255,255,255,0.62); }
   .hero .hero__skip:hover:not(:disabled) { background: transparent; border-color: transparent; color: #fff; }
   .hero .hero__skip svg { width: 17px; height: 17px; }
@@ -750,21 +677,16 @@
     .hero__nextup { margin-left: 0; padding-left: 0; border-left: none; }
   }
   @media (max-width: 331px) { .hero { --hero-body-h: 21rem; } }
-  /* Large screens: a taller body (the poster width tracks --hero-body-h
-     automatically), roomier padding, and a higher title ceiling. Still static
-     across draws within this breakpoint (§7); mirrors the phone step above. */
+  /* Still static across draws within this breakpoint (§7). */
   @media (min-width: 1728px) {
     .hero { --hero-body-h: 21rem; }
     .hero__inner { padding: 72px 32px 76px; }
     .hero__title { font-size: clamp(32px, 4.6vw, 64px); }
   }
 
-  /* ---- Draw reel (slot-machine reveal) ----
-     A takeover overlay inside the hero: a horizontal poster reel scrolls and
-     decelerates onto the server-chosen winner, then hands off to the hero
-     draw-reveal. The track's transform is set in JS and glided by a CSS
-     transition (DrawReel.tsx); the global reduced-motion block collapses both
-     the fade-in and that transition to instant, so it degrades to a clean cut. */
+  /* ---- Draw reel ----
+     DrawReel.tsx sets the track transform and a CSS transition glides it; the
+     global reduced-motion block makes both instant. */
   .drawreel {
     position: absolute; inset: 0; z-index: 3;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -797,10 +719,7 @@
   }
   .drawreel__reticle::before { top: -2px; border-top-color: var(--accent); }
   .drawreel__reticle::after { bottom: -2px; border-bottom-color: var(--accent); }
-  /* Fixed-height control row: the spinning Skip button, the settled OK button, and
-     the spectator "Waiting" line are all different heights. Reserving the tallest
-     (the OK button) keeps the centered column from reflowing — so the reel doesn't
-     shift up when the controls swap on settle. */
+  /* Reserves the tallest control (OK) so the reel does not shift when controls swap on settle. */
   .drawreel__controls { display: flex; align-items: center; justify-content: center; min-height: 40px; }
   .drawreel__skip {
     font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
@@ -811,10 +730,7 @@
     transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
   .drawreel__skip:hover { color: #fff; background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.34); }
-  /* Settled reel: the drawer's confirm button. It's the gold accent button with a
-     dark sweep that fills left→right over --dur-confirm — a visible countdown.
-     When it fills, DrawReel auto-confirms (same token drives the JS timer), so the
-     reel never hangs. The label stays above the sweep for constant legibility. */
+  /* The fill is the --dur-confirm countdown; DrawReel auto-confirms off the same token. */
   .drawreel__ok { position: relative; overflow: hidden; min-width: 132px; justify-content: center; }
   .drawreel__ok-fill {
     position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0);
@@ -828,39 +744,23 @@
     .drawreel__tile { flex-basis: 96px; }
   }
 
-  /* Shared page-section entrance. `--i` is an opt-in stagger index: it defaults
-     to 0, so a page whose blocks don't set it (Movies / Members / Stats) mounts
-     them simultaneously as before. Surfaces with 3+ peer sections, or a
-     front-door moment (auth), set `--i` 0,1,2… per mg-rise block to cascade top-down at
-     55ms apart — the same step the hero draw-reveal uses. `both` fill is
-     required for any delayed mg-rise so its pre-delay frame shows the empty start,
-     not the resting (opacity 1) value. */
-  /* Named mg-rise, not `block`: Tailwind ships a `.block` display utility, and
-     its layer outranks this one, so an element carrying the old name silently
-     got `display: block` on top of the animation. Harmless on a plain div,
-     which is every early caller, and invisible until a flex row (`.sec-head`)
-     took it and dropped its right-hand control onto its own line. */
+  /* `--i` is an opt-in stagger index (default 0). `both` keeps a delayed rise empty
+     before it starts. Not `.block`: Tailwind's utility of that name outranks this layer. */
   .mg-rise { animation: mg-fadeUp var(--dur-slow) var(--ease) both; animation-delay: calc(var(--i, 0) * var(--stagger)); }
   .rule { height: 1px; background: var(--line); margin: 36px 0; }
   .empty { padding: 32px 0; text-align: center; color: var(--ink-2); font-size: 14px; }
 
   /* ---- Movies tab ---- */
-  /* Section-header control row (Pool: lock button; Watched: search + view
-     toggle). The search keeps a fixed desktop width; on phones it fills the
-     stacked header (see the 640px block below). */
+  /* The search fills the stacked header on phones (640px block below). */
   .watched-controls { display: flex; flex-wrap: wrap; align-items: stretch; gap: 12px; }
   .watched-controls__search { width: 230px; }
   .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 28px 18px; }
   .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
   .tile { display: flex; flex-direction: column; gap: 12px; cursor: pointer; }
-  /* The watched grid/list is window-virtualized (see VirtualWatched), so only
-     the rows near the viewport are in the DOM — no content-visibility here: it
-     would report contain-intrinsic-size instead of the real height and feed the
-     virtualizer's row measurement a lie. */
-  /* Hover zoom lives on the image inside the frame (.poster clips with
-     overflow:hidden), not a translate on the frame itself, so the whole tile
-     paints within its own box. Same treatment on the pool, the search results,
-     the stats rails, and the Members wall and pool slots (members.css). */
+  /* No content-visibility: it would feed VirtualWatched's row measurement the
+     intrinsic size, not the real height. */
+  /* Zoom the image inside the clipped frame, not the frame, so the tile paints in
+     its own box. Same on every poster surface, members.css included. */
   .tile:hover .poster__img,
   .tile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .tile:active .poster__img { transform: scale(var(--poster-zoom-press)); }
@@ -885,37 +785,22 @@
 
   /* ---- Users tab ---- */
   .user-add { display: flex; gap: 10px; align-items: center; }
-  /* Fixed desktop width; on phones it flexes to fill the stacked header
-     (see the 640px block below), mirroring .watched-controls__search. */
+  /* Fills the stacked header on phones (640px block below). */
   .user-add__field { width: 240px; }
-  /* The pool slot outlives the grid of boards it was written for: the rail's
-     drawer draws three of them (members.css), and the loading skeleton draws
-     three more. Everything else that framed a board — .boards, .board and its
-     head, .poolbox, .pool-slots, .stash — went with the peer grid and its
-     placeholder. */
+  /* Used by the rail's drawer (members.css) and the loading skeleton. */
   .pslot { flex: 1; aspect-ratio: 2/3; border: 1.5px solid transparent; border-radius: var(--r-md); position: relative; overflow: hidden; }
-  /* Non-interactive placeholder — the pool is filled by promoting from the stash. */
+  /* Non-interactive: the pool is filled by promoting from the stash. */
   .pslot--empty { border-style: dashed; border-color: var(--line-2); }
   .pslot--filled .poster { width: 100%; }
-  /* The demote control on a filled slot is the wall's corner action (.mem-act,
-     members.css): one language for the one control a poster carries, on both
-     bands. The full-poster overlay it replaced could not be made persistent
-     under `hover: none` without covering the art it sat on. */
 
   /* ---- Stats tab ---- */
   .stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
   .win-control { position: relative; }
 
-  /* One filter system (F-008): the time-range seg and every filter chip share
-     a single wrapping row, the 30px control rhythm, and the gold active
-     language. display:contents flattens the FilterBar so its chips wrap as
-     row items beside the seg instead of as one indivisible block. */
+  /* One filter row (F-008): display:contents lets the FilterBar's chips wrap beside the seg. */
   .statsfilters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 8px; margin-bottom: 30px; }
   .statsfilters .filterbar { display: contents; }
-  /* Inside the filter row the seg drops its filled-container costume and
-     speaks the chips' dialect — transparent, line-2 outline, r-sm, mono 12px,
-     and the active preset wears the chips' gold tint instead of solid gold —
-     so presets and filters read as one control family, not two systems. */
+  /* In the filter row the seg takes the chips' style, so presets and filters read as one family. */
   .statsfilters .seg { background: transparent; border-color: var(--line-2); border-radius: var(--r-sm); padding: 0; gap: 0; overflow: hidden; }
   .statsfilters .seg button {
     font-family: var(--font-mono); font-size: 12px; font-weight: 400;
@@ -930,18 +815,13 @@
     background: var(--accent-soft); color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--accent-line);
   }
-  /* The popover used to hang off a right-aligned control; the seg now sits at
-     the row's left, so anchor the calendar's left edge instead. */
+  /* The seg sits at the row's left, so anchor the calendar's left edge. */
   .statsfilters .daterange { left: 0; right: auto; }
 
   .daterange { position: absolute; top: calc(100% + 10px); right: 0; z-index: 45; width: 540px; max-width: calc(100vw - 40px); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 16px; animation: mg-scaleIn var(--dur-base) var(--ease); }
-  /* Exit motion to match the Menu/filter dropdowns: scale-out, fast, accelerate-away.
-     The popover stays mounted for exitDelayMs() while this plays (StatsTab gates the
-     unmount), so it never pops out instantly. The focus outline must still draw, so
-     no display:contents here. */
+  /* StatsTab keeps it mounted for exitDelayMs() while this plays. */
   .daterange--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
-  /* The popover is a focusable dialog (focus lands here on open); don't paint the
-     2px global focus ring on the surface itself — its controls carry their own. */
+  /* Focus lands on the dialog on open; its controls carry their own rings. */
   .daterange:focus { outline: none; }
   .daterange:focus-visible { outline: none; }
   .daterange__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
@@ -967,30 +847,19 @@
   .stat-strip { display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .statitem { padding: 24px 30px; display: flex; flex-direction: column; gap: 13px; border-left: 1px solid var(--line); }
   .statitem:first-child { border-left: none; padding-left: 0; }
-  /* Reserve two label lines so a wrapping label ("Most-watched adder" wraps at
-     the 6-up width) doesn't push this tile's value below its neighbours' and
-     break the KPI baseline across the strip. */
+  /* Two label lines, so a wrapping label keeps the KPI baseline across the strip. */
   .statitem__top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); min-height: 30px; }
   .statitem__top svg { color: var(--accent); flex-shrink: 0; }
   .statitem__top span { font-family: var(--font-mono); font-size: 11px; line-height: 1.35; letter-spacing: 0.1em; text-transform: uppercase; }
-  /* Fixed 2-line height (bottom-aligned) so a wrapping most-watched-adder name
-     never changes the strip height, so the page no longer jumps between windows. */
+  /* Fixed 2-line height, so a wrapping name never changes the strip height. */
   .statitem__val { font-size: 29px; font-weight: 650; letter-spacing: -0.025em; line-height: 1.05; height: 2.1em; display: flex; align-items: flex-end; overflow: hidden; }
   .statitem__val.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
-  /* NumberFlow's box carries internal mask padding round(0.25em/2,1px) below the
-     glyph — at this fixed 29px value size exactly 4px. The
-     value cell is align-items:flex-end, which aligns box bottoms (not baselines),
-     so the numeral floats 4px above where the plain-text values (Most-watched
-     adder / Busiest day) land. Pull it down so numbers and names share one baseline.
-     NOTE: this comp is only needed because of flex-end box alignment. Inline
-     NumberFlows (the .statitem__sub runtime + .statsec__title count) baseline-align
-     on their own — the mask is visual-only and does not move the glyph baseline.
-     Do NOT add vertical-align nudges there; they shove the
-     numeral off the text baseline (regressed the avg-runtime sub once already). */
+  /* NumberFlow's mask padding is round(0.25em/2, 1px) = 4px at 29px, and flex-end
+     aligns box bottoms, not baselines. Only needed here: inline NumberFlows
+     baseline-align on their own, so never nudge them (that regressed once). */
   .statitem__val number-flow-react { margin-bottom: -4px; }
   .statitem__sub { font-size: 12.5px; color: var(--ink-3); }
-  /* The 6-up KPI strip steps 6 → 3 → 2 columns; each step re-derives which
-     items start a row (and so drop their left border). */
+  /* 6, 3, 2 columns; each step re-derives which items start a row (no left border). */
   @media (max-width: 900px) {
     .stat-strip { grid-template-columns: repeat(3, 1fr); }
     .statitem { padding: 20px; border-left: 1px solid var(--line); }
@@ -1005,20 +874,13 @@
   }
 
   .statsec { margin-top: 30px; padding-top: 28px; border-top: 1px solid var(--line); }
-  /* Hugs the element above it (e.g. the movies rail under the KPI strip, which
-     already closes with its own bottom rule) — no second divider. */
+  /* The element above already closes with a rule, so no second divider. */
   .statsec--flush { margin-top: 24px; padding-top: 0; border-top: none; }
-  /* The below-fold panels (everything except the flush movies rail) skip layout
-     and paint while off-screen — the browser renders each only as it nears the
-     viewport, using the intrinsic-size placeholder to hold scroll position until
-     then (it remembers the real height after the first render via `auto`). Pairs
-     with the IntersectionObserver mount gate in StatsTab: that keeps them out of
-     the DOM until first approach, this skips repaint for the ones sitting below
-     the fold once mounted. */
+  /* Below-fold panels skip paint off-screen. Pairs with StatsTab's IntersectionObserver
+     mount gate, which keeps them out of the DOM until first approach. */
   .statsec:not(.statsec--flush) { content-visibility: auto; contain-intrinsic-size: auto 320px; }
   .statsec__title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0 0 20px; letter-spacing: -0.005em; }
-  /* Inline count ("Movies in Filter View · N") baseline-aligns on its own — see the
-     NOTE on .statitem__val above; no vertical-align nudge. */
+  /* Inline count: no vertical-align nudge (see .statitem__val). */
 
   .bar-rows { display: flex; flex-direction: column; gap: 16px; }
   .barrow { display: grid; grid-template-columns: 188px 1fr 34px; align-items: center; gap: 16px; }
@@ -1027,17 +889,12 @@
   .barrow--dow { grid-template-columns: 48px 1fr 24px; }
   .barrow--dow .b-name { font-family: var(--font-mono); }
   .barrow .b-track { height: 8px; border-radius: var(--r-sm); background: var(--surface-3); overflow: hidden; }
-  /* Real width (not transform: scaleX) for the same reason as the hourly bars:
-     scaling a rounded box squishes its border-radius on short bars and browsers
-     rasterize it differently. Timeframe toggles tween via `transition: width`. */
+  /* Real width, not scaleX: same reason as .hcol__bar. */
   .barrow .b-fill { width: calc(var(--p, 0) * 100%); height: 100%; border-radius: var(--r-sm); transition: width var(--dur-base) var(--ease); animation: mg-growBfill var(--dur-slow) var(--ease) backwards; }
   .barrow .b-val { font-family: var(--font-mono); font-size: 13px; color: var(--ink-2); text-align: right; }
 
-  /* Top-genres donut (F-003): a conic-gradient disc in stepped accent alphas —
-     gold stays the only hue (color = state, never decoration), and the legend
-     carries the actual mapping so color is never the only channel. The ramp
-     lives here so the disc's gradient stops and the legend swatches read the
-     same variables. */
+  /* Genre donut (F-003): gold is the only hue, so the legend carries the mapping. The
+     ramp lives here so the disc and the legend swatches read the same variables. */
   .genredonut {
     --donut-1: var(--accent);
     --donut-2: color-mix(in oklab, var(--accent) 78%, transparent);
@@ -1061,16 +918,10 @@
   .donut-legend__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .donut-legend__count { margin-left: auto; padding-left: 16px; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-2); }
 
-  /* People rails (F-004/F-005): the modal's castcard visuals as a horizontal
-     drill-down strip. Two SIBLING interactive layers per card — the toggle
-     button filters the page, the always-visible corner link opens TMDB —
-     never nested, so each keeps its own tab stop and a link click can't flip
-     the filter. Gold name = active (gold is state). */
-  /* Inline padding + matching negative margin keep the cards flush with the
-     section title; scroll-padding keeps the first card resting flush at scroll-0.
-     The padding is also what keeps the focus ring off the rail's clip edge: the
-     global ring needs 4px of clearance (2px offset + 2px width), so the top and
-     inline padding are exactly that. */
+  /* People rails (F-004/F-005): toggle and TMDB link are siblings, never nested, so
+     each keeps its own tab stop. */
+  /* 4px padding = the focus ring's clearance (2px offset + 2px width); the negative
+     margin keeps cards flush with the title. */
   .peoplerail { display: flex; gap: 14px; overflow-x: auto; padding: 4px 4px 6px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .peoplecard { position: relative; flex: 0 0 96px; }
   .peoplecard__toggle {
@@ -1078,13 +929,8 @@
     background: none; border: none; padding: 0; font: inherit; color: inherit;
     text-align: left; cursor: pointer; border-radius: var(--r-sm);
   }
-  /* Focus keeps the global outward ring. An inward one is invisible here: it
-     would run inside the photo box, which the opaque .avatar paints over. The
-     rail's padding gives the outward ring its clearance. */
-  /* Hover zooms the avatar inside the clipped photo box (same language as the
-     poster tiles). The active state is the gold name alone: a ring on the photo
-     box can't be seen, because .avatar is positioned and opaque and so paints
-     over its non-positioned parent's outline. */
+  /* Focus keeps the outward ring and active is the gold name alone: the positioned,
+     opaque .avatar paints over any inward ring or photo-box ring. */
   .peoplecard .castcard__photo .avatar { transition: transform var(--dur-fast) var(--ease); }
   .peoplecard__toggle:hover .castcard__photo .avatar,
   .peoplecard__toggle:focus-visible .castcard__photo .avatar { transform: scale(var(--poster-zoom)); }
@@ -1100,13 +946,8 @@
   .peoplecard__ext:hover { background: rgba(8,9,14,0.8); }
   .peoplecard__ext svg { width: 13px; height: 13px; }
 
-  /* Movies-in-window rail: poster tiles of the matched movies. Inline padding +
-     negative margin (as .peoplerail) and a taller top pad keep the edge tiles'
-     hover/focus ring — and the -4px hover lift — clear of the scroll-container
-     clip. align-items:flex-start + min-width:0 hold every tile at the shared
-     general-poster basis; without them a poster's aspect-ratio resolves a
-     larger content min-width under the default stretch and tiles render at
-     uneven sizes. */
+  /* Padding keeps edge tiles' rings clear of the scroll clip. flex-start + min-width:0
+     stop aspect-ratio from inflating min-width under stretch (uneven tiles). */
   .movierail { display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; padding: 10px 4px 8px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .movietile {
     flex: 0 0 var(--poster-general); min-width: 0; display: flex; flex-direction: column; gap: 9px;
@@ -1123,18 +964,7 @@
   .movietile:hover .movietile__title,
   .movietile:focus-visible .movietile__title { color: var(--accent); }
 
-  /* Filter-change motion for the stats rails (movies, people, member bars), driven
-     by useFlipRail. The hook measures each item's old→new box and animates by how
-     it actually moved: persistent items glide via an inline transform set in JS,
-     so an item whose position didn't change —
-     e.g. the 30d movies that are a prefix of the 1y set — gets a zero delta and
-     never moves. Newcomers fade in (data-flip-enter, set by the hook with a capped
-     per-newcomer stagger via inline animation-delay) — the exit played in reverse,
-     a pure opacity fade with no vertical motion; dropped items fade out
-     (data-flip-exit, set declaratively from the entry's `exiting` flag) and then
-     unmount, after which the survivors glide to close the gap. reduced-motion is
-     honored in the hook (no transforms/entrance, exits drop instantly) and the
-     global guard zeroes any leftover animation. */
+  /* useFlipRail sets data-flip-enter/exit and glides survivors with inline transforms. */
   .movierail .movietile[data-flip-enter],
   .peoplerail .peoplecard[data-flip-enter],
   .bar-rows .barrow[data-flip-enter],
@@ -1152,17 +982,11 @@
   .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 44px; }
   @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; gap: 0; } }
 
-  /* hourly column chart — bars and axis labels are separate rows so a label's
-     line-box height can never nudge an individual bar's baseline. */
+  /* Bars and labels are separate rows, so a label's line box cannot shift a bar. */
   .hourchart { display: flex; flex-direction: column; gap: 7px; }
   .hourchart__bars { display: flex; align-items: flex-end; gap: 3px; height: 150px; }
-  /* Real-height bars, NOT transform: scaleY. Scaling a rounded box squishes its
-     border-radius on short bars (2px x scaleY), and Chrome/Firefox rasterize the
-     squished corners differently — so short columns look a different style in FF.
-     Real height draws the radius at true size in every browser. The timeframe
-     toggle tweens between heights via `transition: height`; mg-growHcol is the
-     from-0 entrance on mount. The count rides just above the bar tip (flex column,
-     bottom-aligned), so it hugs even as the bar grows. */
+  /* Real height, NOT scaleY: scaling squishes the border-radius on short bars, and
+     Chrome and Firefox rasterize the squished corners differently. */
   .hcol { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; cursor: default; }
   .hcol__n { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: var(--ink-2); line-height: 1; opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
   .hcol:hover .hcol__n { opacity: 1; }
@@ -1170,10 +994,7 @@
   .hcol:hover .hcol__bar { filter: brightness(1.15); }
   .hourchart__axis { display: flex; gap: 3px; }
   .hourchart__axis span { flex: 1; text-align: center; font-family: var(--font-mono); font-size: 9.5px; line-height: 12px; color: var(--ink-3); }
-  /* Release decades (F-007): the hourly pattern at decade granularity. A few
-     wide, left-aligned columns (zero columns keep skipped decades honest in
-     the chronology), every non-empty count permanently visible, and an axis
-     label per column. Axis spans mirror the column flex so labels track bars. */
+  /* Release decades (F-007). Axis spans mirror the column flex so labels track bars. */
   .hourchart--decades .hourchart__bars { justify-content: flex-start; gap: 10px; height: 130px; }
   .hourchart--decades .hcol { flex: 0 1 72px; }
   .hourchart--decades .hcol:not([data-empty]) .hcol__n { opacity: 1; }
@@ -1183,16 +1004,12 @@
 
   /* ---- Search modal ---- */
   .modal-veil { position: fixed; inset: 0; z-index: 50; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px max-content 56px; justify-items: center; align-items: start; padding: 0 20px; overflow-y: auto; scrollbar-gutter: stable; }
-  /* Cross-browser compositor contract: the blur is a sibling of the dialog,
-     never a filter on .app or an ancestor of a dialog scroll owner. Filtering
-     .app makes Firefox rebuild bounded page scrollers with the navigation in
-     the same layer; filtering their dialog ancestor lets Safari paint modal
-     artwork above a native scrollbar. Keep this fixed layer beside .modal. */
+  /* The blur is a sibling of the dialog, never a filter on .app or a scroll owner's
+     ancestor: Firefox then layers the nav with page scrollers, and Safari paints modal
+     art above a native scrollbar. */
   .modal-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; background-color: rgba(5,6,10,0.62); backdrop-filter: blur(8px); animation: mg-backdropIn var(--dur-base) var(--ease) both; }
-  /* Explicit grid tracks keep the breathing room in the scrollable layout.
-     Firefox excludes a trailing pseudo-element from a column flex container's
-     scrollable overflow even when the element has a fixed size. A grid track is
-     layout geometry in every engine, so a tall dialog keeps 56px at both ends. */
+  /* Grid tracks, not a trailing pseudo-element: Firefox drops that from a column flex
+     container's scroll overflow, so a tall dialog would lose its 56px end. */
   .modal-veil::before, .modal-veil::after { content: ""; width: 0; }
   .modal-veil::before { grid-row: 1; }
   .modal-veil > .modal { position: relative; z-index: 1; grid-row: 2; }
@@ -1200,19 +1017,14 @@
   .modal-veil--closing { pointer-events: none; }
   .modal-veil--closing .modal-backdrop { animation: mg-backdropOut var(--dur-fast) var(--ease-exit) forwards; }
   .modal { width: min(var(--modal-browse-max), 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-xl); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); overflow: hidden; }
-  /* Once closing, ignore further clicks so the deferred-unmount window can't fire a confirm/submit twice. */
+  /* Ignore clicks while closing, so the deferred unmount cannot fire a submit twice. */
   .modal--closing { animation: mg-scaleOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
   .modal--movie { --moviemodal-hero-height: clamp(260px, 38cqi, 420px); width: min(var(--modal-record-max), 100%); container-type: inline-size; animation: mg-movieModalIn var(--dur-base) var(--ease) both; }
   .modal--movie.modal--closing { animation: mg-fadeOut var(--dur-fast) var(--ease-exit) forwards; }
   .modal--form { width: min(var(--modal-form-max), 100%); }
-  /* Capped mode (`<Modal capped>`): the surface owns the scroll instead of the veil,
-     so chrome pinned outside the `.modal__scroll` region (a close X, a head) stays put
-     while the content moves. Generic capped surfaces center; movie records override
-     that below with a stable top inset and a content-driven bottom. The veil stops
-     scrolling entirely, which is also what stops the whole blurred page from sliding
-     under a tall dialog. `position: relative` anchors pinned chrome to the surface,
-     while `overscroll-behavior` keeps a wheel over that chrome from chaining to the
-     page. Opt-in: form dialogs are short and should keep sizing to their content. */
+  /* Capped (`<Modal capped>`): the surface scrolls, not the veil, so pinned chrome stays
+     put and the page does not slide under a tall dialog. overscroll-behavior stops wheel
+     chaining from that chrome. Opt-in: form dialogs size to content. */
   .modal-veil:has(.modal--capped) { display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; overscroll-behavior: contain; }
   .modal-veil:has(.modal--capped)::before, .modal-veil:has(.modal--capped)::after { display: none; }
   .modal-veil:has(.modal--movie.modal--capped) { justify-content: flex-start; padding-block: var(--modal-record-top) 48px; }
@@ -1233,8 +1045,7 @@
   .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 22px 16px; }
   .result { display: flex; flex-direction: column; gap: 10px; }
   .result__media { position: relative; border-radius: var(--r-md); }
-  /* Zoom the poster image inside its clipped frame (same language as the tiles);
-     the overlay is a sibling above the poster, so it stays put over the zoom. */
+  /* The overlay is a sibling above the poster, so it stays put over the zoom. */
   .result:hover .poster__img,
   .result:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .result:active .poster__img { transform: scale(var(--poster-zoom-press)); }
@@ -1263,13 +1074,10 @@
   /* watched grid<->list crossfade */
   .watch-body { animation: mg-fadeUp var(--dur-base) var(--ease); }
 
-  /* movie detail modal — a record-width capped surface (`.modal--movie` + `<Modal capped>`):
-     backdrop, then a rail of poster + links out beside the reading column, then the
-     cast strip. The width is what makes the rest work: the overview stops running
-     narrow next to the poster and the cast strip shows nine cards before it scrolls. */
-  /* The scroller keeps the decorative layer in its paint plane. Its first child
-     uses the movie surface's complete container width, so the custom overlay
-     scrollbar never reserves a strip in the backdrop. */
+  /* Movie detail modal (`.modal--movie` + `<Modal capped>`). The record width lets the
+     overview breathe beside the poster and shows nine cast cards before scrolling. */
+  /* The first child spans the full container width, so the overlay scrollbar never
+     reserves a strip in the backdrop. */
   .moviemodal__scroll { position: relative; overflow-x: hidden; }
   .moviemodal__backdrop {
     position: absolute; top: 0; left: 0;
@@ -1278,8 +1086,7 @@
     pointer-events: none;
     background-position: top center; background-repeat: no-repeat;
   }
-  /* Clip the shimmer to the hero. The hero itself stays transparent because
-     the backdrop and both scrims belong to the overscanned decorative layer. */
+  /* Clip the shimmer to the hero; the backdrop and scrims live in the overscanned layer. */
   .moviemodal__hero { position: relative; height: var(--moviemodal-hero-height); overflow: hidden; }
   .moviemodal__hero__shimmer {
     position: absolute; inset: 0; pointer-events: none;
@@ -1287,47 +1094,29 @@
     animation: mg-shimmer 1.4s ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) { .moviemodal__hero__shimmer { animation: none; } }
-  /* Anchored to the surface (`.modal--capped` is the positioned ancestor), not to
-     the hero, so it stays put while the hero scrolls under it. */
+  /* Anchored to the surface, not the hero, so it stays put while the hero scrolls. */
   .moviemodal__close { position: absolute; top: 12px; right: 12px; z-index: 4; background: rgba(8,9,14,0.45); color: #fff; backdrop-filter: blur(6px); }
   .moviemodal__close:hover { background: rgba(8,9,14,0.7); color: #fff; border-color: transparent; }
   .moviemodal__body { display: flex; gap: 30px; padding: 0 30px 28px; margin-top: -68px; position: relative; z-index: 1; }
   .moviemodal__rail { width: 172px; flex: none; display: flex; flex-direction: column; gap: 14px; }
-  /* A whisper of lift where the poster overlaps the backdrop — the old 120px
-     poster's shadow reads oversaturated at 172px, especially in light mode. */
+  /* Light lift: a stronger shadow reads oversaturated at 172px, mainly in light mode. */
   .moviemodal__rail .poster { box-shadow: 0 10px 24px -16px rgba(0,0,0,0.42); }
   .moviemodal__info { flex: 1; min-width: 0; padding-top: 76px; }
   .moviemodal__info h3 { margin: 0 0 12px; font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -0.018em; line-height: 1.05; }
   .moviemodal__tag { margin: 14px 0 0; font-style: italic; font-size: 14px; color: var(--ink-2); }
   .moviemodal__overview { width: 100%; margin: 14px 0 0; font-size: 14.5px; line-height: 1.62; color: var(--ink-2); text-wrap: pretty; }
-  /* The links out, in the rail under the poster: quiet mono text with a small
-     icon. Three ghost buttons read as three things to do; three mono lines read
-     as reference material attached to the movie, which is what they are. */
+  /* Mono lines, not ghost buttons: they are reference material, not actions. */
   .moviemodal__links { display: flex; flex-direction: column; gap: 7px; padding-top: 4px; border-top: 1px solid var(--line); }
   .moviemodal__links a { display: flex; align-items: center; gap: 7px; padding-top: 3px; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
   .moviemodal__links a:hover,
   .moviemodal__links a:focus-visible { color: var(--accent); }
   .moviemodal__links svg { width: 13px; height: 13px; }
-  /* Rename and delete, under the links at the foot of the rail: one labelled
-     row each, stacked the way the links are, at every width. Bare icons were
-     tried first and read as decoration once they sat under three lines that
-     each name themselves — "delete" is worth a word. They still aren't links:
-     the label is sans where the links are mono, and the row lights a background
-     on hover where a link only changes colour, so the danger red arrives on
-     hover and focus instead of sitting at rest. The glyph is the links' 13px
-     and the row bleeds its own padding out both sides, so the icon column is
-     shared with the links while the rule stays on the block.
-
-     The row keeps this height on touch: guardrail 8's 44px was tried and makes
-     the pair tower over the 21px links it is meant to line up with, and the
-     label stops starting on the first one. It is a wide row either way, full
-     width in the rail and about 70px beside the links. */
+  /* Labelled rows, not bare icons: "delete" is worth a word. Sans text and a hover
+     background set them apart from the mono links. Not 44px on touch (guardrail 8):
+     that towers over the 21px links it lines up with. */
   .moviemodal__railfoot { display: contents; }
-  /* The numbers are the links': an 18px line with 3px above it, the rule 4px
-     off the first row, and a pitch of 28px down the column (the rows are 3px
-     taller than a link, so the gap is 3px smaller). Two columns of the same
-     kind of line have to keep the same rhythm, or the pair reads as a block
-     that landed on the rail rather than the last part of it. */
+  /* Same rhythm as the links: 18px line, 3px above, rule 4px off the first row,
+     28px pitch (rows are 3px taller, so the gap is 3px smaller). */
   .moviemodal__actions { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
   .moviemodal__act {
     display: flex; align-items: center; gap: 7px;
@@ -1340,39 +1129,27 @@
   .moviemodal__act:hover, .moviemodal__act:focus-visible { background: var(--surface-3); color: var(--ink); }
   .moviemodal__act:active { transform: scale(0.98); }
   .moviemodal__act--danger:hover, .moviemodal__act--danger:focus-visible { background: color-mix(in oklab, var(--danger) 18%, transparent); color: var(--danger); }
-  /* A refused delete is inert, not absent, and it is `aria-disabled` rather
-     than natively disabled so it can still take focus and say why (members.css
-     says the same of a tile's action). So the hover and press states have to be
-     called off by hand: a control that lights up danger-red under the pointer
-     and then does nothing is worse than one that never lit up. */
+  /* aria-disabled, not disabled, so a refused delete can take focus and say why
+     (as in members.css). Its hover and press states are called off by hand. */
   .moviemodal__act[aria-disabled="true"] { cursor: not-allowed; }
   .moviemodal__act[aria-disabled="true"]:hover,
   .moviemodal__act[aria-disabled="true"]:focus-visible { background: transparent; color: var(--ink-3); }
   .moviemodal__act[aria-disabled="true"]:active { transform: none; }
   /* "Directed by …" / "Written by …" — quiet prose lines with the names lifted. */
   .moviemodal__credits { margin: 12px 0 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
-  /* The credit block: the credit lines and the attribution beside them, split by
-     a rule. `align-items: stretch` so the rule spans the whole block rather than
-     only the line the attribution needs — a one-line right column next to a
-     two-line left one still looks deliberate. The rule is on the adjacent-sibling
-     selector, so a movie with no credits at all gets the attribution alone. */
+  /* `stretch` so the rule spans the whole block. The rule is on the sibling selector,
+     so a movie with no credits gets the attribution alone. */
   .moviemodal__credit { display: flex; align-items: stretch; gap: 22px; margin-top: 12px; }
   .moviemodal__credit .moviemodal__credits { margin: 0; }
   .moviemodal__credits + .moviemodal__by { padding-left: 22px; border-left: 1px solid var(--line); }
-  /* Credits land with the lazy detail, so their rows are reserved at the real
-     line height (1lh) while it's in flight — a 12px skeleton bar in a 12px box
-     would under-reserve and the block would grow under the reader. */
+  /* Rows reserve 1lh while credits load; a 12px bar would under-reserve and grow. */
   .moviemodal__credits__ghost { display: flex; align-items: center; height: 1lh; }
-  /* A name you can follow: the credited people out to TMDB, and the adder in to
-     their own board (#238) — one treatment, because they are the same thing. */
+  /* People out to TMDB and the adder to their board (#238) share one treatment. */
   .moviemodal__person { font-weight: 550; color: var(--ink-2); text-decoration: none; transition: color var(--dur-fast) var(--ease); }
   a.moviemodal__person:hover,
   a.moviemodal__person:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-  /* Cast strip: a horizontally scrollable row of 2:3 headshot cards under the
-     modal body. The frame falls back to the Avatar initials gradient (stretched
-     to fill) when TMDB has no headshot; hidden entirely when cast is empty.
-     Each card links out to the person's TMDB page (F-002) — hover/focus lifts
-     the name to gold; the people rails on Stats reuse the same visuals. */
+  /* Cast strip (F-002). Without a headshot the frame falls back to the Avatar initials;
+     Stats' people rails reuse these visuals. */
   .castrow { display: flex; gap: 14px; overflow-x: auto; padding: 2px 30px 28px; }
   .castcard { flex: 0 0 84px; margin: 0; display: flex; flex-direction: column; gap: 7px; }
   a.castcard { text-decoration: none; color: inherit; border-radius: var(--r-sm); }
@@ -1381,43 +1158,31 @@
   /* Inward ring — the scrolling .castrow clips outward rings at its edges. */
   a.castcard:focus-visible { outline-offset: -2px; }
   .castcard__photo { aspect-ratio: 2 / 3; border-radius: var(--r-sm); overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--poster-ring); }
-  /* The pending cast card composes both classes, and the frame background above
-     is declared later at equal specificity, so it would beat the skeleton fill.
-     Only the pending state moves; the loaded frame stays as it was. */
+  /* The frame background above wins at equal specificity, so restate the skeleton fill. */
   .castcard__photo.skel { background: var(--skel-bg); }
   .castcard__photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .castcard__photo .avatar { width: 100%; height: 100%; border-radius: 0; font-size: 17px; }
   .castcard__caption { display: flex; flex-direction: column; gap: 2px; }
   .castcard__name { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink); transition: color var(--dur-fast) var(--ease); }
   .castcard__role { font-family: var(--font-mono); font-size: 12px; line-height: 1.3; color: var(--ink-3); }
-  /* Wide, short viewports are usually phones in landscape. Keep enough of the
-     record below the backdrop visible to make the internal scroll obvious. */
+  /* Landscape phones: keep enough below the backdrop to show the internal scroll. */
   @media (min-width: 701px) and (max-height: 719px) {
     .modal--movie { --moviemodal-hero-height: min(260px, 50dvh); }
   }
-  /* Narrow: the rail becomes a row (links beside the poster, bottom-aligned so
-     they clear the backdrop the poster overlaps) and the credit columns stack,
-     the rule turning into a top border. */
+  /* Narrow: the rail becomes a row and the credit columns stack. */
   @media (max-width: 700px) {
     .modal--movie { --moviemodal-hero-height: 190px; }
     .moviemodal__body { flex-direction: column; gap: 16px; padding: 0 20px 22px; }
-    /* Two items now, the poster and the block of text columns beside it. From
-       371px up, the row holds rather than wraps: the poster shrinks instead. */
+    /* From 371px up the row holds and the poster shrinks instead. */
     .moviemodal__rail { flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: 14px; width: auto; }
-    /* The poster gives up width before the row breaks: links and actions beside
-       it need ~180px, and at 375 that is more than what's left of 118. */
+    /* Links and actions need ~180px; at 375 a 118px poster leaves less. */
     .moviemodal__rail .poster { width: 118px; flex: 0 1 auto; min-width: 84px; }
     .moviemodal__links { padding-top: 0; border-top: 0; gap: 10px; }
-    /* The two blocks pair off beside the poster, tops flush so the first action
-       sits on the first link. They are bottom-aligned as one block, not each on
-       its own, which is what the wrapper is for: two stacks of different heights
-       both hugging the poster's foot would start on different lines. */
+    /* Bottom-aligned as one block: two stacks each hugging the poster's foot would
+       start on different lines. */
     .moviemodal__railfoot { display: flex; flex: none; align-items: stretch; align-self: flex-end; gap: 14px; }
-    /* Stacked, the rule ran above the actions; side by side it runs between
-       them, and the actions keep their own left edge off it. A movie with no
-       links (nothing to divide from) gets neither. */
-    /* The links open up to a 10px gap here, so the rows follow them to keep the
-       31px pitch the two columns share. */
+    /* Side by side, the rule runs between the columns; a movie with no links gets none. */
+    /* Follows the links' 10px gap to keep the shared 31px pitch. */
     .moviemodal__actions { margin: 0; padding-top: 0; border-top: 0; gap: 7px; }
     .moviemodal__links + .moviemodal__actions { padding-left: 16px; border-left: 1px solid var(--line); }
     .moviemodal__info { padding-top: 0; }
@@ -1426,18 +1191,14 @@
     .moviemodal__credits + .moviemodal__by { padding: 10px 0 0; border-left: 0; border-top: 1px solid var(--line); width: 100%; }
   }
 
-  /* At the content floor, even the 84px poster plus the paired footer is wider
-     than the modal body. Keep the links and actions paired, but move that pair
-     under the poster so neither column clips. */
+  /* At the content floor the pair moves under the poster so neither column clips. */
   @media (max-width: 370px) {
     .moviemodal__rail { flex-direction: column; align-items: flex-start; width: 100%; }
     .moviemodal__rail .poster { width: 84px; flex: none; }
     .moviemodal__railfoot { width: 100%; align-self: stretch; }
   }
 
-  /* "More actions" menu — bespoke portalled floating surface (moviepickarr/Menu.tsx)
-     on the shared overlay motion (mg-scaleIn/Out), scaling from the trigger corner
-     via an inline transform-origin. Replaces the former Radix dropdown. */
+  /* "More actions" menu (Menu.tsx): portalled, scaling from the trigger corner. */
   /* z-index 45 (matching .daterange): above the page + navbar (40), but below the
      modal veil (50) so a select-opened dialog covers the menu as it animates out. */
   .mg-menu { position: fixed; z-index: 45; min-width: 9rem; display: flex; flex-direction: column; padding: 5px; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--shadow); animation: mg-scaleIn var(--dur-base) var(--ease); }
@@ -1449,25 +1210,18 @@
   .mg-menu__item--danger { color: var(--danger); font-weight: 600; }
   .mg-menu__item--danger:hover, .mg-menu__item--danger:focus-visible { background: color-mix(in oklab, var(--danger) 16%, transparent); }
 
-  /* Filter dropdowns (FilterBar.tsx) reuse the .mg-menu surface as a listbox:
-     an optional inline .field search pinned on top, a scrollable option list,
-     and a gold selected state. */
+  /* Filter dropdowns (FilterBar.tsx) reuse the .mg-menu surface as a listbox. */
   .filtermenu { min-width: 13rem; max-height: min(340px, 70vh); }
-  /* Anchored under its chip (overrides the portalled .mg-menu's position:fixed).
-     Opens downward from the chip's left edge; the chips live at the top of the
-     page so there is always room below. max-width keeps it inside the viewport. */
+  /* Overrides .mg-menu's position:fixed. Opens down from the chip's left edge; chips
+     sit at the top of the page, so there is room below. */
   .filterchip-wrap > .filtermenu {
     position: absolute; top: calc(100% + 6px); left: 0; right: auto;
     transform-origin: top left; max-width: calc(100vw - 16px);
   }
-  /* Where anchor positioning is supported, tether to the chip and flip to its
-     right edge when a left-aligned menu would run off-screen (narrow viewports,
-     right-side chips). Older engines keep the left-aligned baseline above. */
+  /* With anchor positioning, flip to the chip's right edge when the menu would run off-screen. */
   @supports (position-try-fallbacks: flip-inline) {
     .filterchip-wrap > .filtermenu {
-      /* Fixed so position-try measures overflow against the viewport (not the
-         chip-sized wrapper) and can flip; anchor() keeps it tethered and the
-         engine re-tracks on scroll and viewport changes, with no JS placement. */
+      /* Fixed so position-try measures overflow against the viewport, not the wrapper. */
       position: fixed;
       top: anchor(bottom); left: anchor(left); right: auto; bottom: auto; margin-top: 6px;
       position-anchor: var(--chip-anchor);
@@ -1478,29 +1232,19 @@
   .filtermenu__list { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
   .filtermenu__empty { margin: 0; padding: 9px 10px; font-size: 12.5px; color: var(--ink-3); }
   .filtermenu .mg-menu__item[aria-selected="true"] { color: var(--accent); }
-  /* Options sit flush against the scrollable list, whose overflow clips a 2px
-     outset focus ring on the left/scroll edges — draw it inward so keyboard
-     focus stays fully visible (cf. the chip/seg :focus-visible rule). */
+  /* The list's overflow clips an outset ring, so draw it inward. */
   .filtermenu__list .mg-menu__item:focus-visible { outline-offset: -2px; }
-  /* Release-year dropdown: selectable decade headers ("1990s") with their years
-     indented beneath — both are real options (a decade filters the whole
-     decade, a year the exact year). */
+  /* Decade headers are real options: a decade filters the whole decade. */
   .filtermenu__item--decade { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
   .filtermenu__item--decade[aria-selected="true"] { color: var(--accent); }
   .filtermenu__item--year { padding-left: 24px; }
-  /* Multi-select rows keep a fixed-width check slot so selection reads as a
-     mark (not gold alone) and labels never shift as it toggles. */
+  /* Fixed-width check slot: selection reads as a mark, not gold alone, and labels never shift. */
   .filtermenu__check { display: inline-flex; align-items: center; width: 14px; flex: none; }
   .filtermenu__check svg { width: 13px; height: 13px; color: var(--accent); }
 
-  /* ============================================================
-     Responsive — phone & touch adaptations
-     Breakpoint scale (content-driven): 640 (single-column reflows),
-     700 (hero stack + page padding + the movie modal's rail-to-row),
-     760 (stat strip 4→2), 900 (bottom nav + stat two-col). Plus
-     capability queries — hover:none / pointer:coarse — so touch users
-     get every action without a hover, and tap targets grow.
-     ============================================================ */
+  /* ---- Responsive ----
+     Breakpoints: 640 single column, 700 hero stack + modal row, 760 stat strip,
+     900 bottom nav. hover:none and pointer:coarse adapt touch. */
 
   /* Bottom tab bar: styled here, revealed below 900 (the block further down). */
   .navbar-bottom {
@@ -1528,12 +1272,8 @@
   .navbar-bottom__tab:active { background: var(--surface-2); }
 
   /* ---- Bottom nav: the top tab row no longer fits ----
-     Nothing in .nav__inner shrinks, so once the row outgrows the viewport the
-     profile avatar (sign-out, theme, volume, preferences) is pushed past the
-     right edge, and body { overflow-x: hidden } means it cannot be scrolled to.
-     Measured against the fixture data, the row stops fitting at 794px for an
-     admin (4 tabs, Roster included) and 677px for a member. 900 clears both
-     with room for longer labels; a fifth tab has to move it again. */
+     Nothing in .nav__inner shrinks: the row overflows at 794px for an admin and 677px
+     for a member (fixture data). A fifth tab must move 900 again. */
   @media (max-width: 900px) {
     .nav__tabs { display: none; }
     .navbar-bottom { display: grid; }
@@ -1547,21 +1287,13 @@
     .sec-head { flex-direction: column; align-items: stretch; gap: 14px; }
     .sec-head .sec-title { justify-content: space-between; }
     .watched-controls__search { flex: 1; }
-    /* the members board's add form and the admin roster's add-&-invite form:
-       both go full width and let the field take the slack (.adm* rules live in
-       roster.css, but this one belongs beside its twin) */
+    /* the members add form and its roster.css twin: full width, the field takes the slack */
     .user-add, .adm-add { width: 100%; }
     .user-add__field, .adm-field { flex: 1; width: auto; }
 
-    /* stats: the window control owns its row, and the chips below it become a
-       two-column grid rather than a ragged wrap. Content-width chips left a
-       short right edge under an edge-to-edge segmented control, and worse, they
-       resized when a filter went active (the gold state adds a clear button),
-       so the whole row rearranged itself under your thumb as you used it. A
-       fixed grid keeps the filters dimensionally static, the way the hero is. */
-    /* stretch, not the base rule's `center`: grid items that inherit `center`
-       size to their content, so a chip whose label wraps would leave its
-       row-mate short and the pair uneven. */
+    /* stats: the window control owns its row; the chips form a fixed two-column grid,
+       so the row stays static when a filter goes active. */
+    /* stretch, not `center`: centered items size to content, leaving a row-mate short. */
     .statsfilters { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; }
     .statsfilters .win-control { grid-column: 1 / -1; width: 100%; }
     .statsfilters .seg { display: flex; width: 100%; }
@@ -1596,13 +1328,7 @@
     /* row actions are hover-revealed on desktop; show them on touch */
     .wrow .wr-actions { opacity: 1; }
 
-    /* The Members boards' controls used to be here too. Both are gone: the
-       stash rows are a wall of posters now and the pool demote shares its
-       corner action, which carries its own touch rules (members.css). */
-
-    /* search results: keep the poster visible, pin a persistent Add button.
-       The overlay's caption block is hidden (the .r-info caption below the
-       poster already carries title + year), leaving just the Add CTA. */
+    /* search results: a persistent Add button over the poster; .r-info carries the caption. */
     .result .r-overlay {
       opacity: 1;
       justify-content: flex-end;
@@ -1610,9 +1336,7 @@
     }
     .result .r-overlay > div { display: none; }
 
-    /* hourly chart: desktop reveals the count on column hover. On touch,
-       reveal the counts for active hours only (skipping empty hours keeps
-       the axis from becoming a row of zeros). */
+    /* hourly chart: on touch, show counts for active hours only, not a row of zeros. */
     .hcol:not([data-empty]) .hcol__n { opacity: 1; }
   }
 
@@ -1639,13 +1363,11 @@
     transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
-  /* Loaders convey ongoing work — essential motion. Keep them spinning. */
+  /* Loaders convey ongoing work, which is essential motion. */
   .mg-spin { animation-duration: 0.8s !important; animation-iteration-count: infinite !important; }
 }
 
-/* Toasts (Sonner) themed to the MG surfaces. Unlayered + !important so they
-   win over Sonner's runtime-injected default styles. Tokens keep it
-   theme-aware (dark + light) automatically. */
+/* Unlayered + !important to beat Sonner's runtime-injected styles. */
 [data-sonner-toaster] { --width: 360px; }
 .mg-toast {
   background: var(--surface) !important;
@@ -1662,8 +1384,7 @@
 .mg-toast[data-type="error"] .mg-toast__icon { color: var(--danger); }
 .mg-toast[data-type="info"] .mg-toast__icon { color: var(--ink-2); }
 
-/* Wherever the bottom tab bar shows, the bottom-right toaster would land on it;
-   lift it above the bar (+ the iOS home-indicator inset). */
+/* Lift the toaster above the bottom tab bar (+ the iOS home-indicator inset). */
 @media (max-width: 900px) {
   [data-sonner-toaster][data-y-position="bottom"] {
     bottom: calc(72px + env(safe-area-inset-bottom)) !important;

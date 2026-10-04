@@ -19,17 +19,15 @@ export type SSEEventType =
   | "settings:next-up-changed";
 
 export interface SSEEvent<T = unknown> {
-  // Broker-global monotonic sequence number, assigned at broadcast time. The
-  // client uses it for gap detection only (a jump means a dropped frame → one
-  // resync); the server keeps no replay history.
+  // Broker-global and monotonic. Gap detection only (a jump triggers one resync);
+  // the server keeps no replay history.
   seq: number;
   type: SSEEventType;
   data?: T;
 }
 
-// The one-shot handshake (`event: connected`). Not a domain event. epoch detects
-// a server restart; seq is the head at subscribe time (cursor alignment);
-// serverNow seeds the choreography clock offset.
+// epoch detects a server restart; seq is the head at subscribe time; serverNow
+// seeds the clock offset.
 export interface SSEConnectedFrame {
   type: "connected";
   epoch: string;
@@ -37,8 +35,7 @@ export interface SSEConnectedFrame {
   serverNow: string;
 }
 
-// The idle keep-alive (`event: heartbeat`). Carries the head seq for passive gap
-// detection and serverNow for clock-offset refresh.
+// Head seq for passive gap detection, serverNow for clock-offset refresh.
 export interface SSEHeartbeatFrame {
   seq: number;
   serverNow: string;
@@ -68,8 +65,7 @@ export interface MovieDrawnEvent extends SSEEvent<MovieDrawPayload> {
   type: "movie:drawn";
 }
 
-// The drawer confirmed (or the reel's countdown filled): every client closes its
-// reel and reveals the draw in lockstep. Carries just enough to match the spin.
+// Every client closes its reel and reveals in lockstep.
 export interface MovieRevealedEvent extends SSEEvent<{ movieID: number; drawnAt: string }> {
   type: "movie:revealed";
 }
@@ -94,9 +90,7 @@ export interface WildcardWatchedEvent extends SSEEvent<Wildcard> {
   type: "wildcard:watched";
 }
 
-// Coalesced signal: the enrichment worker finished a burst of movies and emits
-// one batch event instead of one per movie. Carries no payload — the frontend
-// invalidates the affected lists (see useSSE), which then refetch enriched data.
+// One event per enrichment burst, not per movie; useSSE invalidates the lists.
 export interface MoviesEnrichedBatchEvent extends SSEEvent<undefined> {
   type: "movies:enriched-batch";
 }

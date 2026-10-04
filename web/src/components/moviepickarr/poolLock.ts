@@ -1,84 +1,52 @@
-// The pool-lock gate: who may lock or unlock the shared pool. Locking is an
-// admin-only action (the backend's handleSetPoolLock calls requireAdmin), so
-// the Movies board disables the toggle for everyone else instead of hiding it,
-// mirroring the turn gate's disable-not-hide treatment on the draw controls.
-// The rule is a pure function of the session actor's role, unit-tested without
-// rendering.
-//
-// The module also owns the words for the round's state and the Members page
-// status line that composes them, so Movies and Members can't drift into
-// describing the same flag differently.
+// Pool-lock gate and round-state wording, shared by Movies and Members so the
+// two pages describe the lock flag the same way. Locking is admin-only (the
+// backend's handleSetPoolLock calls requireAdmin); the toggle is disabled, not hidden.
 
 /**
  * Whether the session actor may toggle the pool lock. Errs open while /auth/me
- * is still loading (role undefined) so an admin never flashes a disabled toggle
- * on first paint; the backend requireAdmin is the backstop for a non-admin who
- * clicks during that window.
+ * loads so an admin never sees a disabled flash; requireAdmin is the backstop.
  */
 export function canLockPool(role: "member" | "guest" | "admin" | undefined): boolean {
   return role === undefined || role === "admin";
 }
 
-/** The round is taking pool changes. Movies says it beside the lock toggle;
- *  Members never renders it (an open round there reads `ready to lock` when
- *  every pool is full and says nothing when they aren't). */
+/** Movies only: Members says `ready to lock` or nothing for an open round. */
 export const ROUND_OPEN = "round open";
-/** The round is locked: no promotes, no demotes. Said by both pages. */
 export const ROUND_CLOSED = "round closed";
 
-/** Members-local: every pool is full and an admin can close the round. */
 const READY_TO_LOCK = "ready to lock";
-/** Members-local: a draw is out and unrevealed, so the pool is frozen. */
 const DRAW_IN_PROGRESS = "draw in progress";
 
 const ROSTER_FAILED = "Members failed to load";
 const NO_MEMBERS = "No members yet";
 
-/** Slots in one member's pool. Here rather than on the page, because two
- *  things draw three slots and only one of them has a roster to count: the
- *  board draws a member's pool, and the loading skeleton draws the same three
- *  before any member has arrived. */
+/** Slots in one member's pool. Here because the loading skeleton draws them with no roster. */
 export const POOL_SIZE = 3;
 
-/** How full the group's pools are, or why we can't say yet. `slots` is members
- *  times the pool size, so a zero-member roster arrives as `slots: 0`. */
+/** How full the group's pools are; `slots` is members times POOL_SIZE. */
 export type RosterOccupancy =
   | { state: "pending" }
   | { state: "error" }
   | { state: "ready"; filled: number; slots: number };
 
 export interface MembersStatus {
-  /** All clauses, for the visible span. `null` while the roster is pending, so
-   *  the caller draws a skeleton bar in the slot instead. */
+  /** `null` while the roster is pending: the caller draws a skeleton bar. */
   text: string | null;
-  /** The round and draw clauses alone, for the visually-hidden live region.
-   *  Empty when neither applies, so nothing is announced. */
+  /** Round and draw clauses only, for the live region; empty announces nothing. */
   announce: string;
 }
 
 /**
- * The Members page status line: up to three clauses joined by ` · `. Occupancy
- * first, then the round clause, then the draw clause; the last two are
- * independent and compose.
- *
- * `announce` deliberately drops the occupancy clause. Occupancy ticks on every
- * other member's promote arriving over SSE (an event you did not cause and
- * cannot act on), and one region holding all three clauses would re-read the
- * whole string each time. Round and draw state is the opposite: rare, not
- * self-inflicted, and it changes what every control on the page will do.
- *
- * The numerator is whatever the caller passes and nothing here adjusts it for a
- * draw. The server keeps the pool frozen with the winner still in it until the
- * reveal, so a moving numerator would say a movie had been drawn.
+ * The Members status line: occupancy, round, and draw clauses joined by ` · `.
+ * `announce` drops occupancy because it ticks on every other member's promote
+ * over SSE. The numerator is not adjusted for a draw: the server keeps the
+ * winner in the frozen pool until the reveal.
  */
 export function membersStatus(
   occupancy: RosterOccupancy,
   locked: boolean,
   drawInProgress: boolean,
 ): MembersStatus {
-  // Pending and errored rosters say nothing about the round: the occupancy the
-  // round clause qualifies isn't known yet, and an announcement for a line the
-  // page hasn't drawn is noise.
   if (occupancy.state === "pending") return { text: null, announce: "" };
   if (occupancy.state === "error") return { text: ROSTER_FAILED, announce: "" };
   if (occupancy.slots === 0) return { text: NO_MEMBERS, announce: "" };

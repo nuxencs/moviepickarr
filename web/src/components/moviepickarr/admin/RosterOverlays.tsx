@@ -18,9 +18,6 @@ import { toast } from "@/components/ui/toast-api";
 
 import type { RosterMember } from "@/types/Response";
 
-// The avatar + name/handle cluster shown in the first column. Tags the current
-// admin ("You") and any admin, so the acting admin can spot themselves for the
-// self-guarded actions.
 export function MemberIdentity({
   member,
   isSelf,
@@ -30,9 +27,7 @@ export function MemberIdentity({
   member: RosterMember;
   isSelf: boolean;
   size?: number;
-  /** The shed columns' values, shown on the sub-line below 640 only (roster.css).
-   *  Rendered on every screen and hidden by CSS above the breakpoint, so nothing
-   *  here depends on a measured width. */
+  /** Shed column values; CSS hides them above 640px (roster.css). */
   extras?: string[];
 }) {
   return (
@@ -59,8 +54,6 @@ export function MemberIdentity({
   );
 }
 
-// The presence-derived login-state chips. Icons only on the credential chips;
-// the placeholder/archived states are label-only.
 export function CredChips({ member }: { member: RosterMember }) {
   const chips = loginChips(member);
   return (
@@ -76,9 +69,7 @@ export function CredChips({ member }: { member: RosterMember }) {
   );
 }
 
-// The one-time claim URL. The ceremony IS the design: shown once, no resend, so
-// the copy affordance and the "won't be shown again" warning carry the weight.
-// claimUrl is a relative /claim/<token> path; the copied value is absolute.
+// Shown once, no resend. claimUrl is a relative path; the copied value is absolute.
 export function InviteReveal({
   name,
   claimUrl,
@@ -166,9 +157,7 @@ export function InviteReveal({
   );
 }
 
-// Remove is one action with two outcomes decided by attribution. The confirm
-// names which will happen before the admin commits: a clean delete that frees
-// the name, or an archive that keeps the row for its movie attribution.
+// Names the outcome first: delete (no movies) or archive (keeps attribution).
 export function RemoveConfirm({
   member,
   pending,
@@ -222,8 +211,7 @@ export function RemoveConfirm({
   );
 }
 
-// A current Turn participant relinquishes the turn when they become a Guest.
-// Make that durable consequence explicit before the role change commits.
+// A Turn participant made Guest gives up the turn, so confirm first.
 export function TurnHandoffConfirm({
   member,
   pending,
@@ -268,8 +256,6 @@ export function TurnHandoffConfirm({
   );
 }
 
-// The self-last-credential guard: unlinking your only way in would lock you out.
-// Refused client-side before the round trip; the server 409 is the backstop.
 export function UnlinkGuard({ onClose }: { onClose: () => void }) {
   return (
     <Modal label="Can't unlink SSO" onClose={onClose} className="modal--form">
@@ -294,9 +280,7 @@ export function UnlinkGuard({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Set (create) or reset a member's local login. A placeholder that has SSO but
-// no password gets one here; an existing local login is reset (which revokes the
-// member's other sessions server-side).
+// Creates or resets a local login; a reset revokes the member's other sessions.
 export function SetLoginDialog({
   member,
   pending,
@@ -369,8 +353,7 @@ export function SetLoginDialog({
   );
 }
 
-// A plain member who reached the admin URL. A first-class forbidden state, not a
-// 404 mask: the page exists, the role doesn't.
+// Forbidden, not a 404 mask: the page exists, the role does not.
 export function ForbiddenState({ onLeave }: { onLeave: () => void }) {
   return (
     <div className="adm-forbidden">

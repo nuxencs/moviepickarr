@@ -8,21 +8,10 @@ import { apiMessage } from "@/components/moviepickarr/account/account";
 import { toast } from "@/components/ui/toast-api";
 
 /**
- * The one way out of the app: end the session, drop the cached actor, land on
- * the login route. Two screens offer logout (the profile panel's quick exit
- * and the account page's sessions row, which also carries "log out
- * everywhere"), and they used to write the sequence out separately.
- *
- * `all` picks the scope: false ends this device's session, true ends every
- * session on the account.
- *
- * Clearing the principal cache before navigate is load-bearing, not stylistic.
- * The login page reads the cached actor, and principal-owned query or mutation
- * data must not survive into whoever signs in next on the same browser.
- *
- * A failed logout navigates nowhere and leaves the cache alone: the session
- * may well still be live, so the member stays where they are with the toast as
- * the only sign.
+ * Ends this session (`all` false) or every session, then goes to /login. Clear
+ * the principal cache before navigate: the next member on this browser must not
+ * see the previous member's data. A failed logout keeps the cache: the session
+ * may still be live.
  */
 export function useLogout() {
   const navigate = useNavigate();

@@ -1,7 +1,5 @@
-// Pure presentation logic for the admin roster: login-state chips, remove
-// outcome, and the self-unlink guard, all derived from a RosterMember's
-// presence flags (never a stored status). Kept side-effect free so the
-// derivation is unit-tested without rendering.
+// Admin roster presentation, derived from RosterMember presence flags, never a
+// stored status.
 import type { RosterMember } from "@/types/Response";
 
 export type LoginChipKind = "password" | "sso" | "pending" | "empty" | "archived";
@@ -16,12 +14,6 @@ export function isPlaceholder(m: RosterMember): boolean {
   return !m.hasLocalLogin && !m.hasLinkedIdentity;
 }
 
-/**
- * The login-state chips for a member, derived from credential/invite/archive
- * presence. Archived collapses to one muted chip; a placeholder shows either the
- * pending-invite or the no-login-yet state; a credentialed member shows one chip
- * per credential it actually holds. Never a single stored boolean.
- */
 export function loginChips(m: RosterMember): LoginChip[] {
   if (m.archived) {
     return [{ kind: "archived", label: "Archived" }];
@@ -37,7 +29,7 @@ export function loginChips(m: RosterMember): LoginChip[] {
   return chips;
 }
 
-/** A one-line summary of a member's login state, for the dense archived rows. */
+/** One-line login state for the dense archived rows. */
 export function credLabel(m: RosterMember): string {
   if (m.archived) return "Archived";
   if (isPlaceholder(m)) return m.invitePending ? "Invite link open" : "No login yet";
@@ -46,22 +38,12 @@ export function credLabel(m: RosterMember): string {
   return "SSO";
 }
 
-/**
- * Whether removing this member hard-deletes (they authored nothing, so the row
- * goes and the name frees up) or archives (they authored movies, so the row
- * survives to keep attribution). Mirrors the backend's added_by_id guard, so the
- * confirm can name the outcome before the request.
- */
+/** Mirrors the backend added_by_id guard so the confirm can name the outcome. */
 export function removeOutcome(m: RosterMember): "delete" | "archive" {
   return m.moviesAuthored === 0 ? "delete" : "archive";
 }
 
-/**
- * The self-unlink guard: an admin unlinking their own SSO when it's their only
- * credential would lock themselves out. Refused client-side before the round
- * trip (the server 409s as the backstop). Unlinking someone ELSE's last
- * credential is fine: they fall back to a placeholder.
- */
+/** An admin unlinking their own last credential would lock themselves out (server 409s too). */
 export function unlinkWouldStrand(m: RosterMember, isSelf: boolean): boolean {
   return isSelf && m.hasLinkedIdentity && !m.hasLocalLogin;
 }

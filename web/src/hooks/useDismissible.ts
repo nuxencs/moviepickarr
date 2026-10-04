@@ -3,53 +3,26 @@ import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import { exitDelayMs } from "@/components/moviepickarr/exitDelay";
 
 /**
- * Every floating surface currently on screen, oldest first. A surface joins
- * when it appears and leaves when it is fully gone (it holds its place through
- * the exit motion, so a second Escape mid-close can't fall through to the
- * surface underneath).
- *
- * Module-level on purpose: a Modal opened from inside another Modal portals
- * into `document.body` as a sibling, so neither one can see the other through
- * React or the DOM. The stack is the only place the depth is knowable.
+ * Floating surfaces on screen, oldest first; a surface keeps its place through
+ * its exit motion. Module-level because nested Modals portal as siblings, so
+ * React and the DOM cannot see their depth.
  */
 const layers: symbol[] = [];
 
 export interface DismissOptions {
-  /** Refocus the configured trigger as part of the dismissal. Pass false for
-   *  an outside click, where focus follows the click instead. Default true. */
+  /** Refocus the trigger. Pass false for an outside click. Default true. */
   restoreFocus?: boolean;
   /** Runs once the exit motion completes (alongside onClosed). */
   after?: () => void;
 }
 
 /**
- * The one dismissal machine every floating surface rides: the Modal, the
- * Menu, the filter chip dropdowns, and the Stats range popover all used to
- * hand-roll the same closing-flag + re-entry-guard + exit-timer + focus-
- * restore choreography; a close-motion fix now lands here once.
- *
- * Phases: closed → show() → open → dismiss() → closing (the surface stays
- * mounted so its CSS exit motion plays) → after exitDelayMs() → closed
- * (onClosed fires). The machine owns the sharp edges:
- *
- * - dismiss() while already closing is a no-op, so racing triggers (Esc +
- *   outside click) can't double-fire.
- * - show() while closing interrupts the exit and re-opens: clearing the
- *   timer is load-bearing, otherwise the original close timer still fires
- *   and slams the surface shut again.
- * - Focus restores to the trigger synchronously inside dismiss(), so a
- *   dialog mounted by the dismissal's action still captures the trigger as
- *   its opener.
- * - hideNow() drops the surface without the exit motion (for when the view
- *   changes out from under it) and resets the guard so a later show() isn't
- *   blocked.
- * - The surface takes a place on the layer stack while it is on screen, and
- *   isTopmost() answers whether it is the one on top. Escape, outside-click
- *   and focus-trapping belong to the topmost surface only, so a dialog opened
- *   from inside another dialog takes those gestures alone (#220).
- *
- * Surfaces whose mounting is parent-controlled (the Modal) ignore `open` and
- * use only closing/dismiss with an onClosed that tells the parent to unmount.
+ * Dismissal machine for every floating surface: open, then closing (mounted
+ * while the exit motion plays), then closed after exitDelayMs(). dismiss() while
+ * closing is a no-op; show() while closing clears the timer so it cannot slam
+ * the surface shut. Focus restores synchronously so a dialog opened by the
+ * dismissal still sees the trigger as its opener. Escape, outside-click and
+ * focus trapping belong to the isTopmost() surface only (#220).
  */
 export function useDismissible({
   restoreFocusTo,
@@ -60,11 +33,7 @@ export function useDismissible({
   restoreFocusTo?: RefObject<HTMLElement | null>;
   /** Runs once per completed dismissal, after the exit motion. */
   onClosed?: () => void;
-  /**
-   * The parent mounts and unmounts the surface (the Modal), so `open` is never
-   * used and being mounted *is* being on screen. Layer membership then runs
-   * from mount to unmount rather than from show() to onClosed.
-   */
+  /** The parent mounts the surface (the Modal), so mounted means on screen. */
   parentMounted?: boolean;
 } = {}) {
   const [open, setOpen] = useState(false);
@@ -116,8 +85,6 @@ export function useDismissible({
 
   useEffect(() => clearTimer, [clearTimer]);
 
-  // A self-mounting surface keeps `open` true through its exit motion, so
-  // `open` alone covers both ends of its time on screen.
   const onScreen = parentMounted || open;
   const layerRef = useRef<symbol | null>(null);
   layerRef.current ??= Symbol("dismissible-layer");
@@ -132,8 +99,7 @@ export function useDismissible({
     };
   }, [onScreen]);
 
-  // Read at event time, not at render time: surfaces above this one come and
-  // go without re-rendering it.
+  // Read at event time: surfaces above this one come and go without a re-render.
   const isTopmost = useCallback(
     () => layers.length === 0 || layers[layers.length - 1] === layerRef.current,
     [],

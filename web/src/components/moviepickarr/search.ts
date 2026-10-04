@@ -1,19 +1,12 @@
-/**
- * Query matching for the two search-driven lists — the MoviesTab watched grid
- * and the FilterBar option menus.
- *
- * Both lists grow with the library (watched movies, people credited on them), so
- * the components defer the typed query into these helpers (useDeferredValue)
- * and render the result through a virtualizer: filtering stays off the
- * keystroke's critical path, and only the rows in view ever hit the DOM.
- */
+// Query matching for the watched grid and the FilterBar menus. Callers defer the
+// query (useDeferredValue) and virtualize, as both lists grow with the library.
 
-/** Trimmed, case-folded query; empty means "no filter". */
+/** Empty means "no filter". */
 export function normalizeQuery(query: string): string {
   return query.trim().toLowerCase();
 }
 
-/** A watched movie matches on its title or the name of whoever added it. */
+/** Matches on title or adder name. */
 export function filterWatched<T extends { title: string; addedByName: string }>(
   movies: readonly T[],
   query: string,
@@ -23,7 +16,6 @@ export function filterWatched<T extends { title: string; addedByName: string }>(
   return movies.filter((m) => m.title.toLowerCase().includes(q) || m.addedByName.toLowerCase().includes(q));
 }
 
-/** A filter-menu option matches on its visible label. */
 export function filterChoices<T extends { label: string }>(
   choices: readonly T[],
   query: string,
@@ -33,7 +25,7 @@ export function filterChoices<T extends { label: string }>(
   return choices.filter((c) => c.label.toLowerCase().includes(q));
 }
 
-/** Split a flat list into rows of `size` — one virtualized row per grid row. */
+/** One virtualized row per grid row. */
 export function chunkRows<T>(items: readonly T[], size: number): T[][] {
   const width = Math.max(1, Math.floor(size));
   const rows: T[][] = [];

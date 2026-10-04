@@ -1,11 +1,4 @@
-/* ============================================================
-   Setup for the "dom" vitest project (see vitest.config.ts).
-
-   Unmounts every rendered tree between tests, and fills the two jsdom gaps
-   the app's components hit: matchMedia (the reduced-motion check) and
-   HTMLImageElement.decode (the reveal's backdrop handoff). Everything else
-   is left as jsdom ships it — a test that needs more should say so itself.
-   ============================================================ */
+// Setup for the "dom" vitest project: cleanup plus stubs for the jsdom gaps the app hits.
 
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
@@ -25,10 +18,7 @@ if (!window.matchMedia) {
   })) as unknown as typeof window.matchMedia;
 }
 
-// jsdom has no layout, so it ships no ResizeObserver either. The overflow cues
-// that use one (the Members rail's bottom fade) ask a question jsdom can only
-// answer "no" to, so the stub is a no-op: it exists to keep the component from
-// throwing, not to simulate a resize.
+// No-op: it only keeps overflow cues (Members rail fade) from throwing.
 if (!window.ResizeObserver) {
   window.ResizeObserver = class {
     observe() {}

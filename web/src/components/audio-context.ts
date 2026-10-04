@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 
 export type AudioProviderState = {
-  /** Whether draw sound effects play (false = muted). Persisted to localStorage. */
+  /** Persisted to localStorage. */
   soundEnabled: boolean;
   toggleSound: () => void;
   /** Playback volume, 0..1. Persisted to localStorage. */

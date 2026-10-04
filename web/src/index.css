@@ -669,14 +669,21 @@
   .hero__held-title { min-width: 0; padding: 0; overflow: hidden; border: 0; background: none; color: #fff; font: inherit; font-size: 13px; font-weight: 650; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   .hero__held-title:hover { text-decoration: underline; text-underline-offset: 3px; }
   .hero__held-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--r-sm); text-decoration: underline; text-underline-offset: 3px; }
+  /* Phones fix the action rows per tier so the reservation covers the worst case:
+     2-line title, held-draw line, and every action row (#357). */
   @media (max-width: 700px) {
+    .hero { --hero-body-h: 21.5rem; }
     .hero__inner { flex-direction: column; align-items: flex-start; gap: 22px; padding: 30px 18px 34px; }
     .hero__poster { width: 120px; }
     .hero__body { align-self: stretch; }
-    .hero__tag { margin-top: 12px; }
-    .hero__nextup { margin-left: 0; padding-left: 0; border-left: none; }
+    .hero__nextup { flex-basis: 100%; margin-left: 0; padding-left: 0; border-left: none; }
   }
-  @media (max-width: 331px) { .hero { --hero-body-h: 21rem; } }
+  /* Two buttons need about 400px side by side, so they stack below that. The block
+     keeps its full height without a secondary action, so the primary stays put. */
+  @media (max-width: 420px) {
+    .hero { --hero-body-h: 25rem; }
+    .hero__actions { display: grid; align-content: start; min-height: calc(2 * var(--control-h) + 30px + 24px); }
+  }
   /* Still static across draws within this breakpoint (§7). */
   @media (min-width: 1728px) {
     .hero { --hero-body-h: 21rem; }

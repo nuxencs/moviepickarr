@@ -933,11 +933,22 @@ Verified static: empty vs populated and a 173-char injected tagline all leave
 
 On phones (≤700px) the hero stacks a 120px poster above the eyebrow → title →
 tagline → meta → held-draw state when present → actions. The body stretches to
-the full content width and keeps the 18.5rem height reservation so the initial
-query shell and committed movie share a footprint. At 331px and below the
-reservation steps to 21rem because the action row wraps. These are floors, not
-caps: unusually long metadata or member names can still grow instead of clipping
-links or controls. The rest of the responsive system lives in §13.
+the full content width, and the bottom group stays pinned by `margin-top: auto` as
+on desktop. The action rows are fixed per tier so the reservation covers the worst
+case (2-line title, held-draw line, every action row), and the hero keeps one height
+and one actions position across draw, wildcard, and empty states (#357):
+
+- **421-700px:** the two buttons share a row and the next-up chip takes its own row.
+  `--hero-body-h` is 21.5rem.
+- **≤420px:** two buttons need about 400px side by side, so the actions stack:
+  primary, secondary, next-up. The block keeps the height of all three rows, so the
+  primary stays put. Without a secondary action, the next-up chip moves up under the
+  primary and the spare height sits at the bottom. `--hero-body-h` is 25rem.
+
+These are floors, not caps: unusually long metadata or member names can still grow
+instead of clipping links or controls. The eyebrow label and the adder name are one
+inline run, so a narrow wrap keeps the name in the text. The rest of the responsive
+system lives in §13.
 
 On large screens (≥1728px) the hero steps *up*: `--hero-body-h` grows (18.5rem → 21rem,
 and the poster width tracks it via the `calc()` above), `.hero__inner` padding opens up,

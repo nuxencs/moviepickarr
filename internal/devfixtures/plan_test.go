@@ -7,7 +7,6 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// testMovies returns a distinct-id movie list large enough for a full plan.
 func testMovies(n int) []MovieIdentity {
 	movies := make([]MovieIdentity, n)
 	for i := range movies {
@@ -216,8 +215,7 @@ func TestBuildPlanIsDeterministic(t *testing.T) {
 		t.Fatalf("movie counts differ: %d vs %d", len(a.Movies), len(b.Movies))
 	}
 	for i := range a.Movies {
-		// Compare by value: WatchedAt is a pointer, so a raw struct compare
-		// would trip on identity rather than the timestamp it points at.
+		// WatchedAt is a pointer, so compare by value.
 		if !sameMovie(a.Movies[i], b.Movies[i]) {
 			t.Fatalf("movie %d differs between runs: %+v vs %+v", i, a.Movies[i], b.Movies[i])
 		}

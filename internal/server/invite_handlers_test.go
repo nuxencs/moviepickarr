@@ -15,8 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// adminSession seeds an admin member with a local login and returns its id and a
-// live session cookie, the actor every invite issuance test needs.
+// adminSession seeds an admin with a local login and returns its id and session cookie.
 func (e *authTestEnv) adminSession(t *testing.T) (int, string) {
 	t.Helper()
 	id := e.seedMember(t, "Admin", "admin")
@@ -24,8 +23,7 @@ func (e *authTestEnv) adminSession(t *testing.T) (int, string) {
 	return id, e.login(t, "admin", "correct horse battery")
 }
 
-// createMember issues POST /members as the admin and returns the new member id
-// and the claim token parsed out of the returned claim URL.
+// createMember issues POST /members as the admin and returns the member id and claim token.
 func (e *authTestEnv) createMember(t *testing.T, adminCookie, name string) (int, string) {
 	t.Helper()
 	resp := e.request(t, http.MethodPost, "/api/v1/members", adminCookie, map[string]string{"name": name})
@@ -39,7 +37,6 @@ func (e *authTestEnv) createMember(t *testing.T, adminCookie, name string) (int,
 	return body.ID, tokenFromClaimURL(t, body.ClaimURL)
 }
 
-// tokenFromClaimURL pulls the raw token out of a "/claim/<token>" URL.
 func tokenFromClaimURL(t *testing.T, url string) string {
 	t.Helper()
 	const prefix = "/claim/"
@@ -62,10 +59,6 @@ func decodeClaim(t *testing.T, resp *http.Response) claimResponse {
 	return cr
 }
 
-// TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp walks the whole primary
-// path: admin creates a placeholder + gets a claim URL, the claim validates as a
-// placeholder, the password claim sets username+password and mints a session,
-// and the invite then reads as already-used.
 func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -76,7 +69,6 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 		t.Fatalf("mint residual placeholder session: %v", err)
 	}
 
-	// Claim validates as a fresh placeholder.
 	valid := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+token, "", nil)
 	if valid.StatusCode != fiber.StatusOK {
 		t.Fatalf("claim validate status = %d, want 200", valid.StatusCode)
@@ -86,7 +78,6 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 		t.Fatalf("claim = %+v, want Newbie/placeholder/password", cc)
 	}
 
-	// Password claim sets the first credential and mints a session (204 + cookie).
 	claim := e.request(t, http.MethodPost, "/api/v1/auth/claim/"+token+"/password", "",
 		map[string]string{"username": "newbie", "password": "a good long password"})
 	if claim.StatusCode != fiber.StatusNoContent {
@@ -97,7 +88,6 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 		t.Fatal("password claim set no session cookie")
 	}
 
-	// The minted session hydrates to the now-credentialed member.
 	me := e.request(t, http.MethodGet, "/api/v1/auth/me", cookie, nil)
 	if me.StatusCode != fiber.StatusOK {
 		t.Fatalf("me status = %d, want 200", me.StatusCode)
@@ -113,7 +103,6 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 		t.Fatalf("residual session after onboarding claim = %d, want 401", old.StatusCode)
 	}
 
-	// The consumed invite now reads as the distinct already-set-up state.
 	used := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+token, "", nil)
 	if used.StatusCode != fiber.StatusGone {
 		t.Fatalf("used claim status = %d, want 410", used.StatusCode)
@@ -123,8 +112,6 @@ func TestCreateMember_IssuesClaimAndPlaceholderClaimSetsUp(t *testing.T) {
 	}
 }
 
-// TestClaim_UsedInviteCannotBeRedeemedTwice proves single-use: a second password
-// claim on a consumed invite is refused with the already-used state.
 func TestClaim_UsedInviteCannotBeRedeemedTwice(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -143,8 +130,6 @@ func TestClaim_UsedInviteCannotBeRedeemedTwice(t *testing.T) {
 	}
 }
 
-// TestReplaceInvite_RevokesTheOldLink proves exact replacement: the old claim
-// URL dies and the fresh one works.
 func TestReplaceInvite_RevokesTheOldLink(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -178,8 +163,6 @@ func TestReplaceInvite_RevokesTheOldLink(t *testing.T) {
 	}
 }
 
-// TestRevokeInvite_InvalidatesThenConflicts proves revoke: the link dies, and a
-// second action on the stale generation conflicts.
 func TestRevokeInvite_InvalidatesThenConflicts(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -206,9 +189,6 @@ func TestRevokeInvite_InvalidatesThenConflicts(t *testing.T) {
 	}
 }
 
-// TestClaimReset_RevokesExistingSessions proves the reset branch: a credentialed
-// member's invite validates as a reset, the password-only claim mints a fresh
-// session, and every prior session is revoked.
 func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -217,7 +197,6 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 	e.seedLocalLogin(t, bobID, "bob", "the old password")
 	oldCookie := e.login(t, "bob", "the old password")
 
-	// Admin explicitly issues a password-reset invite for credentialed Bob.
 	issue := e.request(t, http.MethodPost, "/api/v1/members/"+strconv.Itoa(bobID)+"/invite", adminCookie,
 		map[string]string{"purpose": "password_reset"})
 	if issue.StatusCode != fiber.StatusCreated {
@@ -241,7 +220,6 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 		t.Fatalf("claim = %+v, want Bob/reset", cc)
 	}
 
-	// Password-only reset: no username in the body.
 	reset := e.request(t, http.MethodPost, "/api/v1/auth/claim/"+token+"/password", "",
 		map[string]string{"password": "a brand new password"})
 	if reset.StatusCode != fiber.StatusNoContent {
@@ -252,7 +230,6 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 		t.Fatal("reset claim set no session cookie")
 	}
 
-	// The old session is gone; the minted one works.
 	if old := e.request(t, http.MethodGet, "/api/v1/auth/me", oldCookie, nil); old.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("old session after reset = %d, want 401", old.StatusCode)
 	}
@@ -260,7 +237,6 @@ func TestClaimReset_RevokesExistingSessions(t *testing.T) {
 		t.Fatalf("new session after reset = %d, want 200", fresh.StatusCode)
 	}
 
-	// The old password no longer logs in; the new one does.
 	badLogin := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "bob", "password": "the old password"})
 	if badLogin.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("old password login = %d, want 401", badLogin.StatusCode)
@@ -297,8 +273,7 @@ func TestCreateInvite_DefaultPurposeRejectsCredentialedMember(t *testing.T) {
 	}
 }
 
-// TestClaim_ExpiredCollapsesToInvalid proves the time-derived validity: past the
-// TTL an unused, unrevoked invite still reads as no-longer-valid.
+// Validity is time-derived: an unused, unrevoked invite past its TTL is invalid.
 func TestClaim_ExpiredCollapsesToInvalid(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -320,8 +295,6 @@ func TestClaim_UnknownTokenIsInvalid(t *testing.T) {
 	}
 }
 
-// TestClaimPassword_RejectsBadInput checks the shared validation is enforced at
-// the claim edge: a placeholder needs a username, and the password bound holds.
 func TestClaimPassword_RejectsBadInput(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -340,14 +313,12 @@ func TestClaimPassword_RejectsBadInput(t *testing.T) {
 		t.Fatalf("short password = %d, want 400", shortPw.StatusCode)
 	}
 
-	// A rejected claim leaves the invite usable.
 	stillValid := e.request(t, http.MethodGet, "/api/v1/auth/claim/"+tokenB, "", nil)
 	if stillValid.StatusCode != fiber.StatusOK {
 		t.Fatalf("claim after rejected attempt = %d, want 200 (still usable)", stillValid.StatusCode)
 	}
 }
 
-// TestInviteRoutes_RequireAdmin proves the issuance surface is admin-gated.
 func TestInviteRoutes_RequireAdmin(t *testing.T) {
 	e := setupAuthApp(t)
 	memberID := e.seedMember(t, "Plain", "member")
@@ -408,13 +379,10 @@ func TestArchivedMemberInviteIsInvalidAndCannotBeCreated(t *testing.T) {
 	}
 }
 
-// TestSelfServeLocalLogin_SetsFirstCredential proves the completeness path: an
-// authed member with no local login sets one, and a second attempt is a 409.
 func TestSelfServeLocalLogin_SetsFirstCredential(t *testing.T) {
 	e := setupAuthApp(t)
 
-	// A member with a session but no local login (the OIDC-first shape): mint a
-	// session straight from the manager, no credential involved.
+	// The OIDC-first shape: a session minted by the manager, no local login.
 	memberID := e.seedMember(t, "Ess Es Oh", "member")
 	rawToken, _, err := e.h.sessions.Mint(context.Background(), memberID, nil)
 	if err != nil {
@@ -436,7 +404,6 @@ func TestSelfServeLocalLogin_SetsFirstCredential(t *testing.T) {
 		t.Fatalf("me = %+v, want username=sso_user hasLocalLogin=true", identity)
 	}
 
-	// The credential now exists: a second attempt is a conflict, not a change.
 	dup := e.request(t, http.MethodPost, "/api/v1/auth/local-login", rawToken,
 		map[string]string{"username": "other", "password": "another good password"})
 	if dup.StatusCode != fiber.StatusConflict {
@@ -477,7 +444,6 @@ func TestAdminCredentialCreationRetiresCurrentInvite(t *testing.T) {
 	}
 }
 
-// invitesOverview reads GET /invites as the given actor, asserting 200.
 func (e *authTestEnv) invitesOverview(t *testing.T, cookie string) invitesOverviewResponse {
 	t.Helper()
 	resp := e.request(t, http.MethodGet, "/api/v1/invites", cookie, nil)
@@ -491,10 +457,7 @@ func (e *authTestEnv) invitesOverview(t *testing.T, cookie string) invitesOvervi
 	return overview
 }
 
-// TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired is the surface's whole
-// contract in one walk: an expired generation replaced by its exact handle
-// appears once as open, an untouched generation remains expired, and open leads
-// expired. Both rows name the issuing admin.
+// Open rows lead expired ones, and both name the issuing admin.
 func TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -502,7 +465,6 @@ func TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired(t *testing.T) {
 	benID, _ := e.createMember(t, adminCookie, "Ben")
 	cleoID, _ := e.createMember(t, adminCookie, "Cleo")
 
-	// Past the 7-day TTL: both first links have lapsed.
 	e.clk.t = e.clk.t.Add(auth.InviteTTL + time.Hour)
 
 	before := e.invitesOverview(t, adminCookie)
@@ -515,7 +477,7 @@ func TestInvitesOverview_OneRowPerMemberSplitOpenFromExpired(t *testing.T) {
 	if cleoInvite == "" {
 		t.Fatal("Cleo's expired invite was missing")
 	}
-	// Replace Cleo's exact expired generation; Ben stays on the dead link.
+	// Replace Cleo's expired generation; Ben stays on the dead link.
 	replacement := e.request(t, http.MethodPost, "/api/v1/invites/"+cleoInvite+"/replacement", adminCookie, nil)
 	if replacement.StatusCode != fiber.StatusCreated {
 		t.Fatalf("replacement status = %d, want 201", replacement.StatusCode)
@@ -602,9 +564,7 @@ func TestInvitesOverview_SubsecondClockMatchesWireClassification(t *testing.T) {
 	}
 }
 
-// TestInvitesOverview_DropsMembersWhoCanLogIn is the self-clearing rule at the
-// HTTP seam: claiming the invite is what a member does, and the row goes with
-// it. No admin action is involved.
+// Claiming clears the row; no admin action is involved.
 func TestInvitesOverview_DropsMembersWhoCanLogIn(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -625,9 +585,6 @@ func TestInvitesOverview_DropsMembersWhoCanLogIn(t *testing.T) {
 	}
 }
 
-// TestDismissInvite_ClearsTheRowThenConflicts covers Dismiss end to end: it
-// retires an exact expired generation and refuses a repeat rather than
-// reporting a second success.
 func TestDismissInvite_ClearsTheRowThenConflicts(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)
@@ -732,7 +689,6 @@ func TestClaimPassword_ConcurrentRedemptionHasOneOwner(t *testing.T) {
 	}
 }
 
-// TestInvitesOverview_AdminOnly proves invite status and actions are admin-only.
 func TestInvitesOverview_AdminOnly(t *testing.T) {
 	e := setupAuthApp(t)
 	_, adminCookie := e.adminSession(t)

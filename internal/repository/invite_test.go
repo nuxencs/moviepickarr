@@ -218,8 +218,7 @@ func TestInviteRepo_ReplacementRejectsArchivedLegacyOwner(t *testing.T) {
 	if err := e.repo.Create(e.ctx, ben, publicID, "hash-old", e.now.Add(time.Hour), e.now, &e.adminID); err != nil {
 		t.Fatal(err)
 	}
-	// Model a legacy/manual inconsistent row: the member was archived without
-	// the normal lifecycle cleanup, leaving its current invite behind.
+	// A legacy row: archived without lifecycle cleanup, so the invite stayed.
 	markUserArchived(t, e.ctx, e.pool, ben)
 
 	err := e.repo.ReplaceCurrent(

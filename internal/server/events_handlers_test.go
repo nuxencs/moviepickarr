@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// A heartbeat carries the broker's global head seq, so it must not be written
-// ahead of events still queued for this client. drainBufferedEvents is what the
-// handler runs before each heartbeat to flush the queue first.
+// A heartbeat carries the broker's head seq, so the handler drains queued events
+// before each heartbeat.
 func TestDrainBufferedEventsWritesAllQueuedInOrderThenEmpties(t *testing.T) {
 	t.Parallel()
 
@@ -31,8 +30,8 @@ func TestDrainBufferedEventsWritesAllQueuedInOrderThenEmpties(t *testing.T) {
 	if want := []uint64{5, 6, 7}; !slices.Equal(got, want) {
 		t.Fatalf("drained %v, want %v", got, want)
 	}
-	// The queue is now empty, so a heartbeat emitted next carries a head seq the
-	// client has already been sent up to — no leapfrog, no spurious resync.
+	// An empty queue means the next heartbeat's head seq cannot leapfrog the client
+	// into a spurious resync.
 	select {
 	case e := <-ch:
 		t.Fatalf("expected an empty channel after draining, still held seq %d", e.Seq)

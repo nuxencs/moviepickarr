@@ -16,10 +16,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// setup opens a real temp SQLite DB, runs every migration (through 009 so the
-// role column and local_accounts table exist), and returns the seed repo plus
-// the raw pool for direct row assertions. Real DB, real repo, no mocks: the
-// seed is a boot-time step with no HTTP seam, so it is exercised directly.
+// setup returns a migrated temp DB: the seed is a boot step with no HTTP seam,
+// so tests drive the real repo directly.
 func setup(t *testing.T) (*repository.SqliteAdminSeedRepository, *db.Pool) {
 	t.Helper()
 
@@ -40,8 +38,6 @@ func setup(t *testing.T) (*repository.SqliteAdminSeedRepository, *db.Pool) {
 	return repository.NewSqliteAdminSeedRepository(pool), pool
 }
 
-// createMember inserts a member row with the given name and role, returning its
-// id, the fixture for the adopt/ambiguous paths.
 func createMember(t *testing.T, pool *db.Pool, name, role string) int {
 	t.Helper()
 	res, err := pool.Write.ExecContext(context.Background(),
@@ -62,8 +58,6 @@ type localLogin struct {
 	passwordHash string
 }
 
-// readLocalLogins returns every local_accounts row, ordered by user_id, so a
-// test can assert on both the count and the stored credential.
 func readLocalLogins(t *testing.T, pool *db.Pool) []localLogin {
 	t.Helper()
 	rows, err := pool.Read.QueryContext(context.Background(),
@@ -107,8 +101,6 @@ func countUsers(t *testing.T, pool *db.Pool) int {
 
 var testCfg = AdminConfig{Name: "Ada", Username: "ada", Password: "correct-horse"}
 
-// TestFreshDBCreatesWorkingAdmin covers acceptance criterion 1: on a fresh DB,
-// the trio creates an admin member with a working local login.
 func TestFreshDBCreatesWorkingAdmin(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -137,8 +129,7 @@ func TestFreshDBCreatesWorkingAdmin(t *testing.T) {
 	}
 }
 
-// TestReRunIsNoOp covers acceptance criterion 2: re-running boot with the same
-// env never overwrites the existing password and creates no duplicate row.
+// Re-running boot never overwrites the password or duplicates the row.
 func TestReRunIsNoOp(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -164,14 +155,10 @@ func TestReRunIsNoOp(t *testing.T) {
 	}
 }
 
-// TestAdoptsExistingMemberCaseInsensitive covers acceptance criterion 3: an
-// existing member matching the name case-insensitively is adopted and ensured
-// admin, preserving its identity (same row).
 func TestAdoptsExistingMemberCaseInsensitive(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
 
-	// Existing member differs only in case and is not yet an admin.
 	existingID := createMember(t, pool, "ada", "member")
 
 	if err := BreakGlassAdmin(ctx, repo, testCfg, true, zerolog.Nop()); err != nil {
@@ -190,8 +177,6 @@ func TestAdoptsExistingMemberCaseInsensitive(t *testing.T) {
 	}
 }
 
-// TestAdoptedMemberPasswordPreserved covers the non-clobber rule on the adopt
-// path: an already-present local login keeps its password.
 func TestAdoptedMemberPasswordPreserved(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -221,9 +206,8 @@ func TestAdoptedMemberPasswordPreserved(t *testing.T) {
 	}
 }
 
-// An archived member is an authentication tombstone, not an adoptable seed
-// target. This is the documented "leave the seed configured" restart path:
-// seed an admin, archive them, then boot again with the same trio.
+// An archived member is a tombstone, not an adoptable seed target: the
+// "leave the seed configured" restart path.
 func TestArchivedMemberIsNotReAdoptedOnRestart(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -237,8 +221,7 @@ func TestArchivedMemberIsNotReAdoptedOnRestart(t *testing.T) {
 	if _, err := movies.Add(ctx, "Arrival", "pool", adminID); err != nil {
 		t.Fatalf("add authored movie: %v", err)
 	}
-	// Member removal now preserves at least one active admin. A second admin
-	// keeps this fixture focused on whether the archived seed target is adopted.
+	// Removal refuses to archive the last admin.
 	createMember(t, pool, "Backup Admin", "admin")
 	users := repository.NewSqliteUserRepository(pool)
 	if _, err := users.Remove(ctx, adminID); err != nil {
@@ -265,9 +248,7 @@ func TestArchivedMemberIsNotReAdoptedOnRestart(t *testing.T) {
 	}
 }
 
-// TestAmbiguousMatchSkips covers acceptance criterion 4a: when several members
-// fold to the same name, the seed skips without touching anything and without
-// failing boot.
+// Several members folding to the same name: skip, write nothing, boot on.
 func TestAmbiguousMatchSkips(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -291,14 +272,12 @@ func TestAmbiguousMatchSkips(t *testing.T) {
 	}
 }
 
-// TestFreshSeedLoginFailureRollsBackAdmin covers acceptance criterion 4b: a
-// configured persistence failure surfaces as a boot error and leaves no new
-// admin behind. The seeded username collides case-insensitively.
+// A login write failure fails boot and leaves no new admin behind.
 func TestFreshSeedLoginFailureRollsBackAdmin(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
 
-	// Another member already owns the seed username (case-folded collision).
+	// Another member already owns the seed username, case-folded.
 	otherID := createMember(t, pool, "Someone Else", "member")
 	otherHash, err := auth.HashPassword("whatever")
 	if err != nil {
@@ -361,9 +340,7 @@ func TestAdoptSeedLoginFailureRollsBackPromotion(t *testing.T) {
 	}
 }
 
-// TestShortPasswordFailsBoot covers the seed-path password bound: a configured
-// trio with an out-of-range password fails boot loudly and writes nothing,
-// rather than hashing it unchecked.
+// An out-of-range seed password fails boot and writes nothing.
 func TestShortPasswordFailsBoot(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -378,10 +355,7 @@ func TestShortPasswordFailsBoot(t *testing.T) {
 	}
 }
 
-// TestNoSeedWarnsWhenZeroAdmins covers acceptance criterion 4c: with no seed
-// configured and zero admins, boot proceeds (no error) but the caller is
-// expected to warn. We assert the non-fatal contract and that nothing is
-// written.
+// The caller warns on zero admins; the seed itself must not fail or write.
 func TestNoSeedWarnsWhenZeroAdmins(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -394,8 +368,6 @@ func TestNoSeedWarnsWhenZeroAdmins(t *testing.T) {
 	}
 }
 
-// TestNoSeedWithExistingAdminIsQuietNoOp confirms the no-seed path is a plain
-// no-op when an admin already exists.
 func TestNoSeedWithExistingAdminIsQuietNoOp(t *testing.T) {
 	repo, pool := setup(t)
 	ctx := context.Background()
@@ -419,9 +391,7 @@ func TestArchivedAdminDoesNotSuppressNoActiveAdminWarning(t *testing.T) {
 	if _, err := movies.Add(ctx, "Heat", "pool", adminID); err != nil {
 		t.Fatalf("add authored movie: %v", err)
 	}
-	// The public removal path refuses to create a zero-admin roster. Seed the
-	// legacy/manual-database state directly so this test can still cover the
-	// startup warning that reports operator-visible bad state.
+	// Removal refuses to leave zero admins, so write that state directly.
 	if _, err := pool.Write.ExecContext(ctx,
 		"UPDATE users SET archived_at = unixepoch() WHERE id = ?", adminID,
 	); err != nil {

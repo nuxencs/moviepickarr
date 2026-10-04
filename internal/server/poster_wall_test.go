@@ -11,10 +11,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// The cache reads empty before any warm, populates (capped at 20) after a
-// successful warm, and holds the last good list when a later warm fails. The
-// warm is driven directly via an injectable fetch func, so no real sleeps or a
-// live TMDB are needed.
+// Driven via an injectable fetch func, so no real sleeps or live TMDB.
 func TestPosterWallCache_WarmAndKeepLastGood(t *testing.T) {
 	t.Parallel()
 
@@ -34,7 +31,6 @@ func TestPosterWallCache_WarmAndKeepLastGood(t *testing.T) {
 
 	c := newPosterWallCache(fetch, 0, zerolog.Nop())
 
-	// Empty before any warm.
 	if got := c.list(); len(got) != 0 {
 		t.Fatalf("before warm: got %v, want empty", got)
 	}
@@ -57,8 +53,7 @@ func TestPosterWallCache_WarmAndKeepLastGood(t *testing.T) {
 	}
 }
 
-// list returns a copy: a caller mutating the returned slice cannot corrupt the
-// cache a concurrent refresh may be reading.
+// A caller mutating the returned slice must not corrupt the cache a refresh may read.
 func TestPosterWallCache_ListReturnsCopy(t *testing.T) {
 	t.Parallel()
 	fetch := func(context.Context) ([]string, error) { return []string{"/a.jpg"}, nil }
@@ -72,8 +67,7 @@ func TestPosterWallCache_ListReturnsCopy(t *testing.T) {
 	}
 }
 
-// Start runs the initial warm and Stop unwinds the goroutine. With refresh
-// disabled (0), Start warms once and the run loop returns on its own.
+// With refresh disabled (0), Start warms once and the run loop returns on its own.
 func TestPosterWallCache_StartWarmsThenStops(t *testing.T) {
 	t.Parallel()
 	warmed := make(chan struct{}, 1)
@@ -98,9 +92,8 @@ func TestPosterWallCache_StartWarmsThenStops(t *testing.T) {
 	}
 }
 
-// A nil cache (keyless boot) no-ops on Start/Stop rather than panicking. Run
-// and the shutdown path call both unconditionally. The endpoint guards nil
-// before ever calling list(), so list() itself need not be nil-safe.
+// Keyless boot leaves the cache nil; Run and shutdown call Start/Stop
+// unconditionally. The endpoint guards nil, so list() need not be nil-safe.
 func TestPosterWallCache_NilSafe(t *testing.T) {
 	t.Parallel()
 	var c *posterWallCache

@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// Provokes real constraint failures so the code-based matchers are pinned to
-// the driver's actual behavior, not to error text.
+// Real constraint failures pin the matchers to the driver's codes, not error text.
 func TestConstraintErrorMatchers(t *testing.T) {
 	ctx := context.Background()
 	pool, err := OpenSQLite(filepath.Join(t.TempDir(), "m.db"))

@@ -28,11 +28,8 @@ type authTestEnv struct {
 	clk      *fakeClock
 }
 
-// setupAuthApp builds a handler over a temp DB with the real route chain from
-// registerRoutes (csrfGuard → login → requireSession → the rest), so the auth
-// handlers are exercised through the same middleware ordering production uses.
-// Both time-driven managers share one fake clock so lockout and session windows
-// advance deterministically.
+// setupAuthApp mounts the real registerRoutes chain so tests see production
+// middleware order. All time-driven managers share one fake clock.
 func setupAuthApp(t *testing.T) *authTestEnv {
 	t.Helper()
 
@@ -50,8 +47,6 @@ func setupAuthApp(t *testing.T) *authTestEnv {
 	clk := &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	h.sessions = auth.NewSessionManager(repository.NewSqliteSessionRepository(dbConn), auth.WithClock(clk.now))
 	h.localAuth = auth.NewLocalAuth(repository.NewSqliteLocalAccountRepository(dbConn), auth.WithLocalClock(clk.now))
-	// The invite manager and scoped transition store share the fake clock so
-	// invite expiry and credential commits advance with the test.
 	h.invites = auth.NewInviteManager(
 		repository.NewSqliteInviteRepository(dbConn),
 		repository.NewSqliteAuthTransitionStore(dbConn),
@@ -104,8 +99,7 @@ func (e *authTestEnv) seedLocalLogin(t *testing.T, userID int, username, passwor
 	}
 }
 
-// request issues an HTTP request. It attaches the same-origin CSRF signal to
-// unsafe methods and a JSON body when one is given.
+// request attaches the same-origin CSRF signal to unsafe methods and a JSON body when given.
 func (e *authTestEnv) request(t *testing.T, method, path, cookie string, body any) *http.Response {
 	t.Helper()
 	var reader *strings.Reader
@@ -144,7 +138,6 @@ func sessionCookieValue(resp *http.Response) string {
 	return ""
 }
 
-// login runs the real login endpoint and returns the session cookie.
 func (e *authTestEnv) login(t *testing.T, username, password string) string {
 	t.Helper()
 	resp := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
@@ -234,8 +227,7 @@ func TestMe_RequiresSession(t *testing.T) {
 func TestAuthConfig_ReportsOIDCPresenceUnauthenticated(t *testing.T) {
 	e := setupAuthApp(t)
 
-	// No provider configured (the setup wires no OIDC): the endpoint answers
-	// without a session and reports SSO off, so the login page hides the button.
+	// The setup wires no OIDC, so the endpoint answers without a session and reports SSO off.
 	off := e.request(t, http.MethodGet, "/api/v1/auth/config", "", nil)
 	if off.StatusCode != fiber.StatusOK {
 		t.Fatalf("config status = %d, want 200", off.StatusCode)
@@ -248,8 +240,7 @@ func TestAuthConfig_ReportsOIDCPresenceUnauthenticated(t *testing.T) {
 		t.Fatalf("config.OIDC = true, want false with no provider")
 	}
 
-	// Flip the presence-derived flag the same way registerRoutes would once a
-	// provider is configured; the endpoint now advertises the SSO button.
+	// registerRoutes sets this flag when a provider is configured.
 	e.h.oidcEnabled = true
 	on := e.request(t, http.MethodGet, "/api/v1/auth/config", "", nil)
 	if err := json.UnmarshalRead(on.Body, &cfg); err != nil {
@@ -263,9 +254,7 @@ func TestAuthConfig_ReportsOIDCPresenceUnauthenticated(t *testing.T) {
 func TestPosterWall_PublicAndEmptyWhenUnwarmed(t *testing.T) {
 	e := setupAuthApp(t)
 
-	// No TMDB key in the test env → posterWall is nil (keyless boot). The route
-	// sits ahead of requireSession, so it answers without a session and returns a
-	// clean JSON [] the client can fall back from.
+	// No TMDB key, so posterWall is nil: the route must still answer a clean [] without a session.
 	resp := e.request(t, http.MethodGet, "/api/v1/auth/poster-wall", "", nil)
 	if resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("poster-wall status = %d, want 200", resp.StatusCode)
@@ -320,7 +309,7 @@ func TestLogin_Lockout(t *testing.T) {
 		}
 	}
 
-	// Now locked: even the correct password is refused with the same uniform 401.
+	// Locked: even the correct password gets the same uniform 401.
 	locked := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "carol", "password": "the right password"})
 	if locked.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("locked status = %d, want 401", locked.StatusCode)
@@ -329,8 +318,7 @@ func TestLogin_Lockout(t *testing.T) {
 		t.Fatal("locked login minted a session")
 	}
 
-	// Lock auto-expires after 15 minutes; the correct password then works and
-	// resets the counters.
+	// The lock expires after 15 minutes.
 	e.clk.t = e.clk.t.Add(16 * time.Minute)
 	cookie := e.login(t, "carol", "the right password")
 	if cookie == "" {
@@ -380,11 +368,9 @@ func TestChangePassword_RotatesAndRevokes(t *testing.T) {
 		t.Fatalf("current token not rotated (got %q)", rotated)
 	}
 
-	// The rotated cookie still authenticates.
 	if me := e.request(t, http.MethodGet, "/api/v1/auth/me", rotated, nil); me.StatusCode != fiber.StatusOK {
 		t.Fatalf("rotated cookie me = %d, want 200", me.StatusCode)
 	}
-	// The old device-A token and device-B are both revoked.
 	if old := e.request(t, http.MethodGet, "/api/v1/auth/me", deviceA, nil); old.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("old current token me = %d, want 401", old.StatusCode)
 	}
@@ -392,7 +378,6 @@ func TestChangePassword_RotatesAndRevokes(t *testing.T) {
 		t.Fatalf("other device me = %d, want 401", other.StatusCode)
 	}
 
-	// The new password logs in; the old one does not.
 	_ = e.login(t, "dana", "brand new password")
 	bad := e.request(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "dana", "password": "old password here"})
 	if bad.StatusCode != fiber.StatusUnauthorized {
@@ -411,7 +396,7 @@ func TestLogout_CurrentDeviceOnly(t *testing.T) {
 	deviceA := e.login(t, "hank", "correct horse battery")
 	deviceB := e.login(t, "hank", "correct horse battery")
 
-	// Empty body → log out just this device. Cookie cleared, 204.
+	// An empty body logs out only this device.
 	resp := e.request(t, http.MethodPost, "/api/v1/auth/logout", deviceA, nil)
 	if resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("logout status = %d, want 204", resp.StatusCode)
@@ -421,7 +406,6 @@ func TestLogout_CurrentDeviceOnly(t *testing.T) {
 		t.Fatal("logout did not clear the session cookie")
 	}
 
-	// Device A is revoked; device B still authenticates.
 	if a := e.request(t, http.MethodGet, "/api/v1/auth/me", deviceA, nil); a.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("logged-out device me = %d, want 401", a.StatusCode)
 	}
@@ -429,9 +413,7 @@ func TestLogout_CurrentDeviceOnly(t *testing.T) {
 		t.Fatalf("other device me = %d, want 200", b.StatusCode)
 	}
 
-	// A second logout with the now-revoked cookie is rejected by requireSession
-	// before the handler runs: the session gate sits ahead of logout, so a dead
-	// cookie is a 401, not another 204. The client is already at the login screen.
+	// requireSession sits ahead of logout, so a dead cookie gets 401, not another 204.
 	again := e.request(t, http.MethodPost, "/api/v1/auth/logout", deviceA, nil)
 	if again.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("repeat logout with revoked cookie = %d, want 401", again.StatusCode)
@@ -446,7 +428,6 @@ func TestLogout_Everywhere(t *testing.T) {
 	deviceA := e.login(t, "iris", "correct horse battery")
 	deviceB := e.login(t, "iris", "correct horse battery")
 
-	// {"all":true} → every session for the member is revoked, this one included.
 	resp := e.request(t, http.MethodPost, "/api/v1/auth/logout", deviceA, map[string]bool{"all": true})
 	if resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("logout-all status = %d, want 204", resp.StatusCode)
@@ -472,7 +453,6 @@ func TestChangePassword_WrongCurrentAndNoLocalLogin(t *testing.T) {
 	e.seedLocalLogin(t, id, "erin", "old password here")
 	cookie := e.login(t, "erin", "old password here")
 
-	// Wrong current password → generic 401.
 	wrong := e.request(t, http.MethodPost, "/api/v1/auth/password", cookie, map[string]string{
 		"currentPassword": "not it", "newPassword": "a fresh password",
 	})
@@ -480,8 +460,7 @@ func TestChangePassword_WrongCurrentAndNoLocalLogin(t *testing.T) {
 		t.Fatalf("wrong current = %d, want 401", wrong.StatusCode)
 	}
 
-	// A member with a valid session but no local login → 409. Mint a session for
-	// a placeholder member directly (they cannot obtain one through login).
+	// A placeholder cannot log in, so mint its session directly; no local login -> 409.
 	placeholder := e.seedMember(t, "Frank", "member")
 	raw, _, err := e.h.sessions.Mint(context.Background(), placeholder, nil)
 	if err != nil {
@@ -503,16 +482,14 @@ func TestAdminSetLocalLogin(t *testing.T) {
 
 	placeholder := e.seedMember(t, "Gwen", "member")
 
-	// Create a first local login for the placeholder.
 	create := e.request(t, http.MethodPut, "/api/v1/members/"+strconv.Itoa(placeholder)+"/local-login", adminCookie,
 		map[string]string{"username": "gwen", "password": "gwen password ok"})
 	if create.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("create status = %d, want 204", create.StatusCode)
 	}
-	// Gwen can now log in.
 	gwenCookie := e.login(t, "gwen", "gwen password ok")
 
-	// Reset (existing row) revokes the target's sessions.
+	// A reset of an existing login revokes the target's sessions.
 	reset := e.request(t, http.MethodPut, "/api/v1/members/"+strconv.Itoa(placeholder)+"/local-login", adminCookie,
 		map[string]string{"password": "reset password ok"})
 	if reset.StatusCode != fiber.StatusNoContent {
@@ -523,7 +500,7 @@ func TestAdminSetLocalLogin(t *testing.T) {
 	}
 	_ = e.login(t, "gwen", "reset password ok") // the reset password works
 
-	// NOCASE username collision → 409.
+	// NOCASE username collision -> 409.
 	other := e.seedMember(t, "Hank", "member")
 	collision := e.request(t, http.MethodPut, "/api/v1/members/"+strconv.Itoa(other)+"/local-login", adminCookie,
 		map[string]string{"username": "GWEN", "password": "hank password ok"})
@@ -531,7 +508,6 @@ func TestAdminSetLocalLogin(t *testing.T) {
 		t.Fatalf("collision status = %d, want 409", collision.StatusCode)
 	}
 
-	// A non-admin is forbidden.
 	nonAdmin := e.seedMember(t, "Ivy", "member")
 	e.seedLocalLogin(t, nonAdmin, "ivy", "ivy password ok")
 	ivyCookie := e.login(t, "ivy", "ivy password ok")
@@ -594,7 +570,6 @@ func TestAdminDeleteLocalLogin(t *testing.T) {
 	}
 	resetToken := tokenFromClaimURL(t, resetInvite.ClaimURL)
 
-	// Delete another member's login → 204, then it's gone (login fails).
 	del := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(target)+"/local-login", adminCookie, nil)
 	if del.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("delete status = %d, want 204", del.StatusCode)
@@ -610,13 +585,12 @@ func TestAdminDeleteLocalLogin(t *testing.T) {
 		t.Fatalf("session after last password removal = %d, want 401", old.StatusCode)
 	}
 
-	// Deleting a member with no local login → 404.
 	missing := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(target)+"/local-login", adminCookie, nil)
 	if missing.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("missing delete = %d, want 404", missing.StatusCode)
 	}
 
-	// The admin cannot delete their own last credential.
+	// An admin cannot delete their own last credential.
 	self := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(adminID)+"/local-login", adminCookie, nil)
 	if self.StatusCode != fiber.StatusConflict {
 		t.Fatalf("self last-credential delete = %d, want 409", self.StatusCode)

@@ -10,10 +10,8 @@ import (
 	"testing"
 )
 
-// applyThrough runs every migration with version <= maxVersion, in order,
-// dispatching on the fk_off marker exactly as the real runner does. It lets a
-// test reach a specific pre-migration schema (here: post-008) before seeding
-// the rows the migration under test has to survive.
+// applyThrough runs migrations up to maxVersion like the real runner, fk_off
+// marker included, so a test can seed rows into an older schema.
 func applyThrough(t *testing.T, ctx context.Context, db *sql.DB, maxVersion int) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
@@ -37,8 +35,7 @@ func applyThrough(t *testing.T, ctx context.Context, db *sql.DB, maxVersion int)
 	}
 }
 
-// applyOne applies a single migration file the way the runner would, recording
-// it in schema_migrations.
+// applyOne applies one migration file and records it, like the runner.
 func applyOne(t *testing.T, ctx context.Context, db *sql.DB, version int, name string) {
 	t.Helper()
 	if _, err := db.ExecContext(ctx,
@@ -54,9 +51,8 @@ func applyOne(t *testing.T, ctx context.Context, db *sql.DB, version int, name s
 	}
 }
 
-// TestMigration009_AppliesOverExistingRows runs the full chain on a fresh DB
-// carrying pre-009 users and movies, then asserts 009 landed the auth schema
-// and every existing member survived as a credential-less placeholder.
+// TestMigration009_AppliesOverExistingRows: pre-009 members survive 009 as
+// credential-less placeholders.
 func TestMigration009_AppliesOverExistingRows(t *testing.T) {
 	ctx := context.Background()
 	pool, err := OpenSQLite(filepath.Join(t.TempDir(), "m.db"))
@@ -65,8 +61,6 @@ func TestMigration009_AppliesOverExistingRows(t *testing.T) {
 	}
 	defer func() { _ = pool.Close() }()
 
-	// Apply everything up to 008 only, then seed the pre-009 rows an install
-	// carries into the migration (members with authored movies).
 	applyThrough(t, ctx, pool.Write, 8)
 
 	mustExec := func(stmt string, args ...any) {
@@ -78,7 +72,6 @@ func TestMigration009_AppliesOverExistingRows(t *testing.T) {
 	mustExec(`INSERT INTO users (id, name) VALUES (1, 'alice'), (2, 'bob')`)
 	mustExec(`INSERT INTO movies (title, status, added_by_id, tmdb_id) VALUES ('Heat', 'pool', 1, 949)`)
 
-	// Now apply 009 the way the runner does.
 	applyOne(t, ctx, pool.Write, 9, "009_auth_schema.sql")
 
 	var v9 int
@@ -121,8 +114,6 @@ func TestMigration009_AppliesOverExistingRows(t *testing.T) {
 		}
 	}
 
-	// Credential-less: no local logins, no linked identities, no invites for
-	// the survivors.
 	for _, tbl := range []string{"local_accounts", "oidc_identities", "invites"} {
 		var n int
 		if err := pool.Read.QueryRowContext(ctx,
@@ -135,8 +126,6 @@ func TestMigration009_AppliesOverExistingRows(t *testing.T) {
 	}
 }
 
-// TestMigration009_ShapeAndConstraints applies the full chain on a fresh DB and
-// exercises each invariant the added columns and tables enforce.
 func TestMigration009_ShapeAndConstraints(t *testing.T) {
 	ctx := context.Background()
 	pool, err := OpenSQLite(filepath.Join(t.TempDir(), "m.db"))
@@ -164,13 +153,10 @@ func TestMigration009_ShapeAndConstraints(t *testing.T) {
 
 	mustExec(`INSERT INTO users (id, name) VALUES (1, 'alice'), (2, 'bob')`)
 
-	// users.role CHECK rejects anything outside the enum.
 	mustExec(`UPDATE users SET role = 'admin' WHERE id = 1`)
 	wantErr("role outside enum rejected",
 		`UPDATE users SET role = 'superadmin' WHERE id = 2`)
 
-	// local_accounts: user_id PK => one local login per member; username is
-	// UNIQUE NOCASE; STRICT rejects a text timestamp bind.
 	mustExec(`INSERT INTO local_accounts (user_id, username, password_hash) VALUES (1, 'Alice', 'hash')`)
 	wantErr("second local login for same member rejected",
 		`INSERT INTO local_accounts (user_id, username, password_hash) VALUES (1, 'alice2', 'hash')`)
@@ -179,25 +165,21 @@ func TestMigration009_ShapeAndConstraints(t *testing.T) {
 	wantErr("text timestamp rejected by STRICT",
 		`INSERT INTO local_accounts (user_id, username, password_hash, created_at) VALUES (2, 'bob', 'hash', '2026-07-19 12:00:00')`)
 
-	// oidc_identities: user_id UNIQUE (1:1) and (issuer, subject) UNIQUE.
 	mustExec(`INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (1, 'https://idp', 'sub-a')`)
 	wantErr("second identity for same member rejected",
 		`INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (1, 'https://idp', 'sub-b')`)
 	wantErr("duplicate (issuer, subject) rejected",
 		`INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (2, 'https://idp', 'sub-a')`)
 
-	// sessions: token_hash UNIQUE; ON DELETE CASCADE clears a member's sessions.
 	mustExec(`INSERT INTO sessions (public_id, token_hash, user_id, expires_at) VALUES ('session-1', 't1', 2, 100)`)
 	wantErr("duplicate session token_hash rejected",
 		`INSERT INTO sessions (public_id, token_hash, user_id, expires_at) VALUES ('session-2', 't1', 2, 200)`)
 
-	// invites: token_hash UNIQUE; created_by SET NULL when the issuer is deleted.
 	mustExec(`INSERT INTO invites (public_id, user_id, token_hash, expires_at, created_by) VALUES ('invite-1-public-handle', 2, 'i1', 100, 1)`)
 	wantErr("duplicate invite token_hash rejected",
 		`INSERT INTO invites (public_id, user_id, token_hash, expires_at, created_by) VALUES ('invite-2-public-handle', 2, 'i1', 100, 1)`)
 
-	// Deleting the issuing admin (alice) nulls created_by but keeps the invite,
-	// and cascades away alice's own credential/identity rows.
+	// Deleting the issuing admin nulls created_by but keeps the invite.
 	mustExec(`DELETE FROM users WHERE id = 1`)
 	var createdBy sql.NullInt64
 	if err := pool.Read.QueryRowContext(ctx,
@@ -218,7 +200,6 @@ func TestMigration009_ShapeAndConstraints(t *testing.T) {
 		}
 	}
 
-	// Deleting bob cascades his session and invite away.
 	mustExec(`DELETE FROM users WHERE id = 2`)
 	for _, tbl := range []string{"sessions", "invites"} {
 		var n int
@@ -231,8 +212,7 @@ func TestMigration009_ShapeAndConstraints(t *testing.T) {
 		}
 	}
 
-	// Every new table is STRICT (the whole point of matching the post-007 shape;
-	// pragma_table_list.strict is 1 only for STRICT tables).
+	// Every new table must be STRICT, like the post-007 tables.
 	for _, tbl := range []string{"local_accounts", "oidc_identities", "sessions", "invites"} {
 		var strict int
 		if err := pool.Read.QueryRowContext(ctx,
@@ -244,8 +224,7 @@ func TestMigration009_ShapeAndConstraints(t *testing.T) {
 		}
 	}
 
-	// The non-unique sweep/revoke indexes exist (the UNIQUE ones are covered by
-	// the collision assertions above).
+	// The collision checks above already cover the UNIQUE indexes.
 	for _, idx := range []string{"sessions_user_id_index", "sessions_expires_at_index", "invites_user_id_index"} {
 		var n int
 		if err := pool.Read.QueryRowContext(ctx,

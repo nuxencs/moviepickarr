@@ -53,7 +53,6 @@ func TestLocalAccountRepo_CreateAndFind(t *testing.T) {
 		t.Fatalf("create local account: %v", err)
 	}
 
-	// Username lookup is case-insensitive (NOCASE).
 	got, err := accounts.FindByUsername(ctx, "ALICE")
 	if err != nil {
 		t.Fatalf("find by username: %v", err)
@@ -163,7 +162,6 @@ func TestLocalAccountRepo_NocaseCollision(t *testing.T) {
 	if err := accounts.Create(ctx, alice.ID, "shared", "h1"); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	// A different-cased username collides on the NOCASE unique index.
 	err := accounts.Create(ctx, bob.ID, "SHARED", "h2")
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("collision err = %v, want ErrConflict", err)
@@ -197,7 +195,6 @@ func TestLocalAccountRepo_RecordFailedAndSuccess(t *testing.T) {
 		t.Fatalf("after failure got %+v", got)
 	}
 
-	// A success with a rehash resets counters, sets last_login, and swaps the hash.
 	newHash := "h2"
 	if err := accounts.RecordSuccessfulLogin(ctx, alice.ID, "h1", &newHash, now, now); err != nil {
 		t.Fatalf("record success: %v", err)
@@ -210,7 +207,6 @@ func TestLocalAccountRepo_RecordFailedAndSuccess(t *testing.T) {
 		t.Fatalf("success did not rehash/bump last_login: %+v", got)
 	}
 
-	// A nil hash keeps the stored one.
 	if err := accounts.RecordSuccessfulLogin(ctx, alice.ID, "h2", nil, now, now); err != nil {
 		t.Fatalf("record success no-rehash: %v", err)
 	}
@@ -310,7 +306,6 @@ func TestLocalAccountRepo_UpdateAndDelete(t *testing.T) {
 		t.Fatalf("hash = %q, want h2", got.PasswordHash)
 	}
 
-	// Seed a lockout, then confirm the admin-reset update clears it.
 	lock := now.Add(time.Hour)
 	_ = accounts.RecordFailedAttempt(ctx, alice.ID, "h2", 1, lock, now)
 	if err := accounts.UpdatePasswordAndClearLockout(ctx, alice.ID, "h3", now); err != nil {
@@ -327,7 +322,6 @@ func TestLocalAccountRepo_UpdateAndDelete(t *testing.T) {
 	if _, err := accounts.FindByUserID(ctx, alice.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("after delete err = %v, want ErrNoRows", err)
 	}
-	// Updating/deleting a missing row is a zero-row miss.
 	if err := accounts.UpdatePasswordHash(ctx, alice.ID, "x", now); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("update missing err = %v, want ErrNoRows", err)
 	}
@@ -340,7 +334,6 @@ func TestLocalAccountRepo_MemberIdentity(t *testing.T) {
 	ctx, accounts, users, pool := setupLocalAccountRepo(t)
 	alice, _ := users.Create(ctx, "Alice")
 
-	// Placeholder: no local login, no linked identity.
 	id, err := accounts.GetMemberIdentity(ctx, alice.ID)
 	if err != nil {
 		t.Fatalf("identity: %v", err)
@@ -352,7 +345,6 @@ func TestLocalAccountRepo_MemberIdentity(t *testing.T) {
 		t.Fatalf("role = %q, want member", id.Role)
 	}
 
-	// Add a local login → hasLocalLogin + username.
 	if err := accounts.Create(ctx, alice.ID, "alice", "h1"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -361,7 +353,6 @@ func TestLocalAccountRepo_MemberIdentity(t *testing.T) {
 		t.Fatalf("after local login identity = %+v", id)
 	}
 
-	// Add a linked identity row → hasLinkedIdentity.
 	if _, err := pool.Write.ExecContext(ctx,
 		"INSERT INTO oidc_identities (user_id, issuer, subject) VALUES (?, 'iss', 'sub')", alice.ID); err != nil {
 		t.Fatalf("insert oidc: %v", err)
@@ -375,7 +366,6 @@ func TestLocalAccountRepo_MemberIdentity(t *testing.T) {
 		t.Fatalf("identity missing linked flag: %+v", id)
 	}
 
-	// Unknown member → no rows.
 	if _, err := accounts.GetMemberIdentity(ctx, 999); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("unknown identity err = %v, want ErrNoRows", err)
 	}

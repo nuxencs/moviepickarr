@@ -9,8 +9,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// startTestDraw pools a movie for adderID and draws it, so it holds the
-// concealed Acquisition a Reveal needs.
+// startTestDraw draws a movie so it holds the concealed Acquisition a Reveal needs.
 func startTestDraw(t *testing.T, e *userRemoveEnv, title string, adderID int) *domain.Movie {
 	t.Helper()
 	movie, err := e.movies.Add(e.ctx, title, "pool", adderID)
@@ -135,8 +134,7 @@ func TestRevealDrawAndAdvanceNextUp_HandsArchivedTurnToFirstActiveMember(t *test
 	}
 }
 
-// The next member still owes the watch of the last pooled movie, so an empty
-// pool does not hold the turn back.
+// The next member still owes the watch, so an empty pool does not hold the turn.
 func TestRevealDrawAndAdvanceNextUp_RotatesWhenPoolIsEmpty(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	members := createTestMembers(t, e, "Ana", "Ben")
@@ -202,8 +200,6 @@ func TestRevealDrawAndAdvanceNextUp_RollsBackRevealWhenHandoffFails(t *testing.T
 	assertStoredNextUp(t, e, members[0].ID)
 }
 
-// Watching rotates only when it is also the draw's Reveal. A revealed draw
-// already handed the turn on.
 func TestWatchCurrentDraw_RotatesOnlyWhenItRevealsDraw(t *testing.T) {
 	tests := []struct {
 		name        string

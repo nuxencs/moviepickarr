@@ -62,8 +62,7 @@ func TestReplaceAndGetCredits_RoundTripAndOrder(t *testing.T) {
 
 	profile := "/kr.jpg"
 	in := []domain.MovieCredit{
-		// Inserted shuffled on purpose: the read must order cast (by billing)
-		// before crew (by name).
+		// Shuffled on purpose: the read orders cast by billing, then crew by name.
 		crewOf(movieID, 9340, "Lana Wachowski", "Director", "Directing"),
 		castOf(movieID, 530, "Carrie-Anne Moss", "Trinity", 1),
 		crewOf(movieID, 9339, "Lilly Wachowski", "Director", "Directing"),
@@ -83,7 +82,6 @@ func TestReplaceAndGetCredits_RoundTripAndOrder(t *testing.T) {
 		t.Fatalf("expected 4 rows, got %d", len(rows))
 	}
 
-	// Cast first, in billing order…
 	if rows[0].Person.Name != "Keanu Reeves" || rows[0].Kind != domain.CreditKindCast || rows[0].Character != "Neo" {
 		t.Fatalf("row 0 mismatch: %+v", rows[0])
 	}
@@ -93,7 +91,6 @@ func TestReplaceAndGetCredits_RoundTripAndOrder(t *testing.T) {
 	if rows[1].Person.Name != "Carrie-Anne Moss" || rows[1].CastOrder != 1 {
 		t.Fatalf("row 1 mismatch: %+v", rows[1])
 	}
-	// …then crew alphabetically.
 	if rows[2].Person.Name != "Lana Wachowski" || rows[2].Kind != domain.CreditKindCrew || rows[2].Job != "Director" {
 		t.Fatalf("row 2 mismatch: %+v", rows[2])
 	}
@@ -115,7 +112,6 @@ func TestReplaceCredits_ReplacesRowsAndRefreshesPerson(t *testing.T) {
 		t.Fatalf("first replace: %v", err)
 	}
 
-	// Re-enrichment: the sidekick is gone, the lead's person row got renamed.
 	second := []domain.MovieCredit{
 		castOf(movieID, 1, "New Name", "Hero", 0),
 	}
@@ -141,8 +137,7 @@ func TestReplaceCredits_PersonAsCastAndCrew(t *testing.T) {
 	ctx, credits, _, movies, users := setupCreditsRepos(t)
 	movieID := seedMovie(t, ctx, users, movies, "Cara")
 
-	// Same person acting and directing (plus a second crew job): three rows
-	// against one people entry — the PK allows it because kind/job differ.
+	// One person, three rows: the PK allows it because kind/job differ.
 	in := []domain.MovieCredit{
 		castOf(movieID, 190, "Clint Eastwood", "Walt", 0),
 		crewOf(movieID, 190, "Clint Eastwood", "Director", "Directing"),
@@ -205,8 +200,7 @@ func TestReplaceCredits_StampsCreditsRefreshedAt(t *testing.T) {
 	movieID := seedMovie(t, ctx, users, movies, "Dave")
 	identifyMovieForEnrichment(t, ctx, movies, movieID)
 
-	// Metadata enriched, but credits never ingested: the NULL marker keeps the
-	// movie a NeedsEnrichment candidate (credits backfill for existing rows).
+	// The NULL credits marker keeps a metadata-enriched movie a backfill candidate.
 	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: movieID}); err != nil {
 		t.Fatalf("upsert metadata: %v", err)
 	}
@@ -218,8 +212,7 @@ func TestReplaceCredits_StampsCreditsRefreshedAt(t *testing.T) {
 		t.Fatalf("movie without ingested credits should be a candidate")
 	}
 
-	// Replacing with EMPTY credits still stamps the marker — a genuinely
-	// credit-less title must not stay in the backlog forever.
+	// Empty credits still stamp the marker, or a credit-less title stays in the backlog forever.
 	if err := credits.ReplaceCredits(ctx, movieID, nil); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
@@ -245,8 +238,7 @@ func TestCredits_CascadeDeleteWithMovie(t *testing.T) {
 		t.Fatalf("delete movie: %v", err)
 	}
 
-	// FK ON DELETE CASCADE (foreign_keys pragma is on via the DSN) removes the
-	// credit rows; the shared people rows stay.
+	// The cascade needs the foreign_keys pragma from the DSN; shared people rows stay.
 	got, err := credits.GetCreditsByMovieIDs(ctx, []int{movieID})
 	if err != nil {
 		t.Fatalf("get: %v", err)

@@ -11,8 +11,6 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// --- fakes -----------------------------------------------------------------
-
 type fakeTMDB struct {
 	findFn    func(ctx context.Context, imdbID string) (tmdbMovie, error)
 	detailsFn func(ctx context.Context, tmdbID int) (tmdbMovieDetails, error)
@@ -75,8 +73,6 @@ func TestIMDbExtractionNormalizesCase(t *testing.T) {
 		t.Fatalf("extract IMDb id = %q, want tt0133093", got)
 	}
 }
-
-// --- tests -----------------------------------------------------------------
 
 func TestEnrichOne_HappyPath(t *testing.T) {
 	t.Parallel()

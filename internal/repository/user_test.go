@@ -13,9 +13,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// userRemoveEnv is the full set of repos the delete/archive/restore paths touch,
-// so a test can wire a member with credentials/session/invite/identity and then
-// assert exactly what each removal outcome leaves behind.
+// userRemoveEnv holds every repo the delete/archive/restore paths touch.
 type userRemoveEnv struct {
 	ctx      context.Context
 	pool     *db.Pool
@@ -59,8 +57,7 @@ func setupUserRemoveEnv(t *testing.T) *userRemoveEnv {
 	}
 }
 
-// seedLogin gives a member the full credential set (local login, linked identity,
-// live session, valid invite), so a removal test can prove each one is gone.
+// seedLogin gives a member a local login, linked identity, session, and invite.
 func (e *userRemoveEnv) seedLogin(t *testing.T, userID int, username string) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -122,8 +119,7 @@ func (e *userRemoveEnv) seedResidualAuthRows(t *testing.T, userID int, suffix st
 	}
 }
 
-// A member who authored no movies is hard-deleted: the row goes, the whole
-// credential set cascades away, and next_up (which pointed at them) nulls out.
+// Credentials cascade away and next_up nulls out.
 func TestUserRepo_Remove_HardDeletesWhenNoMovies(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	alice, err := e.users.Create(e.ctx, "Alice")
@@ -159,7 +155,6 @@ func TestUserRepo_Remove_HardDeletesWhenNoMovies(t *testing.T) {
 		t.Fatalf("invite survived: %d", n)
 	}
 
-	// next_up SET NULL fired, so the rotation pointer no longer dangles.
 	var nextUp sql.NullInt64
 	if err := e.pool.Read.QueryRowContext(e.ctx,
 		"SELECT user_id FROM next_up WHERE id = 1").Scan(&nextUp); err != nil {
@@ -169,15 +164,13 @@ func TestUserRepo_Remove_HardDeletesWhenNoMovies(t *testing.T) {
 		t.Fatalf("next_up still points at deleted member: %d", nextUp.Int64)
 	}
 
-	// The name is freed: a fresh member can reuse it (users.name is UNIQUE).
+	// users.name is UNIQUE, so reuse proves the row is gone.
 	if _, err := e.users.Create(e.ctx, "Alice"); err != nil {
 		t.Fatalf("name not freed after hard delete: %v", err)
 	}
 }
 
-// A member who authored movies is archived, not deleted: the row and the movie's
-// attribution survive, archived_at is set, and every login row is stripped so
-// the member can no longer authenticate.
+// The row keeps movie attribution; every login row is stripped.
 func TestUserRepo_Remove_ArchivesWhenAuthoredMovies(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	bob, err := e.users.Create(e.ctx, "Bob")
@@ -198,7 +191,6 @@ func TestUserRepo_Remove_ArchivesWhenAuthoredMovies(t *testing.T) {
 		t.Fatalf("outcome = %q, want archived", outcome)
 	}
 
-	// The row survives with archived_at stamped.
 	if n := e.countRow(t, "SELECT COUNT(*) FROM users WHERE id = ?", bob.ID); n != 1 {
 		t.Fatalf("archived users row missing: %d", n)
 	}
@@ -206,7 +198,6 @@ func TestUserRepo_Remove_ArchivesWhenAuthoredMovies(t *testing.T) {
 		t.Fatal("archived_at not set on archive")
 	}
 
-	// Attribution is intact: the movie still resolves to Bob's name.
 	got, err := e.movies.FindByID(e.ctx, movie.ID)
 	if err != nil {
 		t.Fatalf("find movie: %v", err)
@@ -215,7 +206,6 @@ func TestUserRepo_Remove_ArchivesWhenAuthoredMovies(t *testing.T) {
 		t.Fatalf("attribution lost: addedBy=%d name=%q", got.AddedByID, got.AddedByName)
 	}
 
-	// Every login row is gone, so login is dead.
 	if n := e.countRow(t, "SELECT COUNT(*) FROM local_accounts WHERE user_id = ?", bob.ID); n != 0 {
 		t.Fatalf("local account survived archive: %d", n)
 	}
@@ -334,8 +324,6 @@ func TestUserRepo_Remove_ConcurrentAdminsPreservesOne(t *testing.T) {
 	}
 }
 
-// Active reads exclude archived members: List and FindByID skip them, but the
-// row is still there (attribution) and Restore brings them back.
 func TestUserRepo_ArchivedFilteredFromActiveReads(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	carol, err := e.users.Create(e.ctx, "Carol")
@@ -364,8 +352,7 @@ func TestUserRepo_ArchivedFilteredFromActiveReads(t *testing.T) {
 	}
 }
 
-// next_up pointing at an archived member reads as no-one-up (active-read filter),
-// so the rotation self-heals rather than surfacing a member who has left.
+// The rotation self-heals instead of surfacing a member who left.
 func TestNextUpRepo_ArchivedMemberReadsAsEmpty(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	dave, err := e.users.Create(e.ctx, "Dave")
@@ -407,7 +394,6 @@ func TestUserRepo_Restore_ReactivatesArchivedMember(t *testing.T) {
 		t.Fatal("archived_at not cleared on restore")
 	}
 
-	// Back on the active roster.
 	got, err := e.users.FindByID(e.ctx, erin.ID)
 	if err != nil {
 		t.Fatalf("find restored member: %v", err)
@@ -481,8 +467,6 @@ func TestUserRepo_Restore_RollsBackAuthCleanupOnFailure(t *testing.T) {
 	}
 }
 
-// Restoring a member who is not archived (active or missing) is a no-op that
-// reports ErrNotFound: there is nothing to restore.
 func TestUserRepo_Restore_NotArchivedIsNotFound(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	frank, err := e.users.Create(e.ctx, "Frank")
@@ -498,8 +482,7 @@ func TestUserRepo_Restore_NotArchivedIsNotFound(t *testing.T) {
 	}
 }
 
-// rosterByID indexes a roster read by member id, so an assertion can pull the
-// row it cares about without depending on the (active-then-oldest) ordering.
+// rosterByID indexes a roster so assertions do not depend on its order.
 func rosterByID(t *testing.T, members []*domain.RosterMember) map[int]*domain.RosterMember {
 	t.Helper()
 	byID := make(map[int]*domain.RosterMember, len(members))
@@ -509,11 +492,8 @@ func rosterByID(t *testing.T, members []*domain.RosterMember) map[int]*domain.Ro
 	return byID
 }
 
-// The roster derives login state from credential/invite/archive presence, not a
-// stored flag: a placeholder shows nothing, an invited placeholder shows a
-// pending invite, a fully-credentialed member shows both link-states, and an
-// archived member surfaces on the roster (unlike the active-only List) with its
-// login rows stripped.
+// Login state comes from credential, invite, and archive rows, not a stored flag.
+// Unlike List, the roster includes archived members.
 func TestUserRepo_Roster_DerivesLoginState(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 
@@ -522,7 +502,7 @@ func TestUserRepo_Roster_DerivesLoginState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create noor: %v", err)
 	}
-	// Invited placeholder: a valid unredeemed invite, still no credentials.
+	// Invited placeholder.
 	jamie, err := e.users.Create(e.ctx, "Jamie")
 	if err != nil {
 		t.Fatalf("create jamie: %v", err)
@@ -531,9 +511,7 @@ func TestUserRepo_Roster_DerivesLoginState(t *testing.T) {
 	if err := e.invites.Create(e.ctx, jamie.ID, "public-jamie-000000000000", "invite-jamie", now.Add(24*time.Hour), now, nil); err != nil {
 		t.Fatalf("seed jamie invite: %v", err)
 	}
-	// Fully credentialed member with authored movies (so a remove would archive).
-	// Seed the credentials directly (not seedLogin) so no leftover invite makes
-	// this claimed member read as still-pending.
+	// Claimed member with movies. Not seedLogin: its leftover invite would read as still-pending.
 	alex, err := e.users.Create(e.ctx, "Alex")
 	if err != nil {
 		t.Fatalf("create alex: %v", err)
@@ -549,7 +527,7 @@ func TestUserRepo_Roster_DerivesLoginState(t *testing.T) {
 	if _, err := e.movies.Add(e.ctx, "Heat", "pool", alex.ID); err != nil {
 		t.Fatalf("add alex movie: %v", err)
 	}
-	// Archived member: kept for attribution, off the active roster but on this one.
+	// Archived member.
 	dana, err := e.users.Create(e.ctx, "Dana")
 	if err != nil {
 		t.Fatalf("create dana: %v", err)
@@ -593,14 +571,11 @@ func TestUserRepo_Roster_DerivesLoginState(t *testing.T) {
 		t.Fatalf("archived Dana moviesAuthored = %d, want 1 (attribution kept)", dRow.MoviesAuthored)
 	}
 
-	// Active members sort before the archived one.
 	if roster[len(roster)-1].ID != dana.ID {
 		t.Fatalf("archived member not ordered last: got id %d", roster[len(roster)-1].ID)
 	}
 }
 
-// Promote then demote round-trips the role. Promotion is unconditional; demotion
-// is allowed here because a second admin remains after the change.
 func TestUserRepo_SetRole_PromoteAndDemote(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	root, err := e.users.Create(e.ctx, "Root")
@@ -623,7 +598,6 @@ func TestUserRepo_SetRole_PromoteAndDemote(t *testing.T) {
 		t.Fatalf("priya role = %q, want admin", byID[priya.ID].Role)
 	}
 
-	// Two admins remain, so demoting one is allowed.
 	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: priya.ID, Role: domain.RoleMember}); err != nil {
 		t.Fatalf("demote priya: %v", err)
 	}
@@ -690,8 +664,6 @@ func TestUserRepo_SetRole_GuestHandsOffNextUp(t *testing.T) {
 	}
 }
 
-// Demoting the only admin is refused so the roster can never be left with no one
-// able to run admin actions.
 func TestUserRepo_SetRole_RefusesLastAdmin(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	root, err := e.users.Create(e.ctx, "Root")
@@ -707,15 +679,13 @@ func TestUserRepo_SetRole_RefusesLastAdmin(t *testing.T) {
 			t.Fatalf("change last admin to %s: got %v, want ErrConflict", role, err)
 		}
 	}
-	// The role is unchanged after the refused demotion.
 	byID := rosterByID(t, mustRoster(t, e))
 	if byID[root.ID].Role != domain.RoleAdmin {
 		t.Fatalf("last admin role changed despite refusal: %q", byID[root.ID].Role)
 	}
 }
 
-// A role change against a missing or archived member is ErrNotFound: an archived
-// member's role is frozen (they are off the active roster).
+// An archived member's role is frozen.
 func TestUserRepo_SetRole_MissingOrArchived(t *testing.T) {
 	e := setupUserRemoveEnv(t)
 	if _, err := e.users.SetRole(e.ctx, domain.RoleChange{MemberID: 4242, Role: domain.RoleAdmin}); !errors.Is(err, domain.ErrNotFound) {

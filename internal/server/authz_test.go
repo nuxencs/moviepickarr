@@ -20,8 +20,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// problemCode decodes the machine `code` (the problem+json title) from a 4xx
-// response so the authz tests can assert on it, not just the status.
+// problemCode decodes the machine `code` (the problem+json title) from a 4xx response.
 func problemCode(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	var p problemDetails
@@ -86,8 +85,6 @@ func (s *pausingWatchMovieStore) WatchCurrentDraw(
 	return s.SqliteMoviesRepository.WatchCurrentDraw(ctx, watchedAt, revealsDraw)
 }
 
-// A member who did not add a movie cannot edit, delete or move it: 403 not_adder,
-// with no admin override. Missing resources still 404 (never masked as 403).
 func TestAuthz_AdderOnlyMutations(t *testing.T) {
 	t.Parallel()
 
@@ -139,7 +136,6 @@ func TestAuthz_AdderOnlyMutations(t *testing.T) {
 	}
 }
 
-// Admin-only actions refuse a plain member with 403 admin_required.
 func TestAuthz_AdminOnlyActions(t *testing.T) {
 	t.Parallel()
 
@@ -228,8 +224,6 @@ func TestAuthz_GuestCannotRunPoolOrHeroCommands(t *testing.T) {
 	}
 }
 
-// The draw/reveal/watch cycle is next-up only: a member or admin who is not up
-// gets 403 not_next_up; the member whose turn it is may draw.
 func TestAuthz_DrawIsNextUpOnly(t *testing.T) {
 	t.Parallel()
 
@@ -264,7 +258,6 @@ func TestAuthz_DrawIsNextUpOnly(t *testing.T) {
 		}
 	}
 
-	// The member whose turn it is may draw.
 	resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`), first.ID, "member")
 	if resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("next-up draw: expected 200, got %d", resp.StatusCode)

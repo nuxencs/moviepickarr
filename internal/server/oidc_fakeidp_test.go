@@ -15,12 +15,9 @@ import (
 	"time"
 )
 
-// fakeIdP is an in-process OpenID provider standing up exactly the three
-// endpoints go-oidc touches: discovery, JWKS, and the token endpoint. It signs
-// real RS256 ID tokens with a per-test RSA key, so the relying-party path
-// (discovery, JWKS fetch, signature / iss / aud / exp / nonce verification) runs
-// end to end against a controllable issuer. The authorization endpoint is never
-// hit; tests replay the code + state the initiation redirect would have carried.
+// fakeIdP serves the three endpoints go-oidc touches (discovery, JWKS, token)
+// and signs real RS256 ID tokens, so relying-party verification runs end to end.
+// Tests skip the authorization endpoint and replay the redirect's code and state.
 type fakeIdP struct {
 	server *httptest.Server
 	key    *rsa.PrivateKey
@@ -30,8 +27,6 @@ type fakeIdP struct {
 	nextIDToken string
 }
 
-// newFakeIdP generates a signing key and starts the provider. It is torn down
-// with the test.
 func newFakeIdP(t *testing.T) *fakeIdP {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -77,13 +72,11 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 	return idp
 }
 
-// issuer is the provider's issuer identifier (its base URL): the value that
-// lands in a verified ID token's iss claim and thus in an oidc_identities row.
+// issuer is the base URL, which lands in the iss claim and oidc_identities rows.
 func (idp *fakeIdP) issuer() string { return idp.server.URL }
 
-// idTokenClaims is the controllable subset of an ID token a test sets before
-// replaying a callback. Aud must match the relying party's client id; Nonce must
-// match the one the initiation redirect carried.
+// idTokenClaims is the ID token subset a test controls. Aud must match the client
+// id and Nonce the one the initiation redirect carried.
 type idTokenClaims struct {
 	Sub               string
 	Aud               string
@@ -94,8 +87,7 @@ type idTokenClaims struct {
 	ExpOffset time.Duration
 }
 
-// setIDToken signs an ID token with the given claims and arms the token endpoint
-// to return it on the next exchange.
+// setIDToken arms the token endpoint to return a token with c on the next exchange.
 func (idp *fakeIdP) setIDToken(t *testing.T, c idTokenClaims) {
 	t.Helper()
 	exp := time.Hour
@@ -122,7 +114,6 @@ func (idp *fakeIdP) setIDToken(t *testing.T, c idTokenClaims) {
 	idp.mu.Unlock()
 }
 
-// signJWT builds and RS256-signs a compact JWT for the given claims.
 func (idp *fakeIdP) signJWT(t *testing.T, claims map[string]any) string {
 	t.Helper()
 	header := map[string]any{"alg": "RS256", "typ": "JWT", "kid": idp.kid}

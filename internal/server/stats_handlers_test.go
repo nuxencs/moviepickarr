@@ -100,11 +100,8 @@ func TestBuildStatsResponse_WindowCountsAndSelectedBreakdown(t *testing.T) {
 		}
 	}
 
-	// Every all-time adder is present every window (Cara watched 31d ago, so
-	// she's 0 in the 30d window but still listed), ordered by stable all-time
-	// total (Alice 4, Bob 2, Cara 1) — not the window count — so rows don't jump
-	// when switching ranges. "Future" (future-dated) and "Nobody" (unwatched)
-	// are excluded.
+	// Rows order by all-time total, not window count, so they do not jump between
+	// ranges. Cara (watched 31d ago) stays listed at 0; Future and Nobody drop.
 	if len(got.WatchedByUser) != 3 {
 		t.Fatalf("expected 3 members, got %d (%+v)", len(got.WatchedByUser), got.WatchedByUser)
 	}
@@ -304,8 +301,7 @@ func TestBuildStatsCacheKey(t *testing.T) {
 		t.Fatalf("expected %q, got %q", wantPreset, gotPreset)
 	}
 
-	// Filters are part of the key — same window, different subsets must never
-	// collide — and the genre is lowercased to match the case-insensitive filter.
+	// The genre is lowercased to match the case-insensitive filter.
 	gotFiltered := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{
 		Genre: "Action", ActorIDs: []int{530, 6384}, CrewIDs: []int{9340}, ReleaseYear: 1999, AddedByIDs: []int{7},
 	})
@@ -317,8 +313,7 @@ func TestBuildStatsCacheKey(t *testing.T) {
 		t.Fatalf("filtered key must differ from the unfiltered key")
 	}
 
-	// A decade filter occupies its own key segment, so it can never collide with
-	// the equivalent exact-year selection.
+	// A decade must not collide with the equivalent exact-year selection.
 	gotDecade := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{ReleaseDecade: 1990})
 	wantDecade := "30d|UTC||||||0|1990|"
 	if gotDecade != wantDecade {
@@ -328,7 +323,6 @@ func TestBuildStatsCacheKey(t *testing.T) {
 		t.Fatalf("decade key must differ from the same-numbered year key")
 	}
 
-	// The added-by (adder) filter is its own key segment too.
 	gotAddedBy := buildStatsCacheKey(statsWindow30d, "UTC", nil, statsFilters{AddedByIDs: []int{10, 20}})
 	wantAddedBy := "30d|UTC||||||0|0|10,20"
 	if gotAddedBy != wantAddedBy {
@@ -338,8 +332,7 @@ func TestBuildStatsCacheKey(t *testing.T) {
 		t.Fatalf("added-by key must differ from the unfiltered key")
 	}
 
-	// The id lists are canonicalized at parse time, so the same selection in a
-	// different request order must land on the same cache entry.
+	// Id lists are canonicalized at parse time, so request order must not matter.
 	first, err := parseStatsFilters("", "6384,530", "", "", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -417,7 +410,6 @@ func TestStatsCacheBoundedSize(t *testing.T) {
 		t.Fatalf("expected %d entries, got %d", statsCacheMaxEntries, len(h.statsCache))
 	}
 
-	// The insert that would exceed the cap resets the map instead of growing it.
 	h.setCachedStats("one-over", statsResponse{}, now)
 	if len(h.statsCache) != 1 {
 		t.Fatalf("expected the cache to reset to 1 entry at the cap, got %d", len(h.statsCache))
@@ -427,9 +419,8 @@ func TestStatsCacheBoundedSize(t *testing.T) {
 	}
 }
 
-// statsEnrichedFixture builds three watched movies inside every window: The
-// Matrix and Speed are enriched (sharing Keanu Reeves as cast), Mystery is not
-// enriched at all — so it must vanish whenever any filter is active.
+// statsEnrichedFixture builds three watched movies: The Matrix and Speed share
+// Keanu Reeves; Mystery is unenriched, so any active filter drops it.
 func statsEnrichedFixture(now time.Time) ([]*domain.Movie, metaByID, creditsByID) {
 	keanuProfile := "/kr.jpg"
 	movies := []*domain.Movie{
@@ -451,8 +442,7 @@ func statsEnrichedFixture(now time.Time) ([]*domain.Movie, metaByID, creditsByID
 		2: {
 			{MovieID: 2, Person: domain.Person{ID: 6384, Name: "Keanu Reeves", ProfilePath: &keanuProfile}, Kind: domain.CreditKindCast, Character: "Jack Traven", CastOrder: 0},
 			{MovieID: 2, Person: domain.Person{ID: 56, Name: "Jan de Bont"}, Kind: domain.CreditKindCrew, Job: "Director", Department: "Directing"},
-			// Writer-only crew — proves crewIds match any whitelisted job, not
-			// just directors.
+			// Writer-only crew: crewIds match any whitelisted job, not only directors.
 			{MovieID: 2, Person: domain.Person{ID: 7707, Name: "Graham Yost"}, Kind: domain.CreditKindCrew, Job: "Writer", Department: "Writing"},
 		},
 	}
@@ -467,12 +457,11 @@ func TestBuildStatsResponse_EnrichedAggregates(t *testing.T) {
 
 	got := buildStatsResponse(movies, meta, credits, nil, statsFilters{}, statsWindow30d, nil, time.UTC, "UTC", now)
 
-	// Without filters the unenriched movie still counts toward the totals…
+	// The unenriched movie counts toward totals but not enrichment tallies.
 	if got.SelectedWindowCount != 3 || got.TotalWatched != 3 {
 		t.Fatalf("expected 3/3 movies, got %d/%d", got.SelectedWindowCount, got.TotalWatched)
 	}
 
-	// …but only enriched movies contribute to the enrichment-derived tallies.
 	wantGenres := []statsNamedCount{{Name: "Action", Count: 2}, {Name: "Science Fiction", Count: 1}}
 	if !reflect.DeepEqual(got.TopGenres, wantGenres) {
 		t.Fatalf("topGenres mismatch: %+v", got.TopGenres)
@@ -520,8 +509,7 @@ func TestBuildStatsResponse_Filters(t *testing.T) {
 
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
 	movies, meta, credits := statsEnrichedFixture(now)
-	// The member roster: Dana has never added anything; everyone still keeps
-	// a leaderboard row under every filter (zero when nothing matches).
+	// Dana never added anything but keeps a zero row under every filter.
 	members := []string{"Alice", "Bob", "Cara", "Dana"}
 
 	cases := []struct {
@@ -541,9 +529,8 @@ func TestBuildStatsResponse_Filters(t *testing.T) {
 			wantGenre: "Science Fiction",
 		},
 		{
-			// U+0130 "İ" ToLower-folds to "i" but has no simple case folding;
-			// matching must use the same fold as the cache key so colliding
-			// keys can't carry different match sets.
+			// U+0130 "İ" ToLower-folds to "i" but has no simple case folding, so
+			// matching must use the cache key's fold or colliding keys differ.
 			name:      "genre folding matches the cache key fold",
 			filters:   statsFilters{Genre: "scİence fiction"},
 			wantTotal: 1,
@@ -635,10 +622,7 @@ func TestBuildStatsResponse_Filters(t *testing.T) {
 			t.Parallel()
 			got := buildStatsResponse(movies, meta, credits, members, tc.filters, statsWindow30d, nil, time.UTC, "UTC", now)
 
-			// EVERY aggregate is computed over the filtered subset — the
-			// all-time total and per-window counts included. The unenriched
-			// "Mystery" fails every active filter, so it never counts — but
-			// Cara still keeps her zero leaderboard row via the roster.
+			// Every aggregate, totals included, uses the filtered subset.
 			if got.SelectedWindowCount != tc.wantTotal || got.TotalWatched != tc.wantTotal {
 				t.Fatalf("expected %d movies, got selected=%d total=%d", tc.wantTotal, got.SelectedWindowCount, got.TotalWatched)
 			}
@@ -650,9 +634,8 @@ func TestBuildStatsResponse_Filters(t *testing.T) {
 				t.Fatalf("watchedByUser mismatch: got %v want %v", names, tc.wantUsers)
 			}
 
-			// The echo carries the active filters, with each person resolved
-			// to a display name from the credit rows and the genre resolved
-			// to its stored canonical casing.
+			// The echo resolves people to credit names and the genre to its
+			// stored casing.
 			wantGenre := tc.wantGenre
 			if wantGenre == "" {
 				wantGenre = tc.filters.Genre
@@ -669,7 +652,7 @@ func TestBuildStatsResponse_Filters(t *testing.T) {
 			}
 
 			if tc.wantTotal == 0 {
-				// Zero-match: empty aggregates, zeroed KPIs — never NaN.
+				// Zero-match KPIs must be zero, never NaN.
 				if len(got.TopGenres) != 0 || len(got.TopActors) != 0 || len(got.TopDirectors) != 0 || len(got.ReleaseYears) != 0 {
 					t.Fatalf("expected empty aggregates, got %+v", got)
 				}
@@ -708,7 +691,7 @@ func TestBuildStatsResponse_MatchedMovieIDs(t *testing.T) {
 			if !reflect.DeepEqual(got.MatchedMovieIDs, tc.want) {
 				t.Fatalf("matchedMovieIDs = %v, want %v", got.MatchedMovieIDs, tc.want)
 			}
-			// The rail and the KPI are the same set — len must equal the count.
+			// The rail and the KPI are the same set.
 			if len(got.MatchedMovieIDs) != got.SelectedWindowCount {
 				t.Fatalf("matchedMovieIDs len %d != selectedWindowCount %d", len(got.MatchedMovieIDs), got.SelectedWindowCount)
 			}
@@ -720,8 +703,7 @@ func TestBuildStatsResponse_AddedByFilter(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
-	// Distinct adder (added-by) ids; no metadata needed — added-by gates on the
-	// movie itself, independent of enrichment.
+	// No metadata: added-by gates on the movie itself, not on enrichment.
 	movies := []*domain.Movie{
 		{ID: 1, Title: "A", AddedByID: 10, AddedByName: "Alice", WatchedAt: new(now.Add(-1 * time.Hour))},
 		{ID: 2, Title: "B", AddedByID: 20, AddedByName: "Bob", WatchedAt: new(now.Add(-2 * time.Hour))},
@@ -761,10 +743,8 @@ func TestBuildStatsResponse_MembersAlwaysListed(t *testing.T) {
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
 	movies, meta, credits := statsEnrichedFixture(now)
 
-	// Dana is on the roster but has never added; Cara's only movie is
-	// unenriched and fails the actor filter. Both keep zero rows — members
-	// never vanish from the leaderboard, whatever the window or filters.
-	// Blank roster names are skipped rather than rendered as empty rows.
+	// Dana never added and Cara's only movie fails the actor filter: both keep
+	// zero rows. Blank roster names are skipped.
 	members := []string{"Alice", "Bob", "Cara", "Dana", " "}
 	got := buildStatsResponse(movies, meta, credits, members, statsFilters{ActorIDs: []int{6384}}, statsWindow30d, nil, time.UTC, "UTC", now)
 
@@ -784,8 +764,7 @@ func TestBuildStatsResponse_TopPeopleCapAndOrdering(t *testing.T) {
 
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
 
-	// Movie 1 bills 13 actors; movie 2 re-bills only "Actor 13". The cap is
-	// 12: Actor 13 leads with count 2, ties order by name, "Actor 12" drops.
+	// Cap is 12: Actor 13 (billed twice) leads, ties order by name, Actor 12 drops.
 	castOf := func(movieID int, ids ...int) []domain.MovieCredit {
 		out := make([]domain.MovieCredit, 0, len(ids))
 		for order, id := range ids {
@@ -828,9 +807,8 @@ func TestBuildStatsResponse_TopPeopleCapAndOrdering(t *testing.T) {
 func TestBuildPersonCounts_SameNameTieBreak(t *testing.T) {
 	t.Parallel()
 
-	// Two distinct people sharing a display name and a count: the id breaks
-	// the tie so the order — and who survives the cap — never flips between
-	// rebuilds (map iteration is random, the sort is unstable).
+	// Map iteration is random and the sort unstable, so the id must break the
+	// tie or who survives the cap flips between rebuilds.
 	counts := map[int]*statsPersonCount{
 		77: {PersonID: 77, Name: "John Smith", Count: 1},
 		12: {PersonID: 12, Name: "John Smith", Count: 1},
@@ -852,9 +830,8 @@ func TestBuildFiltersEcho_CanonicalGenreCasing(t *testing.T) {
 	now := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
 	movies, meta, credits := statsEnrichedFixture(now)
 
-	// Matching is case-insensitive and the cache key folds case, so the echo
-	// must resolve to the stored canonical casing — otherwise a cache hit
-	// would serve another requester's casing.
+	// The cache key folds case, so echoing the request casing would serve
+	// another requester's casing on a hit.
 	payload := buildStatsResponse(movies, meta, credits, nil, statsFilters{Genre: "aCtIoN"}, statsWindowAllTime, nil, time.UTC, "UTC", now)
 	if payload.Filters.Genre != "Action" {
 		t.Fatalf("expected the stored canonical casing %q, got %q", "Action", payload.Filters.Genre)
@@ -880,7 +857,7 @@ func TestMovieMatchesStatsFilters_Unenriched(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			// nil metadata + nil credits = never enriched.
+			// nil metadata and credits = never enriched.
 			if got := tc.filters.matches(nil, nil); got != tc.want {
 				t.Fatalf("expected %v, got %v", tc.want, got)
 			}
@@ -967,8 +944,7 @@ func TestParseIDList(t *testing.T) {
 		want    []int
 		wantErr bool
 	}{
-		// Empty input must yield nil — not an empty slice — so the filters
-		// echo omits the field entirely.
+		// nil, not an empty slice, so the filters echo omits the field.
 		{name: "empty", input: "", want: nil},
 		{name: "blank", input: "   ", want: nil},
 		{name: "single", input: "6384", want: []int{6384}},

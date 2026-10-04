@@ -34,3 +34,9 @@ func (s *Service) Get(ctx context.Context) (*domain.User, error) {
 
 	return s.nextUpRepo.SetFirstEligible(ctx)
 }
+
+// Skip is the admin's explicit turn handoff from holderID to the next Turn
+// participant. The repository owns the stale-holder and unrevealed-draw guards.
+func (s *Service) Skip(ctx context.Context, holderID int) (*domain.User, error) {
+	return s.nextUpRepo.Skip(ctx, holderID)
+}

@@ -34,6 +34,10 @@ func (r *fakeNextUpRepo) Set(_ context.Context, userID int) error {
 	return nil
 }
 
+func (r *fakeNextUpRepo) Skip(_ context.Context, _ int) (*domain.User, error) {
+	return nil, errors.New("not used by the service tests")
+}
+
 func (r *fakeNextUpRepo) SetFirstEligible(_ context.Context) (*domain.User, error) {
 	if len(r.eligible) == 0 {
 		return nil, sql.ErrNoRows

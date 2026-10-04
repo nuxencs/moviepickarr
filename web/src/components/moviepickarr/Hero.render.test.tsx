@@ -13,7 +13,7 @@
    replay the content reveal or let an older request repaint a newer draw.
    ============================================================ */
 
-import { act, configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { APIClient } from "@/api/APIClient";
@@ -35,7 +35,7 @@ vi.mock("@/api/APIClient", () => ({
       getCurrent: vi.fn(), getPool: vi.fn(), getWildcard: vi.fn(), draw: vi.fn(),
       markWatched: vi.fn(), watchWildcard: vi.fn(), cancelWildcard: vi.fn(),
     },
-    settings: { getNextUp: vi.fn() },
+    settings: { getNextUp: vi.fn(), getPoolState: vi.fn(() => new Promise<never>(() => {})), skipNextUp: vi.fn() },
     auth: { me: vi.fn() },
   },
   ApiError: class ApiError extends Error {},
@@ -219,6 +219,43 @@ describe("Guest Hero permissions", () => {
     fireEvent.click(wildcard);
     expect(APIClient.movies.markWatched).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("the admin Turn skip", () => {
+  const revealed: MovieDetail = { ...drawn, revealed: true };
+  const settleDraw = (queryClient: QueryClient) =>
+    act(() => {
+      queryClient.setQueryData(SettingsKeys.poolLock(), { poolLocked: false, drawInProgress: false });
+    });
+
+  it("confirms, then skips the turn holder the admin saw", async () => {
+    vi.mocked(APIClient.settings.skipNextUp).mockResolvedValue({ id: 2, name: "Member 2" });
+    const { queryClient } = await renderHero(revealed, false, "admin");
+    await settleDraw(queryClient);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Skip Member 1's turn" }));
+    const dialog = await screen.findByRole("dialog", { name: "Skip Member 1's turn?" });
+    expect(APIClient.settings.skipNextUp).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Skip turn" }));
+    await waitFor(() => expect(APIClient.settings.skipNextUp).toHaveBeenCalledWith(1));
+  });
+
+  it("is hidden for a member", async () => {
+    const { queryClient } = await renderHero(revealed, false, "member");
+    await settleDraw(queryClient);
+
+    await screen.findByRole("button", { name: /^Mark as watched/ });
+    expect(screen.queryByRole("button", { name: /^Skip .+ turn$/ })).toBeNull();
+  });
+
+  it("waits while the drawer still owns an unrevealed draw", async () => {
+    // renderHero seeds drawInProgress: true, the server's unrevealed hold.
+    await renderHero(drawn, false, "admin");
+
+    await screen.findByRole("button", { name: /^Mark as watched/ });
+    expect(screen.queryByRole("button", { name: /^Skip .+ turn$/ })).toBeNull();
   });
 });
 

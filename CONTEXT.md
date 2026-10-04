@@ -49,8 +49,8 @@ _Avoid_: picker, picked by, owner
 **Next up**:
 The Turn participant whose turn it is to run the draw workflow: mark the
 previous Current draw watched, then draw and reveal the next one. Enforced, not
-just shown in the hero: only the next-up member (or an admin) can draw, reveal,
-or mark watched. The turn rotates to the next Turn participant on Reveal (the
+just shown in the hero: only the next-up member can draw, reveal, or mark
+watched. Admins get no exception; they move a stuck turn on with a Turn skip. The turn rotates to the next Turn participant on Reveal (the
 drawer's confirm, the auto-reveal deadline, or an early watch), when more than
 one Turn participant exists. It rotates even when the draw emptied the pool,
 because the next member still owes that watch. The server serializes these three
@@ -64,11 +64,21 @@ Promoting that Guest later makes them eligible again but does not restore the
 turn that was handed off.
 _Avoid_: next picker
 
+**Turn skip**:
+An admin passing Next up to the next Turn participant without a draw, for a
+holder who cannot take their turn. The admin confirms the holder they saw, so a
+stale skip is refused. It is refused while a draw is unrevealed, because the
+drawer still holds that turn and the Reveal rotates on its own. Each skip moves
+the turn one step forward and cannot be undone.
+_Avoid_: admin override, pass
+
 ### Identity
 
 **Admin**:
 A member holding the admin role: can create, delete/archive, and restore
-members, lock the pool, and manage integrations and settings. Every other member
+members, lock the pool, skip a turn, and manage integrations and settings. An
+admin has no exception to member rules: the Next up gate and the adder-only
+movie edits apply to admins too. Every other member
 holds the plain member or guest role. Role is app-owned and single-valued, never
 derived from a credential.
 

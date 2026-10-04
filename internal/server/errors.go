@@ -60,6 +60,8 @@ func writeError(c *fiber.Ctx, err error) error {
 		return writeProblem(c, fiber.StatusConflict, "current_draw_changed", err.Error())
 	case errors.Is(err, domain.ErrWildcardChanged):
 		return writeProblem(c, fiber.StatusConflict, "wildcard_changed", err.Error())
+	case errors.Is(err, domain.ErrNextUpChanged):
+		return writeProblem(c, fiber.StatusConflict, "next_up_changed", err.Error())
 	case errors.Is(err, domain.ErrInvalidState):
 		return writeProblem(c, fiber.StatusBadRequest, "invalid_state", err.Error())
 	case errors.Is(err, domain.ErrConflict):

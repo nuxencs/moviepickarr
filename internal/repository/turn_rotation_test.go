@@ -593,3 +593,53 @@ func TestWatchRevealsAcquisitionAndQueuesWebhook(t *testing.T) {
 		t.Fatalf("early Reveal queued %d deliveries, want 1", got)
 	}
 }
+
+func TestNextUpSkip_RotatesSeenHolder(t *testing.T) {
+	e := setupUserRemoveEnv(t)
+	members := createTestMembers(t, e, "Ana", "Ben", "Cai")
+	if err := e.nextUp.Set(e.ctx, members[2].ID); err != nil {
+		t.Fatalf("set next up: %v", err)
+	}
+
+	next, err := e.nextUp.Skip(e.ctx, members[2].ID)
+	if err != nil {
+		t.Fatalf("skip: %v", err)
+	}
+	if next == nil || next.ID != members[0].ID {
+		t.Fatalf("skip handoff = %+v, want wrap to member %d", next, members[0].ID)
+	}
+	assertStoredNextUp(t, e, members[0].ID)
+}
+
+func TestNextUpSkip_Refusals(t *testing.T) {
+	tests := []struct {
+		name    string
+		members []string
+		holder  int
+		seen    int
+		draw    bool
+		wantErr error
+	}{
+		{name: "stale holder", members: []string{"Ana", "Ben"}, holder: 1, seen: 0, wantErr: domain.ErrNextUpChanged},
+		{name: "unrevealed draw", members: []string{"Ana", "Ben"}, holder: 0, seen: 0, draw: true, wantErr: domain.ErrDrawNotRevealed},
+		{name: "one participant", members: []string{"Only"}, holder: 0, seen: 0, wantErr: domain.ErrConflict},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupUserRemoveEnv(t)
+			members := createTestMembers(t, e, tt.members...)
+			if err := e.nextUp.Set(e.ctx, members[tt.holder].ID); err != nil {
+				t.Fatalf("set next up: %v", err)
+			}
+			if tt.draw {
+				startTestDraw(t, e, "Heat", members[0].ID)
+			}
+
+			if _, err := e.nextUp.Skip(e.ctx, members[tt.seen].ID); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("skip error = %v, want %v", err, tt.wantErr)
+			}
+			assertStoredNextUp(t, e, members[tt.holder].ID)
+		})
+	}
+}

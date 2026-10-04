@@ -148,6 +148,7 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	defer h.broker.Unsubscribe(client)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/movies/random", strings.NewReader(`{"clientId":"c-test"}`))
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req, -1)
 	if err != nil {
@@ -316,6 +317,7 @@ func TestHandleGetRandomMovie_ReadsCandidatePoolOnce(t *testing.T) {
 		strings.NewReader(`{"clientId":"c-test"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	resp, err := app.Test(req, -1)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
@@ -353,6 +355,7 @@ func TestHandleGetRandomMovie_StampsServerNowForTheConfirmDeadline(t *testing.T)
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/movies/random", strings.NewReader(`{"clientId":"c-test"}`))
+	req.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req, -1)
 	if err != nil {
@@ -412,6 +415,7 @@ func seedPoolAndDraw(t *testing.T, app *fiber.App, movieRepo *repository.SqliteM
 		}
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/movies/random", strings.NewReader(`{"clientId":"c-test"}`))
+	req.Header.Set(testMemberHeader, strconv.Itoa(userID))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req, -1)
 	if err != nil || resp.StatusCode != fiber.StatusOK {
@@ -743,6 +747,7 @@ func TestHandleRevealCurrentMovie_CancelsServerAutoReveal(t *testing.T) {
 
 	// Confirm well within the 100ms window → cancels the pending auto-reveal.
 	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
+	revReq.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	if resp, err := app.Test(revReq, -1); err != nil || resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("reveal: err=%v status=%v", err, resp.StatusCode)
 	}
@@ -775,6 +780,7 @@ func TestHandleWatchCurrentMovie_RevealsUnrevealedDraw(t *testing.T) {
 
 	seedPoolAndDraw(t, app, movieRepo, user.ID, "Moon", "Sunshine")
 	watchReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil)
+	watchReq.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	if resp, err := app.Test(watchReq, -1); err != nil || resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("watch: err=%v status=%v", err, resp.StatusCode)
 	}
@@ -840,6 +846,7 @@ func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) 
 	t.Cleanup(func() { h.broker.Unsubscribe(client) })
 
 	watchReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil)
+	watchReq.Header.Set(testMemberHeader, strconv.Itoa(first.ID))
 	resp := doAs(t, app, watchReq, first.ID, "member")
 	if resp.StatusCode != fiber.StatusInternalServerError {
 		t.Fatalf("watch status = %d, want 500", resp.StatusCode)
@@ -891,6 +898,7 @@ func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) 
 	}
 
 	retryReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil)
+	retryReq.Header.Set(testMemberHeader, strconv.Itoa(first.ID))
 	retry := doAs(t, app, retryReq, first.ID, "member")
 	if retry.StatusCode != fiber.StatusOK {
 		t.Fatalf("retry watch status = %d, want 200", retry.StatusCode)
@@ -1164,6 +1172,7 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 	}
 
 	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
+	revReq.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	if resp, err := app.Test(revReq, -1); err != nil || resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("reveal: err=%v status=%v", err, resp.StatusCode)
 	}
@@ -1278,6 +1287,7 @@ func TestPoolIsFrozenAndStillCountsWhileADrawIsUnrevealed(t *testing.T) {
 	}
 
 	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
+	revReq.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	if resp, err := app.Test(revReq, -1); err != nil || resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("reveal: err=%v status=%v", err, resp.StatusCode)
 	}

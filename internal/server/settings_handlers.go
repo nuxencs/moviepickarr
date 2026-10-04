@@ -73,3 +73,33 @@ func (h *handler) handleGetNextUp(c *fiber.Ctx) error {
 		"name": nextUp.Name,
 	})
 }
+
+// handleSkipNextUp is the admin's explicit way past a stuck turn: it passes
+// Next up to the following Turn participant without a draw. The body names the
+// holder the admin saw, so a stale client cannot skip a member it never showed.
+// It shares the draw-command lock so it cannot interleave with a draw, Reveal,
+// or watch authorization.
+func (h *handler) handleSkipNextUp(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+
+	var body struct {
+		MemberID int `json:"memberId"`
+	}
+	if err := c.BodyParser(&body); err != nil || body.MemberID <= 0 {
+		return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "memberId is required")
+	}
+
+	h.drawCommandMu.Lock()
+	defer h.drawCommandMu.Unlock()
+
+	next, err := h.nextUpService.Skip(c.UserContext(), body.MemberID)
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	payload := fiber.Map{"id": next.ID, "name": next.Name}
+	h.broker.Broadcast(event{Type: "settings:next-up-changed", Data: payload})
+	return c.Status(fiber.StatusOK).JSON(payload)
+}

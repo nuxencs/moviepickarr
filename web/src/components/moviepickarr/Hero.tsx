@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { AsteriskIcon, EyeIcon, Loader2Icon, RefreshCwIcon, ShuffleIcon, XIcon } from "lucide-react";
+import { AsteriskIcon, EyeIcon, Loader2Icon, RefreshCwIcon, ShuffleIcon, SkipForwardIcon, XIcon } from "lucide-react";
 import {
   type CSSProperties,
   useEffect,
@@ -17,6 +17,7 @@ import {
   MoviesGetPoolQueryOptions,
   MoviesGetWildcardQueryOptions,
   SettingsGetNextUpQueryOptions,
+  SettingsGetPoolStateQueryOptions,
 } from "@/api/queries";
 import { MoviesKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
 
@@ -79,6 +80,22 @@ function Backdrop({ bg, revision }: { bg: string; revision: number }) {
 const reportScrollDone = () => drawStore.send({ type: "SCROLL_DONE" });
 const confirmDraw = () => drawStore.send({ type: "CONFIRM", source: "local" });
 
+/** Names why a Turn skip bounced. The server refuses a moved turn, an
+ *  unrevealed draw, and a roster with one Turn participant. */
+function skipErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) return "Failed to skip the turn";
+  switch (err.code) {
+    case "next_up_changed":
+      return "The turn already moved. Check who is next up and try again.";
+    case "draw_not_revealed":
+      return "Wait for the draw to be revealed before you skip the turn.";
+    case "conflict":
+      return "There is no other member to pass the turn to.";
+    default:
+      return "Failed to skip the turn";
+  }
+}
+
 const drawIdentity = (movie: MovieDetail | null): string =>
   movie ? `${movie.movieID}:${movie.drawnAt ?? ""}` : "none";
 
@@ -116,9 +133,13 @@ export function Hero() {
   const { data: wildcard } = wildcardQuery;
   const wildcardStateKnown = wildcard !== undefined && !wildcardQuery.isError;
   const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());
-  // The board-level turn gate: whether this viewer (admin, or the next-up
-  // member) may run the watch → draw → reveal turn. Drives the disabled +
-  // tooltip treatment on the action buttons and the reel's reveal control.
+  // Server-owned: true from movie:drawn until movie:revealed. The drawer owns an
+  // unrevealed draw's turn, so the Turn skip waits for it (409 is the backstop).
+  const { data: poolState } = useQuery(SettingsGetPoolStateQueryOptions());
+  const drawUnrevealed = poolState === undefined || poolState.drawInProgress;
+  // The board-level turn gate: whether this viewer (the next-up member) may run
+  // the watch → draw → reveal turn. Drives the disabled + tooltip treatment on
+  // the action buttons and the reel's reveal control, and the admin Turn skip.
   const gate = useTurnGate();
 
   // The backstop for a lost race: the turn passed (or the roster changed)
@@ -151,6 +172,8 @@ export function Hero() {
   const [drawing, setDrawing] = useState(false);
   const [wildcardPickerHostID, setWildcardPickerHostID] = useState<number | null>(null);
   const [wildcardCancelID, setWildcardCancelID] = useState<number | null>(null);
+  // The holder the admin saw when opening the skip confirm, sent as the stale guard.
+  const [skipHolder, setSkipHolder] = useState<{ id: number; name: string } | null>(null);
   const heldDrawModal = useMovieModal();
 
   useEffect(() => {
@@ -240,6 +263,21 @@ export function Hero() {
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: MoviesKeys.wildcard() });
       toast.error("Failed to cancel the wildcard");
+    },
+  });
+
+  const skipMutation = useMutation({
+    mutationFn: (holderID: number) => APIClient.settings.skipNextUp(holderID),
+    onSuccess: (next) => {
+      setSkipHolder(null);
+      queryClient.setQueryData(SettingsKeys.nextUp(), next);
+      toast.success(`Turn skipped. It's ${possessive(next.name)} turn.`);
+    },
+    onError: (err) => {
+      setSkipHolder(null);
+      void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
+      void queryClient.invalidateQueries({ queryKey: MoviesKeys.current() });
+      toast.error(skipErrorMessage(err));
     },
   });
 
@@ -703,6 +741,20 @@ export function Hero() {
               <div className="hero__nextup">
                 <Avatar name={nextUp.name} size={30} />
                 <div className="nm">{gate.isSelf ? "Your turn" : `${possessive(gate.nextUpName)} turn`}</div>
+                {/* Admin-only and hidden, not disabled, for everyone else. The
+                    confirm pins itself while pending, so the trigger stays
+                    enabled and can take focus back when the dialog closes. */}
+                {gate.canSkip && !spinning && !drawUnrevealed && (
+                  <button
+                    type="button"
+                    className="iconbtn hero__skip"
+                    onClick={() => setSkipHolder({ id: nextUp.id, name: nextUp.name })}
+                    aria-label={`Skip ${possessive(nextUp.name)} turn`}
+                    title={`Skip ${possessive(nextUp.name)} turn`}
+                  >
+                    <SkipForwardIcon />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -744,6 +796,19 @@ export function Hero() {
       confirmText="Cancel wildcard"
       pendingText="Canceling…"
       cancelText="Keep wildcard"
+    />
+    <DeletionDialog
+      isOpen={skipHolder !== null}
+      pending={skipMutation.isPending}
+      onClose={() => setSkipHolder(null)}
+      onConfirm={() => {
+        if (skipHolder !== null) skipMutation.mutate(skipHolder.id);
+      }}
+      title={`Skip ${possessive(skipHolder?.name ?? "")} turn?`}
+      description="Next up passes to the next member without a draw. You cannot undo a skip."
+      confirmText="Skip turn"
+      pendingText="Skipping…"
+      cancelText="Keep turn"
     />
     </>
   );

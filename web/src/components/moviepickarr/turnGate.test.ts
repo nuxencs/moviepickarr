@@ -34,12 +34,24 @@ describe("turnGate", () => {
     expect(gate.isSelf).toBe(true);
   });
 
-  it("always lets an admin act, even when they aren't next-up", () => {
+  it("locks an admin who isn't next-up, but lets them skip the turn", () => {
     const gate = turnGate(inputs({ role: "admin", meID: 9, nextUpID: 1 }));
+    expect(gate.canAct).toBe(false);
+    expect(gate.locked).toBe(true);
+    expect(gate.isSelf).toBe(false);
+    expect(gate.canSkip).toBe(true);
+  });
+
+  it("lets an admin act on their own turn", () => {
+    const gate = turnGate(inputs({ role: "admin", meID: 1, nextUpID: 1 }));
     expect(gate.canAct).toBe(true);
     expect(gate.locked).toBe(false);
-    // canAct via the admin role, but the admin is not the turn-holder.
-    expect(gate.isSelf).toBe(false);
+  });
+
+  it("never offers the skip to a member or guest", () => {
+    expect(turnGate(inputs({ role: "member" })).canSkip).toBe(false);
+    expect(turnGate(inputs({ role: "guest" })).canSkip).toBe(false);
+    expect(turnGate(inputs({ role: undefined })).canSkip).toBe(false);
   });
 
   it("locks a guest even if stale next-up data names them", () => {
@@ -59,11 +71,12 @@ describe("turnGate", () => {
     expect(gate.isSelf).toBe(false);
   });
 
-  it("keeps an admin unlocked when next-up is unresolved", () => {
+  it("locks an admin and offers no skip when next-up is unresolved", () => {
     const gate = turnGate(inputs({ role: "admin", meID: 9, nextUpID: 0, nextUpName: "" }));
-    expect(gate.canAct).toBe(true);
-    expect(gate.locked).toBe(false);
+    expect(gate.canAct).toBe(false);
+    expect(gate.locked).toBe(true);
     expect(gate.resolved).toBe(false);
+    expect(gate.canSkip).toBe(false);
   });
 
   it("locks a member with the waiting fallback when next-up is unresolved", () => {

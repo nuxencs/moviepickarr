@@ -1,6 +1,6 @@
 # ADR 0011: Rotate Next up on Reveal
 
-Status: accepted (2026-10-04)
+Status: accepted (2026-10-04), admin turn exception replaced by ADR 0012
 
 ## Context
 

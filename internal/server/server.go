@@ -759,6 +759,7 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/settings/pool-lock", h.handleGetPoolLock)
 	v1.Put("/settings/pool-lock", h.handleSetPoolLock)
 	v1.Get("/settings/next-up", h.handleGetNextUp)
+	v1.Post("/settings/next-up/skip", h.handleSkipNextUp)
 
 	v1.Get("/tmdb/search", h.handleTMDBSearch)
 }

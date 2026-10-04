@@ -1335,6 +1335,59 @@ func (d *SqliteNextUpRepository) SetFirstEligible(ctx context.Context) (*domain.
 	return user, nil
 }
 
+// Skip is the admin's explicit turn handoff. The holder check, the unrevealed
+// draw check, and the rotation share one write snapshot, so a skip cannot race
+// a Reveal into a double rotation or skip a member the admin never saw.
+func (d *SqliteNextUpRepository) Skip(ctx context.Context, holderID int) (*domain.User, error) {
+	tx, err := d.pool.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var stored sql.NullInt64
+	err = tx.QueryRowContext(ctx, `
+		SELECT n.user_id
+		FROM next_up n
+		JOIN turn_participants u ON u.id = n.user_id
+		WHERE n.id = 1
+	`).Scan(&stored)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if !stored.Valid || stored.Int64 != int64(holderID) {
+		return nil, domain.ErrNextUpChanged
+	}
+
+	// The drawer keeps the turn until Reveal, and Reveal rotates on its own.
+	var unrevealed int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM radarr_acquisitions AS a
+			JOIN movies AS m ON m.id = a.movie_id
+			WHERE m.status = 'current' AND a.revealed_at IS NULL
+		)
+	`).Scan(&unrevealed); err != nil {
+		return nil, err
+	}
+	if unrevealed == 1 {
+		return nil, domain.ErrDrawNotRevealed
+	}
+
+	next, err := advanceNextUpTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if next == nil {
+		return nil, fmt.Errorf("%w: only one turn participant", domain.ErrConflict)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
 type SqliteSettingsRepository struct {
 	pool *db.Pool
 }

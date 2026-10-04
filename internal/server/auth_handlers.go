@@ -79,16 +79,14 @@ func (h *handler) requireTurnParticipant(c *fiber.Ctx) (bool, error) {
 	return false, writeProblem(c, fiber.StatusForbidden, "guest_restricted", "guest role cannot perform this action")
 }
 
-// requireNextUpOrAdmin gates the watch → draw → reveal turn: only the member
-// whose turn it is, or an admin, may run it. Anyone else gets 403 not_next_up.
+// requireNextUp gates the watch → draw → reveal turn: only the member whose
+// turn it is may run it, admins included. Anyone else gets 403 not_next_up.
 // The rotation advances on Reveal, so the drawer reveals their own draw and the
-// next member marks it watched before drawing.
-func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
+// next member marks it watched before drawing. An admin moves a stuck turn on
+// with the explicit skip (handleSkipNextUp), never by acting in its place.
+func (h *handler) requireNextUp(c *fiber.Ctx) (bool, error) {
 	if ok, err := h.requireTurnParticipant(c); !ok {
 		return false, err
-	}
-	if h.isAdmin(c) {
-		return true, nil
 	}
 
 	nextUp, err := h.nextUpService.Get(c.UserContext())
@@ -112,7 +110,7 @@ func (h *handler) runDrawCommand(c *fiber.Ctx, command func() error) (ran bool, 
 	h.drawCommandMu.Lock()
 	defer h.drawCommandMu.Unlock()
 
-	if ok, err := h.requireNextUpOrAdmin(c); !ok {
+	if ok, err := h.requireNextUp(c); !ok {
 		return false, err
 	}
 	return true, command()

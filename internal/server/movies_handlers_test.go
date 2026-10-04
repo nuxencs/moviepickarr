@@ -32,9 +32,9 @@ const (
 
 // mountTestV1 mounts the v1 routes behind a middleware that injects the session
 // actor from test headers, standing in for the real csrfGuard → requireSession
-// chain. Role defaults to admin so the draw/reveal/watch guard passes without
-// having to wire next-up; the adder-only checks compare the member id, which the
-// adder tests set explicitly via testMemberHeader.
+// chain. Role defaults to admin so admin-gated routes pass. The draw/reveal/watch
+// guard still needs testMemberHeader set to the next-up member, and the
+// adder-only checks compare the same member id.
 func mountTestV1(app *fiber.App, h *handler) {
 	v1 := app.Group("/api/v1")
 	v1.Use(func(c *fiber.Ctx) error {

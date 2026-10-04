@@ -408,6 +408,11 @@ export const APIClient = {
             appClient.Get<Settings>("api/v1/settings/pool-lock"),
         getNextUp: () =>
             appClient.Get<{id: number, name: string}>("api/v1/settings/next-up"),
+        // Names the holder the admin saw; a moved turn answers 409 next_up_changed.
+        skipNextUp: (memberId: number) =>
+            appClient.Post<{id: number, name: string}>("api/v1/settings/next-up/skip", {
+                body: { memberId },
+            }),
     },
     stats: {
         get: ({ window, timezone, start, end, genre, actorIds, crewIds, addedByIds, releaseYear, decade }: StatsQuery, signal?: AbortSignal) =>

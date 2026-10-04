@@ -228,9 +228,9 @@ func TestAuthz_GuestCannotRunPoolOrHeroCommands(t *testing.T) {
 	}
 }
 
-// The draw/reveal/watch cycle is next-up-or-admin: a member who is not up gets
-// 403 not_next_up; the member whose turn it is may draw.
-func TestAuthz_DrawIsNextUpOrAdmin(t *testing.T) {
+// The draw/reveal/watch cycle is next-up only: a member or admin who is not up
+// gets 403 not_next_up; the member whose turn it is may draw.
+func TestAuthz_DrawIsNextUpOnly(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -253,19 +253,79 @@ func TestAuthz_DrawIsNextUpOrAdmin(t *testing.T) {
 		t.Fatalf("expected next up = first (%d), got %+v err=%v", first.ID, up, err)
 	}
 
-	// The member who is not up is refused.
-	resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`), second.ID, "member")
-	if resp.StatusCode != fiber.StatusForbidden {
-		t.Fatalf("not-up draw: expected 403, got %d", resp.StatusCode)
-	}
-	if code := problemCode(t, resp); code != "not_next_up" {
-		t.Fatalf("expected code not_next_up, got %q", code)
+	// A member or admin who is not up is refused. Admins get no exception.
+	for _, role := range []domain.Role{domain.RoleMember, domain.RoleAdmin} {
+		resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`), second.ID, role)
+		if resp.StatusCode != fiber.StatusForbidden {
+			t.Fatalf("not-up %s draw: expected 403, got %d", role, resp.StatusCode)
+		}
+		if code := problemCode(t, resp); code != "not_next_up" {
+			t.Fatalf("not-up %s draw: expected code not_next_up, got %q", role, code)
+		}
 	}
 
 	// The member whose turn it is may draw.
-	resp = doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`), first.ID, "member")
+	resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`), first.ID, "member")
 	if resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("next-up draw: expected 200, got %d", resp.StatusCode)
+	}
+}
+
+// Turn skip is admin-only, names the holder the admin saw, and refuses while
+// the drawer still owns an unrevealed draw.
+func TestAuthz_SkipNextUpIsAdminOnly(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h, app, userRepo, movieRepo := setupEditMovieTest(t)
+
+	first, err := userRepo.Create(ctx, "First")
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	second, err := userRepo.Create(ctx, "Second")
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	if _, err := movieRepo.Add(ctx, "Drive", "pool", first.ID); err != nil {
+		t.Fatalf("seed pool: %v", err)
+	}
+	if up, err := h.nextUpService.Get(ctx); err != nil || up.ID != first.ID {
+		t.Fatalf("expected next up = first (%d), got %+v err=%v", first.ID, up, err)
+	}
+	skipReq := func(memberID int) *http.Request {
+		return jsonReq(http.MethodPost, "/api/v1/settings/next-up/skip", fmt.Sprintf(`{"memberId":%d}`, memberID))
+	}
+	expectProblem := func(step string, resp *http.Response, status int, code string) {
+		t.Helper()
+		if resp.StatusCode != status {
+			t.Fatalf("%s: expected %d, got %d", step, status, resp.StatusCode)
+		}
+		if got := problemCode(t, resp); got != code {
+			t.Fatalf("%s: expected code %s, got %q", step, code, got)
+		}
+	}
+
+	expectProblem("member skip", doAs(t, app, skipReq(first.ID), second.ID, "member"), fiber.StatusForbidden, "admin_required")
+	expectProblem("stale skip", doAs(t, app, skipReq(second.ID), second.ID, "admin"), fiber.StatusConflict, "next_up_changed")
+
+	resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`), first.ID, "member")
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("next-up draw: expected 200, got %d", resp.StatusCode)
+	}
+	expectProblem("skip during reel", doAs(t, app, skipReq(first.ID), second.ID, "admin"), fiber.StatusConflict, "draw_not_revealed")
+
+	resp = doAs(t, app, httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil), first.ID, "member")
+	if resp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("reveal: expected 204, got %d", resp.StatusCode)
+	}
+	// Reveal handed the turn to second. The admin skips it back to first.
+	resp = doAs(t, app, skipReq(second.ID), second.ID, "admin")
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("admin skip: expected 200, got %d", resp.StatusCode)
+	}
+	if up, err := h.nextUpService.Get(ctx); err != nil || up.ID != first.ID {
+		t.Fatalf("after skip: next up = %+v err=%v, want %d", up, err, first.ID)
 	}
 }
 

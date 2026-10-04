@@ -1,8 +1,8 @@
 // The next-up turn gate: who may mark the current draw watched, draw, and reveal
-// that draw (the turn passes on reveal). Mirrors the backend
-// requireNextUpOrAdmin rule (an admin, or the member whose turn it is) so the
-// board disables the three controls for everyone else instead of
-// hiding them — the turn stays legible. The rule is a pure function of the
+// that draw (the turn passes on reveal). Mirrors the backend requireNextUp rule
+// (only the member whose turn it is, admins included) so the board disables the
+// three controls for everyone else instead of hiding them, and the turn stays
+// legible. Admins move a stuck turn on with the Turn skip (`canSkip`). The rule is a pure function of the
 // session actor and the next-up member, unit-tested without rendering; the hook
 // at the bottom wires it to the two queries.
 import { useQuery } from "@tanstack/react-query";
@@ -24,21 +24,24 @@ export interface TurnGateInputs {
 }
 
 export interface TurnGate {
-  /** The viewer may act (an admin or the next-up member). Also true while the
+  /** The viewer may act (the next-up member). Also true while the
    *  gate is still loading, so the controls stay live and the backend
    *  not_next_up is the backstop rather than a premature client-side lock. */
   canAct: boolean;
   /** Apply the disabled + tooltip treatment: the gate has resolved and the
-   *  viewer is neither next-up nor admin. */
+   *  viewer is not next-up. */
   locked: boolean;
   /** Next-up is a real member, not the empty-roster placeholder. Drives the
    *  named tooltip vs the waiting fallback. */
   resolved: boolean;
   /** The viewer *is* the next-up member (their turn right now). Narrower than
-   *  `canAct`, which also covers admins and the loading window. Drives the
-   *  "Your turn" vs "<name>'s turn" hero label, so an admin who isn't next-up
-   *  still reads the turn-holder's name. */
+   *  `canAct`, which also covers the loading window. Drives the "Your turn" vs
+   *  "<name>'s turn" hero label. */
   isSelf: boolean;
+  /** The viewer is an admin and a real member holds the turn, so the Turn skip
+   *  control renders. Never true for anyone else: the control is hidden, not
+   *  disabled. */
+  canSkip: boolean;
   /** The viewer holds the read-mostly Guest role. */
   guest: boolean;
   /** The next-up member's name, "" when unresolved. */
@@ -48,7 +51,7 @@ export interface TurnGate {
 /**
  * The turn rule. `canAct` errs open while either query is still loading (so the
  * real next-up member never flashes a locked control on first paint); once both
- * have resolved it is admin-or-next-up. `locked` is the inverse, but only once
+ * have resolved it is next-up only. `locked` is the inverse, but only once
  * the gate is known — never during the loading window.
  */
 export function turnGate(input: TurnGateInputs): TurnGate {
@@ -57,12 +60,13 @@ export function turnGate(input: TurnGateInputs): TurnGate {
   const guest = input.role === "guest";
   const resolved = (input.nextUpID ?? 0) > 0;
   const isNextUp = resolved && input.meID !== undefined && input.meID === input.nextUpID;
-  const canAct = !guest && (!ready || isAdmin || isNextUp);
+  const canAct = !guest && (!ready || isNextUp);
   return {
     canAct,
     locked: ready && !canAct,
     resolved,
     isSelf: isNextUp,
+    canSkip: isAdmin && resolved,
     guest,
     nextUpName: input.nextUpName ?? "",
   };

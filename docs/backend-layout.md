@@ -95,7 +95,7 @@
   reset, revokes the member's sessions through the scoped auth transition store.
   It also holds the shared authz guards used across handlers: `requireAdmin`
   (403 `admin_required`), `requireTurnParticipant` (403 `guest_restricted`),
-  and `requireNextUpOrAdmin` (403 `not_next_up`).
+  and `requireNextUp` (403 `not_next_up`).
   `/auth/login` is registered ahead of
   `requireSession` so it stays reachable without a session; it is still behind
   `csrfGuard`. Local credentials attached to an archived row are treated like
@@ -245,7 +245,8 @@
   draw, reveal, and watch from next-up authorization through synchronous
   lifecycle event publication. A reveal or early watch keeps that command lock
   through next-up rotation, so an outgoing holder cannot start the next command
-  with stale authorization. The server serializes `RevealAt`/`ServerNow` into
+  with stale authorization. The admin Turn skip (`POST /settings/next-up/skip`)
+  takes the same lock and rotates through `SqliteNextUpRepository.Skip`. The server serializes `RevealAt`/`ServerNow` into
   every draw payload so clients
   time their confirm countdown off `revealAt − serverNow` (skew-immune) and broadcasts
   `movie:drawn` / `movie:revealed`. It also owns the pool *view*: `Pooled`,

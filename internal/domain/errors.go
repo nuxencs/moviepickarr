@@ -16,6 +16,7 @@ var (
 	ErrDrawNotRevealed                 = errors.New("the current draw is not revealed")
 	ErrCurrentDrawChanged              = errors.New("the current draw changed")
 	ErrWildcardChanged                 = errors.New("the active wildcard changed")
+	ErrNextUpChanged                   = errors.New("next up changed")
 	ErrInvalidState                    = errors.New("invalid state")
 	ErrConflict                        = errors.New("conflict")
 	ErrInvalidCredentials              = errors.New("invalid credentials")

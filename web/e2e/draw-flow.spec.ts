@@ -1,6 +1,22 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 const BASE_URL = "http://127.0.0.1:3030";
+
+/** Admins get no turn exception, so the spec moves Next up to the signed-in
+ *  admin with Turn skips before it runs the turn. */
+async function takeTurn(page: Page) {
+  const me = await (await page.request.get("/api/v1/auth/me")).json() as { id: number };
+  for (let step = 0; step < 10; step++) {
+    const nextUp = await (await page.request.get("/api/v1/settings/next-up")).json() as { id: number };
+    if (nextUp.id === me.id) return;
+    const skip = await page.request.post("/api/v1/settings/next-up/skip", {
+      data: { memberId: nextUp.id },
+      headers: { Origin: BASE_URL },
+    });
+    expect(skip.ok(), await skip.text()).toBe(true);
+  }
+  throw new Error("Next up never reached the signed-in admin");
+}
 
 test("draw spins, survives a tab remount, reveals on its deadline, and confirms", async ({ page }) => {
   const membersResponse = await page.request.get("/api/v1/members");
@@ -17,6 +33,7 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
     headers: { Origin: BASE_URL },
   });
   expect(protectResponse.ok(), await protectResponse.text()).toBe(true);
+  await takeTurn(page);
 
   await page.goto("/users");
   await expect(page.locator(".mem")).toBeVisible();
@@ -76,6 +93,8 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   // A Wildcard is a group-owned detour. It can be watched without replacing
   // this draw or moving Next up, and another can then be selected and canceled.
   const currentTitle = await page.locator(".hero__title").textContent();
+  // Reveal passes the turn on; wait for that handoff before reading the label.
+  await expect(page.locator(".hero__nextup .nm")).not.toHaveText("Your turn");
   const nextUp = await page.locator(".hero__nextup").textContent();
   await page.getByRole("button", { name: "Choose wildcard" }).click();
   const picker = page.getByRole("dialog", { name: "Choose a wildcard" });
@@ -116,6 +135,16 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   await expect(activeWildcard).toBeHidden();
   await expect(page.locator(".hero__title")).toHaveText(currentTitle ?? "");
   await expect(page.locator(".hero__nextup")).toHaveText(nextUp ?? "");
+
+  // Reveal passed the turn on. The admin skips that member through the hero
+  // control, then takes the turn back to mark the draw watched.
+  await page.getByRole("button", { name: /^Skip .+'s turn$/ }).click();
+  const skipDialog = page.getByRole("dialog", { name: /^Skip .+ turn\?$/ });
+  await skipDialog.getByRole("button", { name: "Skip turn" }).click();
+  await expect(skipDialog).toBeHidden();
+  await expect(page.locator(".hero__nextup")).not.toHaveText(nextUp ?? "");
+  await takeTurn(page);
+  await expect(page.locator(".hero__nextup .nm")).toHaveText("Your turn");
 
   // Restore a no-current-draw baseline for the next browser project.
   await page.getByRole("button", { name: "Mark as watched" }).click();

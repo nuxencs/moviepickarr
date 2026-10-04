@@ -783,6 +783,11 @@ breakpoint; see the phone and large-screen notes below.) How it's built (`Hero.t
 - **Meta slot** carries the `.metachips` row (§4): facts `│` genres `│` external
   links, in white-on-backdrop. Links derive from ids present on every enriched draw,
   so the row's presence is consistent draw-to-draw and does not break the contract.
+- **Admin Turn skip** is a bare `.iconbtn.hero__skip` (skip-forward icon, no fill,
+  accessible name "Skip <name>'s turn") right after the next-up name. It renders only
+  for admins and only while no draw is unrevealed, and opens a confirm. Its fixed 30px
+  box keeps the chip on its row at 375px, so showing it never grows the hero; a coarse
+  pointer gets a larger hit area through `::after`, not a larger box.
 - The hero stays a **dark "island"** in light theme by design (cinematic scrim over a
   backdrop). Its scrim/text are intentionally dark/white in both themes; only fix the
   genuinely-broken light overlays, not the hero's darkness.

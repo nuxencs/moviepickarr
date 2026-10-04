@@ -36,7 +36,7 @@ func TestWildcardWatchPreservesCurrentDrawAndNextUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := revealedCurrentForWildcard(t, e, first.ID)
-	// Set the turn after the Reveal, which already rotated it once.
+	// The Reveal already rotated the turn once.
 	if err := e.nextUp.Set(e.ctx, first.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,6 @@ func TestWildcardWatchPreservesCurrentDrawAndNextUp(t *testing.T) {
 		t.Fatalf("next up after wildcard = %+v err=%v", next, err)
 	}
 
-	// A second Wildcard can follow under the same Current draw.
 	stash, err := e.movies.Add(e.ctx, "Second wildcard", "stash", first.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +147,6 @@ func TestCancelWildcardRestoresMovieAndClosesAcquisitionRequirement(t *testing.T
 	}
 	attention, err := NewSqliteRadarrRepository(e.pool).AttentionCount(e.ctx)
 	if err != nil || attention != 1 {
-		// The host Current draw still needs its preset. The canceled Wildcard does not.
 		t.Fatalf("attention = %d err=%v, want host draw only", attention, err)
 	}
 }

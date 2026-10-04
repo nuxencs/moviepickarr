@@ -24,9 +24,8 @@ export function drawInProgressForEvent(
 }
 
 /**
- * Apply lifecycle facts that an event establishes exactly, before the
- * coalesced refetch begins. This closes the queue window without fabricating
- * unrelated cache fields.
+ * Applies exact lifecycle facts before the coalesced refetch lands, closing that
+ * window without inventing other fields.
  */
 export function applyImmediateLifecycleState(
   queryClient: QueryClient,
@@ -73,9 +72,8 @@ export function applyImmediateLifecycleState(
       typeof state?.poolLocked === "boolean" &&
       typeof state.drawInProgress === "boolean"
     ) {
-      // The handler reads the draw gate before entering the broker. A draw or
-      // reveal can broadcast between that read and this event, so a cached
-      // lifecycle fact owns this field while the lock event owns the lock.
+      // drawInProgress here can be stale (read before the broker), so keep the
+      // cached lifecycle value and take only the lock.
       queryClient.setQueryData<Settings>(SettingsKeys.poolLock(), (current) =>
         current ? { ...current, poolLocked: state.poolLocked } : state,
       );

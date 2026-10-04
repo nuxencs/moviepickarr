@@ -1,15 +1,6 @@
-/* ============================================================
-   moviepickarr: the Draw store.
-
-   The thin impure shell around drawMachine: it resolves the environment
-   snapshot at send() time, runs the reducer, executes the returned commands
-   through injected executors, and notifies subscribers. A module singleton,
-   like the old handledDraws Set, deliberately outliving the Hero so a
-   tab-switch remount can't replay a spin, while a full reload starts fresh.
-
-   Components read it with useSyncExternalStore(drawStore.subscribe,
-   drawStore.getState); useSSE and the draw mutation feed it events.
-   ============================================================ */
+/* The impure shell around drawMachine: resolves env, runs the reducer, executes
+   commands. A module singleton so it outlives the Hero: a tab-switch remount cannot
+   replay a spin, while a full reload starts fresh. */
 
 import { APIClient } from "@/api/APIClient";
 import { MoviesKeys } from "@/api/query_keys";
@@ -28,15 +19,12 @@ import { backdropUrl } from "@/components/moviepickarr/lib";
 
 import { getClientId } from "@/lib/clientId";
 
-/** Everything impure the machine's commands need, injected so tests can run
- *  the full store against fakes (see drawStore.test.ts). */
+/** The machine's side effects, injected so tests can use fakes. */
 export interface DrawStoreDeps {
   resolveEnv: () => DrawEnv;
-  /** POST the reveal confirm. Failures are swallowed: the server's own
-   *  auto-reveal deadline is the backstop. */
+  /** Failures are swallowed: the server's auto-reveal deadline is the backstop. */
   postReveal: () => Promise<unknown>;
-  /** Warm + decode the winner's backdrop; resolve when paintable. Null when
-   *  the image can't be decoded (the commit then proceeds anyway). */
+  /** Resolves when paintable; null when there is nothing to decode. */
   decodeBackdrop: (path: string) => Promise<unknown> | null;
   invalidatePool: () => void;
 }
@@ -100,8 +88,7 @@ export function createDrawStore(deps: DrawStoreDeps): DrawStore {
   };
 }
 
-/** The live environment snapshot, also used by the Hero to run pure machine
- *  helpers (drawAwaitingReveal) outside a dispatch. */
+/** The live environment snapshot, also for machine helpers outside a dispatch. */
 export function resolveDrawEnv(): DrawEnv {
   return {
     spinDurationMs: spinDurationMs(),

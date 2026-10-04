@@ -13,9 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// The admin roster is admin-only: a plain member hitting it gets the first-class
-// 403 admin_required, which the frontend renders as the "Admins only" screen
-// rather than masking it as a 404.
+// 403 admin_required, which the frontend renders as "Admins only", never a 404.
 func TestHandleGetRoster_ForbidsNonAdmin(t *testing.T) {
 	t.Parallel()
 	_, app, _, _ := setupEditMovieTest(t)
@@ -29,9 +27,7 @@ func TestHandleGetRoster_ForbidsNonAdmin(t *testing.T) {
 	}
 }
 
-// The roster surfaces active and archived members with presence-derived state,
-// active-before-archived, so the frontend can split the two sections and read the
-// role/archived facts straight off each row.
+// Active before archived, so the frontend can split the two sections.
 func TestHandleGetRoster_ReturnsRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -88,8 +84,7 @@ func TestHandleGetRoster_ReturnsRows(t *testing.T) {
 	}
 }
 
-// Promote then demote flips the role end to end; a second admin remains so the
-// demotion is allowed.
+// A second admin remains so the demotion is allowed.
 func TestHandleSetRole_PromoteDemote(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -219,8 +214,7 @@ func TestHandleSetRole_RequiresAtomicTurnHandoffConfirmation(t *testing.T) {
 	}
 }
 
-// Demoting the only admin is refused with 409 so the surface can warn instead of
-// stranding the roster with no admin.
+// 409 lets the surface warn instead of stranding the roster with no admin.
 func TestHandleSetRole_LastAdminConflict(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

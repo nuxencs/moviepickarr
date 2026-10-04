@@ -146,7 +146,6 @@ func TestHandleRestoreUser_DeliversClaimURLWithoutPostCommitRead(t *testing.T) {
 	client, _ := h.broker.Subscribe()
 	defer h.broker.Unsubscribe(client)
 
-	// Lifecycle writes and their response projection use the writer transaction.
 	// Closing readers proves the committed raw token is not stranded behind a
 	// fallible post-commit roster lookup.
 	if err := pool.Read.Close(); err != nil {

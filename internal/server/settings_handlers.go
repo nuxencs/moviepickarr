@@ -74,11 +74,9 @@ func (h *handler) handleGetNextUp(c *fiber.Ctx) error {
 	})
 }
 
-// handleSkipNextUp is the admin's explicit way past a stuck turn: it passes
-// Next up to the following Turn participant without a draw. The body names the
-// holder the admin saw, so a stale client cannot skip a member it never showed.
-// It shares the draw-command lock so it cannot interleave with a draw, Reveal,
-// or watch authorization.
+// handleSkipNextUp passes Next up to the following Turn participant without a
+// draw. The body names the holder the admin saw, so a stale client cannot skip
+// a member it never showed. It shares the draw-command lock.
 func (h *handler) handleSkipNextUp(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err

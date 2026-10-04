@@ -1,21 +1,7 @@
-/* ============================================================
-   Render tests for the account page's dialog wiring (#140).
-
-   AccountOverlays.render.test.tsx renders each ceremony directly and covers
-   what it does once it's on screen. What that can't reach is the page above
-   it: which row button opens which ceremony, that only one is ever open (the
-   page drives them off a single tag, not a pile of booleans), and that a
-   server refusal comes back INTO the open dialog as inline copy rather than a
-   toast the member has to catch.
-
-   That last one is the whole reason ChangePasswordDialog takes a serverError
-   prop. Rendering the dialog with the prop already set proves it paints; only
-   the page can prove anything ever sets it.
-
-   This is the one place a provider harness earns its keep: the page reads its
-   OIDC-link redirect through useSearch({ from: "/_app/settings" }), which
-   needs a real route tree, so a stubbed router would stub out the subject.
-   ============================================================ */
+/* Render tests for the account page's dialog wiring (#140): which row opens
+   which ceremony, one open at a time, and server refusals shown inside the
+   dialog. AccountOverlays.render.test.tsx covers each ceremony alone. The page
+   reads useSearch, so it needs the real route tree. */
 
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -111,7 +97,6 @@ async function settle() {
 /** Long enough to outrun exitDelayMs(), whatever the motion tokens say. */
 const AFTER_EXIT = 1000;
 
-/** A dismissed dialog stays mounted until its exit motion finishes. */
 async function runExit() {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(AFTER_EXIT);
@@ -151,7 +136,6 @@ describe("opening a ceremony from its row", () => {
   it("offers a first password instead, for a member who signs in with SSO", async () => {
     await renderPage({ me: actor({ hasLocalLogin: false, username: null }) });
 
-    // The Change button is the other branch of the same row; it must be gone.
     expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
     fireEvent.click(button("Set a password"));
 
@@ -175,11 +159,9 @@ describe("opening a ceremony from its row", () => {
 
     fireEvent.click(button("Unlink"));
     expect(screen.getByRole("heading", { name: /Can't unlink/ })).not.toBeNull();
-    // Refused client-side: the guard is shown instead of the request going out.
     expect(unlinkSelf).not.toHaveBeenCalled();
 
-    // Scoped to the guard: the row behind it offers a Set a password of its own,
-    // and the handoff under test is the dialog's.
+    // Scoped to the guard: the row behind it has its own Set a password.
     fireEvent.click(within(dialog() as HTMLElement).getByRole("button", { name: "Set a password" }));
 
     expect(screen.getByRole("heading", { name: "Set a password" })).not.toBeNull();
@@ -327,8 +309,7 @@ describe("the device list", () => {
     fireEvent.click(screen.getByText("1 other device"));
     fireEvent.click(button("Log out everywhere"));
 
-    // One other device, so the confirm must not read "2 other devices" off a
-    // list that includes the session doing the asking.
+    // The list includes the current session, which must not be counted.
     expect(dialog()?.textContent).toContain("1 other device");
   });
 });

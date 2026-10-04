@@ -1,19 +1,9 @@
-/* ============================================================
-   moviepickarr: reel timing + easing geometry.
+/* Reel timing and easing, read from the --dur-spin and --ease-reel CSS tokens so JS
+   and the keyframes share one source of truth. */
 
-   The presentational constants of the draw reel: the scroll duration and the
-   `--ease-reel` cubic-bezier, both read from CSS tokens so the JS and the
-   keyframes share one source of truth. DrawReel uses these to glide the
-   track, resume the scroll at the right spot after a reload, and time the
-   draw-sound clicks; drawStore snapshots them into the machine's DrawEnv.
-   The draw lifecycle itself lives in drawMachine.ts.
-   ============================================================ */
-
-/** Fallback used when the --dur-spin token can't be read (e.g. SSR/no DOM). */
+/** Used when there is no DOM to read --dur-spin from. */
 const DEFAULT_SPIN_MS = 6500;
 
-/** The reveal-spin duration, read from the `--dur-spin` CSS token so the JS and
- *  the keyframe share one source of truth. */
 export function spinDurationMs(): number {
   if (typeof window === "undefined") return DEFAULT_SPIN_MS;
   const raw = getComputedStyle(document.documentElement).getPropertyValue("--dur-spin");
@@ -21,15 +11,10 @@ export function spinDurationMs(): number {
   return Number.isFinite(secs) && secs > 0 ? Math.round(secs * 1000) : DEFAULT_SPIN_MS;
 }
 
-/* ---- Reel easing geometry ----
-   The reel glides on `--ease-reel` (a cubic-bezier). These helpers read that token
-   and evaluate the *actual* curve — not a polynomial stand-in — so two things stay
-   locked to what's rendered: the resume start-position after a reload, and the
-   draw-sound clicks (one per poster gap crossing the reticle). Parsing the token
-   means a future `--ease-reel` change carries through for free. */
+// Evaluates the actual --ease-reel curve, not a stand-in, so resume position and
+// draw-sound clicks stay locked to what is rendered.
 
-/** Cubic-bezier control points (x1, y1, x2, y2) of `--ease-reel`, parsed once.
- *  Falls back to easeOutCubic's standard approximation (SSR / non-bezier token). */
+/** Control points of --ease-reel, parsed once; falls back to easeOutCubic. */
 let reelEasePts: [number, number, number, number] | null = null;
 function reelEasePoints(): [number, number, number, number] {
   if (reelEasePts) return reelEasePts;
@@ -64,8 +49,7 @@ function solveBezierS(target: number, p1: number, p2: number): number {
   return (lo + hi) / 2;
 }
 
-/** Distance fraction the reel has covered at elapsed-time fraction `tx` (the CSS
- *  ease output). Resumes the scroll at the right spot after a reload mid-spin. */
+/** Distance fraction covered at elapsed-time fraction `tx`. */
 export function reelEaseOutput(tx: number): number {
   if (tx <= 0) return 0;
   if (tx >= 1) return 1;
@@ -73,8 +57,7 @@ export function reelEaseOutput(tx: number): number {
   return bezierComponent(y1, y2, solveBezierS(tx, x1, x2));
 }
 
-/** Inverse: elapsed-time fraction at which the reel has covered `frac` of its
- *  distance. Times a click to the instant a poster gap crosses the reticle. */
+/** Elapsed-time fraction at which the reel has covered `frac` of its distance. */
 export function reelEaseTimeAt(frac: number): number {
   if (frac <= 0) return 0;
   if (frac >= 1) return 1;

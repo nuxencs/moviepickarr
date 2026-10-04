@@ -50,8 +50,7 @@ function MonthView({
 }) {
   const y = base.getFullYear();
   const m = base.getMonth();
-  // The 42-cell grid only depends on the visible month — keep it off the
-  // hover path so dragging a range doesn't rebuild ~84 Date objects per move.
+  // Keeps the grid off the hover path, which fires on every mouse move.
   const cells = useMemo(() => monthGrid(y, m), [y, m]);
   const end = range.end || hover;
   const lo = range.start && end ? Math.min(dayKey(range.start), dayKey(end)) : null;
@@ -96,12 +95,8 @@ function MonthView({
 }
 
 /**
- * Custom-range calendar popover. Shares the floating-surface lifecycle with the
- * Menu and the filter dropdowns: it opens with `mg-scaleIn`, animates out via
- * `daterange--closing` (the parent keeps it mounted for `exitDelayMs()`), takes
- * focus on open (role="dialog"), restores it to the trigger on dismiss, and
- * dismisses on capturing `pointerdown` outside / Esc. The `.daterange` surface
- * itself stays bespoke (a 2-month calendar isn't a `.mg-menu` listbox).
+ * Custom-range calendar popover. Shares the Menu's floating-surface lifecycle;
+ * the parent keeps it mounted for `exitDelayMs()` while it animates out.
  */
 export function DateRangePopover({
   id,
@@ -114,16 +109,13 @@ export function DateRangePopover({
 }: {
   id?: string;
   initial: DayRange | null;
-  /** The opener (the "Custom" preset), so outside-dismiss ignores it and its own
-   *  toggle owns open/close — no double-fire. */
+  /** Ignored by outside-dismiss, so its own toggle does not double-fire. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
   closing?: boolean;
-  /** From the parent's `useDismissible`: false once a surface has opened on top
-   *  of the popover, which then owns Esc and outside-clicks (#220). */
+  /** False once a surface opens on top and owns Esc and outside-clicks (#220). */
   isTopmost: () => boolean;
   onApply: (range: DayRange) => void;
-  /** Dismiss without applying. `restoreFocus` is false for an outside click
-   *  (focus follows the click) and true for Cancel/Esc. */
+  /** `restoreFocus` is false for an outside click: focus follows the click. */
   onDismiss: (restoreFocus: boolean) => void;
 }) {
   const [base, setBase] = useState<Date>(() =>
@@ -133,15 +125,13 @@ export function DateRangePopover({
   const [hover, setHover] = useState<Date | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Move focus into the dialog on open (mirrors Modal/Menu); preventScroll so
-  // focusing the absolutely-positioned surface never jumps the page.
+  // preventScroll: focusing the absolutely positioned surface would jump the page.
   useLayoutEffect(() => {
     ref.current?.focus({ preventScroll: true });
   }, []);
 
   useEffect(() => {
-    // Capturing pointerdown + Esc, matching Menu.tsx / FilterChipMenu. The
-    // trigger is excluded so its toggle handles open/close itself.
+    // Capture phase, matching Menu.tsx and FilterChipMenu.
     const onPointerDown = (e: PointerEvent) => {
       if (!isTopmost()) return;
       const node = e.target as Node;

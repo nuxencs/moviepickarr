@@ -13,99 +13,78 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// InviteTTL is how long a freshly issued claim link stays valid. Fixed policy,
-// not operator config (like the session windows): an admin delivers the link
-// out-of-band, so a week is enough to hand it over without leaving a long-lived
-// credential outstanding. A lost or stale link is replaced, which revokes the
-// old generation, so the window never needs to be long.
+// InviteTTL is how long a claim link stays valid. Fixed policy, not config: a
+// lost link is replaced, so the window never needs to be long.
 const InviteTTL = 7 * 24 * time.Hour
 
-// ErrInviteInvalid is the single sentinel every unusable-invite case collapses
-// to for the claim page: no such token, expired, or revoked all return it so
-// the SPA shows one "no longer valid" screen. It is deliberately distinct from
-// ErrInviteUsed, the already-set-up case, which gets its own screen.
+// ErrInviteInvalid covers an unknown, expired, or revoked invite: one "no longer
+// valid" screen. ErrInviteUsed gets its own screen.
 var ErrInviteInvalid = domain.ErrInviteInvalid
 
-// ErrInviteUsed marks an invite that was already redeemed, so the claim page
-// shows the distinct "already set up, go log in" screen instead of the generic
-// no-longer-valid one.
+// ErrInviteUsed marks an already redeemed invite ("already set up, go log in").
 var ErrInviteUsed = domain.ErrInviteUsed
 
-// ClaimContext is what the claim page needs to render: who the invite greets,
-// whether it is a fresh setup (placeholder) or a reset (the member already holds
-// a local login), and which credential options to offer.
+// ClaimContext is what the claim page needs to render.
 type ClaimContext struct {
 	DisplayName string
-	// IsReset is true when the target already has a local login: the claim resets
-	// the password (username immutable) rather than creating a first credential.
+	// IsReset means the target already has a local login, so only the password changes.
 	IsReset bool
 	Options ClaimOptions
 }
 
-// ClaimOptions reports which credential paths the claim page should present.
-// Password is always available. OIDC is offered only for onboarding when a
-// provider is configured; the HTTP layer adds that presence-derived option.
+// ClaimOptions reports which credential paths the claim page offers. The HTTP
+// layer sets OIDC when a provider is configured.
 type ClaimOptions struct {
 	Password bool
 	OIDC     bool
 }
 
-// The two invite states an admin can still act on, and the only two the
-// overview renders. Open is issued, unclaimed and not yet lapsed; Expired is
-// lapsed unclaimed. Used and revoked invites have no row: nothing about them is
-// actionable, and a revoked one is what Dismiss writes.
+// The two invite states an admin can still act on. Used and revoked invites
+// are not actionable, so the overview has no row for them.
 const (
 	InviteOpen    = "open"
 	InviteExpired = "expired"
 )
 
-// InviteSummary is one row of the admin invites overview: the stored invite plus
-// the open/expired word derived from the manager's clock at read time. The word
-// is computed, never stored, the same way the claim path derives validity.
+// InviteSummary is one row of the admin invites overview. Status is derived at
+// read time, never stored.
 type InviteSummary struct {
 	domain.InviteOverview
 	Status string
 }
 
-// InviteOverviewResult anchors every status word and client-side expiry timer
-// to the same whole-second server-clock sample used on the wire and in SQLite.
+// InviteOverviewResult anchors every status and client expiry timer to one
+// whole-second server clock sample.
 type InviteOverviewResult struct {
 	ServerNow time.Time
 	Items     []InviteSummary
 }
 
-// ClaimResult reports the atomic credential-and-invite transition. A supplied
-// session replaces every prior session; the HTTP layer only sets its cookie.
+// ClaimResult reports the atomic credential-and-invite transition.
 type ClaimResult struct {
 	MemberID int
-	// WasReset is true when the claim reset an existing local login, false when
-	// it created a placeholder's first credential.
+	// WasReset is false when the claim created a placeholder's first credential.
 	WasReset bool
 }
 
-// InviteManager is the deep module over invite issuance, exact-generation
-// actions, claim validation, and atomic credential or member-lifecycle
-// transitions. Password and username rules are shared with LocalAuth through
-// the package helpers. Session cookie handling stays in the HTTP layer.
+// InviteManager owns invite issuance, claims, and the atomic credential and
+// member-lifecycle transitions. Cookies stay in the HTTP layer.
 type InviteManager struct {
 	repo        domain.InviteRepo
 	transitions domain.InviteTransitionStore
-	// now is the injectable clock every expiry decision reads, so tests advance
-	// time instead of sleeping.
+	// now is injectable so tests advance time instead of sleeping.
 	now func() time.Time
 }
 
 // InviteOption configures an InviteManager at construction.
 type InviteOption func(*InviteManager)
 
-// WithInviteClock overrides the wall clock so tests drive invite expiry
-// deterministically.
+// WithInviteClock overrides the wall clock for tests.
 func WithInviteClock(clock func() time.Time) InviteOption {
 	return func(m *InviteManager) { m.now = clock }
 }
 
-// NewInviteManager builds an InviteManager over the invite store and the scoped
-// credential, membership, and invite transition store.
+// NewInviteManager builds an InviteManager.
 func NewInviteManager(repo domain.InviteRepo, transitions domain.InviteTransitionStore, opts ...InviteOption) *InviteManager {
 	m := &InviteManager{repo: repo, transitions: transitions, now: time.Now}
 	for _, opt := range opts {
@@ -114,22 +93,19 @@ func NewInviteManager(repo domain.InviteRepo, transitions domain.InviteTransitio
 	return m
 }
 
-// Issue creates a member's first current invite generation. If another current
-// generation already exists, the repository invariant returns ErrConflict; a
-// caller that saw an existing generation must use Replace with its exact handle.
+// Issue creates a member's first current invite generation. If one already
+// exists it returns ErrConflict; use Replace instead.
 func (m *InviteManager) Issue(ctx context.Context, userID, createdBy int) (string, error) {
 	return m.issue(ctx, userID, createdBy, false)
 }
 
-// IssuePasswordReset creates an explicitly requested reset generation for a
-// member who already holds a local login.
+// IssuePasswordReset creates a reset generation for a member with a local login.
 func (m *InviteManager) IssuePasswordReset(ctx context.Context, userID, createdBy int) (string, error) {
 	return m.issue(ctx, userID, createdBy, true)
 }
 
-// CreateMemberWithInvite commits a new placeholder, its initial next-up
-// assignment when eligible and needed, and its first claim generation
-// together. The raw token is returned only after that transaction commits.
+// CreateMemberWithInvite commits a new placeholder, its next-up assignment when
+// needed, and its first claim generation in one transaction.
 func (m *InviteManager) CreateMemberWithInvite(
 	ctx context.Context,
 	name string,
@@ -150,9 +126,8 @@ func (m *InviteManager) CreateMemberWithInvite(
 	return member, rawToken, nil
 }
 
-// RestoreMemberWithInvite reopens an archived member and creates the new claim
-// generation in the same transaction. It returns the response member projection
-// with the response-only raw token, so no fallible read follows the commit.
+// RestoreMemberWithInvite reopens an archived member and creates a new claim
+// generation in one transaction. No fallible read follows the commit.
 func (m *InviteManager) RestoreMemberWithInvite(
 	ctx context.Context,
 	userID, createdBy int,
@@ -203,9 +178,8 @@ func (m *InviteManager) issue(ctx context.Context, userID, createdBy int, passwo
 	return tok.Raw, nil
 }
 
-// Replace atomically retires the exact current generation the admin saw and
-// returns the raw token for its replacement. A stale handle returns ErrConflict
-// and cannot mutate the newer generation.
+// Replace atomically retires the exact generation the admin saw and returns the
+// replacement's raw token. A stale handle returns ErrConflict.
 func (m *InviteManager) Replace(ctx context.Context, currentPublicID string, createdBy int) (string, error) {
 	now := m.now()
 	tok, err := GenerateToken()
@@ -230,19 +204,14 @@ func (m *InviteManager) Replace(ctx context.Context, currentPublicID string, cre
 	return tok.Raw, nil
 }
 
-// Revoke cancels the exact open generation addressed by the admin. Expired,
-// spent, revoked, or stale handles return ErrConflict.
+// Revoke cancels the exact open generation. Any other handle returns ErrConflict.
 func (m *InviteManager) Revoke(ctx context.Context, publicID string) error {
 	now := m.now()
 	return m.repo.RevokeOpen(ctx, publicID, now, now)
 }
 
-// Overview lists every current invite an admin can still act on, including
-// explicit password-reset links for credentialed members. Each row is tagged
-// open or expired against the same whole-second clock returned to the client.
-// Ordering is open before expired, then
-// soonest-to-lapse first inside Open and most-recently-lapsed first inside
-// Expired, so the row nearest needing attention leads each group.
+// Overview lists every actionable invite, open before expired. Inside each
+// group the row nearest needing attention leads.
 func (m *InviteManager) Overview(ctx context.Context) (InviteOverviewResult, error) {
 	now := m.now().UTC().Truncate(time.Second)
 	rows, err := m.repo.ListCurrent(ctx)
@@ -252,8 +221,7 @@ func (m *InviteManager) Overview(ctx context.Context) (InviteOverviewResult, err
 
 	summaries := make([]InviteSummary, 0, len(rows))
 	for _, row := range rows {
-		// Same predicate as the claim path's validity check (strict now < expiry),
-		// so a link that would still redeem always reads as Open here.
+		// Same strict now < expiry predicate as the claim path.
 		status := InviteExpired
 		if now.Before(row.ExpiresAt) {
 			status = InviteOpen
@@ -279,17 +247,15 @@ func (m *InviteManager) Overview(ctx context.Context) (InviteOverviewResult, err
 	return InviteOverviewResult{ServerNow: now, Items: summaries}, nil
 }
 
-// Dismiss retires the exact expired generation addressed by its public handle.
-// Open, spent, revoked, and stale generations conflict without changing state.
+// Dismiss retires the exact expired generation. Any other handle returns
+// ErrConflict.
 func (m *InviteManager) Dismiss(ctx context.Context, publicID string) error {
 	now := m.now()
 	return m.repo.DismissExpired(ctx, publicID, now, now)
 }
 
-// Validate resolves a raw claim token into the claim-page context, or one of the
-// two distinct failure sentinels: ErrInviteUsed for an already-redeemed invite
-// (the "already set up" screen) and ErrInviteInvalid for everything else (no
-// such token, expired, revoked: the single "no longer valid" screen).
+// Validate resolves a raw claim token into the claim-page context, or
+// ErrInviteUsed or ErrInviteInvalid.
 func (m *InviteManager) Validate(ctx context.Context, rawToken string) (*ClaimContext, error) {
 	ic, err := m.lookup(ctx, rawToken)
 	if err != nil {
@@ -302,11 +268,9 @@ func (m *InviteManager) Validate(ctx context.Context, rawToken string) (*ClaimCo
 	}, nil
 }
 
-// ClaimPassword establishes the member's local login from a valid invite:
-// placeholder → username + password (first login), reset → password only
-// (username immutable). Password hashing happens before one writer transaction
-// updates the credential, revokes existing sessions, consumes the exact token
-// hash, and inserts the supplied replacement session.
+// ClaimPassword sets the member's local login from a valid invite. A reset
+// changes only the password. The credential, session revocation, token use, and
+// new session commit in one writer transaction.
 func (m *InviteManager) ClaimPassword(
 	ctx context.Context,
 	rawToken, username, password string,
@@ -315,8 +279,7 @@ func (m *InviteManager) ClaimPassword(
 	if rawToken == "" {
 		return ClaimResult{}, ErrInviteInvalid
 	}
-	// Reject a dead link before spending Argon2 work. The transition store repeats
-	// this lookup authoritatively on the writer transaction after hashing.
+	// Reject a dead link before Argon2 work; the transaction re-checks it.
 	ic, err := m.lookup(ctx, rawToken)
 	if err != nil {
 		return ClaimResult{}, err
@@ -384,15 +347,15 @@ func (m *InviteManager) ClaimOIDCByHash(
 	return res.MemberID, nil
 }
 
-// SetLocalLogin atomically creates/resets a local login and retires any current
-// invite. Admin resets revoke the member's existing sessions in the same commit.
+// SetLocalLogin atomically creates or resets a local login, retires any current
+// invite, and revokes the member's sessions on a reset.
 func (m *InviteManager) SetLocalLogin(ctx context.Context, userID int, username, password string) (SetLocalLoginResult, error) {
 	res, err := m.setLocalCredential(ctx, userID, username, password, domain.LocalCredentialUpsert, true)
 	return SetLocalLoginResult{WasReset: res.WasReset}, err
 }
 
-// SetFirstLocalLogin is the self-serve first-credential transition. It keeps the
-// current authenticated session and conflicts if a local login already exists.
+// SetFirstLocalLogin is the self-serve first credential. It keeps the current
+// session and conflicts if a local login already exists.
 func (m *InviteManager) SetFirstLocalLogin(ctx context.Context, userID int, username, password string) error {
 	_, err := m.setLocalCredential(ctx, userID, username, password, domain.LocalCredentialFirst, false)
 	return err
@@ -414,8 +377,8 @@ func (m *InviteManager) CompleteLocalLogin(
 	return m.transitions.CompleteLocalLogin(ctx, login, session, m.now())
 }
 
-// CompleteOIDCLogin refreshes a verified linked identity and creates its
-// session in one transaction. found is false if unlink won the writer race.
+// CompleteOIDCLogin refreshes a linked identity and creates its session in one
+// transaction. found is false if unlink won the writer race.
 func (m *InviteManager) CompleteOIDCLogin(
 	ctx context.Context,
 	claims OIDCClaims,
@@ -502,10 +465,7 @@ func identityFromClaims(userID int, claims OIDCClaims) domain.OIDCIdentity {
 	}
 }
 
-// lookup resolves a raw token to its live invite context or a failure sentinel,
-// applying the validity state machine in one place. The already-used check comes
-// first so a redeemed invite always reads as "already set up", never as merely
-// expired or revoked.
+// lookup resolves a raw token to its live invite context or a failure sentinel.
 func (m *InviteManager) lookup(ctx context.Context, rawToken string) (*domain.InviteContext, error) {
 	if rawToken == "" {
 		return nil, ErrInviteInvalid
@@ -513,14 +473,11 @@ func (m *InviteManager) lookup(ctx context.Context, rawToken string) (*domain.In
 	return m.lookupByHash(ctx, HashToken(rawToken))
 }
 
-// lookupByHash is the shared post-hash resolution: it reads the invite context
-// by token hash and runs the validity checks. The already-used check comes first
-// so a redeemed invite always reads as "already set up", never as merely expired
-// or revoked.
 func (m *InviteManager) lookupByHash(ctx context.Context, tokenHash string) (*domain.InviteContext, error) {
 	return m.lookupByHashAt(ctx, tokenHash, m.now())
 }
 
+// lookupByHashAt checks used first, so a redeemed invite never reads as expired.
 func (m *InviteManager) lookupByHashAt(ctx context.Context, tokenHash string, now time.Time) (*domain.InviteContext, error) {
 	ic, err := m.repo.FindContextByTokenHash(ctx, tokenHash)
 	if errors.Is(err, sql.ErrNoRows) {

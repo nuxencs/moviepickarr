@@ -4,9 +4,7 @@ import { sessionMeta } from "@/components/moviepickarr/account/sessions";
 
 import type { SessionSummary } from "@/types/Response";
 
-/** The device family behind a label, for the row icon. The label is server-side
- *  copy ("Safari on iPhone"), so matching on it keeps the shape rule in one
- *  place rather than shipping a second device field just to pick a glyph. */
+/** Matches on the server's label copy ("Safari on iPhone"), so no extra device field. */
 export function DeviceIcon({ device }: { device: string }) {
   if (device.includes("iPad")) return <TabletIcon />;
   if (device.includes("iPhone") || device.includes("Android")) return <SmartphoneIcon />;
@@ -20,11 +18,6 @@ interface SessionListProps {
   onRevoke: (session: SessionSummary) => void;
 }
 
-/**
- * The member's other signed-in devices, revealed only when they choose to
- * manage them. One flat register with dividers keeps the management view
- * scannable without turning every device into another settings card.
- */
 export function SessionList({ sessions, revokingID, disabled = false, onRevoke }: SessionListProps) {
   return (
     <ul className="acc-devicelist">

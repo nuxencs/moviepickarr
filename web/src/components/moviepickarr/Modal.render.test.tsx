@@ -1,20 +1,6 @@
-/* ============================================================
-   Render tests for the Modal shell, in both scroll modes (#177).
-
-   The two modes differ only in CSS, and jsdom has no layout engine: it never
-   sizes a box, so scrollHeight/clientHeight are 0 and getBoundingClientRect
-   returns zeroes. Whether the veil's spacers survive a scroll to the end, or a
-   capped surface centers, is measured in a real browser instead (the numbers
-   are in the #177 commit). What jsdom CAN hold is everything around the mode:
-   the surface has to carry `modal--capped` for those rules to select at all,
-   plus the dialog behaviour the issue says must not regress in either mode.
-   That's Esc, veil-click, the page-owner scroll lock, focus in and back out, and the
-   deferred unmount that lets the exit motion play.
-
-   Dismissal is driven the way a member does it (Escape, a press and release on
-   the veil)
-   and asserted through onClose plus what's on screen, not component state.
-   ============================================================ */
+/* Render tests for the Modal shell, in both scroll modes (#177). The modes
+   differ only in CSS, which jsdom cannot lay out (measured in a browser, see
+   the #177 commit); this pins the mode class and the dialog behaviour. */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
@@ -96,7 +82,6 @@ describe("Modal", () => {
   it("marks the surface capped only when asked, so the capped CSS can select it", () => {
     const { dialog } = renderModal({ capped: true });
     expect(dialog.classList.contains("modal--capped")).toBe(true);
-    // The caller's own class rides along; capped is a mode, not a replacement.
     expect(dialog.classList.contains("modal--movie")).toBe(true);
   });
 
@@ -113,7 +98,7 @@ describe("Modal", () => {
       const { onClose } = renderModal({ capped });
 
       fireEvent.keyDown(document, { key: "Escape" });
-      // Still mounted: the surface stays put while its exit animation runs.
+      // Still mounted while the exit animation runs.
       expect(screen.queryByRole("dialog")).not.toBeNull();
       expect(onClose).not.toHaveBeenCalled();
 
@@ -291,12 +276,8 @@ describe("Modal", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next movie" }));
   });
 
-  /* A history-backed modal (the movie modal, see #196) can't dismiss itself:
-     the close it wants is a `back()`, and the exit motion has to run off the
-     resulting state change rather than ahead of it. So the shell takes the
-     parent's intent as `open` and hands every gesture to `onRequestClose`.
-     Neither prop is passed by the local-state dialogs, whose behaviour is
-     covered by the cases above. */
+  /* A history-backed modal (#196) closes with `back()`, so the exit runs off
+     the parent's `open` prop and every gesture goes to `onRequestClose`. */
   describe("driven by the parent", () => {
     it("plays the exit when the parent withdraws open", () => {
       const onClose = vi.fn();
@@ -311,7 +292,7 @@ describe("Modal", () => {
           {modalBody}
         </Modal>,
       );
-      // Same deal as a self-driven dismissal: on screen until the motion ends.
+      // On screen until the motion ends.
       expect(screen.queryByRole("dialog")).not.toBeNull();
       expect(onClose).not.toHaveBeenCalled();
 
@@ -371,7 +352,7 @@ describe("Modal", () => {
       runExit();
 
       expect(onRequestClose).toHaveBeenCalledTimes(1);
-      // The parent owns the close; nothing happens until `open` comes back false.
+      // Nothing happens until the parent sets `open` false.
       expect(onClose).not.toHaveBeenCalled();
       expect(screen.queryByRole("dialog")).not.toBeNull();
     });
@@ -402,10 +383,8 @@ describe("Modal", () => {
     });
   });
 
-  /* A confirm opened from inside a dialog (#220): both surfaces portal into
-     <body> as siblings, so nothing about the DOM tells the outer one that
-     something is on top of it. Escape, the veil and the Tab trap all have to
-     stop at the topmost surface, or one press takes the whole stack down. */
+  /* A confirm inside a dialog (#220): both portal into <body> as siblings, so
+     Escape, the veil and the Tab trap must stop at the topmost surface. */
   describe("opened from inside another modal", () => {
     /** Outer dialog with its own field; the inner one mounts on demand. */
     function renderNested() {
@@ -534,7 +513,6 @@ describe("Modal", () => {
 
       expect(onInnerClose).toHaveBeenCalledTimes(1);
       expect(onOuterClose).not.toHaveBeenCalled();
-      // The outer dialog is still there, and now answers Escape itself.
       expect(screen.getAllByRole("dialog")).toHaveLength(1);
 
       fireEvent.keyDown(document, { key: "Escape" });
@@ -545,8 +523,7 @@ describe("Modal", () => {
     it("leaves the outer veil inert while the inner dialog is up", () => {
       const { onOuterClose, onInnerClose, inner } = renderNested();
 
-      // The inner veil sits over the outer one, so this is the click a member
-      // lands when aiming past the confirm.
+      // The inner veil covers the outer one.
       clickVeil(inner);
       runExit();
 
@@ -555,8 +532,7 @@ describe("Modal", () => {
     });
 
     it("stops the outer focus trap from cycling past the dialog on top of it", () => {
-      // jsdom lays nothing out, so every element's offsetParent is null and the
-      // trap's visibility filter would drop all of its items. Stand one in.
+      // jsdom's offsetParent is always null, which the trap's visibility filter drops.
       const offsetParent = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetParent");
       Object.defineProperty(HTMLElement.prototype, "offsetParent", {
         configurable: true,
@@ -569,8 +545,7 @@ describe("Modal", () => {
 
         fireEvent.keyDown(document, { key: "Tab" });
 
-        // Tabbing off the outer surface's last item used to wrap back to its
-        // first; with a dialog on top, the outer surface owns no Tab at all.
+        // With a dialog on top, the outer surface does not wrap Tab.
         expect(document.activeElement).toBe(last);
         expect(document.activeElement).not.toBe(
           screen.getByRole("button", { name: "Delete", hidden: true }),
@@ -581,9 +556,7 @@ describe("Modal", () => {
       }
     });
 
-    /* The rule is the shared machine's, not the Modal's: a Menu opened from
-       inside a dialog is just another surface on the stack, and the one on top
-       is the one Escape reaches. */
+    // A Menu is another surface on the shared stack, so the top one gets Escape.
     it("gives Escape to a menu opened inside the dialog, not the dialog", () => {
       const onClose = vi.fn();
       render(
@@ -604,7 +577,6 @@ describe("Modal", () => {
       expect(screen.queryByRole("menu")).toBeNull();
       expect(onClose).not.toHaveBeenCalled();
 
-      // With the menu gone the dialog is back on top and takes the next press.
       fireEvent.keyDown(document, { key: "Escape" });
       runExit();
       expect(onClose).toHaveBeenCalledTimes(1);
@@ -619,7 +591,6 @@ describe("Modal", () => {
       fireEvent.keyDown(document, { key: "Escape" });
       runExit();
       expect(onInnerClose).toHaveBeenCalledTimes(1);
-      // The outer dialog is still open: the page must not scroll behind it.
       expect(document.body.style.overflow).toBe("hidden");
 
       fireEvent.keyDown(document, { key: "Escape" });

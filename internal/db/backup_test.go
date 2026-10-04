@@ -17,9 +17,7 @@ func listBackups(t *testing.T, dbPath string) []string {
 	return matches
 }
 
-// TestRunMigrationsWithBackup_FreshDB: a brand-new database has all migrations
-// pending but nothing applied — there is nothing worth snapshotting, so no
-// backup file may appear.
+// A fresh DB has nothing worth a snapshot.
 func TestRunMigrationsWithBackup_FreshDB(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "m.db")
@@ -37,8 +35,6 @@ func TestRunMigrationsWithBackup_FreshDB(t *testing.T) {
 	}
 }
 
-// TestRunMigrationsWithBackup_UpToDate: nothing pending means the backup path
-// is never entered, no matter how often startup runs.
 func TestRunMigrationsWithBackup_UpToDate(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "m.db")
@@ -59,10 +55,7 @@ func TestRunMigrationsWithBackup_UpToDate(t *testing.T) {
 	}
 }
 
-// TestRunMigrationsWithBackup_PendingCreatesBackup seeds a post-006 database
-// (versions 1..6 applied, 007 pending) and asserts the pre-007 state is
-// snapshotted before the rebuild — and that the snapshot is a readable SQLite
-// file still holding the old schema.
+// The snapshot must be a readable SQLite file that still holds the pre-007 schema.
 func TestRunMigrationsWithBackup_PendingCreatesBackup(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "m.db")
@@ -119,7 +112,6 @@ func TestRunMigrationsWithBackup_PendingCreatesBackup(t *testing.T) {
 		t.Errorf("backup %s does not carry pre-migration version v006", backups[0])
 	}
 
-	// The live DB moved on to 007 (epoch INTEGER timestamps)...
 	var liveType string
 	if err := pool.Read.QueryRowContext(ctx,
 		`SELECT typeof(added_at) FROM movies WHERE title = 'pre-backup'`).Scan(&liveType); err != nil {
@@ -129,7 +121,6 @@ func TestRunMigrationsWithBackup_PendingCreatesBackup(t *testing.T) {
 		t.Errorf("live DB added_at type = %s, want integer (007 applied)", liveType)
 	}
 
-	// ...while the snapshot still holds the pre-007 state and opens cleanly.
 	snap, err := OpenSQLite(backups[0])
 	if err != nil {
 		t.Fatalf("open backup: %v", err)
@@ -154,9 +145,7 @@ func TestRunMigrationsWithBackup_PendingCreatesBackup(t *testing.T) {
 	}
 }
 
-// TestCleanupBackups_PrunesOldest fabricates backup files (retention only
-// looks at names) and checks the newest max survive, oldest go first, and
-// unrelated files are untouched.
+// Retention reads only file names, so empty fakes suffice.
 func TestCleanupBackups_PrunesOldest(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "m.db")

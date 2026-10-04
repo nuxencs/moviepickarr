@@ -16,10 +16,8 @@ interface ConfirmDialogProps {
 }
 
 /**
- * Destructive-confirm dialog on the bespoke Modal. Dismissing (Esc, veil click,
- * Cancel) is the safe choice (it does NOT delete), so outside-click dismiss is
- * intentional before submission. A pending delete pins the dialog until the
- * parent reports success or failure.
+ * Destructive-confirm dialog. Outside-click dismiss is intentional: dismissing
+ * never deletes. A pending delete pins the dialog until the parent settles it.
  */
 export const DeletionDialog: React.FC<ConfirmDialogProps> = ({
     isOpen,

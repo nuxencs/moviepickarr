@@ -10,10 +10,8 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// CreateMemberWithInvite inserts the member, claims an unresolved next-up slot
-// when the role is eligible, and stores the first invite in one writer
-// transaction. SQLite orders concurrent creates on the single writer, so only
-// the first eligible committed member can claim an unresolved pointer.
+// CreateMemberWithInvite inserts the member, claims an unresolved Next up when
+// eligible, and stores the first invite, in one tx.
 func (d *SqliteAuthTransitionStore) CreateMemberWithInvite(
 	ctx context.Context,
 	name string,
@@ -42,9 +40,7 @@ func (d *SqliteAuthTransitionStore) CreateMemberWithInvite(
 	}
 
 	if role.IsTurnParticipant() {
-		// The singleton normally exists from migration 001, but the upsert also
-		// repairs a missing row. Its WHERE keeps a resolvable active participant
-		// intact. A Guest never claims the turn.
+		// The upsert also repairs a missing singleton; its WHERE keeps a valid holder.
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO next_up (id, user_id)
 			VALUES (1, ?)
@@ -63,9 +59,7 @@ func (d *SqliteAuthTransitionStore) CreateMemberWithInvite(
 		return nil, err
 	}
 
-	// Build the response before commit. A projection failure must roll back the
-	// member, next-up assignment, and invite instead of returning a failed request
-	// after durable lifecycle writes.
+	// Read before commit, so a failed read rolls back the writes.
 	member, err := scanUser(tx.QueryRowContext(ctx,
 		"SELECT id, name, created_at, updated_at FROM users WHERE id = ?", userID,
 	))
@@ -78,8 +72,8 @@ func (d *SqliteAuthTransitionStore) CreateMemberWithInvite(
 	return member, nil
 }
 
-// RestoreMemberWithInvite strips any residual authentication state, reopens an
-// archived member, and stores a fresh invite in one writer transaction.
+// RestoreMemberWithInvite strips residual logins, unarchives the member, and
+// stores a fresh invite, in one tx.
 func (d *SqliteAuthTransitionStore) RestoreMemberWithInvite(
 	ctx context.Context,
 	userID int,

@@ -29,20 +29,14 @@ const (
 	testOIDCRedirect = "http://localhost/api/v1/auth/oidc/callback"
 )
 
-// oidcTestEnv wraps the shared auth test env with the fake provider and the
-// identity store, so OIDC tests reuse the same seed/login/request helpers as the
-// local-auth tests.
 type oidcTestEnv struct {
 	*authTestEnv
 	idp        *fakeIdP
 	identities *repository.SqliteOIDCIdentityRepository
 }
 
-// setupOIDCApp builds a handler over a temp DB with the fake provider wired in
-// before registerRoutes, so the /oidc/* routes are mounted and the real route
-// chain (csrfGuard → unauth OIDC → requireSession → authed OIDC) is exercised.
-// The tx codec and auth stores share the same fake clock as sessions/invites so
-// expiry and last-login timestamps advance deterministically.
+// setupOIDCApp wires the fake provider in before registerRoutes so the /oidc/*
+// routes mount, and shares one fake clock across the tx codec and auth stores.
 func setupOIDCApp(t *testing.T) *oidcTestEnv {
 	t.Helper()
 
@@ -110,8 +104,6 @@ func setupOIDCApp(t *testing.T) *oidcTestEnv {
 	}
 }
 
-// linkIdentity seeds an oidc_identities row directly, standing in for a member
-// who has already linked their SSO identity.
 func (e *oidcTestEnv) linkIdentity(t *testing.T, userID int, subject, email string) {
 	t.Helper()
 	now := e.clk.t
@@ -137,9 +129,7 @@ func (e *oidcTestEnv) countIdentities(t *testing.T) int {
 	return n
 }
 
-// getWithCookies issues a GET carrying the given cookies verbatim (the OIDC flow
-// juggles the tx cookie and the session cookie together, which the shared
-// request helper can't express).
+// getWithCookies sends several cookies (tx and session), which e.request cannot.
 func (e *oidcTestEnv) getWithCookies(t *testing.T, path string, cookies ...*http.Cookie) *http.Response {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -153,9 +143,8 @@ func (e *oidcTestEnv) getWithCookies(t *testing.T, path string, cookies ...*http
 	return resp
 }
 
-// begin runs an initiation endpoint and returns the state + nonce the provider
-// redirect carried plus the tx cookie it set, so a test can arm the fake IdP and
-// replay the callback.
+// begin runs an initiation endpoint and returns the redirect's state and nonce
+// and the tx cookie, so a test can arm the fake IdP and replay the callback.
 func (e *oidcTestEnv) begin(t *testing.T, path string, cookies ...*http.Cookie) (state, nonce string, tx *http.Cookie) {
 	t.Helper()
 	resp := e.getWithCookies(t, path, cookies...)
@@ -173,7 +162,6 @@ func (e *oidcTestEnv) begin(t *testing.T, path string, cookies ...*http.Cookie) 
 	return loc.Query().Get("state"), loc.Query().Get("nonce"), tx
 }
 
-// callback replays the provider redirect with the given query and cookies.
 func (e *oidcTestEnv) callback(t *testing.T, query string, cookies ...*http.Cookie) *http.Response {
 	t.Helper()
 	return e.getWithCookies(t, "/api/v1/auth/oidc/callback?"+query, cookies...)
@@ -202,7 +190,6 @@ func sessionCookie(value string) *http.Cookie {
 	return &http.Cookie{Name: sessionCookieName, Value: value}
 }
 
-// locationError parses the ?error= bucket off a 302 Location.
 func locationError(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	if resp.StatusCode != fiber.StatusFound {
@@ -235,7 +222,7 @@ func TestOIDC_LoginLinkedMintsSession(t *testing.T) {
 	if sessionCookieValue(resp) == "" {
 		t.Fatal("linked login minted no session")
 	}
-	// Snapshot refreshed on login.
+	// Login refreshes the identity snapshot.
 	oi, err := e.identities.FindByIssuerSubject(context.Background(), e.idp.issuer(), "alice-sub")
 	if err != nil {
 		t.Fatalf("find identity: %v", err)
@@ -302,8 +289,6 @@ func TestOIDC_CallbackTamperedTxExpired(t *testing.T) {
 	e := setupOIDCApp(t)
 	state, _, tx := e.begin(t, "/api/v1/auth/oidc/login")
 
-	// Corrupt the AEAD ciphertext: the auth tag no longer verifies, so Open
-	// rejects it as invalid.
 	tampered := &http.Cookie{Name: tx.Name, Value: corruptSealed(t, tx.Value)}
 	resp := e.callback(t, "code=abc&state="+state, tampered)
 	if got := locationError(t, resp); got != errOIDCExpired {
@@ -328,7 +313,6 @@ func TestOIDC_LinkSuccessAndIdempotent(t *testing.T) {
 	e.seedLocalLogin(t, id, "bob", "bob password here")
 	cookie := sessionCookie(e.login(t, "bob", "bob password here"))
 
-	// First link: writes the identity, lands on settings?linked=1.
 	state, nonce, tx := e.begin(t, "/api/v1/auth/oidc/link", cookie)
 	e.idp.setIDToken(t, idTokenClaims{Sub: "bob-sub", Aud: testOIDCClientID, Nonce: nonce, Email: "bob@example.com"})
 	resp := e.callback(t, "code=abc&state="+state, tx, cookie)
@@ -340,7 +324,6 @@ func TestOIDC_LinkSuccessAndIdempotent(t *testing.T) {
 		t.Fatalf("after link identities = %d, want 1", n)
 	}
 
-	// Re-linking the same identity is idempotent success, not a conflict.
 	state2, nonce2, tx2 := e.begin(t, "/api/v1/auth/oidc/link", cookie)
 	e.idp.setIDToken(t, idTokenClaims{Sub: "bob-sub", Aud: testOIDCClientID, Nonce: nonce2, Email: "bob@example.com"})
 	resp2 := e.callback(t, "code=abc&state="+state2, tx2, cookie)
@@ -355,11 +338,9 @@ func TestOIDC_LinkSuccessAndIdempotent(t *testing.T) {
 
 func TestOIDC_LinkConflictWritesNothing(t *testing.T) {
 	e := setupOIDCApp(t)
-	// Carol already owns the identity.
 	carol := e.seedMember(t, "Carol", "member")
 	e.linkIdentity(t, carol, "shared-sub", "carol@example.com")
 
-	// Dave, logged in, tries to link the same (issuer, subject).
 	dave := e.seedMember(t, "Dave", "member")
 	e.seedLocalLogin(t, dave, "dave", "dave password here")
 	cookie := sessionCookie(e.login(t, "dave", "dave password here"))
@@ -370,7 +351,6 @@ func TestOIDC_LinkConflictWritesNothing(t *testing.T) {
 	if got := locationError(t, resp); got != errOIDCLinkConflict {
 		t.Fatalf("error bucket = %q, want %q", got, errOIDCLinkConflict)
 	}
-	// Still exactly one identity, still Carol's.
 	if n := e.countIdentities(t); n != 1 {
 		t.Fatalf("after conflict identities = %d, want 1", n)
 	}
@@ -419,7 +399,6 @@ func TestOIDC_ClaimLinksConsumesMints(t *testing.T) {
 	if sessionCookieValue(resp) == "" {
 		t.Fatal("claim minted no session")
 	}
-	// Identity linked to the placeholder.
 	oi, err := e.identities.FindByUserID(context.Background(), placeholder)
 	if err != nil {
 		t.Fatalf("find claimed identity: %v", err)
@@ -427,7 +406,6 @@ func TestOIDC_ClaimLinksConsumesMints(t *testing.T) {
 	if oi.Subject != "frank-sub" {
 		t.Fatalf("linked subject = %q, want frank-sub", oi.Subject)
 	}
-	// Invite consumed → now reads as already-used.
 	if _, err := e.h.invites.Validate(context.Background(), raw); err != auth.ErrInviteUsed {
 		t.Fatalf("invite after claim = %v, want ErrInviteUsed", err)
 	}
@@ -470,7 +448,6 @@ func TestOIDC_PasswordResetClaimDoesNotOfferOrStartSSO(t *testing.T) {
 func TestOIDC_ClaimConflictDoesNotConsume(t *testing.T) {
 	e := setupOIDCApp(t)
 	admin := e.seedMember(t, "Admin", "admin")
-	// The identity is already linked to someone else.
 	other := e.seedMember(t, "Gwen", "member")
 	e.linkIdentity(t, other, "taken-sub", "gwen@example.com")
 
@@ -490,11 +467,9 @@ func TestOIDC_ClaimConflictDoesNotConsume(t *testing.T) {
 	if sessionCookieValue(resp) != "" {
 		t.Fatal("conflicting claim minted a session")
 	}
-	// Invite NOT consumed: still validatable (placeholder mode).
 	if _, err := e.h.invites.Validate(context.Background(), raw); err != nil {
 		t.Fatalf("invite after conflict = %v, want still valid", err)
 	}
-	// Placeholder gained no identity.
 	if _, err := e.identities.FindByUserID(context.Background(), placeholder); err == nil {
 		t.Fatal("conflicting claim linked the placeholder")
 	}
@@ -509,7 +484,6 @@ func TestOIDC_UnlinkSelfLastCredentialGuard(t *testing.T) {
 		t.Fatalf("mint session: %v", err)
 	}
 
-	// Only credential is the identity: self-unlink is refused with 409.
 	resp := e.request(t, http.MethodDelete, "/api/v1/auth/linked-identity", raw, nil)
 	if resp.StatusCode != fiber.StatusConflict {
 		t.Fatalf("last-credential unlink = %d, want 409", resp.StatusCode)
@@ -518,7 +492,6 @@ func TestOIDC_UnlinkSelfLastCredentialGuard(t *testing.T) {
 		t.Fatalf("refused unlink still removed the identity (count %d)", n)
 	}
 
-	// Add a local login, and now the unlink succeeds.
 	e.seedLocalLogin(t, member, "zoe", "zoe password here")
 	resetToken, err := e.h.invites.IssuePasswordReset(context.Background(), member, member)
 	if err != nil {
@@ -549,8 +522,7 @@ func TestOIDC_UnlinkAdminAndForbidden(t *testing.T) {
 		t.Fatalf("mint target session: %v", err)
 	}
 
-	// Admin removes another member's identity even though it's their last
-	// credential (they fall back to a placeholder): 204.
+	// An admin may remove a member's last credential; the member becomes a placeholder.
 	del := e.request(t, http.MethodDelete, "/api/v1/members/"+strconv.Itoa(target)+"/linked-identity", adminCookie, nil)
 	if del.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("admin unlink = %d, want 204", del.StatusCode)
@@ -562,7 +534,6 @@ func TestOIDC_UnlinkAdminAndForbidden(t *testing.T) {
 		t.Fatalf("session after last identity removal = %d, want 401", old.StatusCode)
 	}
 
-	// A non-admin is forbidden.
 	nonAdmin := e.seedMember(t, "Jack", "member")
 	e.seedLocalLogin(t, nonAdmin, "jack", "jack password ok")
 	jackCookie := e.login(t, "jack", "jack password ok")
@@ -607,13 +578,8 @@ func TestOIDC_RoutesAbsentWhenDisabled(t *testing.T) {
 	}
 }
 
-// corruptSealed decodes a base64url-encoded AEAD cookie, flips a byte inside the
-// decoded sealed bytes, and re-encodes it. Mutating a decoded byte (here the
-// first, part of the GCM nonce) guarantees Open fails its auth check, unlike
-// flipping the last base64 character: that final char carries only the trailing
-// 2-4 significant bits of the payload, and the rest are discarded on decode, so
-// on some random keys/nonces it decodes to the same bytes and Open still
-// succeeds. That base64-boundary luck is what made the test flaky.
+// corruptSealed flips a decoded byte of an AEAD cookie. Flipping the last base64
+// character is flaky: its discarded bits can decode to the same bytes.
 func corruptSealed(t *testing.T, s string) string {
 	t.Helper()
 	raw, err := base64.RawURLEncoding.DecodeString(s)

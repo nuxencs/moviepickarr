@@ -11,28 +11,23 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// maxPoolSize is the per-user cap on pooled movies. It is enforced atomically
-// at the repository layer (see PromoteToPoolIfRoom) so concurrent promotions
-// cannot overshoot it.
+// maxPoolSize is the per-user pool cap, enforced atomically by
+// PromoteToPoolIfRoom so concurrent promotions cannot overshoot it.
 const maxPoolSize = 3
 
-// DefaultAutoRevealDelay is how long after a draw the reveal fires by itself
-// when no client confirms. The server owns this deadline outright: it rides
-// every draw payload as `revealAt`, and clients derive their confirm
-// countdown from it: there is no client-side copy to keep in sync.
+// DefaultAutoRevealDelay is how long after a draw the reveal fires by itself.
+// Clients read it only through the `revealAt` payload field.
 const DefaultAutoRevealDelay = 16500 * time.Millisecond
 
-// A fired time.AfterFunc cannot be reused. When its durable Reveal write fails,
-// schedule a small bounded retry instead of leaving autoRevealArmed true for a
-// timer that has already completed. The admin error hook still receives every
-// failure, and a manual confirm can succeed between retries.
+// A fired time.AfterFunc cannot be reused, so a failed durable Reveal gets a
+// bounded retry timer.
 const (
 	autoRevealRetryDelay = time.Second
 	maxAutoRevealRetries = 3
 )
 
-// watchCurrentDrawStore is the consumer-side port for watching the Current
-// draw. A watch that reveals the draw also commits the next-up handoff.
+// watchCurrentDrawStore watches the Current draw. A watch that reveals the draw
+// also commits the next-up handoff.
 type watchCurrentDrawStore interface {
 	WatchCurrentDraw(
 		ctx context.Context,
@@ -41,9 +36,8 @@ type watchCurrentDrawStore interface {
 	) (watched *domain.Movie, next *domain.User, err error)
 }
 
-// editMovieStore is the transaction-bound edit command. Ownership, watched
-// state, movie fields, enrichment staleness, and the response read share one
-// writer transaction so a failed edit has no durable fragment.
+// editMovieStore runs the whole edit in one writer transaction, so a failed
+// edit leaves no durable fragment.
 type editMovieStore interface {
 	EditMovie(
 		ctx context.Context,
@@ -54,11 +48,8 @@ type editMovieStore interface {
 	) (movie *domain.Movie, identityChanged bool, err error)
 }
 
-// drawLifecycleStore owns the durable half of Draw and Reveal. StartDraw commits
-// the movie's pool -> current transition and its concealed Pending acquisition
-// together. RevealDrawAndAdvanceNextUp persists the visibility boundary and the
-// next-up handoff before any in-memory flip or client publication.
-// ConcealedCurrentDraw restores a draw whose process was restarted before Reveal.
+// drawLifecycleStore owns the durable half of Draw and Reveal. Each write
+// commits before any in-memory flip or client publication.
 type drawLifecycleStore interface {
 	StartDraw(
 		ctx context.Context,
@@ -93,72 +84,53 @@ type movieStore interface {
 	wildcardLifecycleStore
 }
 
-// ActiveDraw records the most recent random draw so a reloading client, one
-// that joined late, or one that dropped the SSE event can resume the draw-reveal
-// spin instead of jumping straight to the result. A concealed draw is restored
-// from its durable Acquisition after a server restart.
+// ActiveDraw records the most recent draw so a reloading or late client can
+// resume the reel instead of jumping to the result.
 type ActiveDraw struct {
 	MovieID int
-	// Generation binds post-publication timer arming and stale deadline
-	// callbacks to this exact process-local draw.
+	// Generation binds timer arming and stale deadline callbacks to this draw.
 	Generation uint64
 	DrawnAt    time.Time
-	// RevealAt is the server's auto-reveal deadline: the instant the reveal
-	// fires by itself if no client confirms first. Clients time the confirm
-	// countdown off it (revealAt − serverNow, immune to client clock skew).
+	// RevealAt is the auto-reveal deadline. Clients time the countdown as
+	// revealAt - serverNow, immune to client clock skew.
 	RevealAt time.Time
-	// DrawClientID is the client that clicked Draw. Only that client shows the
-	// reel's confirm button; everyone else's reel closes when the draw is revealed.
+	// DrawClientID is the client that clicked Draw; only it shows the confirm button.
 	DrawClientID string
-	// Revealed flips true once the draw has been confirmed (drawer pressed the
-	// button or its countdown filled). A reload then shows the result directly
-	// instead of re-opening the reel.
-	Revealed bool
+	Revealed     bool
 }
 
-// Reveal is one committed Reveal: the draw it flipped, plus the member the turn
-// passed to (nil when the turn stayed put).
+// Reveal is one committed Reveal. NextUp is nil when the turn stayed put.
 type Reveal struct {
 	ActiveDraw
 	NextUp *domain.User
 }
 
-// DrawResult is the complete publication snapshot of one successful draw.
-// Candidates is the exact pool that was eligible before the winner became
-// current. ActiveDraw is copied from the same lock boundary, so callers never
-// have to reconstruct either value after later pool mutations can proceed.
+// DrawResult is the publication snapshot of one draw, taken under one lock so
+// later pool mutations cannot change it.
 type DrawResult struct {
 	Movie      *domain.Movie
 	Candidates []*domain.Movie
 	ActiveDraw ActiveDraw
 }
 
-// DrawConfig wires the server-owned auto-reveal into the Service. The zero
-// value works for callers that don't care about the reveal (unit tests):
-// the default delay applies and a nil OnRevealed just isn't notified.
+// DrawConfig wires the auto-reveal into the Service. The zero value is valid.
 type DrawConfig struct {
 	// AutoRevealDelay overrides DefaultAutoRevealDelay when > 0.
 	AutoRevealDelay time.Duration
-	// RandomIndex chooses one candidate index in [0, n). Nil uses the process
-	// random source. Tests inject it to make selection deterministic.
+	// RandomIndex returns an index in [0, n). Nil uses the process random source.
 	RandomIndex func(n int) int
-	// StartTimer schedules fn asynchronously once after d and returns a stop
-	// func. Nil uses time.AfterFunc; tests inject their own to drive the
-	// deadline by hand.
+	// StartTimer runs fn once after d. Nil uses time.AfterFunc.
 	StartTimer func(d time.Duration, fn func()) (stop func())
-	// OnRevealed observes every reveal flip (manual confirm, auto-reveal, or an
-	// early watch) exactly once per draw, after its next-up handoff commits. The
-	// server wires it to the movie:revealed and settings:next-up-changed
-	// broadcasts so every client closes its reel off one frame.
+	// OnRevealed runs exactly once per draw, after its next-up handoff commits.
+	// The server wires it to the movie:revealed and settings:next-up-changed
+	// broadcasts.
 	OnRevealed func(Reveal)
-	// OnRevealError observes a failed durable Reveal. The active draw stays
-	// unrevealed and no OnRevealed callback runs. Nil is allowed.
+	// OnRevealError observes a failed durable Reveal; the draw stays unrevealed.
 	OnRevealError func(error)
 }
 
-// Service owns the movie lifecycle: stash/pool moves, watched history, and the
-// whole draw lifecycle: the in-memory active draw, the auto-reveal deadline
-// and its timer, and the reveal-once flip behind the cross-client reveal.
+// Service owns the movie lifecycle, including the in-memory active draw and
+// its auto-reveal timer.
 type Service struct {
 	movieRepo movieStore
 	drawCfg   DrawConfig
@@ -169,9 +141,7 @@ type Service struct {
 	autoRevealArmed   bool
 	autoRevealRetries int
 	closed            bool
-	// drawGen counts draws so an auto-reveal timer can confine itself to the
-	// draw it was armed for: a watch + fresh draw bumps it, so a stale timer
-	// that already fired reveals nothing instead of the replacement draw.
+	// drawGen keeps a stale auto-reveal timer from revealing a replacement draw.
 	drawGen uint64
 }
 
@@ -208,10 +178,8 @@ func NewServiceChecked(movieRepo movieStore, drawCfg DrawConfig) (*Service, erro
 	return service, nil
 }
 
-// resumeConcealedDraw restores the one durable draw that did not cross Reveal
-// before a restart. The persisted deadline remains authoritative. An elapsed
-// deadline schedules immediately; a future deadline keeps the Held draw hidden
-// until its remaining time passes.
+// resumeConcealedDraw restores a draw that was not revealed before a restart.
+// The persisted deadline stays authoritative.
 func (s *Service) resumeConcealedDraw(ctx context.Context) error {
 	movieID, drawnAt, revealAt, clientID, found, err := s.movieRepo.ConcealedCurrentDraw(ctx)
 	if err != nil {
@@ -242,8 +210,7 @@ func (s *Service) notifyRevealError(err error) {
 	}
 }
 
-// Close permanently stops auto-reveal scheduling and drops any pending timer;
-// used on server shutdown.
+// Close permanently stops auto-reveal scheduling on server shutdown.
 func (s *Service) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -251,10 +218,8 @@ func (s *Service) Close() {
 	s.cancelAutoRevealLocked()
 }
 
-// armAutoRevealLocked (re)arms the auto-reveal for the active draw. There is
-// only ever one active draw, so a prior pending timer is stopped first. The
-// timer is bound to gen (the draw's generation) so that when it fires it only
-// reveals that draw, never one that replaced it. Callers hold s.mu.
+// armAutoRevealLocked replaces any pending timer with one bound to draw gen.
+// Callers hold s.mu.
 func (s *Service) armAutoRevealLocked(gen uint64) {
 	s.cancelAutoRevealLocked()
 	delay := max(time.Until(s.activeDraw.RevealAt), 0)
@@ -265,17 +230,14 @@ func (s *Service) armAutoRevealLocked(gen uint64) {
 // counter. Callers hold s.mu and have already retired any previous timer.
 func (s *Service) scheduleAutoRevealLocked(gen uint64, delay time.Duration) {
 	s.stopAutoReveal = s.drawCfg.StartTimer(delay, func() {
-		// Guarded by gen: a late manual confirm, a watch, or a watch-then-redraw
-		// all leave this deadline a harmless no-op.
 		_, _, _ = s.revealActive(context.Background(), gen, true)
 	})
 	s.autoRevealArmed = true
 }
 
-// retryAutoRevealLocked retires the one-shot timer that just failed and, while
-// this exact draw remains active, schedules a bounded retry. Once the retry
-// budget is exhausted autoRevealArmed stays false, so state never claims that a
-// dead timer is still responsible for the Reveal.
+// retryAutoRevealLocked retires the failed one-shot timer and schedules a
+// bounded retry while draw gen is still active. Once the budget is spent,
+// autoRevealArmed stays false so state never points at a dead timer.
 func (s *Service) retryAutoRevealLocked(gen uint64) {
 	s.stopAutoReveal = nil
 	s.autoRevealArmed = false
@@ -291,9 +253,7 @@ func (s *Service) retryAutoRevealLocked(gen uint64) {
 	s.scheduleAutoRevealLocked(gen, autoRevealRetryDelay)
 }
 
-// cancelAutoRevealLocked stops a pending auto-reveal: a manual confirm won
-// the race, the draw was watched, or the server is shutting down. Callers
-// hold s.mu.
+// cancelAutoRevealLocked stops a pending auto-reveal. Callers hold s.mu.
 func (s *Service) cancelAutoRevealLocked() {
 	if s.stopAutoReveal != nil {
 		s.stopAutoReveal()
@@ -314,12 +274,10 @@ func (s *Service) AddToStash(
 }
 
 // MoveToPool promotes a stashed movie into its owner's pool. It is idempotent
-// (already-pooled is a no-op) and reports whether a real transition happened.
+// and reports whether a real transition happened.
 func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
-	// The held-draw snapshot and the promotion must sit on one side of draw
-	// publication. Otherwise a draw can remove one DB pool row after this method
-	// derives maxPoolSize, letting the held winner plus the promoted rows exceed
-	// the member's cap.
+	// Hold the lock so a draw cannot land between the limit and the promotion
+	// and let the held winner push the member over the cap.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -336,11 +294,8 @@ func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
 		return true, nil
 	}
 
-	// No row transitioned. Disambiguate against committed state: a movie already
-	// in the pool (e.g. a duplicate click that lost the race) is an idempotent
-	// no-op; so is the active held winner, which every client-facing read still
-	// projects into that pool. A still-stashed movie means the pool cap was hit;
-	// any other status is an illegal source for a promotion.
+	// No row transitioned. The held winner counts as already pooled, since every
+	// client-facing read still shows it there.
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return false, err
@@ -360,11 +315,9 @@ func (s *Service) MoveToPool(ctx context.Context, id int) (bool, error) {
 	}
 }
 
-// poolLimitLocked is the per-user pool cap as it applies to promoting movie id.
-// A held draw (see withHeldDraw) still occupies a tile in its adder's pool, so
-// it has to keep costing them a slot: counting only the rows with status "pool"
-// would hand that member a free fourth movie for the length of every draw.
-// Callers hold s.mu through the resulting promotion.
+// poolLimitLocked is the pool cap for promoting movie id. A held draw still
+// costs its adder a slot, or they would get a free fourth movie during every
+// draw. Callers hold s.mu through the promotion.
 func (s *Service) poolLimitLocked(ctx context.Context, id int) (int, error) {
 	held, ok := s.heldDrawLocked()
 	if !ok {
@@ -393,17 +346,11 @@ func (s *Service) poolLimitLocked(ctx context.Context, id int) (int, error) {
 }
 
 // MoveToStash demotes a pooled movie back to the stash. Idempotent; reports
-// whether a real transition happened.
-//
-// While a draw is unrevealed the whole pool is frozen: the held winner sits in
-// the pool as a normal tile but is really "current", so demoting it would fail
-// where every other tile succeeds — and that difference tells whoever tries
-// which movie was drawn, before the reel lands. One answer for every tile keeps
-// the draw secret, and the pool the reel is spinning over stays put.
+// whether a real transition happened. During an unrevealed draw every pool tile
+// refuses alike, so a failed demotion cannot reveal which movie was drawn.
 func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
-	// Serialize the draw-state decision through the status transition. A draw
-	// that wins this lock freezes every pool tile; a demotion that wins changes
-	// the candidate set before the draw selects from it.
+	// Hold the lock through the status flip so a draw cannot select from a pool
+	// this demotion is about to change.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -425,8 +372,6 @@ func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
 		return true, nil
 	}
 
-	// No row transitioned: already-stashed is an idempotent no-op, anything else
-	// (watched/current/missing) is an illegal source for a demotion.
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
 		return false, err
@@ -437,13 +382,11 @@ func (s *Service) MoveToStash(ctx context.Context, id int) (bool, error) {
 	return false, domain.ErrInvalidState
 }
 
-// Delete removes a stash or pool row. poolLocked is the pool lock, read by the
-// caller (the move handler reads it the same way): the ordering of the two
-// refusals belongs here, next to the draw the service owns.
+// Delete removes a stash or pool row. The caller reads poolLocked; the order of
+// the two refusals lives here, next to the draw.
 func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
-	// Keep the lifecycle read and delete on one side of draw publication. In
-	// particular, a stale "pool" read must never authorize deleting a winner
-	// after DrawRandom has persisted it as current.
+	// A stale "pool" read must never authorize deleting a winner DrawRandom
+	// has already persisted as current.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -452,17 +395,13 @@ func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
 		return err
 	}
 
-	// Same reasoning as MoveToStash: while a draw is unrevealed, every pool tile
-	// answers alike (the held winner included, which is why this runs before the
-	// status check below — it is "current", not "pool"). Stashes stay deletable.
+	// As in MoveToStash. Runs before the status check because the held winner
+	// is "current", not "pool".
 	if held, ok := s.heldDrawLocked(); ok && (movie.Status == "pool" || movie.ID == held.MovieID) {
 		return domain.ErrDrawInProgress
 	}
 
-	// A locked pool has a fixed set of candidates, and deleting a pooled movie
-	// shrinks it just as surely as demoting one does, so the lock refuses both.
-	// The stash sits outside it: adds aren't lock-checked, so deletes aren't
-	// either.
+	// Stash adds are not lock-checked, so stash deletes are not either.
 	if poolLocked && movie.Status == "pool" {
 		return domain.ErrPoolLocked
 	}
@@ -492,12 +431,8 @@ func (s *Service) Get(ctx context.Context, id int) (*domain.Movie, error) {
 	return s.movieRepo.FindByID(ctx, id)
 }
 
-// GetForDisplay returns one movie as clients may see it. A held winner still
-// reads as pooled until reveal, matching every pool listing and preventing the
-// detail endpoint from identifying it while the reel is in flight.
-//
-// Command handlers use Get instead: authorization and mutations need the
-// persisted lifecycle state, not this display projection.
+// GetForDisplay returns one movie as clients may see it: a held winner reads as
+// pooled until reveal. Commands use Get, which returns the persisted state.
 func (s *Service) GetForDisplay(ctx context.Context, id int) (*domain.Movie, error) {
 	movie, err := s.movieRepo.FindByID(ctx, id)
 	if err != nil {
@@ -516,9 +451,8 @@ func (s *Service) List(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.List(ctx)
 }
 
-// Pooled is the pool as clients may see it, which is not the same as the rows
-// with status "pool": a drawn-but-unrevealed movie is held in it (see
-// withHeldDraw). Everything that renders a pool reads through here.
+// Pooled is the pool as clients may see it, including the held draw (see
+// withHeldDraw).
 func (s *Service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 	movies, err := s.movieRepo.FindByStatus(ctx, "pool")
 	if err != nil {
@@ -528,16 +462,13 @@ func (s *Service) Pooled(ctx context.Context) ([]*domain.Movie, error) {
 	return s.withHeldDraw(ctx, movies, 0)
 }
 
-// heldDraw returns the active draw while it is still unrevealed: the window in
-// which the pool must not give the winner away. Everything that has to behave
-// differently during the ceremony asks here.
+// heldDraw returns the active draw while it is still unrevealed.
 func (s *Service) heldDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.heldDrawLocked()
 }
 
-// heldDrawLocked is heldDraw for callers that already own s.mu.
 func (s *Service) heldDrawLocked() (ActiveDraw, bool) {
 	if s.activeDraw == nil || s.activeDraw.Revealed {
 		return ActiveDraw{}, false
@@ -545,15 +476,13 @@ func (s *Service) heldDrawLocked() (ActiveDraw, bool) {
 	return *s.activeDraw, true
 }
 
-// isNotFound covers both shapes a repo may report a missing row with: the sqlite
-// repo wraps the miss as domain.ErrNotFound, others return sql.ErrNoRows bare.
+// isNotFound accepts the sqlite repo's domain.ErrNotFound and a bare sql.ErrNoRows.
 func isNotFound(err error) bool {
 	return errors.Is(err, domain.ErrNotFound) || errors.Is(err, sql.ErrNoRows)
 }
 
-// asHeldPoolMovie projects the active unrevealed winner into the pool without
-// mutating the repository-owned record. The bool reports whether projection
-// happened.
+// asHeldPoolMovie returns a pooled copy of the held winner and reports whether
+// it projected. The repository record stays untouched.
 func asHeldPoolMovie(movie *domain.Movie, held ActiveDraw) (*domain.Movie, bool) {
 	if movie.ID != held.MovieID || movie.Status != "current" {
 		return movie, false
@@ -619,21 +548,10 @@ func (s *Service) MarkActiveWildcardWatched(ctx context.Context, expectedWildcar
 	return s.movieRepo.WatchWildcard(ctx, expectedWildcardID, time.Now().UTC())
 }
 
-// withHeldDraw puts a drawn-but-unrevealed movie back into a pool listing.
-//
-// DrawRandom flips the winner to "current" the moment it draws, so every pool
-// read loses that tile immediately — while the reel is still spinning. Clients
-// that were already on the page don't notice (their cached pool isn't refreshed
-// until the reel lands), but a reload mid-spin, or any client opening the board
-// during the draw, fetches the post-draw pool and the missing tile gives the
-// winner away before the reveal. Holding the movie in the view until the draw
-// is revealed makes the pool read the same for everyone, whatever their cache
-// state, and the reveal-time refresh drops it.
-//
-// The row keeps its DB status ("current", so it can't be drawn again), only the
-// copy handed out reads as pooled; callers bucket on Status. userID scopes the
-// hold to one member's pool (0 = the whole pool). The movie is inserted in
-// title order, matching the repo's sort, so the tile doesn't jump to the end.
+// withHeldDraw puts a drawn-but-unrevealed movie back into a pool listing, so
+// a reload mid-spin cannot spot the winner by its missing tile. Only the copy
+// reads as pooled; the row stays "current". userID 0 means the whole pool. The
+// insert keeps the repo's title order.
 func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, userID int) ([]*domain.Movie, error) {
 	held, ok := s.heldDraw()
 	if !ok {
@@ -642,8 +560,7 @@ func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, user
 
 	movie, err := s.movieRepo.FindByID(ctx, held.MovieID)
 	if err != nil {
-		// The draw is in memory and the row is not: a deleted movie mid-draw.
-		// The listing is still correct without it, so don't fail the read.
+		// Movie deleted mid-draw: the listing is still correct without it.
 		if isNotFound(err) {
 			return pooled, nil
 		}
@@ -656,8 +573,7 @@ func (s *Service) withHeldDraw(ctx context.Context, pooled []*domain.Movie, user
 	if !ok {
 		return pooled, nil
 	}
-	// A draw that landed between the listing query and the read above leaves the
-	// row in both: hand it out once.
+	// A draw between the listing query and the read above puts the row in both.
 	for _, m := range pooled {
 		if m.ID == movie.ID {
 			return pooled, nil
@@ -690,8 +606,8 @@ func (s *Service) Current(ctx context.Context) (*domain.Movie, error) {
 	return s.movieRepo.GetCurrent(ctx)
 }
 
-// PooledByUserID is one member's slice of the same view: the held draw shows up
-// only in its own adder's pool.
+// PooledByUserID is Pooled for one member; the held draw shows only in its
+// adder's pool.
 func (s *Service) PooledByUserID(ctx context.Context, userID int) ([]*domain.Movie, error) {
 	movies, err := s.movieRepo.FindByUserIDAndStatus(ctx, userID, "pool")
 	if err != nil {
@@ -710,13 +626,11 @@ func (s *Service) StashedByUserID(ctx context.Context, userID int) ([]*domain.Mo
 	return movies, nil
 }
 
-// DrawRandom selects a random pooled movie as the current draw. clientID is
-// the opaque id of the client that initiated the draw (see ActiveDraw). It
-// gates who sees the reel's confirm button; "" is acceptable (no drawer).
+// DrawRandom selects a random pooled movie as the current draw. clientID is the
+// drawer (see ActiveDraw); "" means no drawer.
 func (s *Service) DrawRandom(ctx context.Context, clientID string) (*DrawResult, error) {
-	// Keep the persisted status flip and the in-memory hold one publication.
-	// Client-facing reads may query the repository concurrently, but they block
-	// on heldDraw before returning and therefore see either side in full.
+	// Concurrent reads block on heldDraw, so they see the status flip and the
+	// in-memory hold together or neither.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -738,9 +652,8 @@ func (s *Service) DrawRandom(ctx context.Context, clientID string) (*DrawResult,
 		return nil, domain.ErrCurrentDrawExists
 	}
 
-	// Detach the candidate snapshot before UpdateStatus. Repository fakes may
-	// expose shared movie pointers, and a later promotion or edit must not mutate
-	// the already-published reel through an alias.
+	// Clone, as repo fakes share pointers and a later edit must not mutate the
+	// published reel.
 	candidates := make([]*domain.Movie, len(pooled))
 	for i, candidate := range pooled {
 		candidates[i] = cloneMovieSnapshot(candidate)
@@ -775,11 +688,9 @@ func (s *Service) DrawRandom(ctx context.Context, clientID string) (*DrawResult,
 	}, nil
 }
 
-// StartAutoReveal arms the deadline for the active draw after its movie:drawn
-// event has been published. Deferring the timer until that boundary prevents a
-// short deadline or slow payload build from broadcasting movie:revealed first.
-// The deadline stays anchored to DrawnAt; publication time is subtracted rather
-// than granting a fresh delay. Stale, duplicate, and post-Close calls are no-ops.
+// StartAutoReveal arms the deadline after movie:drawn is published, so
+// movie:revealed can never go out first. The deadline stays anchored to
+// DrawnAt. Stale, duplicate, and post-Close calls are no-ops.
 func (s *Service) StartAutoReveal(movieID int, generation uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -797,13 +708,10 @@ func (s *Service) StartAutoReveal(movieID int, generation uint64) {
 }
 
 // MarkCurrentAsWatched persists the watched movie. Watching an unrevealed draw
-// is also its Reveal, so that path commits the next-up handoff in the same
-// transaction. The active draw stays untouched until that transaction commits,
-// so a failed watch remains retryable and emits no reveal.
+// is also its Reveal and commits the next-up handoff in the same transaction.
 func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, error) {
-	// Hold the draw mutex across the durable transition and its in-memory
-	// counterpart. The timer may wait here, but can never reveal a transaction
-	// that later rolls back.
+	// Held across the transaction so the timer can never reveal a draw whose
+	// watch later rolls back.
 	s.mu.Lock()
 	revealsDraw := s.activeDraw != nil && !s.activeDraw.Revealed
 	watched, next, err := s.movieRepo.WatchCurrentDraw(ctx, time.Now().UTC(), revealsDraw)
@@ -819,11 +727,10 @@ func (s *Service) MarkCurrentAsWatched(ctx context.Context) (*domain.Movie, erro
 	return watched, nil
 }
 
-// finishWatchLocked applies the process-local half of a committed watch.
-// Callers hold s.mu and notify OnRevealed only after releasing it.
+// finishWatchLocked applies the in-memory half of a committed watch. Callers
+// hold s.mu and notify OnRevealed only after releasing it.
 func (s *Service) finishWatchLocked() *ActiveDraw {
-	// An early watch is also a reveal for clients still running the reel. Mark
-	// it before clearing so this path and the timer/manual paths notify once.
+	// Mark revealed before clearing so the timer and manual paths do not notify again.
 	var revealed *ActiveDraw
 	if s.activeDraw != nil && !s.activeDraw.Revealed {
 		s.activeDraw.Revealed = true
@@ -841,10 +748,7 @@ func (s *Service) notifyWatchReveal(revealed *ActiveDraw, next *domain.User) {
 	}
 }
 
-// ActiveDraw reports the in-flight draw (movie id + when it was drawn) that
-// drives the cross-client draw-reveal spin, or ok=false when none is active
-// (no current draw, or the current draw was already marked watched). A server
-// restart restores a concealed draw from its durable Acquisition.
+// ActiveDraw reports the in-flight draw, or ok=false when none is active.
 func (s *Service) ActiveDraw() (ActiveDraw, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -854,38 +758,29 @@ func (s *Service) ActiveDraw() (ActiveDraw, bool) {
 	return *s.activeDraw, true
 }
 
-// DrawInProgress reports whether the pool is held for an unrevealed draw.
-// Unlike the client reel phase, this is the server-owned mutation gate: it is
-// true even when reduced motion or a lone candidate skips the animation.
+// DrawInProgress reports whether the pool is held for an unrevealed draw. It is
+// true even when the client skips the reel animation.
 func (s *Service) DrawInProgress() bool {
 	_, ok := s.heldDraw()
 	return ok
 }
 
-// RevealCurrentDraw marks the active draw as revealed: the drawer confirmed,
-// or the auto-reveal deadline fired. The flip happens at most once per draw:
-// the winning call cancels the pending timer and notifies OnRevealed exactly
-// once; a duplicate confirm is a silent no-op. It reports the draw plus
-// whether this call flipped it; ok=false when there's no active draw or it
-// was already revealed.
+// RevealCurrentDraw reveals the active draw at most once and reports whether
+// this call flipped it. A duplicate confirm is a silent no-op.
 func (s *Service) RevealCurrentDraw() (ActiveDraw, bool) {
 	ap, flipped, _ := s.RevealCurrentDrawContext(context.Background())
 	return ap, flipped
 }
 
-// RevealCurrentDrawContext is RevealCurrentDraw with a caller-owned context and
-// a durable error result. Kept beside the compatibility wrapper so handlers can
-// adopt explicit error reporting without changing the reveal-once semantics.
+// RevealCurrentDrawContext is RevealCurrentDraw with a context and the durable
+// error.
 func (s *Service) RevealCurrentDrawContext(ctx context.Context) (ActiveDraw, bool, error) {
 	return s.revealActive(ctx, 0, false)
 }
 
-// revealActive flips the active draw to revealed, cancels its pending timer,
-// and notifies OnRevealed exactly once. When requireGen is set it only
-// proceeds while the active draw is still generation gen (the draw the
-// auto-reveal timer was armed for) so a stale deadline can't reveal a
-// replacement. Manual confirms pass requireGen=false: they target whatever
-// draw is current.
+// revealActive reveals the active draw and notifies OnRevealed exactly once.
+// With requireGen it reveals only draw gen, so a stale timer cannot reveal a
+// replacement; manual confirms target whatever draw is current.
 func (s *Service) revealActive(ctx context.Context, gen uint64, requireGen bool) (ActiveDraw, bool, error) {
 	s.mu.Lock()
 	if s.activeDraw == nil ||
@@ -895,9 +790,7 @@ func (s *Service) revealActive(ctx context.Context, gen uint64, requireGen bool)
 		return ActiveDraw{}, false, nil
 	}
 
-	// The durable boundary comes first. If it fails, the draw stays held and
-	// clients receive no Reveal publication. A failed auto-reveal retires its
-	// spent one-shot timer and schedules a bounded retry.
+	// Durable write first: on failure the draw stays held and nothing is published.
 	next, err := s.movieRepo.RevealDrawAndAdvanceNextUp(ctx, s.activeDraw.MovieID, time.Now().UTC())
 	if err != nil {
 		if requireGen {

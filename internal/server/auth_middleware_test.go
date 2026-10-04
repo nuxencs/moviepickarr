@@ -31,10 +31,9 @@ type fakeClock struct{ t time.Time }
 
 func (c *fakeClock) now() time.Time { return c.t }
 
-// setupSessionApp builds a handler over a temp DB with the real auth chain
-// (csrfGuard → requireSession) mounted on /api/v1, mirroring registerRoutes.
-// A test-only /test/login route mints a session (standing in for the later
-// login handlers), and probe routes report the attached actor.
+// setupSessionApp mounts the real auth chain (csrfGuard, requireSession) on
+// /api/v1 as registerRoutes does. /test/login mints a session; probe routes
+// report the attached actor.
 func setupSessionApp(t *testing.T) *sessionTestEnv {
 	t.Helper()
 
@@ -128,7 +127,6 @@ func decodeWhoami(t *testing.T, resp *http.Response) whoamiBody {
 	return body
 }
 
-// sessionClearedBy reports whether a response clears the session cookie.
 func sessionClearedBy(resp *http.Response) bool {
 	for _, cookie := range resp.Cookies() {
 		if cookie.Name == sessionCookieName && cookie.Value == "" {
@@ -371,8 +369,7 @@ func TestCSRF_RejectsForeignOrigin(t *testing.T) {
 func TestCSRF_RunsBeforeRequireSession(t *testing.T) {
 	e := setupSessionApp(t)
 
-	// No session and no origin: CSRF must reject with 403 before the session
-	// check would return 401.
+	// No session and no origin: CSRF rejects with 403 before the session check's 401.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/probe", nil)
 	resp, _ := e.app.Test(req, -1)
 	if resp.StatusCode != fiber.StatusForbidden {

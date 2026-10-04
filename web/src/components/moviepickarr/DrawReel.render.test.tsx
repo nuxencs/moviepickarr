@@ -1,12 +1,5 @@
-/* ============================================================
-   Render tests for the draw reel's mount behaviour.
-
-   The reel's scroll progress is component state and the Movies tab unmounts
-   with the route, so a mount is not always the start of a scroll: switching
-   tabs and coming back mounts a fresh reel onto a draw that has already moved
-   on. There's no pure seam below that (it IS the mount), so it's tested here,
-   through what a member sees: the label, the Skip control, and the OK confirm.
-   ============================================================ */
+/* Render tests for the draw reel's mount behaviour. The Movies tab unmounts
+   with the route, so a mount can land mid-draw rather than at the scroll start. */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -63,8 +56,6 @@ function renderReel(props: Partial<Parameters<typeof DrawReel>[0]> = {}) {
   return { ...view, onScrollDone, onConfirm };
 }
 
-/** Let the reel's timers run: the scroll's own settle timer fires inside act,
- *  so the render that follows is the one a member would be looking at. */
 const advance = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
 
 /** How long the confirm bar is set to run, in ms. */
@@ -107,8 +98,7 @@ describe("coming back to the Movies tab", () => {
     advance(SPIN_MS + 200);
     expect(ok()).toBeTruthy();
 
-    // Switching tabs unmounts the Hero; switching back mounts a new reel
-    // against the same draw, which the machine now reports as settled.
+    // A tab switch remounts the reel against a draw the machine reports as settled.
     unmount();
     renderReel({ spin: spin(), phase: "settled" });
 
@@ -135,8 +125,7 @@ describe("coming back to the Movies tab", () => {
     const { unmount } = renderReel();
     unmount();
 
-    // Away long enough that the scroll would have finished: nothing was
-    // mounted to notice, so the machine is still spinning and needs telling.
+    // Nothing was mounted to notice the scroll end, so the machine still says spinning.
     advance(SPIN_MS + 1000);
     const { onScrollDone } = renderReel({ spin: spin(), phase: "spinning" });
 

@@ -10,22 +10,14 @@ interface PosterProps {
   title: string;
   hue: number;
   posterPath?: string;
-  /** Show the procedural alt-poster title overlay (hidden in tight rows/slots). */
+  /** Title overlay on the procedural art. */
   showTitle?: boolean;
   /** Render-width hint that opts this poster into compact responsive sources. */
   sizes?: string;
   className?: string;
 }
 
-/**
- * The only real "container" in the design. Renders the TMDB poster when
- * available, otherwise a deterministic procedural duotone with the title
- * baked in as an alt-poster overlay. The CSS supplies the sheen + grain.
- */
-// Memoized: all props are primitives, so identical tiles skip re-rendering when
-// a parent re-renders for an unrelated reason (e.g. typing in the watched-grid
-// search box re-runs the list map but the surviving tiles' Poster props are
-// unchanged).
+// Memoized: all props are primitives, so unchanged tiles skip parent re-renders.
 export const Poster = memo(function Poster({
   title,
   hue,
@@ -38,10 +30,8 @@ export const Poster = memo(function Poster({
   const [loaded, setLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // Instances are keyed by movie id, but a poster path can still arrive/retry
-  // under SSE enrichment — reset on source change. Sync `loaded` from a cached
-  // image's `complete` before paint so an already-loaded photo doesn't flash the
-  // placeholder.
+  // SSE enrichment can change the path under the same key. Read a cached image's
+  // `complete` before paint so a loaded photo does not flash the placeholder.
   useLayoutEffect(() => {
     const img = imgRef.current;
     setImgFailed(false);
@@ -49,9 +39,7 @@ export const Poster = memo(function Poster({
   }, [posterPath]);
 
   const url = imgFailed ? null : posterUrl(posterPath);
-  // The procedural duotone is ALWAYS the backdrop: the loading placeholder until
-  // the photo fades in over it, and the permanent art when there's no/failed
-  // image. `loading` drives the shimmer + the image's opacity fade.
+  // The duotone is always painted: placeholder while loading, art without a photo.
   const loading = url !== null && !loaded;
 
   return (
@@ -75,7 +63,6 @@ export const Poster = memo(function Poster({
 
       {loading && <div className="poster__shimmer" aria-hidden="true" />}
 
-      {/* The alt-poster title only makes sense on the procedural art (no photo). */}
       {showTitle && !url && (
         <div className="poster__title">
           <div className="poster__rule" />

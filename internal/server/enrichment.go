@@ -11,8 +11,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// tmdbAPI is the slice of the TMDB client the enrichment service depends on.
-// *tmdbClient satisfies it; tests substitute a fake.
+// tmdbAPI is the TMDB client slice the enrichment service uses; tests fake it.
 type tmdbAPI interface {
 	FindByIMDb(ctx context.Context, imdbID string) (tmdbMovie, error)
 	MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDetails, error)
@@ -70,7 +69,6 @@ func newEnrichmentService(
 
 var _ Enricher = (*enrichmentService)(nil)
 
-// extractIMDbID pulls the tt-id out of a link, reusing the shared regex.
 func extractIMDbID(link string) string {
 	return strings.ToLower(imdbIDRegex.FindString(link))
 }
@@ -86,8 +84,7 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 	}
 	expected := domain.MovieIdentity{TMDBID: m.TMDBID, IMDbID: m.IMDbID}
 
-	// Prefer the TMDB id already on the movie (search adds, prior enrichment) so
-	// we go straight to details. Otherwise reverse-look-up from the IMDb id.
+	// A stored TMDB id skips the IMDb reverse lookup.
 	tmdbID, ok := movieTMDBID(m)
 	if !ok {
 		imdbID := movieIMDbID(m)
@@ -112,8 +109,7 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 		return enrichResult{}, err
 	}
 
-	// Persist the stable identity on the movie row (idempotent). Prefer the
-	// authoritative imdb_id from details; fall back to what we already had.
+	// Prefer the authoritative imdb_id from details over the stored one.
 	imdbID := extractIMDbID(details.IMDbID)
 	if imdbID == "" {
 		imdbID = movieIMDbID(m)
@@ -140,7 +136,6 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 	return enrichResult{TMDBID: tmdbID, Genres: len(details.Genres), Credits: len(credits)}, nil
 }
 
-// movieTMDBID returns the stored TMDB id, if any.
 func movieTMDBID(m *domain.Movie) (int, bool) {
 	if m.TMDBID != nil {
 		return *m.TMDBID, true
@@ -148,7 +143,6 @@ func movieTMDBID(m *domain.Movie) (int, bool) {
 	return 0, false
 }
 
-// movieIMDbID returns the stored IMDb id, if any.
 func movieIMDbID(m *domain.Movie) string {
 	if m.IMDbID != nil && *m.IMDbID != "" {
 		return extractIMDbID(*m.IMDbID)
@@ -156,8 +150,7 @@ func movieIMDbID(m *domain.Movie) string {
 	return ""
 }
 
-// crewJobWhitelist keeps only the crew roles the UI surfaces; everything else
-// (lighting, sound, ...) is dropped at ingest.
+// crewJobWhitelist is the crew roles the UI shows; the rest is dropped at ingest.
 var crewJobWhitelist = map[string]struct{}{
 	"Director":                {},
 	"Writer":                  {},
@@ -166,10 +159,9 @@ var crewJobWhitelist = map[string]struct{}{
 	"Director of Photography": {},
 }
 
-// mapCredits trims TMDB credits to what we persist: the top castLimit cast
-// members by billing order (0 = full cast; duplicate persons merged, their
-// characters joined with " / ") plus whitelisted crew jobs, deduped per
-// (person, job) so re-listed roles can't violate the movie_credits PK.
+// mapCredits keeps the top castLimit cast (0 = all) and whitelisted crew.
+// Crew dedupes per (person, job) so re-listed roles cannot break the
+// movie_credits PK.
 func mapCredits(movieID int, credits tmdbCredits, castLimit int) []domain.MovieCredit {
 	cast := make([]tmdbCastMember, len(credits.Cast))
 	copy(cast, credits.Cast)
@@ -180,8 +172,7 @@ func mapCredits(movieID int, credits tmdbCredits, castLimit int) []domain.MovieC
 	for i := range cast {
 		m := cast[i]
 		if idx, ok := castIndex[m.ID]; ok {
-			// Same person billed more than once (e.g. dual roles): merge the
-			// characters into the existing row instead of duplicating it.
+			// Dual roles: join the characters into one row.
 			switch {
 			case m.Character == "":
 			case out[idx].Character == "":

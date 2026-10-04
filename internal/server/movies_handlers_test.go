@@ -30,11 +30,9 @@ const (
 	testRoleHeader   = "X-Test-Role"
 )
 
-// mountTestV1 mounts the v1 routes behind a middleware that injects the session
-// actor from test headers, standing in for the real csrfGuard → requireSession
-// chain. Role defaults to admin so admin-gated routes pass. The draw/reveal/watch
-// guard still needs testMemberHeader set to the next-up member, and the
-// adder-only checks compare the same member id.
+// mountTestV1 mounts the v1 routes with the session actor read from test headers
+// in place of csrfGuard and requireSession. Role defaults to admin; draw, reveal,
+// and watch still need testMemberHeader set to the next-up member.
 func mountTestV1(app *fiber.App, h *handler) {
 	v1 := app.Group("/api/v1")
 	v1.Use(func(c *fiber.Ctx) error {
@@ -126,8 +124,7 @@ func TestWildcardLifecycle_AnyMemberPreservesCurrentAndTurn(t *testing.T) {
 		t.Fatalf("close reveal response: %v", err)
 	}
 
-	// Selection is a group action. The member who is not next may select a
-	// direct TMDB title that was not in any member's stash or pool.
+	// Selection is a group action: a member who is not next may pick any TMDB title.
 	selectResp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/wildcard", fmt.Sprintf(`{"hostMovieId":%d,"title":"Guest night","tmdbId":998877}`, drawn.ID)), second.ID, "member")
 	if selectResp.StatusCode != fiber.StatusCreated {
 		t.Fatalf("select wildcard status = %d, want 201", selectResp.StatusCode)
@@ -1026,8 +1023,7 @@ func TestHandleEditMovie_WatchedTitleInvalidatesStats(t *testing.T) {
 	}
 }
 
-// postMove moves a movie as the given actor (userID). The actor is passed as the
-// session member header, since the endpoint no longer carries a user path id.
+// postMove moves a movie with userID as the session member.
 func postMove(t *testing.T, app *fiber.App, userID, movieID int, target string) *http.Response {
 	t.Helper()
 
@@ -1083,10 +1079,8 @@ func movieStatus(t *testing.T, ctx context.Context, movieRepo *repository.Sqlite
 	return m.Status
 }
 
-// A rapid duplicate click used to cancel itself out: the move endpoint blind-
-// toggled on live status, so two clicks did stash→pool→stash and the movie
-// appeared to move then snap back. The directional endpoint treats a move to
-// the current location as an idempotent no-op, so duplicates can't reverse it.
+// A blind toggle let a duplicate click move the movie back; a move to the
+// current location must be a no-op.
 func TestHandleMove_DirectionalIsIdempotent(t *testing.T) {
 	t.Parallel()
 
@@ -1109,7 +1103,6 @@ func TestHandleMove_DirectionalIsIdempotent(t *testing.T) {
 		t.Fatalf("after first promote: expected pool, got %q", got)
 	}
 
-	// The regression: a second promote to the same target must NOT revert it.
 	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("duplicate promote: expected 204, got %d", resp.StatusCode)
 	}
@@ -1160,12 +1153,9 @@ func TestHandleMove_RejectsMissingTarget(t *testing.T) {
 	}
 }
 
-// A fast double-click fires two near-simultaneous /move POSTs (the pending-guard
-// can't block the second before React re-renders). With a blind toggle the
-// even count cancelled out; the directional endpoint must instead leave the
-// movie at the target and return 2xx for every duplicate — no spurious 409
-// (pool-limit counting the movie against its own promotion) or 400
-// (ErrInvalidState from a lost read-modify-write race).
+// The client pending-guard cannot block a double-click before React re-renders.
+// No duplicate may get a 409 (the movie counted against its own promotion) or a
+// 400 (ErrInvalidState from a lost read-modify-write race).
 func TestHandleMove_ConcurrentDuplicatePromote_NoSpuriousError(t *testing.T) {
 	t.Parallel()
 
@@ -1176,8 +1166,7 @@ func TestHandleMove_ConcurrentDuplicatePromote_NoSpuriousError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	// Fill two of three pool slots so the duplicates also exercise the pool-limit
-	// check, which must not count the movie against its own in-flight promotion.
+	// Fill two of three pool slots so the duplicates also hit the pool-limit check.
 	if _, err := movieRepo.Add(ctx, "Alien", "pool", user.ID); err != nil {
 		t.Fatalf("seed pool: %v", err)
 	}
@@ -1236,8 +1225,7 @@ func TestHandleMove_ConcurrentDuplicatePromote_NoSpuriousError(t *testing.T) {
 	}
 }
 
-// countMovedEvents drains a broker client for "movie:moved" frames until the
-// channel goes quiet for `within`.
+// countMovedEvents counts "movie:moved" frames until the channel is quiet for `within`.
 func countMovedEvents(client chan event, within time.Duration) int {
 	count := 0
 	for {
@@ -1255,9 +1243,7 @@ func countMovedEvents(client chan event, within time.Duration) int {
 	}
 }
 
-// A real move broadcasts movie:moved so other clients refetch; a no-op duplicate
-// must NOT — otherwise every redundant click triggers an invalidation storm. The
-// `changed` flag gates the broadcast; this asserts the gate holds.
+// A no-op broadcast would turn every redundant click into an invalidation storm.
 func TestHandleMove_NoOpDuplicateSuppressesBroadcast(t *testing.T) {
 	t.Parallel()
 
@@ -1276,7 +1262,6 @@ func TestHandleMove_NoOpDuplicateSuppressesBroadcast(t *testing.T) {
 	client, _ := h.broker.Subscribe()
 	defer h.broker.Unsubscribe(client)
 
-	// First promote is a real transition → exactly one movie:moved.
 	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("promote: expected 204, got %d", resp.StatusCode)
 	}
@@ -1284,7 +1269,6 @@ func TestHandleMove_NoOpDuplicateSuppressesBroadcast(t *testing.T) {
 		t.Fatalf("real move: expected 1 movie:moved broadcast, got %d", got)
 	}
 
-	// Duplicate promote finds the movie already pooled → no-op, no broadcast.
 	if resp := postMove(t, app, user.ID, movie.ID, "pool"); resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("duplicate promote: expected 204, got %d", resp.StatusCode)
 	}
@@ -1327,10 +1311,8 @@ func TestHandleMove_PublishesCommittedMoveWithoutResponseProjection(t *testing.T
 	}
 }
 
-// Two DIFFERENT stashed movies promoted concurrently into a one-free-slot pool
-// must not overshoot maxPoolSize: the pool-count check is folded into the same
-// atomic UPDATE as the status flip, so exactly one wins and the rest get 409.
-// Before the atomic refactor both could read count<cap and both commit -> pool of 4.
+// The pool-count check shares the status flip's atomic UPDATE, so with one free
+// slot exactly one promote wins and the rest get 409.
 func TestHandleMove_ConcurrentDistinctPromotes_RespectPoolCap(t *testing.T) {
 	t.Parallel()
 
@@ -1341,7 +1323,6 @@ func TestHandleMove_ConcurrentDistinctPromotes_RespectPoolCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	// Seed 2 of 3 pool slots → exactly one free slot for the contenders below.
 	if _, err := movieRepo.Add(ctx, "Fargo", "pool", user.ID); err != nil {
 		t.Fatalf("seed pool: %v", err)
 	}
@@ -1415,9 +1396,7 @@ func TestHandleMove_ConcurrentDistinctPromotes_RespectPoolCap(t *testing.T) {
 	}
 }
 
-// The demote path is directional + idempotent too: many concurrent demotes of
-// the same pooled movie all succeed (2xx) and leave it stashed, never erroring
-// on the lost-race ErrInvalidState.
+// No demote may fail with the lost-race ErrInvalidState.
 func TestHandleMove_ConcurrentDemoteIsIdempotent(t *testing.T) {
 	t.Parallel()
 
@@ -1473,9 +1452,7 @@ func TestHandleMove_ConcurrentDemoteIsIdempotent(t *testing.T) {
 	}
 }
 
-// Regression: adding a movie lands it in the stash, never the pool — even when
-// the pool has free slots. The button says "Add to <user>'s stash", so the add
-// must not silently auto-promote; reaching the pool is a separate explicit move.
+// The button says "Add to <user>'s stash", so an add must never auto-promote.
 func TestHandleAddMovie_LandsInStashEvenWithPoolRoom(t *testing.T) {
 	t.Parallel()
 
@@ -1564,9 +1541,7 @@ func TestHandleAddMovie_DuplicateIMDbDoesNotCreateMovie(t *testing.T) {
 	}
 }
 
-// Regression: a duplicate add used to insert an identityless stash row before
-// the TMDB uniqueness check ran. If its compensating DELETE then failed, the
-// handler still returned 409 and silently left that orphan behind.
+// A failed cleanup DELETE must not leave an identityless stash row behind a 409.
 func TestHandleAddMovie_DuplicateIdentityDoesNotLeaveOrphanWhenCleanupFails(t *testing.T) {
 	t.Parallel()
 
@@ -1626,9 +1601,7 @@ func TestHandleAddMovie_DuplicateIdentityDoesNotLeaveOrphanWhenCleanupFails(t *t
 	}
 }
 
-// Regression: the add response is read after the INSERT. If that read fails,
-// every write caused by the INSERT must roll back and no event may claim that
-// the movie was added.
+// No event may claim an add whose response read failed.
 func TestHandleAddMovie_ResponseReadFailureRollsBackInsert(t *testing.T) {
 	t.Parallel()
 

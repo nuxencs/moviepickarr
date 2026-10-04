@@ -259,10 +259,8 @@ func (r *testMovieRepo) Delete(_ context.Context, id int) error {
 	return nil
 }
 
-// TestDeleteUnderPoolLock covers the lock's promise: once the pool is locked
-// its composition is fixed, so the adder can't shrink the candidate set out
-// from under the draw it was locked in for. The stash sits outside the lock and
-// stays deletable, matching the add path, which has no lock check either.
+// A locked pool's candidate set is fixed. The stash sits outside the lock and
+// stays deletable, matching the add path.
 func TestDeleteUnderPoolLock(t *testing.T) {
 	t.Parallel()
 
@@ -292,7 +290,6 @@ func TestDeleteUnderPoolLock(t *testing.T) {
 		t.Fatal("expected the stashed movie to be gone")
 	}
 
-	// Unlocked, the pool row goes as it always did.
 	repo, svc = newSvc()
 	if err := svc.Delete(ctx, 1, false); err != nil {
 		t.Fatalf("delete pooled movie while unlocked: %v", err)
@@ -301,8 +298,7 @@ func TestDeleteUnderPoolLock(t *testing.T) {
 		t.Fatal("expected the pooled movie to be gone")
 	}
 
-	// Both rules apply at once: the unrevealed draw answers first, so nothing
-	// about the lock distinguishes a mid-draw tile from any other.
+	// The unrevealed-draw rule answers first, so the lock cannot single out the drawn tile.
 	_, svc = newSvc()
 	if _, err := svc.DrawRandom(ctx, "client-abc"); err != nil {
 		t.Fatalf("DrawRandom: %v", err)
@@ -350,8 +346,7 @@ func TestActiveDrawLifecycle(t *testing.T) {
 		t.Fatal("expected a fresh draw to be unrevealed")
 	}
 
-	// First reveal flips it and reports the draw; a second is a no-op so the
-	// handler broadcasts movie:revealed exactly once.
+	// A second reveal is a no-op so the handler broadcasts movie:revealed once.
 	revealed, flipped := svc.RevealCurrentDraw()
 	if !flipped {
 		t.Fatal("expected the first reveal to flip the draw")
@@ -366,8 +361,6 @@ func TestActiveDrawLifecycle(t *testing.T) {
 		t.Fatal("expected the active draw to remain, now marked revealed")
 	}
 
-	// The drawn movie stays "current" across the reveal and becomes "watched"
-	// only when the next member marks it watched.
 	if got := repo.movies[drawn.Movie.ID].Status; got != "current" {
 		t.Fatalf("after reveal: movie status = %q, want current (not yet watched)", got)
 	}
@@ -452,8 +445,7 @@ func TestRevealPersistenceFailureKeepsDrawConcealed(t *testing.T) {
 	}
 }
 
-// fakeTimer captures the auto-reveal scheduling so tests drive the deadline
-// by hand: fire() runs the scheduled fn, stops counts cancellations.
+// fakeTimer lets tests fire the auto-reveal deadline by hand.
 type fakeTimer struct {
 	fn      func()
 	starts  int
@@ -520,8 +512,6 @@ func TestPublishedDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
 		t.Fatalf("revealAt - drawnAt = %v, want 5s", got)
 	}
 
-	// Deadline fires: the reveal flips and notifies exactly once; a late
-	// duplicate fire stays silent.
 	ft.fire()
 	ft.fire()
 	if len(revealedDraws) != 1 {
@@ -660,8 +650,7 @@ func TestStartAutoRevealUsesRemainingDeadline(t *testing.T) {
 		t.Fatal("expected an active draw")
 	}
 
-	// Simulate payload construction running past the advertised deadline. The
-	// post-publication timer fires immediately; it does not grant a fresh 5s.
+	// Payload construction ran past the deadline: the timer fires at once, no fresh 5s.
 	svc.mu.Lock()
 	svc.activeDraw.RevealAt = time.Now().Add(-time.Second)
 	svc.mu.Unlock()
@@ -752,7 +741,7 @@ func TestManualRevealCancelsAutoRevealAndNotifiesOnce(t *testing.T) {
 		t.Fatal("expected the manual reveal to cancel the pending auto-reveal")
 	}
 
-	// The (already-stopped, but racing) deadline fires anyway: no double notify.
+	// A stopped timer can still race and fire.
 	ft.fire()
 	if notified != 1 {
 		t.Fatalf("expected exactly one OnRevealed, got %d", notified)
@@ -796,8 +785,7 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 	}
 }
 
-// Rotation-on-reveal: the committed handoff reaches OnRevealed with the
-// Reveal, whether the drawer confirmed or an early watch revealed the draw.
+// The handoff reaches OnRevealed whether the drawer confirmed or an early watch revealed.
 func TestRevealPublishesNextUpHandoff(t *testing.T) {
 	t.Parallel()
 
@@ -852,8 +840,7 @@ func TestRevealPublishesNextUpHandoff(t *testing.T) {
 	}
 }
 
-// Once the draw is revealed the turn has already passed: marking it watched
-// must not ask the store to rotate again or publish a second Reveal.
+// The turn already passed at reveal, so watch must not rotate again.
 func TestWatchAfterRevealDoesNotRotate(t *testing.T) {
 	t.Parallel()
 
@@ -883,9 +870,8 @@ func TestWatchAfterRevealDoesNotRotate(t *testing.T) {
 	}
 }
 
-// A draw's auto-reveal timer belongs to THAT draw. time.AfterFunc can't
-// un-fire a callback that already triggered, so a stale deadline that runs
-// after its draw was watched and replaced must not reveal the replacement.
+// time.AfterFunc cannot un-fire a triggered callback, so a stale deadline must
+// not reveal the draw that replaced its own.
 func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	t.Parallel()
 
@@ -897,8 +883,7 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	// Draw A and grab the exact callback armed for it, before a later draw can
-	// overwrite the fake timer's captured fn.
+	// Grab A's callback before draw B overwrites the fake timer's fn.
 	drawA, err := svc.DrawRandom(ctx, "c1")
 	if err != nil {
 		t.Fatalf("DrawRandom A: %v", err)
@@ -910,7 +895,6 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	svc.StartAutoReveal(drawA.Movie.ID, activeA.Generation)
 	fireA := ft.fn
 
-	// A is watched (clearing the draw), then a fresh draw B takes the slot.
 	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
 		t.Fatalf("MarkCurrentAsWatched: %v", err)
 	}
@@ -938,8 +922,6 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 		t.Fatalf("draw B timer starts=%d, want one new timer", ft.starts)
 	}
 
-	// A's deadline was cancelled by the watch, but simulate its already-triggered
-	// callback running now, after B is active. It must not touch B.
 	fireA()
 
 	if len(revealed) != 1 {
@@ -1029,10 +1011,8 @@ func TestEditWatchedMovieAllowsWatchedAt(t *testing.T) {
 	}
 }
 
-// titlePoolRepo holds three pooled movies whose titles sort A < B < C, plus a
-// second owner, so the pool-view tests can assert both placement and per-member
-// scoping. FindByUserIDAndStatus is implemented here (the shared repo panics on
-// it) because the per-member pool view goes through it.
+// titlePoolRepo holds three pooled movies sorted A < B < C across two owners,
+// for pool-view placement and per-member scoping.
 type titlePoolRepo struct {
 	testMovieRepo
 }
@@ -1049,8 +1029,7 @@ func (r *titlePoolRepo) FindByUserIDAndStatus(_ context.Context, userID int, sta
 	return out, nil
 }
 
-// FindByID mirrors the sqlite repo, which wraps a miss as domain.ErrNotFound
-// rather than returning sql.ErrNoRows bare.
+// FindByID wraps a miss as domain.ErrNotFound, like the sqlite repo.
 func (r *titlePoolRepo) FindByID(_ context.Context, id int) (*domain.Movie, error) {
 	movie, ok := r.movies[id]
 	if !ok {
@@ -1065,8 +1044,7 @@ func (r *titlePoolRepo) FindByStatus(ctx context.Context, status string) ([]*dom
 	if err != nil {
 		return nil, err
 	}
-	// The real repo sorts the pool by title; the pool view inserts the held
-	// draw into that order, so the fake has to sort too.
+	// The pool view inserts the held draw into the real repo's title order.
 	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	return out, nil
 }
@@ -1085,9 +1063,8 @@ func firstCandidateDrawConfig() DrawConfig {
 	return DrawConfig{RandomIndex: func(int) int { return 0 }}
 }
 
-// movableTitlePoolRepo adds the conditional promotion write used by
-// MoveToPool. The shared title repo leaves writes loud by default so a pool
-// view test cannot start mutating state accidentally.
+// movableTitlePoolRepo adds the MoveToPool promotion write; titlePoolRepo
+// panics on writes so pool-view tests cannot mutate state.
 type movableTitlePoolRepo struct {
 	titlePoolRepo
 }
@@ -1116,8 +1093,7 @@ func (r *movableTitlePoolRepo) PromoteToPoolIfRoom(
 	return 1, nil
 }
 
-// A promotion that starts after DrawRandom publishes is legal. It belongs to
-// the next draw, not the reel whose candidate set was already selected.
+// A promotion after DrawRandom publishes belongs to the next draw's candidates.
 func TestDrawRandomSnapshotsCandidatesBeforeLaterPromotion(t *testing.T) {
 	t.Parallel()
 
@@ -1168,9 +1144,7 @@ func TestDrawRandomSnapshotsCandidatesBeforeLaterPromotion(t *testing.T) {
 	}
 }
 
-// The repository is allowed to reuse movie pointers internally. DrawRandom
-// must still publish detached selected/candidate values from the same pre-draw
-// snapshot.
+// The repo may reuse movie pointers, so DrawRandom must publish detached copies.
 func TestDrawRandomDetachesSelectedMovieAndCandidates(t *testing.T) {
 	t.Parallel()
 
@@ -1351,8 +1325,7 @@ func TestDrawRandomDoesNotSelectWhenCurrentDrawExists(t *testing.T) {
 	}
 }
 
-// pausingDrawRepo exposes the instant after the winner and its Acquisition are
-// persisted but before StartDraw returns to the service.
+// pausingDrawRepo pauses after the winner is persisted, before StartDraw returns.
 type pausingDrawRepo struct {
 	titlePoolRepo
 	statusUpdated chan struct{}
@@ -1373,9 +1346,8 @@ func (r *pausingDrawRepo) StartDraw(
 	return nil
 }
 
-// repoCallPause stops a repository mutation after the service has made its
-// draw-state decision but before the persisted change. That exposes the reverse
-// side of the publication race covered by pausingDrawRepo.
+// repoCallPause pauses a repo mutation after the draw-state decision, before
+// the write: the reverse of pausingDrawRepo's race.
 type repoCallPause struct {
 	reached chan struct{}
 	resume  chan struct{}
@@ -1520,8 +1492,7 @@ func TestDrawPublicationHidesWinnerAtomically(t *testing.T) {
 		escaped <- "gate"
 	}()
 
-	// The persisted winner is already current. None of the client-facing reads
-	// may pass the draw publication boundary and observe that half-state.
+	// No client read may observe the persisted-but-unpublished winner.
 	select {
 	case name := <-escaped:
 		t.Fatalf("%s read escaped before the held draw was published", name)
@@ -1710,9 +1681,7 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 		t.Fatalf("drawn movie = %d, want 1 so movie 2 stays a bystander", drawn.Movie.ID)
 	}
 
-	// Both tiles are projected into the same pool. Reasserting that directional
-	// target must therefore be the same idempotent no-op for the persisted
-	// current winner as it is for an ordinary pool row.
+	// The held winner shows in the pool, so moving it there is the same no-op as for a pool row.
 	for name, movieID := range map[string]int{
 		"held winner":      drawn.Movie.ID,
 		"pooled bystander": 2,
@@ -1731,8 +1700,7 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 		t.Fatalf("held winner status = %q, want current", got)
 	}
 
-	// The exception is the active, unrevealed hold, not current status alone.
-	// Once revealed, the same persisted state is an invalid promotion source.
+	// Only the unrevealed hold is exempt; once revealed, current is not a valid source.
 	if _, flipped := svc.RevealCurrentDraw(); !flipped {
 		t.Fatal("expected reveal to flip the draw")
 	}
@@ -1745,9 +1713,8 @@ func TestMoveToPoolTreatsOnlyHeldWinnerAsAlreadyPooled(t *testing.T) {
 	}
 }
 
-// The whole point of the pool view: an unrevealed draw stays in the pool, in
-// its title position, so no client can tell which movie was drawn before the
-// reel lands. The injected index picks "Alpha" as the deterministic winner.
+// An unrevealed draw keeps its title position so no client learns the winner
+// before the reel lands.
 func TestPooledHoldsTheDrawnMovieUntilRevealed(t *testing.T) {
 	t.Parallel()
 
@@ -1784,8 +1751,6 @@ func TestPooledHoldsTheDrawnMovieUntilRevealed(t *testing.T) {
 	}
 }
 
-// The board renders each member's own pool, so the hold has to reach that read
-// too — and only for the member who actually owns the drawn movie.
 func TestPooledByUserIDHoldsTheDrawnMovieForItsOwner(t *testing.T) {
 	t.Parallel()
 
@@ -1826,8 +1791,6 @@ func TestPooledByUserIDHoldsTheDrawnMovieForItsOwner(t *testing.T) {
 	}
 }
 
-// A watch clears the active draw, and the watched movie must not reappear in
-// the pool through the hold.
 func TestPooledDropsTheDrawnMovieOnceWatched(t *testing.T) {
 	t.Parallel()
 
@@ -1851,8 +1814,6 @@ func TestPooledDropsTheDrawnMovieOnceWatched(t *testing.T) {
 	}
 }
 
-// A movie deleted out from under an in-flight draw must not fail every pool
-// read: the listing is correct without it.
 func TestPooledSurvivesAHeldDrawWhoseMovieIsGone(t *testing.T) {
 	t.Parallel()
 
@@ -1875,8 +1836,7 @@ func TestPooledSurvivesAHeldDrawWhoseMovieIsGone(t *testing.T) {
 	}
 }
 
-// staleListingRepo answers the pool listing from before the draw while FindByID
-// already reports the winner as current: the window between the two queries.
+// staleListingRepo returns the pre-draw listing while FindByID already sees the winner as current.
 type staleListingRepo struct {
 	titlePoolRepo
 }
@@ -1894,8 +1854,7 @@ func (r *staleListingRepo) FindByStatus(_ context.Context, status string) ([]*do
 	return out, nil
 }
 
-// A draw landing between the listing query and the held-draw read leaves the
-// movie in both; it must still appear once.
+// A draw between the listing query and the held-draw read must not list the movie twice.
 func TestPooledHandsOutTheHeldDrawOnlyOnce(t *testing.T) {
 	t.Parallel()
 

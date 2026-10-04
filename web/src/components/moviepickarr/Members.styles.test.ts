@@ -59,8 +59,7 @@ describe("the Members mobile push styles", () => {
   });
 
   it("animates one number declared above the width query", () => {
-    // Registered, so it interpolates rather than jumping. Declaring it where
-    // the width query cannot reach it keeps every duration tied to the URL.
+    // Registered, so it interpolates; above the width query, so durations follow the URL.
     expect(aboveQuery).toContain("@property --mem-in");
     expect(aboveQuery).toMatch(/--mem-in:\s*0;/);
     expect(aboveQuery).toContain("transition:");

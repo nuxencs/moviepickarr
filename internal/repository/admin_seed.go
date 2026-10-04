@@ -9,10 +9,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteAdminSeedRepository backs the break-glass admin seed over users,
-// local_accounts, and invites. SeedAdmin keeps its decision reads and writes on one
-// writer transaction. CountAdmins remains a read-pool query for the no-seed
-// warning path.
+// SqliteAdminSeedRepository backs the break-glass admin seed.
 type SqliteAdminSeedRepository struct {
 	pool *db.Pool
 }
@@ -29,10 +26,8 @@ type adminSeedMatch struct {
 	hasLogin bool
 }
 
-// SeedAdmin resolves the whole seed decision on one writer transaction. A nil
-// passwordHash is a read-only probe when the target needs a login. This lets the
-// caller run Argon2 after the transaction releases the single writer, then
-// retry with a hash that can be committed with the member and login writes.
+// SeedAdmin resolves the seed in one tx. A nil passwordHash is a probe, so the
+// caller runs Argon2 without holding the single writer, then retries.
 func (d *SqliteAdminSeedRepository) SeedAdmin(
 	ctx context.Context,
 	name string,
@@ -67,9 +62,8 @@ func (d *SqliteAdminSeedRepository) SeedAdmin(
 	}
 }
 
-// findAdminSeedMatches performs the authoritative case-insensitive name and
-// login-presence read. users.name is case-sensitive UNIQUE, so a NOCASE match
-// may still be ambiguous ("Bob" and "bob").
+// findAdminSeedMatches matches names case-insensitively. users.name is
+// case-sensitive UNIQUE, so the match can be ambiguous ("Bob" and "bob").
 func findAdminSeedMatches(ctx context.Context, tx *sql.Tx, name string) ([]adminSeedMatch, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
@@ -244,9 +238,8 @@ func insertSeedLogin(
 	return nil
 }
 
-// A break-glass login created for an existing placeholder is a credential write
-// like any other. Retire its current invite in the same transaction so an old
-// claim link cannot later reset the seeded admin's password.
+// retireSeedInvite retires the member's invite, so an old claim link cannot
+// reset the seeded admin's password.
 func retireSeedInvite(ctx context.Context, tx *sql.Tx, userID int) error {
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE invites

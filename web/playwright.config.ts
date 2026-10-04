@@ -6,9 +6,7 @@ const authFile = (browser: "chromium" | "firefox" | "webkit") =>
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
-  // Every project exercises one production server and its throwaway database.
-  // Mutation flows restore their logical baseline, but they must not race a
-  // geometry read or another lifecycle transition in a second worker.
+  // One shared server and database: mutation flows must not race another worker.
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,

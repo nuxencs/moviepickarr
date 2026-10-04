@@ -1,9 +1,5 @@
-/* Login + claim screens — the split-marquee direction locked in issue #85.
-   Cinematic left panel (faux poster wall + wordmark) beside a form column;
-   the panel collapses to a slim header band on phones. Colours come from the
-   app's global tokens (index.css); everything is namespaced under .auth*.
-   These pages own the whole viewport — they render outside the app shell, so
-   there is no NavBar above them. */
+/* Login + claim screens (#85). They render outside the app shell and own the
+   whole viewport. Namespaced under .auth*. */
 
 .auth {
   position: fixed;
@@ -18,14 +14,8 @@
   color: var(--ink);
 }
 
-/* ---- Left: the cinematic marquee ----
-   A layered-depth poster wall (issue #134, prototype variant B): four columns,
-   each pushed to its own Z depth and vertical offset, tilted so the right edge
-   recedes back-and-to-the-right with the nearest content on the left. The
-   arrangement is static — it never loops, drifts, or parallaxes — but the whole
-   wall plays a one-time scale-fade settle on mount (mg-wallSettle), so the page
-   arrives cinematically instead of snapping into existence. The stage clips the
-   pre-settle overscale, so the settle never bleeds onto the form column. */
+/* Layered-depth poster wall (#134): static, with a one-time settle on mount. The
+   stage clips the pre-settle overscale so it never bleeds onto the form column. */
 .auth__stage {
   position: relative;
   overflow: hidden;
@@ -41,15 +31,13 @@
   align-items: center;
   gap: 16px;
   transform-style: preserve-3d;
-  /* The resting tilt lives in a var so mg-wallSettle can settle *onto* it
-     (from a tighter scale) without duplicating — or drifting from — the tilt. */
+  /* A var so mg-wallSettle settles onto the tilt without duplicating it. */
   --wall-tilt: translateX(9%) rotateX(5deg) rotateY(18deg);
   transform: var(--wall-tilt) scale(0.98);
   opacity: 0.6;
   animation: mg-wallSettle var(--dur-reveal) var(--ease-reveal) both;
 }
-/* One-time entrance only: fade up from a tighter scale onto the resting tilt +
-   opacity (the implicit `to` is the element's own resting style above). */
+/* The implicit `to` is the element's resting style above. */
 @keyframes mg-wallSettle {
   from {
     opacity: 0;
@@ -65,10 +53,8 @@
   transform: translateZ(var(--col-z, 0));
   margin-top: var(--col-offset, 0);
 }
-/* Each column carries its own Z depth and vertical offset, so the wall shingles
-   unevenly instead of alternating in lockstep. Only the two vars vary per column;
-   the base rule owns the transform, so the mobile reset below zeroes both with a
-   plain .auth__col override instead of restating every nth-child. */
+/* Only the two vars vary per column, so the mobile reset zeroes them with one
+   .auth__col override. */
 .auth__col:nth-child(1) {
   --col-z: 70px;
   --col-offset: 54px;
@@ -94,8 +80,7 @@
   outline: 1px solid var(--poster-ring);
   outline-offset: -1px;
 }
-/* Real poster art overlays the gradient, which stays as the underlay so a
-   slow or broken image still reads as a poster rather than a hole. */
+/* The gradient stays underneath so a slow or broken image still reads as a poster. */
 .auth__poster {
   position: absolute;
   inset: 0;
@@ -111,7 +96,6 @@
     linear-gradient(60deg, var(--bg-deep) 8%, transparent 60%);
 }
 
-/* ---- Right: the form column ---- */
 .auth__panel {
   display: grid;
   place-items: center;
@@ -125,20 +109,9 @@
   flex-direction: column;
 }
 
-/* ---- Entrance: the form/terminal column assembles top-down ----
-   Element-level cascade (deliberately finer than the section-level stagger on
-   the account/roster pages): the login is the app's front door, so eyebrow ->
-   title -> fields -> submit rise into place one after another, reusing the
-   shared mg-fadeUp motion at the same 55ms step the hero draw-reveal uses. The
-   step is clamped from the 8th child on so the longest form (the claim
-   confirm-password screen) never drags out. The reactive messages are excluded
-   — the login banner (.auth__note) and the inline claim error (.auth__error)
-   both fade in quick (below) rather than rise, because they appear after a
-   failed submit into an already-settled form. Terminal claim screens
-   (.auth__msg) share .auth__form, so their icon -> title -> lead -> button
-   cascade in for free. The global reduced-motion rule (index.css) neutralises
-   all of it. (An OIDC notice present at mount consumes its child slot, leaving a
-   one-step gap in the ladder below it — cosmetic, only on the SSO-error entry.) */
+/* Element-level entrance cascade, deliberately finer than the account and roster
+   pages: the login is the front door. Clamped from the 8th child so the longest
+   form does not drag. Reactive messages are excluded and fade in instead. */
 .auth__form > *:not(.auth__note, .auth__error) {
   animation: mg-fadeUp var(--dur-slow) var(--ease) both;
 }
@@ -171,7 +144,6 @@
   margin: 0 0 22px;
 }
 
-/* Reused .field rows, sized for a login form. */
 .auth__field {
   height: var(--control-h-lg);
   width: 100%;
@@ -196,7 +168,6 @@
   height: 16px;
 }
 
-/* ---- Banner (top-of-form 401 / oidc notice) ---- */
 .auth__note {
   display: flex;
   align-items: flex-start;
@@ -207,9 +178,7 @@
   font-size: 13px;
   line-height: 1.4;
   border: 1px solid var(--line);
-  /* Kept out of the form cascade above: a quick fade (no rise) so a reactive
-     failed-login banner lands softly in the already-settled form rather than
-     snapping in. Same rule covers the at-mount OIDC redirect notice. */
+  /* Out of the cascade: it appears reactively in an already-settled form. */
   animation: mg-fadeIn var(--dur-fast) var(--ease) both;
 }
 .auth__note svg {
@@ -229,18 +198,15 @@
   color: color-mix(in oklab, var(--accent) 45%, var(--ink));
 }
 
-/* Inline field-validation error, quieter than the banner. */
 .auth__error {
   margin: 10px 0 0;
   font-size: 13px;
   line-height: 1.4;
   color: color-mix(in oklab, var(--danger) 55%, var(--ink));
-  /* Like .auth__note: kept out of the form cascade and fades in quick (no rise),
-     since it only ever appears reactively after a failed claim submit. */
+  /* Out of the cascade, like .auth__note. */
   animation: mg-fadeIn var(--dur-fast) var(--ease) both;
 }
 
-/* ---- Terminal claim screens (no-longer-valid / already set up) ---- */
 .auth__msg {
   padding-top: 6px;
 }
@@ -272,9 +238,7 @@
   .auth__stage {
     min-height: 168px;
   }
-  /* Heavy per-column Z-depth reads poorly in a ~168px band — flatten toward a
-     single plane (drop the per-column Z + vertical offsets) so the tilt stays
-     legible full-width. */
+  /* Per-column depth reads poorly in a ~168px band, so flatten to one plane. */
   .auth__wall {
     inset: -40%;
   }

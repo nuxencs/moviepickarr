@@ -31,19 +31,15 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootShell,
 });
 
-// Login always checks the server before redirecting an already signed-in member.
-// App navigation instead revalidates a cached principal in the background.
+// Login always checks the server; app navigation revalidates in the background.
 const resolveMe = (queryClient: QueryClient) =>
   queryClient.fetchQuery({ ...MeQueryOptions(), staleTime: 0 });
 
-// Pathless layout route carrying the app chrome (NavBar + SSE). The
-// authenticated app pages hang off it; the standalone auth routes below sit
-// directly under the root so they render without that chrome.
+// Pathless layout with the app chrome (NavBar + SSE). Auth routes sit under the
+// root so they render without it.
 const appLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "_app",
-  // First entry waits for auth; later switches do not wait on the network.
-  // A background 401 clears private state before replacing the current route.
   beforeLoad: ({ context }) =>
     requireAppSession(context.queryClient, () => {
       void router.navigate({ to: "/login", replace: true });
@@ -51,24 +47,15 @@ const appLayoutRoute = createRoute({
   component: AppLayout,
 });
 
-// Every route below except the movies landing page loads its component on
-// demand, so the entry bundle carries the shell plus the one route the visitor
-// actually asked for. lazyRouteComponent (not React.lazy) is what makes that
-// free at navigation time: the router owns the import, so defaultPreload:
-// "intent" fetches the chunk on nav-link hover and it's warm by the time the
-// click lands. Movies stays eager because it's the landing route, where a
-// deferred chunk would only delay the first paint.
+// Routes load lazily except Movies, the landing route. lazyRouteComponent (not
+// React.lazy) lets defaultPreload: "intent" fetch the chunk on nav-link hover.
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  // The OIDC callback redirects back here with a ?error= bucket on failure; keep
-  // it as a plain optional string and let the page map it to banner copy.
+  // OIDC failures land here with ?error=<bucket>; the page maps it to copy.
   validateSearch: (search: Record<string, unknown>): { error?: string } => ({
     error: typeof search.error === "string" ? search.error : undefined,
   }),
-  // A member with a live session never sees the login form: /me is resolved
-  // before render so there is no one-frame flash of the form (see
-  // redirectIfSignedIn).
   beforeLoad: ({ context }) =>
     redirectIfSignedIn(
       () => resolveMe(context.queryClient),
@@ -107,18 +94,12 @@ const moviesRoute = createRoute({
 const usersRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/users",
-  // Which member's board is open lives in the URL (see membersSearch). No
-  // stripSearchParams here, unlike /stats: the rail's rows always carry an
-  // explicit id, and an id that doesn't resolve has to stay in the URL rather
-  // than be canonicalised out from under whoever pasted it.
+  // No stripSearchParams, unlike /stats: an unresolved id must stay in the URL.
   validateSearch: validateMembersSearch,
   component: lazyRouteComponent(() => import("@/pages/UsersPage"), "UsersPage"),
 });
 
-// Admin is one top-level tab with its own internal route seam. The shared shell
-// stays mounted while each destination remains an independent lazy chunk.
-// Non-admins still reach the route and get the API's first-class 403 state once
-// a destination reads protected data, rather than a masked 404.
+// Non-admins reach the route and get the API's 403 state, not a masked 404.
 const adminRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/admin",
@@ -142,8 +123,7 @@ const adminRosterRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/AdminPage"), "AdminPage"),
 });
 
-// /admin/members is intentionally absent. Old bookmarks fall through to the
-// normal not-found path instead of preserving a second name for this surface.
+// /admin/members is intentionally absent: old bookmarks fall through to not-found.
 
 const adminIntegrationsRoute = createRoute({
   getParentRoute: () => adminRoute,
@@ -217,10 +197,8 @@ const adminRunsRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/AdminRunsPage"), "AdminRunsPage"),
 });
 
-// The account settings surface. Path is /settings, not /account: the merged
-// OIDC link flow redirects the browser back to /settings?linked=1 (or
-// ?error=<bucket>) after connecting a provider, so the route has to match that
-// contract. The page reads those params to toast the link outcome.
+// Path must stay /settings: the OIDC link flow redirects to /settings?linked=1
+// (or ?error=<bucket>).
 const settingsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/settings",
@@ -234,7 +212,6 @@ const settingsRoute = createRoute({
 const statsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/stats",
-  // All Stats filter state lives in the URL search params (see statsSearch).
   validateSearch: validateStatsSearch,
   search: { middlewares: [stripSearchParams(statsSearchDefaults)] },
   component: lazyRouteComponent(() => import("@/pages/StatsPage"), "StatsPage"),
@@ -272,8 +249,7 @@ export const router = createRouter({
   defaultPreload: "intent",
 });
 
-// A refresh with the movie modal open lands on a clean page, so the entry's
-// location state is stripped here, before the first render (see #196).
+// Before first render, so a refresh with the modal open lands clean (#196).
 clearMovieModalHistory(router);
 
 declare module "@tanstack/react-router" {

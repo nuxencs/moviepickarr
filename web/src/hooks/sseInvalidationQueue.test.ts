@@ -117,7 +117,6 @@ describe("the invalidation queue", () => {
     clock.fire();
     expect(flush).not.toHaveBeenCalled();
 
-    // Usable again after cancel (cancel is unmount, but keep it honest).
     queue.push([["users", "list"]]);
     clock.fire();
     expect(flush).toHaveBeenCalledTimes(1);

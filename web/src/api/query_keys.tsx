@@ -4,8 +4,7 @@ export const AuthKeys = {
     config: () => [...AuthKeys.all, "config"] as const,
     posterWall: () => [...AuthKeys.all, "poster-wall"] as const,
     claim: (token: string) => [...AuthKeys.all, "claim", token] as const,
-    // The actor's own live sessions (the account page's device list). Rides the
-    // "auth" root, so an identity change stales the devices with it.
+    // Under "auth" so an identity change stales the device list too.
     sessions: () => [...AuthKeys.all, "sessions"] as const,
 }
 
@@ -14,17 +13,12 @@ export const UsersKeys = {
     list: () => [...UsersKeys.all, "list"] as const,
     pool: () => [...UsersKeys.all, "pool"] as const,
     stash: () => [...UsersKeys.all, "stash"] as const,
-    // The admin roster (presence-derived login state per member). Distinct from
-    // list() (the movie-board members), but rides the same "users" root so a
-    // roster mutation and a board change stale under one prefix.
+    // Admin roster, distinct from list() but under "users" so both stale together.
     roster: () => [...UsersKeys.all, "roster"] as const,
 }
 
-// The admin invites overview. Its own root rather than a branch of "users": the
-// rows are invites, not members, and issuing or revoking one has to stale both
-// this and the roster (whose invitePending chip reads the same fact), which a
-// shared prefix would hide behind one invalidation that looks like it covers
-// everything.
+// Own root, not under "users": invite changes must stale this and the roster
+// explicitly (see reconcileInviteSurfaces).
 export const InvitesKeys = {
     all: ["invites"] as const,
     list: () => [...InvitesKeys.all, "list"] as const,
@@ -36,14 +30,10 @@ export const MoviesKeys = {
     current: () => [...MoviesKeys.all, "current"] as const,
     wildcard: () => [...MoviesKeys.all, "wildcard"] as const,
     listwatched: () => [...MoviesKeys.all, "listwatched"] as const,
-    // Full enriched record (cast/crew/overview) lazy-loaded by the detail modal,
-    // so the list payloads can ship lean. `details()` is the prefix used to
-    // invalidate every open/cached modal on enrichment.
+    // Full record for the detail modal, so lists ship lean. `details()` is the
+    // prefix enrichment invalidates.
     details: () => [...MoviesKeys.all, "detail"] as const,
     detail: (movieID: number) => [...MoviesKeys.details(), movieID] as const,
-    // Stats filter choices (genres/actors/crew/years/adders), derived
-    // server-side from the watched library — replaces deriving them from the
-    // credits that used to be embedded in the watched list.
     filterOptions: () => [...MoviesKeys.all, "filterOptions"] as const,
 }
 
@@ -55,9 +45,8 @@ export const SettingsKeys = {
 
 export const StatsKeys = {
     all: ["stats"] as const,
-    // The filter segment arrives pre-canonicalized (comma-joined sorted id
-    // lists) from StatsGetQueryOptions' one serializer, so selection order
-    // can't split the cache and the key always matches the request sent.
+    // Filter ids arrive canonicalized by StatsGetQueryOptions, so selection order
+    // cannot split the cache.
     byWindow: (
         window: string,
         timezone: string,

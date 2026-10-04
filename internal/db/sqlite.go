@@ -17,10 +17,8 @@ const (
 	defaultReadConns        = 4
 )
 
-// Pool separates the single writer connection from a small pool of readers.
-// WAL lets readers run concurrently with the writer, but writes must stay
-// serialized on one connection so two goroutines never contend for the write
-// lock mid-transaction (SQLITE_BUSY). Reads route to Read, mutations to Write.
+// Pool splits one writer connection from a small read pool. One writer keeps
+// two goroutines from contending for the write lock (SQLITE_BUSY).
 type Pool struct {
 	Read  *sql.DB
 	Write *sql.DB
@@ -29,17 +27,14 @@ type Pool struct {
 func OpenSQLite(path string) (*Pool, error) {
 	dsn := sqliteDSN(path)
 
-	// The writer opens first: on a fresh file it creates the DB and switches it
-	// to WAL before any reader connects.
+	// The writer opens first so a fresh file is in WAL before any reader connects.
 	write, err := openHandle(dsn, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	// query_only turns a mis-routed write on the read pool into an immediate,
-	// loud error instead of silent write contention. Appended last so the
-	// earlier pragmas (journal_mode etc.) still apply; WAL is already set
-	// persistently by the writer, so the reader's journal_mode is a no-op read.
+	// query_only makes a mis-routed write fail loudly. Appended last so the
+	// earlier pragmas still apply.
 	read, err := openHandle(dsn+"&_pragma=query_only(1)", defaultReadConns)
 	if err != nil {
 		_ = write.Close()
@@ -50,8 +45,7 @@ func OpenSQLite(path string) (*Pool, error) {
 }
 
 func (p *Pool) Close() error {
-	// PRAGMA optimize is SQLite's recommended pre-close hygiene: it refreshes
-	// the stats the query planner relies on (cheap and bounded on the writer).
+	// SQLite recommends PRAGMA optimize before close to refresh planner stats.
 	_, _ = p.Write.Exec("PRAGMA optimize")
 	return errors.Join(p.Write.Close(), p.Read.Close())
 }

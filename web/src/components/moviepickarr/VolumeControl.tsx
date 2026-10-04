@@ -5,21 +5,11 @@ import { useAudio } from "@/components/audio-context";
 
 import { isJinglePlaying, onJingleChange, playDrawJingle, stopDrawJingle } from "@/lib/sound";
 
-/**
- * Draw-sound control, rendered inline inside the profile panel's Preferences
- * section: a mute toggle, a volume slider with its percentage, and a play/stop
- * button to audition the draw jingle without waiting for a real draw. Both the
- * on/off state and the 0..1 volume persist to localStorage (see sound.ts).
- *
- * The panel is the single surface this lives on, so the control owns no
- * open/close state and no Escape / outside-click handling of its own — it just
- * presents the audio state and the jingle play/stop helpers, both unchanged.
- */
+/** Draw-sound mute, volume, and jingle audition, inline in the profile panel's Preferences. */
 export function VolumeControl() {
   const { soundEnabled, toggleSound, volume, setVolume } = useAudio();
   const [jinglePlaying, setJinglePlaying] = useState(false);
 
-  // Track jingle playback so the audition button flips between play and stop.
   useEffect(() => {
     setJinglePlaying(isJinglePlaying());
     return onJingleChange(setJinglePlaying);
@@ -55,7 +45,7 @@ export function VolumeControl() {
           aria-label="Draw sound volume"
           aria-valuetext={`${pct}%`}
         />
-        {/* Play/stop the draw jingle so you can hear it without waiting for a draw. */}
+        {/* Audition the jingle without waiting for a draw. */}
         <button
           type="button"
           className="iconbtn"

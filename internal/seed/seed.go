@@ -1,8 +1,5 @@
-// Package seed holds the app's one bootstrap into itself: the env-seeded
-// break-glass admin. Onboarding is otherwise invite-only, so a fresh deploy
-// would have no way in without this. The seed runs once per boot, between
-// migrate and serve, and is idempotent while the named member remains active,
-// so leaving the env vars set across those restarts is safe.
+// Package seed creates the env-seeded break-glass admin. Onboarding is
+// invite-only, so a fresh deploy has no other way in. Idempotent per boot.
 package seed
 
 import (
@@ -17,34 +14,27 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Password bounds for the seeded login, matching the min-8/max-128 rule the
-// local-login flow applies at the HTTP edge (the max closes an unbounded-input
-// argon2id DoS). auth.HashPassword defers length validation to its caller, and
-// the seed is a caller, so it enforces the bounds here rather than hashing an
-// out-of-range password unchecked.
+// Password bounds: keep in step with the local-login HTTP rule. The max closes
+// an argon2id DoS, and auth.HashPassword leaves length checks to its callers.
 const (
 	minPasswordLen = 8
 	maxPasswordLen = 128
 )
 
-// AdminConfig is the break-glass admin trio. Name is matched against an
-// existing member (case-insensitively) to adopt rather than duplicate;
-// Username/Password become the seeded local login.
+// AdminConfig is the break-glass admin trio. Name adopts an existing member
+// (case-insensitive) instead of a duplicate.
 type AdminConfig struct {
 	Name     string
 	Username string
 	Password string
 }
 
-// complete reports whether all three fields are present. The trio is
-// all-or-nothing: a partial set is a misconfiguration, not a valid seed.
+// complete reports whether all three fields are set; a partial set is invalid.
 func (c AdminConfig) complete() bool {
 	return c.Name != "" && c.Username != "" && c.Password != ""
 }
 
-// missingVars names the unset members of the trio, for the partial-config
-// warning. It returns env var names because that is what the operator has to go
-// and fix.
+// missingVars returns the env var names of the unset fields.
 func (c AdminConfig) missingVars() []string {
 	var missing []string
 	for _, v := range []struct {
@@ -62,10 +52,7 @@ func (c AdminConfig) missingVars() []string {
 	return missing
 }
 
-// validate checks the fields a configured trio must satisfy before the seed
-// touches the database. Only the password bound is enforced here; presence is
-// already guaranteed by complete(). A violation fails boot loudly, which is the
-// right outcome for a misconfigured seed.
+// validate checks the password bounds; complete() already checked presence.
 func (c AdminConfig) validate() error {
 	if n := len(c.Password); n < minPasswordLen || n > maxPasswordLen {
 		return fmt.Errorf("MPA_ADMIN_PASSWORD must be %d-%d characters, got %d", minPasswordLen, maxPasswordLen, n)
@@ -73,18 +60,12 @@ func (c AdminConfig) validate() error {
 	return nil
 }
 
-// seedLogger tags this package's lines with component=seed. Every message here
-// used to open with a literal "break-glass admin seed: " prefix, which said the
-// same thing in a place you cannot filter on and cannot grep past.
 func seedLogger(log zerolog.Logger) zerolog.Logger {
 	return log.With().Str("component", "seed").Logger()
 }
 
-// AdminConfigFromEnv reads the MPA_ADMIN_* trio, trimming surrounding
-// whitespace so a stray space in a compose file doesn't silently change the
-// seeded name or credentials. ok is true only when all three are set; a partial
-// set is logged as a warning and reported as not-configured, so boot skips the
-// seed (and, if no admin exists, falls through to the zero-admins warning).
+// AdminConfigFromEnv reads the trimmed MPA_ADMIN_* trio. ok is true only when
+// all three are set; a partial set logs a warning and skips the seed.
 func AdminConfigFromEnv(log zerolog.Logger) (AdminConfig, bool) {
 	log = seedLogger(log)
 	cfg := AdminConfig{
@@ -96,11 +77,8 @@ func AdminConfigFromEnv(log zerolog.Logger) (AdminConfig, bool) {
 		return cfg, true
 	}
 
-	// Some but not all set: call it out so a typo'd var name isn't mistaken for
-	// a deliberate "no seed" deployment.
+	// Warn, so a typo'd var name is not mistaken for a deliberate "no seed".
 	if cfg.Name != "" || cfg.Username != "" || cfg.Password != "" {
-		// Which ones are missing is the whole point of the line, so name them
-		// directly instead of making the operator diff three booleans.
 		log.Warn().
 			Strs("missing", cfg.missingVars()).
 			Msg("break-glass admin seed partially configured, skipping; MPA_ADMIN_NAME, MPA_ADMIN_USERNAME and MPA_ADMIN_PASSWORD are all required")
@@ -108,17 +86,9 @@ func AdminConfigFromEnv(log zerolog.Logger) (AdminConfig, bool) {
 	return cfg, false
 }
 
-// BreakGlassAdmin is the seed step in the migrate → seed → serve boot sequence.
-//
-// When the trio is configured it makes sure an admin member with a working
-// local login exists, and returns a non-nil error on any failure so boot dies
-// loudly. A broken seed must be obvious, not a silently login-less deploy. When
-// the trio is not configured it is a no-op except for one guard: if the DB has
-// zero admins it warns loudly, because nobody can perform admin actions.
-//
-// The step is idempotent. An existing member matching the name is adopted and
-// ensured admin, and an already-present local login is never overwritten, so
-// re-running boot with the same env changes nothing.
+// BreakGlassAdmin ensures an admin with a local login exists, between migrate
+// and serve. Any failure fails boot, so a broken seed is obvious. Unconfigured,
+// it only warns when no admin exists. An existing local login is never overwritten.
 func BreakGlassAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, configured bool, log zerolog.Logger) error {
 	log = seedLogger(log)
 	if !configured {
@@ -135,9 +105,7 @@ func BreakGlassAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminCo
 	return nil
 }
 
-// warnIfNoAdmins logs a loud warning when the roster holds no admin. A failed
-// count here is not fatal, since the paths that call it are deliberately
-// non-blocking, but it is surfaced so the operator sees it.
+// warnIfNoAdmins warns when no admin exists. A failed count is logged, not fatal.
 func warnIfNoAdmins(ctx context.Context, repo domain.AdminSeedRepo, log zerolog.Logger) {
 	admins, err := repo.CountAdmins(ctx)
 	if err != nil {
@@ -149,8 +117,6 @@ func warnIfNoAdmins(ctx context.Context, repo domain.AdminSeedRepo, log zerolog.
 	}
 }
 
-// seedAdmin runs the actual bootstrap once the trio is known good. Any returned
-// error propagates to a loud boot failure.
 func seedAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, log zerolog.Logger) error {
 	result, err := repo.SeedAdmin(ctx, cfg.Name, cfg.Username, nil)
 	if err != nil {
@@ -172,11 +138,8 @@ func seedAdmin(ctx context.Context, repo domain.AdminSeedRepo, cfg AdminConfig, 
 	}
 
 	if len(result.AmbiguousNames) > 0 {
-		// Ambiguous: two members fold to the same name, so there is no single
-		// row to adopt. Skip and log rather than guess or fail boot; the spec
-		// treats this as a deliberate no-op, not a seed error. Still run the
-		// zero-admins guard so a skipped seed on a fresh DB gets the same loud
-		// signal the no-seed path would give.
+		// Several members fold to the name: skip rather than guess or fail boot,
+		// but still warn if no admin exists.
 		log.Warn().
 			Str("configured_name", cfg.Name).
 			Strs("matches", result.AmbiguousNames).

@@ -1,10 +1,7 @@
 import { getClientId } from "@/lib/clientId";
 import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, MeResponse, MemberRole, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User, Wildcard } from "@/types/Response";
 
-// Carries the HTTP status alongside the human-readable message so callers can
-// branch on it (the login page shows the uniform banner only for a 401, and
-// treats anything else as a try-again error). It extends Error, so existing
-// `err.message` consumers are unaffected.
+// Carries the HTTP status so callers can branch on it (login shows its banner only on a 401).
 export class ApiError extends Error {
     readonly status: number;
     readonly code?: string;
@@ -26,12 +23,11 @@ interface StatsQuery {
     start?: string;
     end?: string;
     genre?: string;
-    // Comma-joined TMDB person id lists. The backend reads each as ONE query
-    // param, so they're pre-joined strings — an array here would serialize to
-    // repeated params and all but the first would be dropped server-side.
+    // Comma-joined id lists: the backend reads ONE param, and an array would repeat
+    // it and lose all but the first.
     actorIds?: string;
     crewIds?: string;
-    // Comma-joined user ids of the movie adders (pre-joined, like actorIds).
+    // Comma-joined, like actorIds.
     addedByIds?: string;
     releaseYear?: number;
     // Decade floor (1990 ⇒ 1990–1999); mutually exclusive with releaseYear.
@@ -42,8 +38,7 @@ interface HttpConfig {
     method?: string;
     body?: RequestBody;
     queryString?: Record<string, Primitive | Primitive[]>;
-    // React Query's per-call AbortSignal; threading it lets superseded requests
-    // (e.g. rapid /stats filter changes under keepPreviousData) cancel in flight.
+    // Lets superseded requests (rapid /stats filter changes) cancel in flight.
     signal?: AbortSignal;
 }
 
@@ -55,8 +50,7 @@ function encodeRFC3986URIComponent(str: string): string {
 }
 
 function baseURL(): string {
-    // In dev, return "" so requests hit "/api/..." same-origin and ride the
-    // Vite proxy (see vite.config.ts). Same-origin requests never preflight.
+    // Dev: same-origin via the Vite proxy (see vite.config.ts), so no preflight.
     if (import.meta.env.DEV) {
         return "";
     }
@@ -116,8 +110,7 @@ export async function HttpClient<T = unknown>(
 
     const response = await window.fetch(`${baseURL()}/${endpoint}`, init);
     const contentType = response.headers.get("Content-Type") ?? "";
-    // Errors arrive as RFC 7807 "application/problem+json", so match the +json
-    // suffix too — a plain "application/json" check misses them.
+    // RFC 7807 errors are application/problem+json, so match the +json suffix too.
     const isJSON =
         contentType.includes("application/json") || contentType.includes("+json");
 
@@ -132,8 +125,7 @@ export async function HttpClient<T = unknown>(
             return Promise.resolve<T>(response as T);
         }
     } else {
-        // Every rejection is an ApiError carrying the status, so callers can
-        // branch on it; the message text matches what components already toast.
+        // Messages match what components already toast.
         switch (response.status) {
             case 400:
                 return Promise.reject(new ApiError(400, "Bad request"));
@@ -149,8 +141,7 @@ export async function HttpClient<T = unknown>(
         let code: string | undefined;
         if (isJSON) {
             const json = await response.json();
-            // problem+json carries the human-readable text in "detail"
-            // (fallback "title"); older shapes used "message".
+            // problem+json puts the text in "detail" (else "title"); older shapes use "message".
             if (typeof json.detail === "string" && json.detail.length) {
                 reason = json.detail as string;
             } else if (typeof json.message === "string" && json.message.length) {
@@ -163,9 +154,7 @@ export async function HttpClient<T = unknown>(
             }
         }
 
-        // A server-provided reason is written for humans (e.g. "conflict:
-        // movie is already in the library") — surface it as the message
-        // directly; components toast err.message verbatim.
+        // Server reasons are written for humans; components toast err.message verbatim.
         if (reason.length) {
             return Promise.reject(new ApiError(response.status, reason, code));
         }
@@ -210,90 +199,67 @@ const appClient = {
         }),
 };
 
-// OIDC initiation and claim-via-SSO are top-level browser navigations (the
-// server 302s to the provider), not XHR. These same-origin paths drive a
-// `window.location.assign`, so the session/tx cookies ride along.
+// Top-level navigations, not XHR: the server 302s to the provider and cookies ride along.
 export const oidcLoginPath = () => "/api/v1/auth/oidc/login";
 export const oidcClaimPath = (token: string) =>
     `/api/v1/auth/claim/${encodeRFC3986URIComponent(token)}/oidc`;
-// Linking SSO to the signed-in member is the same top-level navigation: the
-// server 302s to the provider and, on the callback, back to /settings?linked=1
-// (or ?error=<bucket>). Driven by window.location.assign so the session cookie
-// rides along.
+// Same navigation; the callback returns to /settings?linked=1 or ?error=<bucket>.
 export const oidcLinkPath = () => "/api/v1/auth/oidc/link";
 
 export const APIClient = {
     auth: {
         // Public: what the unauthenticated login page needs (SSO presence).
         config: () => appClient.Get<AuthConfig>("api/v1/auth/config"),
-        // Public: popularity-ordered TMDB poster paths for the login wall. Bare
-        // []string; [] when the cache is unwarmed or no TMDB key is set. Carries
-        // no secrets (poster paths are public artwork).
+        // Public. [] when the cache is unwarmed or no TMDB key is set.
         posterWall: () => appClient.Get<string[]>("api/v1/auth/poster-wall"),
         // The session actor; rejects 401 when there is no valid session.
         me: () => appClient.Get<MeResponse>("api/v1/auth/me"),
         // 204 + session cookie on success; 401 for any credential failure.
         login: (username: string, password: string) =>
             appClient.Post<void>("api/v1/auth/login", { body: { username, password } }),
-        // Claim-page data for a token: the greet name, placeholder-vs-reset mode,
-        // and offered options. 404 = no longer valid, 410 = already set up.
+        // 404 = no longer valid, 410 = already set up.
         validateClaim: (token: string) =>
             appClient.Get<ClaimInfo>(`api/v1/auth/claim/${encodeRFC3986URIComponent(token)}`),
-        // Redeem via password. Placeholder sends username + password; reset sends
-        // password only (username omitted). 204 + session cookie on success.
+        // Reset mode omits username. 204 + session cookie on success.
         claimPassword: (token: string, password: string, username?: string) =>
             appClient.Post<void>(`api/v1/auth/claim/${encodeRFC3986URIComponent(token)}/password`, {
                 body: username ? { username, password } : { password },
             }),
-        // Self-service account actions (the session is the proof of identity).
-        // Change an existing password: verify the current one, rewrite it. The
-        // server revokes the other devices and rotates this session's cookie, so
-        // the round trip keeps this device signed in. 401 on a wrong current.
+        // Revokes other devices and rotates this session's cookie, so this device stays
+        // signed in. 401 on a wrong current password.
         changePassword: (currentPassword: string, newPassword: string) =>
             appClient.Post<void>("api/v1/auth/password", { body: { currentPassword, newPassword } }),
         // An SSO-first member (no local login) adds a first username + password.
         setPassword: (username: string, password: string) =>
             appClient.Post<void>("api/v1/auth/local-login", { body: { username, password } }),
-        // Log out. Empty body ends this device; { all: true } ends every session
-        // for the member (this one included). 204 + cleared cookie either way.
+        // { all: true } ends every session, this one included.
         logout: (all = false) =>
             appClient.Post<void>("api/v1/auth/logout", { body: all ? { all: true } : {} }),
-        // The actor's own live sessions, most recently active first. Self-only
-        // server-side: the member comes from the session, so there is no id to
-        // pass and no way to read anyone else's devices.
+        // Self-only: the member comes from the session.
         sessions: () => appClient.Get<SessionSummary[]>("api/v1/auth/sessions"),
-        // Sign one of your own devices out. 204; 404 when the session is already
-        // gone or was never yours (the delete is scoped to the session member,
-        // so another member's public handle matches nothing).
+        // 404 when the session is gone or is not yours.
         revokeSession: (sessionID: string) =>
             appClient.Delete(`api/v1/auth/sessions/${encodeRFC3986URIComponent(sessionID)}`),
     },
-    // The admin roster surface. Reads the presence-derived roster and drives every
-    // per-member admin action off the session actor (never a path id for the actor).
-    // 403 on any of these is the "Admins only" signal the surface renders.
+    // Admin actions act as the session actor. 403 is the "Admins only" signal.
     members: {
         roster: () => appClient.Get<RosterMember[]>("api/v1/members/roster"),
-        // Create a placeholder + issue its first claim link in one step; the claim
-        // URL is response-only (never broadcast) and shown once.
+        // The claim URL is response-only (never broadcast) and shown once.
         create: (name: string, role: MemberRole) =>
             appClient.Post<InviteResult>("api/v1/members", { body: { name, role } }),
-        // Promote/demote. A Next up holder needs an explicit confirmed retry
-        // before a Guest transition can hand off the turn.
+        // A Next up holder needs a confirmed retry before a Guest change hands off the turn.
         setRole: (memberID: number, role: MemberRole, confirmTurnHandoff = false) =>
             appClient.Patch<void>(`api/v1/members/${memberID}/role`, {
                 body: { role, confirmTurnHandoff },
             }),
-        // Create the first current invite generation. Existing generations are
-        // replaced through their immutable handle below.
+        // First generation only; existing ones are replaced through invites.replace.
         createInvite: (memberID: number) =>
             appClient.Post<InviteResult>(`api/v1/members/${memberID}/invite`),
-        // Issue a recovery link for a member who already has a local login.
         createPasswordResetInvite: (memberID: number) =>
             appClient.Post<InviteResult>(`api/v1/members/${memberID}/invite`, {
                 body: { purpose: "password_reset" },
             }),
-        // Set (create) or reset an existing local login. Reset revokes the member's
-        // other sessions server-side.
+        // Reset revokes the member's other sessions.
         setLocalLogin: (memberID: number, username: string, password: string) =>
             appClient.Put<void>(`api/v1/members/${memberID}/local-login`, { body: { username, password } }),
         removeLocalLogin: (memberID: number) =>
@@ -301,8 +267,7 @@ export const APIClient = {
         // Remove another member's linked identity (they fall back to a placeholder).
         unlink: (memberID: number) =>
             appClient.Delete(`api/v1/members/${memberID}/linked-identity`),
-        // Remove your OWN linked identity. 409 when it is your last credential (the
-        // surface refuses this client-side first; this is the backstop).
+        // 409 on your last credential (server backstop for the client check).
         unlinkSelf: () => appClient.Delete("api/v1/auth/linked-identity"),
         // One action, two outcomes: hard delete (no authored movies) or archive.
         remove: (memberID: number) =>
@@ -324,14 +289,9 @@ export const APIClient = {
         dismiss: (inviteID: string) =>
             appClient.Post(`api/v1/invites/${encodeRFC3986URIComponent(inviteID)}/dismiss`),
     },
-    // The Members board and its self-service movie actions. Reads hit /members
-    // (the board's per-member pool + stash tiles); mutations hit /movies. Movie
-    // mutations are adder-only server-side: the adder is always the session
-    // member, so none of them take a target member id (editing/moving/deleting a
-    // movie you did not add returns 403 not_adder, with no admin override).
-    // Member lifecycle (create/remove) lives under `members` above, not here.
+    // Movie mutations are adder-only server-side (403 not_adder, no admin override),
+    // so none take a member id. Member lifecycle lives under `members`.
     board: {
-        // Every member with their lean pool + stash tiles for the board.
         getAll: () => appClient.Get<User[]>("api/v1/members"),
         // Adds always land in the session member's stash.
         addMovie: (title: string, tmdbId: number) =>
@@ -355,8 +315,6 @@ export const APIClient = {
             appClient.Post<void>(`api/v1/movies/${movieID}/move`, {
                 body: { target },
             }),
-        // Board reads stay keyed by member id (a public per-member read, not a
-        // mutation): the pool/stash tiles for the given member.
         getPool: (userID: number) =>
             appClient.Get<MovieTile[]>(`api/v1/members/${userID}/pool`),
         getStash: (userID: number) =>
@@ -383,15 +341,13 @@ export const APIClient = {
         watchWildcard: (wildcardID: number) => appClient.Post<Wildcard>("api/v1/movies/wildcard/watch", {
             body: { wildcardId: wildcardID },
         }),
-        // Confirm the draw — closes the reel for every client (via movie:revealed).
+        // Closes the reel for every client (via movie:revealed).
         reveal: () => appClient.Post<void>("api/v1/movies/current/reveal"),
         getWatched: () =>
             appClient.Get<MovieTile[]>("api/v1/movies/watched"),
-        // Full enriched record (cast/crew/overview/backdrop) for the detail modal;
-        // the list payloads are lean, so the modal lazy-loads this on open.
+        // Full record for the detail modal; list payloads are lean.
         get: (movieID: number, signal?: AbortSignal) =>
             appClient.Get<MovieDetail>(`api/v1/movies/${movieID}`, { signal }),
-        // Stats filter choices, derived server-side from the watched library.
         getFilterOptions: (signal?: AbortSignal) =>
             appClient.Get<FilterOptionsResponse>("api/v1/movies/filter-options", { signal }),
         markWatched: () =>

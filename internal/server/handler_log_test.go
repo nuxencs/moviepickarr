@@ -11,8 +11,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// captureReqLog drives one request through a throwaway app whose only handler
-// logs via h.reqLog, and returns the decoded JSON line.
+// captureReqLog runs one request through an app that only logs via h.reqLog and returns the decoded line.
 func captureReqLog(t *testing.T, setup func(app *fiber.App), method, path string) map[string]any {
 	t.Helper()
 
@@ -49,9 +48,8 @@ func TestReqLogCarriesRequestScope(t *testing.T) {
 	if got := line["method"]; got != fiber.MethodGet {
 		t.Errorf("method = %v, want %s", got, fiber.MethodGet)
 	}
-	// The route template under "route", not "path": a per-request path would
-	// make every movie its own log stream, and "path" belongs to the access-log
-	// middleware, which puts the concrete URL there.
+	// A per-request path would make every movie its own log stream; "path" belongs
+	// to the access-log middleware.
 	if got := line["route"]; got != "/req/:movieID?" {
 		t.Errorf("route = %v, want the route template", got)
 	}

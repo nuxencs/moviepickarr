@@ -10,26 +10,18 @@ import (
 )
 
 const (
-	// posterWallMax caps how many poster paths the wall holds. One /discover page
-	// is 20 results, and the login panel never renders more than a handful.
+	// One /discover page.
 	posterWallMax = 20
-	// posterWallRefreshInterval re-warms the wall on a long cadence: the popular
-	// list barely moves day to day, so a weekly refresh keeps it from going stale
-	// over a long-running deploy without hammering TMDB.
+	// The popular list barely moves day to day.
 	posterWallRefreshInterval = 7 * 24 * time.Hour
 )
 
-// posterFetch fetches the current popular poster paths. It is an injectable seam
-// so the cache's warm/refresh behavior can be driven deterministically in tests
-// without a live TMDB or real sleeps.
+// posterFetch fetches the current popular poster paths; a seam for tests.
 type posterFetch func(ctx context.Context) ([]string, error)
 
-// posterWallCache holds the poster paths the public /auth/poster-wall endpoint
-// serves. It is warmed once on startup and refreshed on a cadence in a background
-// goroutine, so no request ever blocks on TMDB. A failed warm or refresh keeps
-// the last good list rather than clearing it, so a transient TMDB outage never
-// blanks the panel. Reads return the current slice (empty until the first warm
-// lands).
+// posterWallCache holds the poster paths for /auth/poster-wall, refreshed in
+// the background so no request blocks on TMDB. A failed refresh keeps the last
+// good list.
 type posterWallCache struct {
 	fetch   posterFetch
 	refresh time.Duration
@@ -58,9 +50,8 @@ func (c *posterWallCache) Refresh() {
 	}
 }
 
-// list returns a copy of the cached poster paths, never nil, so the endpoint
-// serializes a clean JSON [] while the cache is still unwarmed. The copy keeps a
-// caller from mutating the slice a concurrent refresh may be swapping under.
+// list returns a copy of the cached paths, never nil, so the endpoint
+// serializes [] before the first warm.
 func (c *posterWallCache) list() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -69,10 +60,8 @@ func (c *posterWallCache) list() []string {
 	return out
 }
 
-// Start warms the cache once and then refreshes it on the cadence, all in one
-// background goroutine so boot is never blocked by the TMDB round trip. Stop
-// cancels it. A nil cache (no TMDB key) is a no-op, mirroring the enrichRunner
-// nil guard.
+// Start warms and then refreshes the cache in a background goroutine. A nil
+// cache (no TMDB key) is a no-op.
 func (c *posterWallCache) Start(ctx context.Context) {
 	if c == nil {
 		return
@@ -84,8 +73,8 @@ func (c *posterWallCache) Start(ctx context.Context) {
 	go c.run(runCtx)
 }
 
-// Stop cancels the background goroutine and waits for it to unwind. Safe to call
-// on a nil cache or one that never started.
+// Stop cancels the background goroutine and waits for it. Safe on a nil or
+// unstarted cache.
 func (c *posterWallCache) Stop() {
 	if c == nil {
 		return
@@ -120,12 +109,11 @@ func (c *posterWallCache) run(ctx context.Context) {
 	}
 }
 
-// warm runs one fetch and, on success, swaps in up to posterWallMax paths. On a
-// failed fetch it logs and returns, leaving the last good list in place.
+// warm runs one fetch and swaps in up to posterWallMax paths on success.
 func (c *posterWallCache) warm(ctx context.Context) {
 	paths, err := c.fetch(ctx)
 	if err != nil {
-		// A cancelled context is an orderly shutdown, not a fault worth an error line.
+		// A cancelled context is a shutdown, not a fault.
 		if ctx.Err() == nil {
 			c.log.Warn().Err(err).Msg("poster wall warm failed, keeping last good list")
 		}
@@ -142,11 +130,8 @@ func (c *posterWallCache) warm(ctx context.Context) {
 	c.log.Debug().Int("count", len(paths)).Msg("poster wall warmed")
 }
 
-// handlePosterWall serves the public, pre-session poster wall: a bare JSON
-// []string of poster paths in popularity order. It carries no secrets (poster
-// paths are public artwork) and serves [] whenever the cache is unwarmed or no
-// TMDB key is set (posterWall stays nil), so the client always has a clean empty
-// signal to fall back to its gradient tiles.
+// handlePosterWall serves poster paths in popularity order, or [] when the
+// cache is cold or no TMDB key is set.
 func (h *handler) handlePosterWall(c *fiber.Ctx) error {
 	if h.posterWall == nil {
 		return c.Status(fiber.StatusOK).JSON([]string{})

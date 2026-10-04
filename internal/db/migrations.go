@@ -25,11 +25,8 @@ func RunMigrations(ctx context.Context, db *sql.DB) error {
 	return RunMigrationsWithBackup(ctx, db, BackupConfig{})
 }
 
-// RunMigrationsWithBackup is RunMigrations plus a pre-migration safety net:
-// when migrations are pending against a previously migrated database, it
-// integrity-checks the file and snapshots it next to the DB before touching
-// the schema. A fresh database (nothing applied yet) is never backed up —
-// there is nothing to lose.
+// RunMigrationsWithBackup is RunMigrations plus an integrity check and snapshot
+// before pending migrations run. A fresh database is never backed up.
 func RunMigrationsWithBackup(ctx context.Context, db *sql.DB, backup BackupConfig) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -106,13 +103,10 @@ func RunMigrationsWithBackup(ctx context.Context, db *sql.DB, backup BackupConfi
 	return nil
 }
 
-// applyMigrationContent dispatches one migration's SQL to the fk_off rebuild
-// path or the plain path based on the marker, then records it. Shared with the
-// migration tests so they mirror the runner instead of reimplementing detection.
+// applyMigrationContent applies and records one migration. The tests call it
+// too, so they share the runner's marker detection.
 func applyMigrationContent(ctx context.Context, db *sql.DB, m migration, content string) error {
-	// Tolerate a BOM or leading blank lines — missing the marker on a rebuild
-	// migration would run its DROP TABLE with FKs on and cascade into child
-	// tables, so detection must not hinge on exact first bytes.
+	// Tolerate a BOM or blank lines: a missed marker would cascade the DROP TABLE.
 	if strings.HasPrefix(strings.TrimLeft(content, "\uFEFF \t\r\n"), fkOffMarker) {
 		return applyMigrationFKOff(ctx, db, m, content)
 	}
@@ -138,12 +132,9 @@ func applyMigration(ctx context.Context, db *sql.DB, m migration, content string
 	return tx.Commit()
 }
 
-// fkOffMarker on a migration's first line means it rebuilds a table that other
-// tables reference: DROP TABLE with foreign_keys=ON would cascade-delete the
-// referencing rows. PRAGMA foreign_keys is a silent no-op inside a
-// transaction, so the pragma must run on the pinned connection around the tx
-// (SQLite's documented rebuild procedure). Before committing, a full
-// foreign_key_check guards against the rebuild leaving dangling references.
+// fkOffMarker on a migration's first line runs it with foreign keys off, so a
+// table rebuild's DROP TABLE does not cascade. PRAGMA foreign_keys is a no-op
+// inside a tx, so it runs on the pinned connection around it.
 const fkOffMarker = "-- migrate:fk_off"
 
 func applyMigrationFKOff(ctx context.Context, db *sql.DB, m migration, content string) error {
@@ -156,7 +147,7 @@ func applyMigrationFKOff(ctx context.Context, db *sql.DB, m migration, content s
 	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
 		return err
 	}
-	// Re-enable on every exit path; the connection returns to the pool.
+	// The connection returns to the pool, so re-enable on every exit path.
 	defer func() { _, _ = conn.ExecContext(ctx, "PRAGMA foreign_keys = ON") }()
 
 	tx, err := conn.BeginTx(ctx, nil)

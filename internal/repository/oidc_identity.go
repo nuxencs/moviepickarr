@@ -10,9 +10,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteOIDCIdentityRepository is the linked-identity store over the 009
-// oidc_identities table. Reads route to the read pool and mutations to the write
-// pool, matching the single-writer discipline the other repositories follow.
+// SqliteOIDCIdentityRepository is the linked-identity store.
 type SqliteOIDCIdentityRepository struct {
 	pool *db.Pool
 }
@@ -21,8 +19,7 @@ func NewSqliteOIDCIdentityRepository(pool *db.Pool) *SqliteOIDCIdentityRepositor
 	return &SqliteOIDCIdentityRepository{pool: pool}
 }
 
-// oidcIdentitySelect is THE oidc_identities projection: every identity read
-// starts from this exact column list and scans via scanOIDCIdentity.
+// oidcIdentitySelect is the one oidc_identities projection; keep it in step with scanOIDCIdentity.
 const oidcIdentitySelect = `
 	SELECT
 		oi.id,
@@ -94,9 +91,7 @@ func (d *SqliteOIDCIdentityRepository) Insert(ctx context.Context, id domain.OID
 		id.UserID,
 	)
 	if err != nil {
-		// Either UNIQUE (user_id already linked, or this issuer+subject linked to
-		// another member) is a client conflict, not a 500; an insert against a
-		// missing member trips the user_id FK, meaning the member does not exist.
+		// Either UNIQUE is a 409, not a 500; an FK failure means no such member.
 		if db.IsUniqueViolation(err) {
 			return fmt.Errorf("%w: identity already linked", domain.ErrConflict)
 		}

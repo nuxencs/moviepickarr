@@ -1,20 +1,6 @@
-/* ============================================================
-   Render tests for the roster section's dialog wiring (#140).
-
-   RosterOverlays.render.test.tsx renders each ceremony directly. The gap this
-   fills is the path a member actually takes to one: the row kebab, whose
-   actions are built per member from their credential state, and which then
-   hands a specific member into the dialog it opens.
-
-   That handoff is the part worth pinning. rowActions and the dialogs are
-   correct in isolation and can still be wired to the wrong row: an off-by-one
-   in the member passed through would open a perfectly good remove confirm
-   naming somebody else. Only a test that goes trigger → menu → dialog sees it.
-
-   Which actions a given member gets is derived by roster.ts (isPlaceholder,
-   unlinkWouldStrand) and roster.test.ts owns that matrix. What's asserted here
-   is that the derivation reaches the menu and the right member rides along.
-   ============================================================ */
+/* Render tests for the roster section's dialog wiring (#140): row kebab ->
+   menu -> dialog, so a dialog never opens for the wrong member. The action
+   matrix is roster.test.ts's. */
 
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -151,8 +137,7 @@ async function renderWithoutInviteData(members: RosterMember[]) {
   return { ...view, queryClient: queryClient! };
 }
 
-/** Open a member's row kebab and take one of its actions. The menu portals to
- *  the body, and its entries are menuitems rather than plain buttons. */
+/** Open a member's row kebab and take one of its actions. */
 function takeAction(name: string, action: string) {
   fireEvent.click(screen.getByRole("button", { name: `Actions for ${name}` }));
   fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: action }));
@@ -195,8 +180,6 @@ describe("opening a ceremony from a member's row", () => {
 
     takeAction("Bea", "Remove member");
 
-    // Bea's row, so Bea's confirm. Which outcome her movie count earns is
-    // RosterOverlays.render.test.tsx's; all that matters here is whose row won.
     expect(dialog().textContent).toContain("Remove Bea?");
     expect(dialog().textContent).not.toContain("Cleo");
   });

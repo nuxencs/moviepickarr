@@ -9,9 +9,7 @@ import { AuthKeys } from "@/api/query_keys";
 
 import type { MeResponse } from "@/types/Response";
 
-// Assert that a guard call redirected to `to`, failing loudly if it resolved
-// without throwing (the "no redirect" bug) or threw something that isn't a
-// redirect.
+// Fails if the guard resolved without throwing or threw something other than a redirect.
 async function expectRedirect(run: Promise<unknown>, to: string) {
   await run.then(
     () => {
@@ -114,7 +112,7 @@ describe("requireAppSession", () => {
 describe("requireSession (app-layout gate)", () => {
   it("redirects a 401 to /login instead of letting the page render", async () => {
     const clearPrincipal = vi.fn();
-    // The main-page bug: a dead session used to paint the chrome behind 401s.
+    // Guards against painting the chrome behind 401s on a dead session.
     await expectRedirect(
       requireSession(rejectsWith(new ApiError(401, "no session")), clearPrincipal),
       "/login",
@@ -141,7 +139,7 @@ describe("requireSession (app-layout gate)", () => {
 
 describe("redirectIfSignedIn (login gate)", () => {
   it("bounces a live session to / before the form renders", async () => {
-    // The login-flash bug: the form used to paint for a frame before redirect.
+    // Guards against the form painting for a frame before the redirect.
     await expectRedirect(redirectIfSignedIn(resolves), "/");
   });
 

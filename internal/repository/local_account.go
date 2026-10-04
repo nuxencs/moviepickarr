@@ -10,10 +10,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteLocalAccountRepository is the local-login store over the 009
-// local_accounts table, with one read of oidc_identities for derived
-// link-state. Reads route to the read pool and mutations to the write pool,
-// matching the single-writer discipline the other repositories follow.
+// SqliteLocalAccountRepository is the local-login store over local_accounts.
 type SqliteLocalAccountRepository struct {
 	pool *db.Pool
 }
@@ -22,8 +19,7 @@ func NewSqliteLocalAccountRepository(pool *db.Pool) *SqliteLocalAccountRepositor
 	return &SqliteLocalAccountRepository{pool: pool}
 }
 
-// localAccountSelect is THE local_accounts projection: every credential read
-// starts from this exact column list and scans via scanLocalAccount.
+// localAccountSelect is the one local_accounts projection; keep it in step with scanLocalAccount.
 const localAccountSelect = `
 	SELECT
 		la.user_id,
@@ -57,8 +53,7 @@ func scanLocalAccount(scanner rowScanner) (*domain.LocalAccount, error) {
 }
 
 func (d *SqliteLocalAccountRepository) FindByUsername(ctx context.Context, username string) (*domain.LocalAccount, error) {
-	// The NOCASE collation on the username column folds case, so a plain equality
-	// match is the trimmed/case-insensitive lookup login needs.
+	// The column's NOCASE collation makes this match case-insensitive.
 	return scanLocalAccount(d.pool.Read.QueryRowContext(ctx, localAccountSelect+" WHERE la.username = ?", username))
 }
 
@@ -75,9 +70,7 @@ func (d *SqliteLocalAccountRepository) Create(ctx context.Context, userID int, u
 	`
 	res, err := d.pool.Write.ExecContext(ctx, query, userID, username, passwordHash, userID)
 	if err != nil {
-		// A NOCASE username collision is a client conflict, not a 500; an insert
-		// against a missing member trips the user_id FK, meaning the member does
-		// not exist.
+		// A NOCASE collision is a 409, not a 500; an FK failure means no such member.
 		if db.IsUniqueViolation(err) {
 			return fmt.Errorf("%w: username already taken", domain.ErrConflict)
 		}
@@ -161,9 +154,7 @@ func (d *SqliteLocalAccountRepository) RecordSuccessfulLogin(
 	newPasswordHash *string,
 	lastLoginAt, updatedAt time.Time,
 ) error {
-	// A nil newPasswordHash means "keep the stored hash": COALESCE leaves it
-	// untouched, so the common no-rehash login is one statement, same as a
-	// rehash-on-login.
+	// A nil newPasswordHash keeps the stored hash (COALESCE).
 	query := `
 		UPDATE local_accounts
 		SET password_hash = COALESCE(?, password_hash),
@@ -226,9 +217,7 @@ func (d *SqliteLocalAccountRepository) HasLinkedIdentity(ctx context.Context, us
 }
 
 func (d *SqliteLocalAccountRepository) GetMemberIdentity(ctx context.Context, userID int) (*domain.MemberIdentity, error) {
-	// One read joins the member to its derived link-state: username (and thus
-	// hasLocalLogin) from the LEFT JOIN, hasLinkedIdentity from an EXISTS. Both
-	// flags are presence-derived, never stored.
+	// Link-state flags derive from row presence; none is stored.
 	query := `
 		SELECT
 			u.id,
@@ -256,9 +245,7 @@ func (d *SqliteLocalAccountRepository) GetMemberIdentity(ctx context.Context, us
 	return id, nil
 }
 
-// execExpectingRow runs a write that must hit exactly one row and maps a
-// zero-row result to sql.ErrNoRows, so callers can tell "no such local login"
-// from a real failure.
+// execExpectingRow runs a one-row write and maps zero rows to sql.ErrNoRows.
 func (d *SqliteLocalAccountRepository) execExpectingRow(ctx context.Context, query string, args ...any) error {
 	res, err := d.pool.Write.ExecContext(ctx, query, args...)
 	if err != nil {

@@ -13,7 +13,6 @@ import (
 	"moviepickarr/internal/db"
 )
 
-// migratedPool opens a fresh temp DB with the full schema applied.
 func migratedPool(t *testing.T) *db.Pool {
 	t.Helper()
 	ctx := context.Background()
@@ -28,7 +27,6 @@ func migratedPool(t *testing.T) *db.Pool {
 	return pool
 }
 
-// applyRealPlan builds and applies the real embedded plan into a migrated DB.
 func applyRealPlan(t *testing.T, pool *db.Pool, now time.Time) Plan {
 	t.Helper()
 	ctx := context.Background()
@@ -110,7 +108,6 @@ func TestApplyWritesFullWorld(t *testing.T) {
 		t.Errorf("current = %d, want 0", got)
 	}
 
-	// next_up points at an active login member.
 	var nextUp sql.NullInt64
 	if err := pool.Read.QueryRowContext(ctx, "SELECT user_id FROM next_up WHERE id = 1").Scan(&nextUp); err != nil {
 		t.Fatalf("next_up: %v", err)
@@ -119,7 +116,6 @@ func TestApplyWritesFullWorld(t *testing.T) {
 		t.Fatal("next_up.user_id is NULL, want an active member")
 	}
 
-	// pool_locked seeded false.
 	var locked string
 	if err := pool.Read.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = 'pool_locked'").Scan(&locked); err != nil {
 		t.Fatalf("pool_locked: %v", err)
@@ -134,7 +130,6 @@ func TestApplySeededLoginsVerify(t *testing.T) {
 	pool := migratedPool(t)
 	applyRealPlan(t, pool, time.Now())
 
-	// Every seeded login must actually authenticate with the dev password.
 	rows, err := pool.Read.QueryContext(ctx, "SELECT username, password_hash FROM local_accounts")
 	if err != nil {
 		t.Fatalf("query logins: %v", err)
@@ -184,9 +179,8 @@ func TestIsEmpty(t *testing.T) {
 	}
 }
 
-// A reset must rebuild the schema, not only the rows. A local file can carry
-// objects from an unmerged migration that reused a version number, and the
-// version-only migration ledger never repairs them.
+// The version-only migration ledger never repairs objects left by an unmerged
+// migration that reused a version number.
 func TestRemoveDBDropsSchemaDrift(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "drifted.db")

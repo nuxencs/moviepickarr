@@ -13,8 +13,7 @@ import (
 	"github.com/alexedwards/argon2id"
 )
 
-// fakeLocalRepo is an in-memory LocalAccountRepo so the service's lockout,
-// rehash, and guard logic is asserted against an injected clock, no SQL.
+// fakeLocalRepo is an in-memory LocalAccountRepo for clock-driven lockout tests.
 type fakeLocalRepo struct {
 	byID       map[int]*domain.LocalAccount
 	linked     map[int]bool // user_id -> has oidc identity
@@ -138,7 +137,6 @@ func (f *fakeLocalRepo) GetMemberIdentity(_ context.Context, userID int) (*domai
 	return &clone, nil
 }
 
-// seedAccount inserts a local login with a real argon2id hash of password.
 func (f *fakeLocalRepo) seedAccount(t *testing.T, userID int, username, password string) {
 	t.Helper()
 	hash, err := HashPassword(password)
@@ -238,8 +236,7 @@ func TestLogin_LockedRejectsCorrectPassword(t *testing.T) {
 	repo.byID[1].FailedAttempts = maxFailedAttempts
 	a := NewLocalAuth(repo, WithLocalClock(fixedClock(now)))
 
-	// Even the correct password is refused while locked (silent lockout), and no
-	// verify bookkeeping runs.
+	// Silent lockout: even the correct password is refused.
 	if _, err := a.Login(context.Background(), "bob", "the right one"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
@@ -281,15 +278,12 @@ func TestLogin_OversizedPasswordRejected(t *testing.T) {
 	if _, err := a.Login(context.Background(), "bob", huge); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
-	// The DoS guard short-circuits before any bookkeeping.
 	if repo.failureCalls != 0 {
 		t.Fatal("oversized password touched the lockout counter")
 	}
 }
 
 func TestLogin_RehashOnDriftedParams(t *testing.T) {
-	// A hash made with weaker-than-configured params must trigger a rehash on a
-	// successful login.
 	weak := &argon2id.Params{Memory: 8192, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	hash, err := argon2id.CreateHash("driftpass", weak)
 	if err != nil {
@@ -313,19 +307,15 @@ func TestChangePassword(t *testing.T) {
 	a := NewLocalAuth(repo)
 	ctx := context.Background()
 
-	// No local login → ErrNoLocalLogin.
 	if err := a.ChangePassword(ctx, 999, "x", "new password"); !errors.Is(err, ErrNoLocalLogin) {
 		t.Fatalf("missing row err = %v, want ErrNoLocalLogin", err)
 	}
-	// Wrong current → generic invalid credentials.
 	if err := a.ChangePassword(ctx, 1, "not it", "new password"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("wrong current err = %v, want ErrInvalidCredentials", err)
 	}
-	// Too-short new password → invalid input.
 	if err := a.ChangePassword(ctx, 1, "old password", "short"); !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("short new err = %v, want ErrInvalidInput", err)
 	}
-	// Success rewrites the hash so the new password verifies and the old fails.
 	if err := a.ChangePassword(ctx, 1, "old password", "brand new password"); err != nil {
 		t.Fatalf("change: %v", err)
 	}
@@ -350,7 +340,6 @@ func TestSetLocalLogin_Create(t *testing.T) {
 		t.Fatal("local login not created")
 	}
 
-	// Bad username charset and short password are rejected as invalid input.
 	if _, err := a.SetLocalLogin(ctx, 6, "no spaces allowed", "a good password"); !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("bad username err = %v, want ErrInvalidInput", err)
 	}
@@ -392,11 +381,10 @@ func TestSetLocalLogin_Reset(t *testing.T) {
 		t.Fatal("reset password does not verify")
 	}
 
-	// A differing username on reset is rejected: username is immutable here.
+	// Username is immutable on reset.
 	if _, err := a.SetLocalLogin(ctx, 1, "renamed", "another password"); !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("rename err = %v, want ErrInvalidInput", err)
 	}
-	// Echoing the current username (any case) is accepted.
 	if _, err := a.SetLocalLogin(ctx, 1, "BOB", "another password"); err != nil {
 		t.Fatalf("echoed username reset: %v", err)
 	}
@@ -411,25 +399,22 @@ func TestDeleteLocalLogin(t *testing.T) {
 	a := NewLocalAuth(repo)
 	ctx := context.Background()
 
-	// Self, last credential → refused.
 	if err := a.DeleteLocalLogin(ctx, 1, 1); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("self-last-credential err = %v, want ErrConflict", err)
 	}
 	if _, ok := repo.byID[1]; !ok {
 		t.Fatal("refused delete still removed the row")
 	}
-	// Another member → allowed.
 	if err := a.DeleteLocalLogin(ctx, 2, 1); err != nil {
 		t.Fatalf("delete other: %v", err)
 	}
 	if _, ok := repo.byID[2]; ok {
 		t.Fatal("target local login not removed")
 	}
-	// Self but with a linked identity as fallback → allowed.
+	// Self with a linked identity as fallback.
 	if err := a.DeleteLocalLogin(ctx, 3, 3); err != nil {
 		t.Fatalf("delete self with fallback: %v", err)
 	}
-	// Missing row → not found.
 	if err := a.DeleteLocalLogin(ctx, 404, 1); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("missing err = %v, want ErrNotFound", err)
 	}

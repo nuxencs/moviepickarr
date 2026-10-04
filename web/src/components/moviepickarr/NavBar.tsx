@@ -10,7 +10,6 @@ import { ProfilePanel } from "@/components/moviepickarr/ProfilePanel";
 
 import { useSlidingTabIndicator } from "@/hooks/useSlidingTabIndicator";
 
-/** Icon per tab id; the pure nav module carries ids/labels/paths, not JSX. */
 const TAB_ICONS: Record<Tab, typeof MovieIcon> = {
   movies: MovieIcon,
   users: UsersIcon,
@@ -20,8 +19,6 @@ const TAB_ICONS: Record<Tab, typeof MovieIcon> = {
 
 export function NavBar() {
   const active = useRouterState({ select: (s) => tabFromPath(s.location.pathname) });
-  // The Admin tab only appears for admins. A 401 (not logged in) leaves role
-  // undefined, so it's hidden, never a dead entry a member can't use.
   const { data: me } = useQuery(MeQueryOptions());
   const tabs = tabsForRole(me?.role);
 
@@ -45,8 +42,6 @@ export function NavBar() {
             </Link>
           </h1>
 
-          {/* Top-bar tabs with the sliding underline (desktop / tablet). Hidden on
-              phones, where navigation moves to the fixed bottom bar below. */}
           <div className="nav__tabs">
             {tabs.map(({ id, label, path }) => {
               const Icon = TAB_ICONS[id];
@@ -80,9 +75,7 @@ export function NavBar() {
         </div>
       </nav>
 
-      {/* Fixed bottom tab bar, shown below 900px. Thumb-reach navigation; the active
-          tab is gold-tinted instead of carrying the desktop underline slider.
-          Hidden at the same breakpoint where the top-bar tabs reappear. */}
+      {/* Below 900px this replaces the top-bar tabs. */}
       <nav className="navbar-bottom" aria-label="Primary">
         {tabs.map(({ id, label, path }) => {
           const Icon = TAB_ICONS[id];

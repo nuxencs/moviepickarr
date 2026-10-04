@@ -72,8 +72,7 @@ func TestSessionRepo_FindJoinsLiveRole(t *testing.T) {
 		t.Fatalf("expires_at = %v, want %v", got.ExpiresAt, now.Add(90*24*time.Hour))
 	}
 
-	// Role is read live: promoting the member surfaces on the next read with the
-	// same token, no session row touched.
+	// Role is read live from users, not stored on the session.
 	if _, err := pool.Write.ExecContext(ctx, "UPDATE users SET role = 'admin' WHERE id = ?", alice.ID); err != nil {
 		t.Fatalf("promote: %v", err)
 	}
@@ -161,7 +160,6 @@ func TestSessionRepo_RevokeVariants(t *testing.T) {
 	mustCreateSession(t, ctx, sessions, "a3", alice.ID, exp, now)
 	mustCreateSession(t, ctx, sessions, "b1", bob.ID, exp, now)
 
-	// Revoke-others for Alice keeps a1, drops a2/a3, never touches Bob.
 	n, err := sessions.DeleteOthersByUserID(ctx, alice.ID, "a1")
 	if err != nil {
 		t.Fatalf("revoke others: %v", err)
@@ -176,7 +174,6 @@ func TestSessionRepo_RevokeVariants(t *testing.T) {
 		t.Fatalf("b1 should survive: %v", err)
 	}
 
-	// Revoke-current drops exactly a1.
 	if err := sessions.DeleteByTokenHash(ctx, "a1"); err != nil {
 		t.Fatalf("revoke current: %v", err)
 	}
@@ -184,7 +181,6 @@ func TestSessionRepo_RevokeVariants(t *testing.T) {
 		t.Fatalf("a1 err = %v, want sql.ErrNoRows", err)
 	}
 
-	// Revoke-all for Bob.
 	n, err = sessions.DeleteByUserID(ctx, bob.ID)
 	if err != nil {
 		t.Fatalf("revoke all: %v", err)
@@ -202,8 +198,6 @@ func TestSessionRepo_ListLiveOrdersByActivity(t *testing.T) {
 	exp := now.Add(90 * 24 * time.Hour)
 	idleCutoff := now.Add(-30 * 24 * time.Hour)
 
-	// Alice: two live sessions with distinct activity, one capped-out, one
-	// idle-expired. Bob's live session must never appear in Alice's list.
 	mustCreateSession(t, ctx, sessions, "a-stale", alice.ID, exp, now.Add(-2*time.Hour))
 	mustCreateSession(t, ctx, sessions, "a-fresh", alice.ID, exp, now)
 	mustCreateSession(t, ctx, sessions, "a-capped", alice.ID, now.Add(-time.Hour), now)
@@ -224,8 +218,7 @@ func TestSessionRepo_ListLiveOrdersByActivity(t *testing.T) {
 		t.Fatalf("listed user id = %d, want %d", live[0].UserID, alice.ID)
 	}
 
-	// Nothing live at all is an empty list, not a nil-vs-empty distinction the
-	// handler has to special-case.
+	// Empty, not nil, so the handler needs no special case.
 	empty, err := sessions.ListLiveByUserID(ctx, bob.ID, now.Add(200*24*time.Hour), idleCutoff)
 	if err != nil {
 		t.Fatalf("list live (none): %v", err)
@@ -247,8 +240,7 @@ func TestSessionRepo_ListLiveCarriesDeviceFields(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	// A session with neither recorded (an API client, a stripped agent) stays
-	// nil rather than becoming an empty string.
+	// Unrecorded client details stay nil, not an empty string.
 	mustCreateSession(t, ctx, sessions, "a2", alice.ID, now.Add(24*time.Hour), now.Add(-time.Minute))
 
 	live, err := sessions.ListLiveByUserID(ctx, alice.ID, now, now.Add(-30*24*time.Hour))
@@ -285,7 +277,6 @@ func TestSessionRepo_DeleteByPublicIDForUserIsScopedToOwner(t *testing.T) {
 	}
 	bobSessionID := live[0].PublicID
 
-	// Alice aiming at Bob's public handle removes nothing and reports nothing removed.
 	hash, err := sessions.DeleteByPublicIDForUser(ctx, bobSessionID, alice.ID)
 	if err != nil {
 		t.Fatalf("delete another member's session: %v", err)
@@ -297,7 +288,6 @@ func TestSessionRepo_DeleteByPublicIDForUserIsScopedToOwner(t *testing.T) {
 		t.Fatalf("another member's session was removed: %v", err)
 	}
 
-	// Its owner removes it, and learns which row went.
 	hash, err = sessions.DeleteByPublicIDForUser(ctx, bobSessionID, bob.ID)
 	if err != nil {
 		t.Fatalf("delete own session: %v", err)
@@ -356,11 +346,8 @@ func TestSessionRepo_DeleteExpired(t *testing.T) {
 	alice, _ := users.Create(ctx, "Alice")
 	now := time.Now().UTC().Truncate(time.Second)
 
-	// Live: inside both windows.
 	mustCreateSession(t, ctx, sessions, "live", alice.ID, now.Add(24*time.Hour), now)
-	// Absolute-expired: past the cap.
 	mustCreateSession(t, ctx, sessions, "capped", alice.ID, now.Add(-time.Hour), now)
-	// Idle-expired: cap far off, but last_seen older than the idle cutoff.
 	mustCreateSession(t, ctx, sessions, "idle", alice.ID, now.Add(24*time.Hour), now.Add(-31*24*time.Hour))
 
 	idleCutoff := now.Add(-30 * 24 * time.Hour)
@@ -388,8 +375,7 @@ func TestSessionRepo_CascadesOnUserDelete(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	mustCreateSession(t, ctx, sessions, "a1", alice.ID, now.Add(24*time.Hour), now)
 
-	// Alice authored no movies, so Remove hard-deletes her row and the session
-	// cascades away with it.
+	// No authored movies, so Remove hard-deletes and the session cascades.
 	outcome, err := users.Remove(ctx, alice.ID)
 	if err != nil {
 		t.Fatalf("remove user: %v", err)

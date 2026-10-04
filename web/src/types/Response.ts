@@ -1,5 +1,4 @@
-// A credited person on a movie: `character` is set on cast entries, `job` on
-// crew entries. profilePath is a raw TMDB path (e.g. "/abc.jpg").
+// `character` is set on cast entries, `job` on crew entries.
 export interface CreditPerson {
     id: number;
     name: string;
@@ -8,16 +7,13 @@ export interface CreditPerson {
     job?: string;
 }
 
-// Where a movie sits in the app. Mirrors the server's domain.MovieStatus.
+// Mirrors the server's domain.MovieStatus.
 export type MovieStatus = "pool" | "stash" | "current" | "wildcard" | "watched";
 
-// The two statuses a member can move a movie between (POST /movies/:id/move).
 // Derived from MovieStatus so renaming a status breaks here too.
 export type MoveTarget = Extract<MovieStatus, "pool" | "stash">;
 
-// The list/tile wire class. Pool, watched, and member-board reads return only
-// these fields; modal-only metadata is structurally unavailable until detail
-// is fetched.
+// Lean list wire class (pool, watched, board reads); modal fields need a detail fetch.
 export interface MovieTile {
     movieID: number;
     title: string;
@@ -25,19 +21,16 @@ export interface MovieTile {
     addedAt: string;
     addedByID: number;
     addedByName: string;
-    // Archived adders keep attribution but no longer have a Members board.
-    // Omitted for active adders to keep list payloads unchanged.
+    // Archived adders keep attribution but have no board. Omitted for active adders.
     addedByArchived?: boolean;
     watchedAt?: string;
-    // Present for a watched wildcard. It identifies the Current draw that the
-    // detour belonged to without changing that draw's lifecycle.
+    // Set on a watched wildcard: the Current draw it detoured from.
     wildcardOfMovieId?: number;
 
-    // Stable external identities used to build IMDb / TMDB / Letterboxd links.
     tmdbId?: number;
     imdbId?: string;
 
-    // Enriched tile metadata. All optional while enrichment is pending.
+    // Optional while enrichment is pending.
     posterPath?: string;
     releaseDate?: string;
     runtime?: number;
@@ -45,46 +38,36 @@ export interface MovieTile {
     voteAverage?: number;
 }
 
-// The full/detail wire class. Detail, current, mutation, and movie lifecycle
-// payloads carry it. A held winner remains projected as pooled until reveal.
+// Full wire class. A held winner stays projected as pooled until reveal.
 export interface MovieDetail extends MovieTile {
     status: MovieStatus;
 
-    // Draw-reveal coordination — present only on the current-movie endpoint and
-    // the movie:drawn event. drawnAt is when the current movie was drawn;
-    // revealAt is the server's auto-reveal deadline (the confirm countdown is
-    // derived from it, the server owns the reveal timing); serverNow is the
-    // server clock at fetch time, so the client computes the reveal spin's
-    // elapsed time without trusting its own clock.
+    // Only on /movies/current and movie:drawn. revealAt is the server's auto-reveal
+    // deadline; serverNow lets the client time the spin without trusting its own clock.
     drawnAt?: string;
     revealAt?: string;
     serverNow?: string;
-    // drawClientId is the client that initiated the draw — only that client
-    // shows the reel's confirm (OK) button. revealed reports whether the draw has
-    // been confirmed, so a reload after the reveal skips the reel (see drawSpin).
+    // drawClientId decides which browser shows the confirm countdown fill. revealed
+    // lets a reload after the reveal skip the reel (see drawMachine).
     drawClientId?: string;
     revealed?: boolean;
-    // Modal-only enriched metadata. All optional while enrichment is pending;
-    // backdropPath is a raw TMDB path (e.g. "/abc.jpg").
+    // Modal-only, optional while enrichment is pending.
     backdropPath?: string;
     tagline?: string;
     overview?: string;
 
-    // TMDB credits (cast in billing order, crew whitelisted jobs only); omitted
-    // by the API when empty or not yet enriched.
+    // Cast in billing order, crew whitelisted jobs only; omitted when empty.
     cast?: CreditPerson[];
     crew?: CreditPerson[];
 }
 
-// The draw mutation and movie:drawn event add a self-contained, lean reel
-// source to the full winning record. The exceptional recovery broadcast may
-// omit candidates, in which case clients skip the reel.
+// Adds a lean reel source to the winning record. The recovery broadcast may omit
+// candidates; clients then skip the reel.
 export interface MovieDrawPayload extends MovieDetail {
     candidates?: MovieTile[];
 }
 
-// The one Active wildcard, linked to the confirmed Current draw it holds while
-// it temporarily takes over the Hero. The movie is a full renderable record.
+// The one Active wildcard; it takes over the Hero while it holds the Current draw.
 export interface Wildcard {
     id: number;
     hostMovieId: number;
@@ -102,21 +85,14 @@ export interface User {
 
 export interface Settings {
     poolLocked: boolean;
-    // Server-owned pool freeze during an unrevealed draw. Independent of
-    // whether this client is animating a reel.
+    // Server-owned freeze during an unrevealed draw, independent of any local reel.
     drawInProgress: boolean;
 }
 
 export type MemberRole = "member" | "guest" | "admin";
 
-// One row of the admin roster (GET /members/roster). Login state is
-// presence-derived server-side, never a stored flag: hasLocalLogin /
-// hasLinkedIdentity / invitePending are the existence of a credential / invite
-// row, archived the archived_at column. moviesAuthored decides whether a remove
-// hard-deletes (frees the name) or archives (keeps attribution), so the surface
-// can name the outcome before committing. username is present only with a local
-// login; lastSeenAt is the newest session touch, absent for members who never
-// logged in.
+// Login state is presence-derived server-side, never a stored flag. moviesAuthored
+// tells the surface whether a remove deletes or archives.
 export interface RosterMember {
     id: number;
     name: string;
@@ -130,22 +106,16 @@ export interface RosterMember {
     lastSeenAt?: string;
 }
 
-// The one-time claim URL returned by member-create, invite changes, and restore.
-// It is shown once and never resent, so the surface reveals it in a copy-or-lose
-// ceremony rather than persisting it.
+// Shown once and never resent, so the surface does not persist it.
 export interface InviteResult {
     claimUrl: string;
 }
 
-// The two current-invite states the roster renders. Used and revoked invites
-// have no row because neither is actionable.
+// Used and revoked invites have no row: neither is actionable.
 export type InviteStatus = "open" | "expired";
 
-// One current generation from GET /invites. It may onboard a placeholder or
-// reset a credentialed member's password. `status` is derived against the
-// response's server clock. `issuedBy` is absent for a seeded invite or a deleted
-// issuer. The claim URL cannot be recovered because only its token hash is
-// stored; replacement is the only way to reveal another link.
+// `status` is derived against the response's serverNow. The claim URL cannot be
+// recovered (only its token hash is stored); replacement reveals a new link.
 export interface InviteSummary {
     id: string;
     memberId: number;
@@ -161,16 +131,14 @@ export interface InvitesResponse {
     items: InviteSummary[];
 }
 
-// Which of the two removal paths ran, so the surface can report "deleted" (gone,
-// name freed) vs "archived" (restorable, attribution kept) after the same action.
+// "deleted" frees the name; "archived" is restorable and keeps attribution.
 export type RemoveOutcome = "deleted" | "archived";
 
 export interface RemoveResult {
     outcome: RemoveOutcome;
 }
 
-// The session actor projected by GET /auth/me. username is null when the member
-// has no local login; the two link-state flags are presence-derived server-side.
+// username is null without a local login.
 export interface MeResponse {
     id: number;
     displayName: string;
@@ -180,10 +148,7 @@ export interface MeResponse {
     hasLinkedIdentity: boolean;
 }
 
-// One live session from GET /auth/sessions: the member's own devices, never
-// anyone else's. `id` is an immutable public handle, never the store row id.
-// `device` is derived server-side from the stored user agent
-// ("Safari on iPhone"); `current` marks the session making the request.
+// The member's own sessions only. `id` is a public handle, never the store row id.
 export interface SessionSummary {
     id: string;
     device: string;
@@ -191,18 +156,14 @@ export interface SessionSummary {
     current: boolean;
 }
 
-// Public auth capabilities the unauthenticated login page reads to decide what
-// to render. Today that is only whether an SSO provider is configured.
 export interface AuthConfig {
     oidc: boolean;
 }
 
-// The two live claim modes GET /auth/claim/{token} returns for a valid invite:
-// "placeholder" (set a fresh username + password) or "reset" (password only).
+// "placeholder" sets username + password; "reset" sets the password only.
 export type ClaimMode = "placeholder" | "reset";
 
-// Drives the /claim/<token> page for a valid invite. The no-longer-valid and
-// already-set-up terminal states arrive as 404/410 errors, not this shape.
+// No-longer-valid and already-set-up arrive as 404/410 errors, not this shape.
 export interface ClaimInfo {
     displayName: string;
     mode: ClaimMode;
@@ -212,14 +173,11 @@ export interface ClaimInfo {
     };
 }
 
-// A selectable person in the Stats filter bar (actor, crew member, or adder).
 export interface FilterPersonOption {
     id: number;
     name: string;
 }
 
-// Stats filter choices, derived server-side from the watched library — the
-// shape consumed by FilterBar (mirrors the old client-side filterOptionsFrom).
 export interface FilterOptionsResponse {
     genres: string[];
     actors: FilterPersonOption[];
@@ -273,14 +231,11 @@ export interface StatsRuntime {
     longestTitle?: string;
 }
 
-// One person in the stats filters echo, resolved to a display name when any
-// credit row references them.
 export interface StatsFilterPerson {
     personId: number;
     name?: string;
 }
 
-// Echo of the active stats filters, with the people lists resolved to names.
 export interface StatsFiltersEcho {
     genre?: string;
     actors?: StatsFilterPerson[];
@@ -292,8 +247,7 @@ export interface StatsFiltersEcho {
 export interface StatsResponse {
     selectedWindow: StatsWindow;
     selectedWindowCount: number;
-    // Movie ids behind selectedWindowCount, watch-recency order — the client
-    // joins these to the cached watched list to render the movies-in-window rail.
+    // The client joins these to the cached watched list for the in-window rail.
     matchedMovieIDs: number[];
     timezone: string;
     totalWatched: number;
@@ -304,7 +258,7 @@ export interface StatsResponse {
     customRangeStart?: string;
     customRangeEnd?: string;
 
-    // TMDB-metadata aggregates, all computed over the filtered in-window subset.
+    // Computed over the filtered in-window subset.
     topGenres: StatsNamedCount[];
     topDirectors: StatsPersonCount[];
     topActors: StatsPersonCount[];

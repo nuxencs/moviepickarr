@@ -10,9 +10,8 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// ApplyEnrichment commits one TMDB result only while the movie still has the
-// identity observed before the remote calls. Identity, metadata, people,
-// credits, and the completion marker are one all-or-nothing writer operation.
+// ApplyEnrichment commits one TMDB result, all or nothing, only while the movie
+// keeps the identity seen before the remote calls.
 func (d *SqliteMoviesRepository) ApplyEnrichment(
 	ctx context.Context,
 	write domain.MovieEnrichmentWrite,
@@ -46,9 +45,8 @@ func (d *SqliteMoviesRepository) ApplyEnrichment(
 	switch {
 	case err == nil:
 	case db.IsUniqueViolation(err):
-		// The identity predicate matched, but another movie owns the resolved
-		// identity. Preserve the existing duplicate-row policy: enrich and stamp
-		// this row without changing its ids, so it does not loop in the backlog.
+		// Another movie owns the resolved identity: enrich without changing ids,
+		// so this row does not loop in the backlog.
 	case errors.Is(err, sql.ErrNoRows):
 		var exists bool
 		if err := tx.QueryRowContext(ctx,

@@ -127,8 +127,8 @@ func NewSqliteUserRepository(pool *db.Pool) *SqliteUserRepository {
 }
 
 func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.User, error) {
-	// Active read: archived members are off the roster, so a lookup by id skips
-	// them too (they resurface only via Restore, which reads the row directly).
+	// Archived members are off the roster here. Roster, Remove, and Restore
+	// read them directly.
 	query := "SELECT id, name, created_at, updated_at FROM users WHERE id = ? AND archived_at IS NULL"
 
 	user, err := scanUser(d.pool.Read.QueryRowContext(ctx, query, id))
@@ -143,9 +143,7 @@ func (d *SqliteUserRepository) FindByID(ctx context.Context, id int) (*domain.Us
 }
 
 func (d *SqliteUserRepository) List(ctx context.Context) ([]*domain.User, error) {
-	// The roster is active members only: archived members keep their row for
-	// watch-history attribution but never show up in a live read (this backs the
-	// board, stats, and the rotation candidate list alike).
+	// Archived members keep their row for attribution but never show in a live read.
 	query := "SELECT id, name, created_at, updated_at FROM users WHERE archived_at IS NULL ORDER BY created_at ASC, id ASC"
 
 	rows, err := d.pool.Read.QueryContext(ctx, query)
@@ -182,10 +180,8 @@ func (d *SqliteUserRepository) Create(ctx context.Context, name string) (*domain
 	return d.FindByID(ctx, int(id))
 }
 
-// Remove deletes or archives a member as one action, chosen inside a single
-// write transaction by whether they authored any movies. The whole decision,
-// including the last-admin guard, runs under one tx so neither the movie count
-// nor the active-admin count can race the delete/archive they drive.
+// Remove deletes or archives a member, by whether they authored movies. One tx
+// keeps the movie and admin counts from racing the write they drive.
 func (d *SqliteUserRepository) Remove(ctx context.Context, id int) (domain.RemoveOutcome, error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
@@ -193,8 +189,7 @@ func (d *SqliteUserRepository) Remove(ctx context.Context, id int) (domain.Remov
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Existence is the movies-join's problem otherwise, so check it up front: a
-	// missing member is a 404, not a silent no-op.
+	// Check existence up front: a missing member is a 404, not a silent no-op.
 	var role domain.Role
 	var archivedAt sql.NullInt64
 	if err := tx.QueryRowContext(ctx,
@@ -233,11 +228,8 @@ func (d *SqliteUserRepository) Remove(ctx context.Context, id int) (domain.Remov
 	return outcome, nil
 }
 
-// removeMember runs the chosen removal path against an open tx. Zero authored
-// movies hard-deletes the row (FK cascade clears credentials/sessions/invites,
-// next_up nulls, name freed); one or more archives it (archived_at set, then the
-// login rows explicitly deleted so login dies) while the users row and its movie
-// attribution survive.
+// removeMember hard-deletes a member with no authored movies (FK cascade clears
+// logins) and archives one with movies, so attribution survives.
 func removeMember(ctx context.Context, tx *sql.Tx, id, authored int) (domain.RemoveOutcome, error) {
 	if authored == 0 {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM users WHERE id = ?", id); err != nil {
@@ -251,8 +243,7 @@ func removeMember(ctx context.Context, tx *sql.Tx, id, authored int) (domain.Rem
 	); err != nil {
 		return "", err
 	}
-	// The users row stays for attribution, so nothing cascades: strip every login
-	// row by hand so the archived member cannot authenticate.
+	// Nothing cascades on archive, so strip the login rows by hand.
 	if err := deleteUserAuthRows(ctx, tx, id); err != nil {
 		return "", err
 	}
@@ -273,10 +264,8 @@ func deleteUserAuthRows(ctx context.Context, tx *sql.Tx, id int) error {
 	return nil
 }
 
-// Restore reactivates an archived member only after stripping any residual
-// authentication rows. The cleanup and archived_at change share one
-// transaction, so a pre-upgrade credential or session can never become live
-// during restore.
+// Restore reactivates an archived member. Residual login rows are stripped in
+// the same tx, so a pre-upgrade credential or session cannot become live.
 func (d *SqliteUserRepository) Restore(ctx context.Context, id int) error {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
@@ -305,14 +294,9 @@ func (d *SqliteUserRepository) Restore(ctx context.Context, id int) error {
 	return tx.Commit()
 }
 
-// rosterSelect is the admin roster read: one row per member, active and archived,
-// with login state derived in-query. The three EXISTS subqueries are the
-// link-state axes (no stored flag), the invite one mirrors the app's validity
-// rule (unredeemed, unrevoked, unexpired), and the movie count decides
-// delete-vs-archive on removal. last_seen_at is the newest session touch (nullable
-// for members with no session, e.g. placeholders and archived rows). Ordering is
-// active-before-archived, then oldest-first, so the handler splits the sections
-// without re-sorting.
+// rosterSelect is the admin roster read, active and archived, with login state
+// derived in-query. The invite EXISTS mirrors the app's invite validity rule.
+// Active-before-archived order lets the handler split sections without re-sorting.
 const rosterSelect = `
 SELECT
     u.id,
@@ -376,10 +360,8 @@ func (d *SqliteUserRepository) Roster(ctx context.Context) ([]*domain.RosterMemb
 	return members, rows.Err()
 }
 
-// SetRole changes an active member's role under one write transaction. The
-// last-admin guard, required turn-handoff confirmation, role update, and turn
-// move all use the same snapshot. A stale client therefore cannot bypass the
-// confirmation or confirm a handoff that was no longer needed.
+// SetRole changes an active member's role. Guards, handoff confirmation, and
+// turn move share one tx, so a stale client cannot bypass the confirmation.
 func (d *SqliteUserRepository) SetRole(ctx context.Context, change domain.RoleChange) (domain.RoleChangeResult, error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
@@ -436,9 +418,8 @@ func (d *SqliteUserRepository) SetRole(ctx context.Context, change domain.RoleCh
 
 	result := domain.RoleChangeResult{Changed: true}
 	if change.Role == domain.RoleGuest {
-		// If the outgoing participant holds Next up, hand it to the next active
-		// participant in roster order, wrapping once. A guest-only roster leaves
-		// the singleton explicitly empty.
+		// If the demoted member holds Next up, pass it on in roster order, wrapping
+		// once; a guest-only roster leaves it empty.
 		handoff, err := tx.ExecContext(ctx, `
 			UPDATE next_up
 			SET user_id = (
@@ -492,10 +473,7 @@ func NewSqliteMoviesRepository(pool *db.Pool) *SqliteMoviesRepository {
 	return &SqliteMoviesRepository{pool: pool}
 }
 
-// movieSelect is THE movies projection: every movie read starts from this
-// exact select (movie columns + the adder's name) and scans via scanMovie.
-// Adding a movie column is one edit here plus one in scanMovie; the query
-// methods below only append their WHERE/ORDER BY tails.
+// movieSelect is the one movies projection; keep it in step with scanMovie.
 const movieSelect = `
 	SELECT
 		m.id,
@@ -513,7 +491,6 @@ const movieSelect = `
 	JOIN users u ON m.added_by_id = u.id
 	LEFT JOIN wildcards w ON w.movie_id = m.id AND w.status = 'watched'`
 
-// queryMovies runs a movieSelect-based query and scans the full result set.
 func (d *SqliteMoviesRepository) queryMovies(ctx context.Context, query string, args ...any) ([]*domain.Movie, error) {
 	rows, err := d.pool.Read.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -554,8 +531,6 @@ func (d *SqliteMoviesRepository) FindByUserID(ctx context.Context, userID int) (
 }
 
 func (d *SqliteMoviesRepository) FindByStatus(ctx context.Context, status string) ([]*domain.Movie, error) {
-	// The watched library reads in watch-recency order; everything else is a
-	// plain title sort.
 	order := " ORDER BY title"
 	if status == "watched" {
 		order = " ORDER BY m.watched_at DESC, m.title"
@@ -653,8 +628,7 @@ func (d *SqliteMoviesRepository) AddToStash(
 		return nil, err
 	}
 
-	// Keep the response projection inside the transaction. The handler only
-	// broadcasts after this record returns, so a failed read must undo the add.
+	// Read inside the tx: the handler broadcasts after return, so a failed read must undo the add.
 	movie, err := scanMovie(tx.QueryRowContext(ctx, movieSelect+" WHERE m.id = ?", int(id)))
 	if err != nil {
 		return nil, err
@@ -672,8 +646,7 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 
 	result, err := d.pool.Write.ExecContext(ctx, query, tmdbID, imdbID, id)
 	if err != nil {
-		// Stable identities are unique whenever present. Keep this message
-		// neutral because either the TMDB or IMDb index can reject the write.
+		// Neutral message: either the TMDB or the IMDb index can reject the write.
 		if db.IsUniqueViolation(err) {
 			return fmt.Errorf("%w: another movie already has this identity", domain.ErrConflict)
 		}
@@ -691,10 +664,8 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 	return nil
 }
 
-// EditMovie commits one authored edit as a unit. The initial movie read owns
-// authorization, status validation, and identity comparison; changed identity
-// cleanup removes derived rows; the final read owns the response. All run on tx
-// so neither callers nor other writers can observe a partial command.
+// EditMovie commits one authored edit, including authorization and identity
+// cleanup, in one tx so no reader sees a partial edit.
 func (d *SqliteMoviesRepository) EditMovie(
 	ctx context.Context,
 	movieID, actorID int,
@@ -776,9 +747,8 @@ func (d *SqliteMoviesRepository) EditMovie(
 	}
 
 	if identityChanged {
-		// Credits and metadata describe the prior movie, so do not serve them while
-		// the replacement identity awaits enrichment. Delete only the movie joins;
-		// people are shared across movies and stay in place.
+		// Credits and metadata describe the prior movie. Delete only the joins:
+		// people are shared across movies.
 		if _, err := tx.ExecContext(ctx,
 			"DELETE FROM movie_credits WHERE movie_id = ?",
 			movieID,
@@ -826,11 +796,8 @@ func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, statu
 	return nil
 }
 
-// StartDraw commits the movie's pool -> current transition and its concealed
-// Pending acquisition in one writer transaction. The Acquisition snapshots the
-// authored movie identity at the same boundary as the status change, so a later
-// edit cannot retarget Radarr work and a failed insert cannot strand a Current
-// draw without its Acquisition.
+// StartDraw moves the movie from pool to current and snapshots its concealed
+// Acquisition in one tx, so a later edit cannot retarget Radarr work.
 func (d *SqliteMoviesRepository) StartDraw(
 	ctx context.Context,
 	movieID int,
@@ -882,11 +849,8 @@ func (d *SqliteMoviesRepository) StartDraw(
 	return tx.Commit()
 }
 
-// RevealDrawAndAdvanceNextUp persists the Acquisition visibility boundary and
-// the rotation-on-reveal handoff before the movie service flips its
-// process-local draw or publishes movie:revealed. next is nil when the turn
-// stays put. Call it once per draw: the Acquisition write is idempotent, but
-// every call rotates. The movie service's reveal-once flip guarantees that.
+// RevealDrawAndAdvanceNextUp persists the Reveal and its turn rotation; next is
+// nil when the turn stays put. Call it once per draw: every call rotates.
 func (d *SqliteMoviesRepository) RevealDrawAndAdvanceNextUp(
 	ctx context.Context,
 	movieID int,
@@ -914,10 +878,8 @@ func (d *SqliteMoviesRepository) RevealDrawAndAdvanceNextUp(
 	return next, nil
 }
 
-// revealAcquisitionTx crosses the admin visibility boundary and creates the
-// first actionable webhook outbox rows in the same transaction. A concealed
-// Acquisition never reaches the outbox. Existing delivery rows make repeated
-// Reveal calls idempotent through the condition uniqueness constraint.
+// revealAcquisitionTx reveals the Acquisition and queues its first webhook
+// outbox rows; a concealed Acquisition never reaches the outbox. Idempotent.
 func revealAcquisitionTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1010,9 +972,8 @@ func revealAcquisitionTx(
 	return true, nil
 }
 
-// ConcealedCurrentDraw loads the durable draw needed to rebuild the Held draw
-// after a restart. A revealed Acquisition deliberately returns found=false: the
-// ceremony is complete and the Current draw should render directly.
+// ConcealedCurrentDraw loads the unrevealed draw to rebuild the Held draw after
+// a restart. A revealed draw returns found=false.
 func (d *SqliteMoviesRepository) ConcealedCurrentDraw(
 	ctx context.Context,
 ) (movieID int, drawnAt, revealAt time.Time, drawClientID string, found bool, err error) {
@@ -1050,10 +1011,8 @@ func (d *SqliteMoviesRepository) UpdateStatusIf(ctx context.Context, id int, to,
 	return res.RowsAffected()
 }
 
-// PromoteToPoolIfRoom flips a stashed movie to "pool" in a single statement,
-// gated on the owner's current pool count via a correlated subquery (the owner
-// is derived from the movie row itself). Because it is one atomic UPDATE, two
-// concurrent promotions cannot both pass a stale count and overshoot maxPool.
+// PromoteToPoolIfRoom moves a stashed movie to the pool when the owner has room.
+// One atomic UPDATE, so two concurrent promotions cannot overshoot maxPool.
 func (d *SqliteMoviesRepository) PromoteToPoolIfRoom(ctx context.Context, id, maxPool int) (int64, error) {
 	query := `
 		UPDATE movies
@@ -1101,11 +1060,9 @@ func (d *SqliteMoviesRepository) MarkAsWatched(ctx context.Context, id int, watc
 	return nil
 }
 
-// WatchCurrentDraw marks the current draw watched in one writer transaction.
-// revealsDraw is true when the draw was still unrevealed: the watch is then also
-// its Reveal and commits the rotation-on-reveal handoff with the watched movie.
-// next is nil when the turn stays put. Every dependent read stays on tx: using
-// the read pool here could derive the handoff from a different snapshot.
+// WatchCurrentDraw marks the current draw watched. With revealsDraw it is also
+// the Reveal and rotates the turn; next is nil when the turn stays put. Reads
+// stay on tx so the handoff cannot come from a different snapshot.
 func (d *SqliteMoviesRepository) WatchCurrentDraw(
 	ctx context.Context,
 	watchedAt time.Time,
@@ -1141,10 +1098,8 @@ func (d *SqliteMoviesRepository) WatchCurrentDraw(
 		return nil, nil, err
 	}
 
-	// Watching an unrevealed draw is itself a Reveal. Keep that visibility and
-	// its actionable webhook outbox rows inside the same transaction as the
-	// watched movie. Legacy current rows can have no Acquisition, so found=false
-	// remains valid on this compatibility path.
+	// Watching is a Reveal. Legacy current rows can lack an Acquisition, so
+	// found=false is valid here.
 	if _, err = revealAcquisitionTx(ctx, tx, movieID, watchedAt, false); err != nil {
 		return nil, nil, err
 	}
@@ -1164,17 +1119,14 @@ func (d *SqliteMoviesRepository) WatchCurrentDraw(
 		return nil, nil, err
 	}
 
-	// SQLite persists epoch seconds, but the successful request keeps the
-	// original UTC instant in its response.
+	// SQLite stores whole seconds; the response keeps the original instant.
 	watchedAt = watchedAt.UTC()
 	watched.WatchedAt = &watchedAt
 	return watched, next, nil
 }
 
-// advanceNextUpTx passes the turn to the Turn participant after the current
-// holder, in roster order. It returns nil without writing when fewer than two
-// Turn participants exist. A holder no longer in the rotation (archived or now
-// a Guest) hands the turn to the first participant.
+// advanceNextUpTx passes the turn to the next participant in roster order, or
+// to the first when the holder left the rotation. Nil with fewer than two.
 func advanceNextUpTx(ctx context.Context, tx *sql.Tx) (*domain.User, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, name, created_at, updated_at
@@ -1213,8 +1165,7 @@ func advanceNextUpTx(ctx context.Context, tx *sql.Tx) (*domain.User, error) {
 
 	currentIndex := -1
 	if !storedNextUp.Valid {
-		// Advance historically self-seeds the first member, then rotates to
-		// the second. Preserve that fresh-install behavior in one write.
+		// Fresh install: behave as if the first member held the turn.
 		currentIndex = 0
 	} else {
 		for i := range users {
@@ -1303,9 +1254,8 @@ func (d *SqliteNextUpRepository) Set(ctx context.Context, userID int) error {
 	return nil
 }
 
-// SetFirstEligible selects and stores the oldest active Turn participant. It is
-// the self-heal path for an empty pointer, an archived holder, or a legacy
-// pointer to a Guest.
+// SetFirstEligible stores the oldest Turn participant: the self-heal for an
+// empty, archived, or Guest pointer.
 func (d *SqliteNextUpRepository) SetFirstEligible(ctx context.Context) (*domain.User, error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
@@ -1335,9 +1285,8 @@ func (d *SqliteNextUpRepository) SetFirstEligible(ctx context.Context) (*domain.
 	return user, nil
 }
 
-// Skip is the admin's explicit turn handoff. The holder check, the unrevealed
-// draw check, and the rotation share one write snapshot, so a skip cannot race
-// a Reveal into a double rotation or skip a member the admin never saw.
+// Skip is the admin's explicit turn handoff. One tx, so a skip cannot race a
+// Reveal into a double rotation or skip a member the admin never saw.
 func (d *SqliteNextUpRepository) Skip(ctx context.Context, holderID int) (*domain.User, error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {

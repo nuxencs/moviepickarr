@@ -13,29 +13,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// sseHeartbeatInterval is how often the server writes a named `heartbeat` frame
-// on an otherwise-idle SSE connection. It does three jobs:
-//
-//   - keep-alive: regular traffic stops intermediaries from reaping an idle
-//     stream — nginx's 60s proxy_read_timeout, Cloudflare's edge idle limit, NAT
-//     table eviction.
-//   - liveness: a failed flush on the heartbeat is how we notice a dead/half-open
-//     socket (e.g. a backgrounded tab whose TCP connection died) and unwind to
-//     the deferred Unsubscribe within one interval — instead of leaking the
-//     subscription until the next domain event happens to fail its write.
-//   - passive gap detection: the frame carries the current head seq, so an idle
-//     client whose cursor trails it (a frame was dropped on a full buffer) knows
-//     to resync without waiting for the next domain event — plus a serverNow the
-//     client can use to refresh its choreography clock offset.
-//
-// 15s leaves a 4x margin under nginx's 60s default and is well under
-// Cloudflare's ~100s edge idle limit.
+// sseHeartbeatInterval paces the idle `heartbeat` frame: it keeps proxies from
+// reaping the stream, a failed flush detects a dead socket, and its head seq
+// lets an idle client detect a gap. 15s stays under nginx's 60s and
+// Cloudflare's ~100s idle limits.
 const sseHeartbeatInterval = 15 * time.Second
 
-// connectedFrame is the one-shot handshake sent when a stream opens. epoch lets a
-// client detect a server restart; seq is the head at subscribe time, so the
-// client aligns its gap-detection cursor; serverNow seeds the choreography clock
-// offset (mirrors the value GET /movies/current returns for the active draw).
+// connectedFrame is the handshake: epoch detects a restart, seq aligns the gap
+// cursor, serverNow seeds the clock offset (as GET /movies/current does).
 type connectedFrame struct {
 	Type      string `json:"type"`
 	Epoch     string `json:"epoch"`
@@ -43,9 +28,7 @@ type connectedFrame struct {
 	ServerNow string `json:"serverNow"`
 }
 
-// heartbeatFrame is the idle keep-alive. It carries no id: line (so it never
-// perturbs the client's seq cursor) but does carry the head seq for passive gap
-// detection and serverNow for clock-offset refresh.
+// heartbeatFrame has no id: line, so it never moves the client's seq cursor.
 type heartbeatFrame struct {
 	Seq       uint64 `json:"seq"`
 	ServerNow string `json:"serverNow"`
@@ -57,33 +40,21 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	// Capture the session token now, while the request context is live, so the
-	// stream can revalidate it on every heartbeat. requireSession already accepted
-	// this token to reach here (401 before the stream ever opens); the per-heartbeat
-	// recheck is what drops a session revoked AFTER the handshake.
+	// Kept for the per-heartbeat recheck that drops a session revoked after the
+	// handshake.
 	sessionToken := c.Cookies(sessionCookieName)
-	// The body-stream writer outlives Fiber's request context, so capture the
-	// complete request scope now. The copied logger owns its fields and remains
-	// safe after c is released.
+	// The stream writer outlives c, so copy the request-scoped logger now.
 	sseLog := h.reqLog(c).With().Str("subsystem", "sse").Logger()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		eventChannel, headSeq := h.broker.Subscribe()
-		// nil means the broker is closed (server shutting down) — don't open a
-		// stream that would block on a channel that's never fed or closed.
+		// nil: the broker is closed, and the channel would never be fed.
 		if eventChannel == nil {
 			return
 		}
 		defer h.broker.Unsubscribe(eventChannel)
 
-		// emit formats one frame straight into the stream and flushes it. Every
-		// frame goes through here: the write and flush failures used to be six
-		// call sites sharing two message strings, so a broken pipe told you
-		// nothing about which frame was in flight. Now there is one of each,
-		// plus a frame field.
-		//
-		// It takes the format and args rather than a built string so the frame
-		// still goes to the writer in one Fprintf, as it did before.
+		// emit writes and flushes every frame, so failures log which frame broke.
 		emit := func(frame, format string, args ...any) error {
 			if _, err := fmt.Fprintf(w, format, args...); err != nil {
 				sseLog.Debug().Err(err).Str("frame", frame).Msg("client write failed, closing stream")
@@ -96,9 +67,7 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			return nil
 		}
 
-		// retry: hints the reconnect delay EventSource uses in the window before
-		// the client's own backoff takes over. The handshake carries epoch (restart
-		// detection), the head seq (cursor alignment) and serverNow (clock offset).
+		// retry: covers EventSource until the client's own backoff takes over.
 		connectedNow := time.Now().UTC()
 		connectedData, err := json.Marshal(connectedFrame{
 			Type:      "connected",
@@ -117,14 +86,10 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 		ticker := time.NewTicker(h.sseHeartbeatInterval)
 		defer ticker.Stop()
 
-		// writeEvent serialises one domain event to the stream. A marshal error
-		// skips that event (logged, non-fatal); a write/flush error is fatal to
-		// the stream and unwinds to the deferred Unsubscribe.
+		// writeEvent skips an unmarshalable event; a write error ends the stream.
 		writeEvent := func(e event) error {
 			eventData, err := json.Marshal(e)
 			if err != nil {
-				// Which event type is unmarshalable is the entire diagnostic
-				// here; without it this line names a closure, not a bug.
 				sseLog.Error().Err(err).
 					Str("frame", "message").
 					Str("event", e.Type).
@@ -132,8 +97,6 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 					Msg("frame marshal failed")
 				return nil
 			}
-			// id: persists the seq in the browser; the client also reads it from
-			// the JSON body for gap detection.
 			return emit("message", "id: %d\nevent: message\ndata: %s\n\n", e.Seq, eventData)
 		}
 
@@ -141,7 +104,6 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 			select {
 			case e, ok := <-eventChannel:
 				if !ok {
-					// Broker closed the channel (Unsubscribe or server shutdown).
 					return
 				}
 				if err := writeEvent(e); err != nil {
@@ -149,12 +111,8 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 				}
 
 			case <-ticker.C:
-				// Revalidate the session before doing any heartbeat work: a session
-				// revoked (logout-everywhere, admin reset, password change) or expired
-				// after the handshake must stop receiving updates within one interval.
-				// Revalidate (not Authenticate) is deliberate: it must not slide the
-				// idle window, or a long-held stream would keep an idle session alive.
-				// Best-effort context: the request's is gone once the writer runs.
+				// Revalidate, not Authenticate: sliding the idle window would let an
+				// open stream keep an idle session alive. The request context is gone here.
 				if err := h.sessions.Revalidate(context.Background(), sessionToken); err != nil {
 					if errors.Is(err, auth.ErrSessionInvalid) {
 						sseLog.Debug().Err(err).Msg("session revoked or expired mid-stream, closing stream")
@@ -164,23 +122,11 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 					return
 				}
 
-				// Flush any events already queued for this client BEFORE the
-				// heartbeat. The heartbeat carries the broker's global head seq, so
-				// emitting it ahead of events still buffered for this client would
-				// leapfrog them: the client advances its cursor to the head, then
-				// reads the trailing buffered events as a seq gap and resyncs twice.
-				// Draining first keeps the head the client sees consistent with what
-				// it has actually been sent.
+				// A heartbeat ahead of buffered events would read as a seq gap.
 				if open, err := drainBufferedEvents(eventChannel, writeEvent); err != nil || !open {
 					return
 				}
 
-				// Named heartbeat (no id: line, so it never advances the seq cursor).
-				// It reaches a dedicated client listener — never the message handler —
-				// and does triple duty: keep the pipe warm, surface dead sockets (a
-				// failed flush is how we notice a half-open socket, worth a debug
-				// line), and carry the head seq + serverNow for passive gap detection
-				// and clock refresh.
 				heartbeatNow := time.Now().UTC()
 				heartbeatData, err := json.Marshal(heartbeatFrame{
 					Seq:       h.broker.HeadSeq(),
@@ -200,12 +146,8 @@ func (h *handler) handleSSE(c *fiber.Ctx) error {
 	return nil
 }
 
-// drainBufferedEvents writes every event currently queued on ch, in seq order,
-// via write, then returns as soon as ch is empty. It stops early if write
-// reports a fatal error (returned) or ch is closed (open=false). Called before
-// a heartbeat so the heartbeat's global head seq is never written ahead of
-// events already buffered for this client, which the client would otherwise
-// read as a seq gap and resync over needlessly.
+// drainBufferedEvents writes the events queued on ch without blocking. It stops
+// on a write error or a closed ch (open=false).
 func drainBufferedEvents(ch <-chan event, write func(event) error) (open bool, err error) {
 	for {
 		select {

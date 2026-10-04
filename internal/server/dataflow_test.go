@@ -22,8 +22,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Delta 1: every broadcast gets a monotonic seq starting at 1, and Subscribe
-// reports the current head so a client can align its gap-detection cursor.
+// Subscribe reports the head so a client can align its gap-detection cursor.
 func TestEventBroker_AssignsMonotonicSeq(t *testing.T) {
 	broker := newEventBroker()
 	client, head := broker.Subscribe()
@@ -49,9 +48,7 @@ func TestEventBroker_AssignsMonotonicSeq(t *testing.T) {
 	}
 }
 
-// Delta 1: a late subscriber's returned head equals the last assigned seq, and
-// the next event it receives is head+1 — so it never reads a spurious gap for
-// events that happened before it connected.
+// A late subscriber must not read a spurious gap for events before it connected.
 func TestEventBroker_SubscribeReturnsCurrentHead(t *testing.T) {
 	broker := newEventBroker()
 	c1, _ := broker.Subscribe()
@@ -73,9 +70,8 @@ func TestEventBroker_SubscribeReturnsCurrentHead(t *testing.T) {
 	}
 }
 
-// An archived member keeps movie attribution but has no active Members board.
-// The movie payload must carry that distinction so clients do not link the
-// adder's name to a dead id that silently resolves to somebody else's board.
+// An archived adder has no active board, so clients must not link the name to a
+// dead id that resolves to another member's board.
 func TestMoviePayload_MarksArchivedAdder(t *testing.T) {
 	t.Parallel()
 
@@ -116,9 +112,8 @@ func TestMoviePayload_MarksArchivedAdder(t *testing.T) {
 	}
 }
 
-// Delta 2: a draw carries self-contained reel candidates (the pre-draw pool,
-// winner included) on BOTH the HTTP response and the movie:drawn broadcast, so
-// every client renders the full reel without consulting its local pool cache.
+// Both the HTTP response and movie:drawn carry the pre-draw pool (winner
+// included), so every client renders the reel without its local pool cache.
 func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	t.Parallel()
 
@@ -172,8 +167,7 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 	if err := json.UnmarshalRead(resp.Body, &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	// The server owns the reveal timing: the payload carries the auto-reveal
-	// deadline so clients derive the confirm countdown from it.
+	// Clients derive the confirm countdown from the server's auto-reveal deadline.
 	drawnAt, err := time.Parse(time.RFC3339, body.DrawnAt)
 	if err != nil {
 		t.Fatalf("drawnAt not RFC3339: %q (%v)", body.DrawnAt, err)
@@ -204,7 +198,6 @@ func TestHandleGetRandomMovie_CarriesSelfContainedCandidates(t *testing.T) {
 		t.Fatalf("winner %d not present in reel candidates", body.MovieID)
 	}
 
-	// The broadcast carries the same self-contained payload, with a seq assigned.
 	select {
 	case e := <-client:
 		if e.Type != "movie:drawn" {
@@ -283,9 +276,8 @@ func (r *countingDrawMetadataRepository) GetMetadataByMovieIDs(
 	return r.MovieMetadataRepo.GetMetadataByMovieIDs(ctx, ids)
 }
 
-// The draw service already reads the complete eligible pool before choosing a
-// winner. Candidate construction must reuse that snapshot instead of issuing a
-// second pool query after the draw lock has been released.
+// Candidates must reuse the draw's pool snapshot: a second query after the draw
+// lock is released can disagree with it.
 func TestHandleGetRandomMovie_ReadsCandidatePoolOnce(t *testing.T) {
 	t.Parallel()
 
@@ -333,11 +325,8 @@ func TestHandleGetRandomMovie_ReadsCandidatePoolOnce(t *testing.T) {
 	}
 }
 
-// The confirm bar counts down to revealAt, and it can start at any point in the
-// draw (Skip lands the reel early, a tab switch can mount it late). So the draw
-// payload has to say when the server stamped it: the client anchors the
-// deadline as serverNow -> revealAt measured against its own arrival time.
-// drawnAt can't serve, being second-truncated and already a round-trip stale.
+// The confirm bar can mount at any point in the draw, so the client anchors its
+// deadline as serverNow -> revealAt. drawnAt is second-truncated and stale.
 func TestHandleGetRandomMovie_StampsServerNowForTheConfirmDeadline(t *testing.T) {
 	t.Parallel()
 
@@ -423,8 +412,7 @@ func seedPoolAndDraw(t *testing.T, app *fiber.App, movieRepo *repository.SqliteM
 	}
 }
 
-// The auto-reveal deadline has no requesting member, but it still ends the
-// drawer's turn: clients hear the Reveal, then the handoff.
+// The auto-reveal has no requesting member but still ends the drawer's turn.
 func TestAutoRevealPassesTurnAndPublishesHandoff(t *testing.T) {
 	t.Parallel()
 
@@ -550,9 +538,8 @@ func TestHandleGetRandomMovie_PublishesBeforeAutoRevealCanFire(t *testing.T) {
 	)
 	<-metadataReached
 
-	// The injected timer makes either implementation deterministic. Before the
-	// fix it has already been armed, so fire it while publication is paused. The
-	// fixed path arms only after movie:drawn, so release publication first.
+	// If the timer is already armed, fire it while publication is paused;
+	// otherwise it arms after movie:drawn, so release publication first.
 	var fire func()
 	select {
 	case fire = <-timer.started:
@@ -689,17 +676,14 @@ func TestHandleGetRandomMovie_PanicPublishesFallbackBeforeAutoReveal(t *testing.
 	}
 }
 
-// Delta fix: the server OWNS the auto-reveal. With no client confirmation, it
-// reveals the draw itself and broadcasts movie:revealed after autoRevealDelay — so
-// every client (even a backgrounded, timer-throttled tab) closes off one broadcast
-// rather than its own countdown.
+// Every client (even a timer-throttled background tab) closes off the server's
+// broadcast, not its own countdown.
 func TestHandleGetRandomMovie_ServerAutoReveals(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	h, app, userRepo, movieRepo := setupEditMovieTest(t)
-	// Short auto-reveal window for the test; the delay now lives in the movie
-	// service's DrawConfig, so swap in a service configured with it.
+	// The delay lives in DrawConfig, so swap in a service with a short window.
 	h.movieService = movie.NewService(movieRepo, movie.DrawConfig{
 		AutoRevealDelay: 60 * time.Millisecond,
 		OnRevealed:      revealBroadcaster(h.broker),
@@ -723,8 +707,6 @@ func TestHandleGetRandomMovie_ServerAutoReveals(t *testing.T) {
 	}
 }
 
-// A manual confirm before the deadline cancels the server timer: exactly one
-// movie:revealed total, even after waiting past autoRevealDelay.
 func TestHandleRevealCurrentMovie_CancelsServerAutoReveal(t *testing.T) {
 	t.Parallel()
 
@@ -745,21 +727,20 @@ func TestHandleRevealCurrentMovie_CancelsServerAutoReveal(t *testing.T) {
 
 	seedPoolAndDraw(t, app, movieRepo, user.ID, "Sicario", "Arrival")
 
-	// Confirm well within the 100ms window → cancels the pending auto-reveal.
 	revReq := httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
 	revReq.Header.Set(testMemberHeader, strconv.Itoa(user.ID))
 	if resp, err := app.Test(revReq, -1); err != nil || resp.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("reveal: err=%v status=%v", err, resp.StatusCode)
 	}
 
-	// Over a window longer than autoRevealDelay, exactly one reveal (the manual one).
+	// The wait outlasts autoRevealDelay, so a late auto-reveal would show here.
 	if got := countEvents(client, "movie:revealed", 300*time.Millisecond); got != 1 {
 		t.Fatalf("expected exactly 1 movie:revealed (manual confirm; auto-reveal canceled), got %d", got)
 	}
 }
 
-// Watching before the reel lands is a terminal reveal too. Other clients may
-// still be animating, so they need the reveal frame before the watched frame.
+// Other clients may still be animating, so they need the reveal frame before
+// the watched frame.
 func TestHandleWatchCurrentMovie_RevealsUnrevealedDraw(t *testing.T) {
 	t.Parallel()
 
@@ -793,9 +774,8 @@ func TestHandleWatchCurrentMovie_RevealsUnrevealedDraw(t *testing.T) {
 	}
 }
 
-// Watching and handing off the turn are one durable transition. If next-up
-// persistence fails, the movie must stay current, its in-memory draw must stay
-// active, and clients must hear none of the terminal lifecycle events.
+// Watch and turn handoff are one transition: on failure the movie stays current,
+// the draw stays active, and no terminal events go out.
 func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) {
 	t.Parallel()
 
@@ -858,8 +838,7 @@ func TestHandleWatchCurrentMovie_RollsBackWhenNextUpRotationFails(t *testing.T) 
 	if !strings.Contains(logged, "forced next-up rotation failure") {
 		t.Fatalf("watch failure log missing database cause: %q", logged)
 	}
-	// The line goes through reqLog, so it identifies who tried to watch and on
-	// which route, not just that some watch somewhere failed.
+	// Logged through reqLog, so the line names the member and the route.
 	if !strings.Contains(logged, `"member_id":`) {
 		t.Fatalf("watch failure log missing the acting member: %q", logged)
 	}
@@ -996,10 +975,8 @@ func TestDrawCommandsPublishInMutationOrder(t *testing.T) {
 	)
 	<-metadataReached
 
-	// A draw owns the command until movie:drawn is published. TryLock chooses the
-	// deterministic order for both the red and green implementations without a
-	// timing assertion: the old implementation lets watch finish while metadata
-	// is paused; the fixed implementation releases draw first.
+	// A draw must own the command until movie:drawn is published. TryLock picks
+	// the matching order without a timing assertion.
 	drawOwnsPublication := !h.drawCommandMu.TryLock()
 	if !drawOwnsPublication {
 		h.drawCommandMu.Unlock()
@@ -1049,11 +1026,9 @@ func TestDrawCommandsPublishInMutationOrder(t *testing.T) {
 	}
 }
 
-// The draw must not leak through the pool reads. DrawRandom flips the winner to
-// "current" straight away, so before this hold every pool read dropped the tile
-// mid-spin: reload the page during the reel (or open the board on a second
-// client) and the missing poster gave the winner away ahead of the reveal. Both
-// the pool list and the per-member board pools have to keep it until the reveal.
+// DrawRandom flips the winner to "current" at once, so without the hold a pool
+// read mid-spin (reload, second client) drops the tile and gives the winner away.
+// Both the pool list and the per-member board pools must keep it.
 func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 	t.Parallel()
 
@@ -1191,13 +1166,8 @@ func TestPoolReadsHoldTheDrawnMovieUntilRevealed(t *testing.T) {
 	}
 }
 
-// Closing the two ways the hold could still give the winner away.
-//
-// The held tile looks pooled but is really "current", so without care it answers
-// mutations differently from the tiles beside it (a prober learns the winner),
-// and it stops costing its adder a pool slot (a free fourth movie for the length
-// of every draw). Both are settled server-side: pool mutations are frozen while
-// a draw is unrevealed, and the held tile still counts against the cap.
+// The held tile is really "current": otherwise it would answer mutations unlike
+// its neighbors (revealing the winner) and free its adder a pool slot.
 func TestPoolIsFrozenAndStillCountsWhileADrawIsUnrevealed(t *testing.T) {
 	t.Parallel()
 
@@ -1254,8 +1224,7 @@ func TestPoolIsFrozenAndStillCountsWhileADrawIsUnrevealed(t *testing.T) {
 		return resp.StatusCode, problem.Title
 	}
 
-	// The held winner and the tile beside it must answer identically: same
-	// status, same problem type. Anything else identifies the draw.
+	// Any difference from the tile beside it identifies the draw.
 	demoteWinner, titleWinner := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", winner.ID), `{"target":"stash"}`)
 	demoteOther, titleOther := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", bystander.ID), `{"target":"stash"}`)
 	if demoteWinner != fiber.StatusConflict || titleWinner != "draw_in_progress" {
@@ -1279,9 +1248,7 @@ func TestPoolIsFrozenAndStillCountsWhileADrawIsUnrevealed(t *testing.T) {
 		t.Fatalf("delete stashed movie = %d/%q, want 204 (the freeze is the pool's)", status, title)
 	}
 
-	// 2 rows in the pool + the held winner = a full pool, so the promotion is
-	// refused. Without counting the held tile this would succeed and leave the
-	// member with four.
+	// 2 pooled + the held winner = a full pool, so the promotion is refused.
 	if status, title := as(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", stashed.ID), `{"target":"pool"}`); status != fiber.StatusConflict || title != "pool_limit_reached" {
 		t.Fatalf("promote during the draw = %d/%q, want 409/pool_limit_reached", status, title)
 	}

@@ -45,8 +45,7 @@ describe("missLine", () => {
   });
 
   it("echoes what was typed, not what was searched", () => {
-    // Trimmed, because the quotes would otherwise show the space as a gap the
-    // user cannot account for.
+    // Trimmed, or the quotes would show the spaces.
     expect(missLine("  dune  ")).toBe('Nothing matches "dune"');
   });
 
@@ -67,8 +66,7 @@ describe("nextCell", () => {
   it("steps a movie at a time left and right, in the wall's own order", () => {
     expect(from(0, "ArrowRight")).toBe(1);
     expect(from(6, "ArrowLeft")).toBe(5);
-    // Across a row boundary, because the order the wall reads in is one run and
-    // the supplied column count is the stylesheet's business.
+    // Across a row boundary: the wall reads as one run.
     expect(from(5, "ArrowRight")).toBe(6);
   });
 
@@ -88,8 +86,7 @@ describe("nextCell", () => {
     expect(from(0, "ArrowLeft")).toBeNull();
     expect(from(13, "ArrowRight")).toBeNull();
     expect(from(2, "ArrowUp")).toBeNull();
-    // Down out of the last full row, over a third row that is two cells long:
-    // no cell there, so focus stays put rather than sliding to the last movie.
+    // No cell below in the short third row, so focus stays rather than sliding.
     expect(from(9, "ArrowDown")).toBeNull();
     expect(from(6, "ArrowDown")).toBe(12);
   });
@@ -133,8 +130,7 @@ describe("columnCount", () => {
   });
 
   it("floors at one column when there is nothing to read", () => {
-    // jsdom has no layout and no stylesheet, and a wall that has not been laid
-    // out yet answers `none`. One column still moves, a movie at a time.
+    // jsdom, or a wall not laid out yet, answers "" or `none`.
     expect(columnCount("")).toBe(1);
     expect(columnCount("none")).toBe(1);
   });

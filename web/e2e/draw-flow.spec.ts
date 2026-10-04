@@ -90,8 +90,7 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   await expect(reel).toBeHidden();
   await expect(page.getByRole("button", { name: "Mark as watched" })).toBeVisible();
 
-  // A Wildcard is a group-owned detour. It can be watched without replacing
-  // this draw or moving Next up, and another can then be selected and canceled.
+  // A Wildcard is watched without replacing this draw or moving Next up.
   const currentTitle = await page.locator(".hero__title").textContent();
   // Reveal passes the turn on; wait for that handoff before reading the label.
   await expect(page.locator(".hero__nextup .nm")).not.toHaveText("Your turn");
@@ -136,8 +135,7 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   await expect(page.locator(".hero__title")).toHaveText(currentTitle ?? "");
   await expect(page.locator(".hero__nextup")).toHaveText(nextUp ?? "");
 
-  // Reveal passed the turn on. The admin skips that member through the hero
-  // control, then takes the turn back to mark the draw watched.
+  // Skip the member the reveal passed the turn to, then take it back to mark watched.
   await page.getByRole("button", { name: /^Skip .+'s turn$/ }).click();
   const skipDialog = page.getByRole("dialog", { name: /^Skip .+ turn\?$/ });
   await skipDialog.getByRole("button", { name: "Skip turn" }).click();

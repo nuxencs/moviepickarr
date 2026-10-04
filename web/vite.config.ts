@@ -18,25 +18,13 @@ export default defineConfig({
     build: {
         rollupOptions: {
             output: {
-                // Peel the large, rarely-changing libraries into their own cached
-                // chunks so an app-code deploy doesn't bust the whole bundle's
-                // content hash: returning users keep the vendor chunks. App code
-                // and on-demand deps (lucide, sonner, number-flow) stay with the
-                // code that imports them, so route-level lazy chunks carry their own.
-                //
-                // This has to be the function form, matching resolved module paths.
-                // The array form matches bare specifiers, so listing "react-dom"
-                // never caught the `react-dom/client` the entry actually imports and
-                // react-dom leaked into the app chunk (react-vendor was 4.4 kB gzip,
-                // and every app deploy re-hashed react-dom along with it).
+                // Vendor chunks survive app deploys. Function form, not array: the
+                // array matches bare specifiers and missed `react-dom/client`.
                 manualChunks(id) {
                     if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
                         return "react-vendor"
                     }
-                    // Everything under @tanstack, not just react-query/react-router:
-                    // the function form matches module paths, so the internals those
-                    // two pull in (router-core, history, store, query-core) have to
-                    // be caught by name too or they fall back into the app chunk.
+                    // All of @tanstack, so internals like router-core stay out of the app chunk.
                     if (/[\\/]node_modules[\\/]@tanstack[\\/]/.test(id)) {
                         return "tanstack"
                     }

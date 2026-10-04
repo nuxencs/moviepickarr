@@ -41,10 +41,8 @@ type handler struct {
 	sessions  *auth.SessionManager
 	localAuth *auth.LocalAuth
 	invites   *auth.InviteManager
-	// OIDC relying-party surface. These fields are set together (or not at all):
-	// oidcEnabled gates route registration and the claim-page OIDC option, so
-	// when provider configuration is incomplete or discovery fails, oidc and
-	// oidcTx stay nil and /oidc/* is never mounted.
+	// The OIDC fields are set together or not at all; without them /oidc/* is
+	// never mounted.
 	oidc            *auth.RelyingParty
 	oidcTx          *auth.OIDCTxCodec
 	oidcEnabled     bool
@@ -52,13 +50,11 @@ type handler struct {
 	movieService    *movie.Service
 	nextUpService   *nextup.Service
 	settingsService *settings.Service
-	// drawCommandMu keeps next-up authorization attached to the lifecycle command
-	// and synchronous event publication it admitted. In particular, watch owns
-	// the turn through its rotation and movie:watched broadcast.
+	// drawCommandMu holds next-up authorization through the command and its
+	// events (see runDrawCommand).
 	drawCommandMu sync.Mutex
-	// poolStateMu orders pool-lock changes with every admitted pool membership
-	// mutation and its synchronous event. A successful lock response therefore
-	// cannot be followed by a move or delete that observed the prior lock value.
+	// poolStateMu orders pool-lock changes with pool mutations, so no move or
+	// delete can act on a stale lock value after a lock succeeds.
 	poolStateMu        sync.Mutex
 	movieMetadata      domain.MovieMetadataRepo
 	movieCredits       domain.MovieCreditsRepo
@@ -74,23 +70,16 @@ type handler struct {
 	radarrAcquisitions *radarrAcquisitionWorker
 	radarrWebhooks     *radarrWebhookWorker
 	radarrWorkersOnce  sync.Once
-	// posterWall backs the public GET /auth/poster-wall endpoint. Like
-	// enrichRunner it is nil when no TMDB key is set, and the handler then serves
-	// an empty array.
+	// posterWall is nil without a TMDB key; the endpoint then serves [].
 	posterWall    *posterWallCache
 	statsCacheMu  sync.RWMutex
 	statsCache    map[string]statsCacheEntry
 	statsCacheTTL time.Duration
 
-	// sseHeartbeatInterval is how often an open SSE stream writes a heartbeat and
-	// revalidates the session. A field (not the const directly) so tests can drive
-	// the revalidation without waiting the full production interval.
+	// sseHeartbeatInterval is a field so tests can shorten it.
 	sseHeartbeatInterval time.Duration
 
-	// Filter options (genres/actors/crew/years/adders for the Stats filter bar)
-	// are derived from the watched library's metadata+credits — the same data
-	// the watched list used to ship inline. A single cached snapshot, invalidated
-	// on the same triggers as the stats cache.
+	// Cached filter options, invalidated with the stats cache.
 	filterOptionsMu     sync.RWMutex
 	filterOptionsCache  *filterOptionsResponse
 	filterOptionsExpiry time.Time
@@ -129,9 +118,8 @@ func (h *handler) Close() {
 	}
 }
 
-// startRadarrWorkers starts process-owned Acquisition reconciliation and
-// webhook delivery exactly once. Tests can construct a handler without
-// background work; Run attaches both workers to its cancellation context.
+// startRadarrWorkers starts Acquisition reconciliation and webhook delivery
+// once. Run calls it, so tests can build a handler without background work.
 func (h *handler) startRadarrWorkers(ctx context.Context) {
 	if h == nil || h.radarr == nil {
 		return
@@ -153,11 +141,8 @@ func (h *handler) startRadarrWorkers(ctx context.Context) {
 	})
 }
 
-// revealBroadcaster is the movie.DrawConfig.OnRevealed adapter: it tells every
-// client to close its reel and reveal the winner in lockstep, then announces
-// the rotation-on-reveal handoff. The Service invokes it exactly once per draw:
-// manual confirm, server-owned auto-reveal, and an early watch emit identical
-// frames.
+// revealBroadcaster is the movie.DrawConfig.OnRevealed adapter. The Service
+// calls it once per draw, whatever path revealed it.
 func revealBroadcaster(broker *eventBroker) func(movie.Reveal) {
 	return func(r movie.Reveal) {
 		broker.Broadcast(event{Type: "movie:revealed", Data: map[string]any{
@@ -188,15 +173,13 @@ func parseInt(raw string) (int, bool) {
 	return v, true
 }
 
-// actorMemberID returns the session member id requireSession attached. It is the
-// single source of "who is acting": every mutation derives the actor from here,
-// never from a path parameter, so no one can act as someone else by editing a URL.
+// actorMemberID is the one source of the acting member. Never take the actor
+// from a path parameter, or a URL edit could act as someone else.
 func actorMemberID(c *fiber.Ctx) int {
 	id, _ := c.Locals(localsMemberID).(int)
 	return id
 }
 
-// resolveMovieID reads the :movieID path parameter as a positive int.
 func resolveMovieID(c *fiber.Ctx) (int, error) {
 	if v, ok := parseInt(c.Params("movieID")); ok {
 		return v, nil

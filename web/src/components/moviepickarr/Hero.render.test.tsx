@@ -1,17 +1,5 @@
-/* ============================================================
-   Render tests for the hero banner's attribution (#238).
-
-   The reveal machinery, the turn gate and the draw reel all have their own
-   homes (drawMachine.test.ts, turnGate.test.ts, DrawReel.render.test.tsx), and
-   none of it is repeated here. What is here is the one thing only the rendered
-   banner can answer: that an active adder's name in the eyebrow is the way to
-   their board, that archived attribution is not a dead link, and that following
-   an active link stacks a history entry instead of spending one.
-
-   It also covers the boundary between content and backdrop loading. A known
-   draw stays usable while its artwork decodes, and artwork updates must not
-   replay the content reveal or let an older request repaint a newer draw.
-   ============================================================ */
+/* Render tests for the hero banner: the adder link (#238), and backdrop loading
+   that must not replay the reveal or let an older decode repaint a newer draw. */
 
 import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -112,7 +100,6 @@ function session(id: number, role: MeResponse["role"] = "admin"): MeResponse {
   };
 }
 
-/** The banner on the Movies page with a draw already up. */
 async function renderHero(
   movie: MovieDetail = drawn,
   strict = false,
@@ -167,8 +154,7 @@ describe("the hero's attribution", () => {
     fireEvent.click(await adder());
 
     await waitFor(() => expect(router.state.location.href).toBe("/users?member=7"));
-    // A push, not the modal's replace: nothing here is holding a history entry
-    // the link has to spend, so leaving the banner is an ordinary navigation.
+    // A push, not the modal's replace: the banner holds no history entry to spend.
     router.history.back();
     await waitFor(() => expect(router.state.location.href).toBe("/"));
   });

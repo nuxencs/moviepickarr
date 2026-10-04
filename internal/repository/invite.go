@@ -11,10 +11,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteInviteRepository is the invite/claim store over the current invites
-// schema, joined to users + local_accounts for claim context. Reads route to
-// the read pool and mutations to the write pool, matching the single-writer
-// discipline the other repositories follow.
+// SqliteInviteRepository is the invite and claim store.
 type SqliteInviteRepository struct {
 	pool *db.Pool
 }
@@ -75,10 +72,8 @@ func (d *SqliteInviteRepository) Create(
 	return tx.Commit()
 }
 
-// ReplaceCurrent changes generations in one writer transaction. The update is
-// a compare-and-swap on the immutable public handle; a second click or another
-// tab replacing first matches nothing. The insert happens before commit, so any
-// constraint/store failure rolls the retirement back.
+// ReplaceCurrent swaps invite generations in one tx. The update is a
+// compare-and-swap on the public handle, so a second click matches nothing.
 func (d *SqliteInviteRepository) ReplaceCurrent(
 	ctx context.Context,
 	currentPublicID, replacementPublicID, tokenHash string,
@@ -174,10 +169,7 @@ func (d *SqliteInviteRepository) retireExact(
 }
 
 func (d *SqliteInviteRepository) FindContextByTokenHash(ctx context.Context, tokenHash string) (*domain.InviteContext, error) {
-	// One read joins the invite to its member's display name and derived
-	// local-login presence: hasLocalLogin decides placeholder-vs-reset, and the
-	// raw state columns (used_at, revoked_at, expires_at) drive the caller's
-	// state machine.
+	// hasLocalLogin decides placeholder-vs-reset; the raw state columns feed the caller.
 	query := `
 		SELECT
 			i.id,
@@ -215,10 +207,7 @@ func (d *SqliteInviteRepository) FindContextByTokenHash(ctx context.Context, tok
 }
 
 func (d *SqliteInviteRepository) ListCurrent(ctx context.Context) ([]domain.InviteOverview, error) {
-	// The partial unique index guarantees one unused, unrevoked generation per
-	// member. Expiry is deliberately absent: an expired generation still needs a
-	// roster action. Credentialed members stay present when an explicit password
-	// reset invite exists, so its public handle remains manageable.
+	// No expiry filter: an expired generation still needs a roster action.
 	query := `
 		SELECT
 			i.public_id,

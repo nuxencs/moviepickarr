@@ -47,17 +47,9 @@ import { timeAgo } from "@/lib/time";
 import "@/components/moviepickarr/admin/roster.css";
 
 /**
- * The data columns between the identity and the row kebab, in display order.
- *
- * Below 640 the table can't hold six columns on a phone, so the `shed` ones
- * hide and fold into the identity sub-line instead (roster.css). Both
- * renderings come from this one array: a column added here reaches the desktop
- * cell and the phone summary together, or neither. Which screen you are on is
- * CSS, the way it is everywhere else (cf. UsersTab's PUSH_WIDTH note).
- *
- * `summary` returns null where the phone line would only repeat the row: the
- * admin role is already a tag beside the name, "Member" is the default and goes
- * unsaid, and a member who has added nothing needs no zero.
+ * Columns between identity and kebab. Below 640px the `shed` ones fold into the
+ * identity sub-line (roster.css), so desktop cell and phone summary share one
+ * source. `summary` returns null where the phone line would repeat the row.
  */
 interface RosterColumn {
   key: string;
@@ -112,11 +104,10 @@ const summaryOf = (m: RosterMember): string[] =>
     .map((c) => c.summary?.(m) ?? null)
     .filter((s): s is string => s !== null);
 
-// Identity + the data columns + the kebab, for the states that span the row.
+// Identity + data columns + kebab.
 const COLUMN_COUNT = COLUMNS.length + 2;
 
-// The one active ceremony. Only one is ever open, so a single tagged union keeps
-// the modal orchestration a plain switch rather than a pile of booleans.
+// Only one dialog is ever open, so one tagged union rather than many booleans.
 type Dialog =
   | {
       kind: "invite";
@@ -203,9 +194,7 @@ function LoginCell({ member, state }: { member: RosterMember; state: InviteCellS
   );
 }
 
-// Every roster mutation toasts the server's message on failure (a 409 last-admin
-// / self-lockout carries its reason in the ApiError message) and falls back to a
-// generic line.
+// A 409 (last admin, self-lockout) carries its reason in the ApiError message.
 const fail = (fallback: string) => (err: unknown) =>
   toast.error(err instanceof ApiError && err.message ? err.message : fallback);
 
@@ -252,9 +241,8 @@ export function RosterSection() {
     : "";
   const reconciledMismatch = useRef("");
 
-  // Roster and invite overview are separate snapshots. If their shared "open"
-  // projection disagrees, hide exact commands and refresh both once. Holding the
-  // signature avoids a refetch loop when a backend or network fault persists.
+  // Roster and invite snapshots disagree: refresh both once. The held signature
+  // stops a refetch loop when the fault persists.
   useEffect(() => {
     if (!projectionMismatchSignature) {
       reconciledMismatch.current = "";
@@ -265,9 +253,8 @@ export function RosterSection() {
     void reconcileInviteSurfaces(queryClient);
   }, [invites.isError, projectionMismatchSignature, queryClient]);
 
-  // Refresh relative wording once a minute, then hit the exact server-clock
-  // expiry boundary when it comes first. Crossing expiry also reconciles the
-  // roster and exact-handle overview in case another tab claimed the link.
+  // Tick once a minute, or at the exact server-clock expiry if sooner; expiry
+  // also reconciles in case another tab claimed the link.
   useEffect(() => {
     if (!invites.data) return;
     const minute = 60_000;
@@ -283,8 +270,7 @@ export function RosterSection() {
   }, [clockTick, invites.data, invites.dataUpdatedAt, queryClient]);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: UsersKeys.roster() });
-  // Archive and restore change whether historical attribution is a live board
-  // link. This is the mutation's fallback when its own SSE frame is lost.
+  // Archive/restore change attribution links; fallback if the SSE frame is lost.
   const refreshMovieAttribution = () =>
     queryClient.invalidateQueries({ queryKey: MoviesKeys.all });
   const closeDialog = () => setDialog(null);
@@ -350,8 +336,7 @@ export function RosterSection() {
     onSuccess: (_res, { member, role }) => {
       closeDialog();
       refresh();
-      // Changing your own role changes your own nav (the admin Shield link, the
-      // name tag), so refresh the session actor too, not just the roster row.
+      // Your own role drives your nav, so refresh the session actor too.
       if (me?.id === member.id) queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       void queryClient.invalidateQueries({ queryKey: SettingsKeys.nextUp() });
       toast.success(`${member.name} is now ${roleWithArticle(role)}`);
@@ -430,8 +415,7 @@ export function RosterSection() {
     onSettled: () => reconcileInviteSurfaces(queryClient),
   });
 
-  // A non-admin gets 403 from the roster read: render the first-class forbidden
-  // state, never a 404 mask. Any other error is a genuine load failure.
+  // 403 renders the forbidden state, never a 404 mask.
   if (roster.isError) {
     if (roster.error instanceof ApiError && roster.error.status === 403) {
       return <ForbiddenState onLeave={() => navigate({ to: "/" })} />;
@@ -483,8 +467,6 @@ export function RosterSection() {
     };
   };
 
-  // The row kebab: invite commands stay beside the affected login state. A
-  // password reset generation remains manageable for credentialed members.
   const rowActions = (m: RosterMember): MenuAction[] => {
     if (m.archived) {
       return [
@@ -580,8 +562,7 @@ export function RosterSection() {
       actions.push({
         icon: <UsersIcon />,
         label: "Make member",
-        // Demoting the only admin would strand the roster; the backend 409s, but
-        // disable it here so the footgun isn't even offered.
+        // Demoting the only admin: the backend 409s too, so do not offer it.
         disabled: setRole.isPending || (m.role === "admin" && activeAdmins <= 1),
         onSelect: () => setRole.mutate({ member: m, role: "member" }),
       });
@@ -720,9 +701,7 @@ export function RosterSection() {
                         <td>
                           <MemberIdentity member={m} isSelf={isSelf(m)} />
                         </td>
-                        {/* Its own table, with its own shape: identity, one summary
-                            cell, kebab. Not tied to COLUMNS — an active-table
-                            column has no business widening this span. */}
+                        {/* Not tied to COLUMNS: an active column must not widen this span. */}
                         <td colSpan={3} className="adm-muted">
                           {credLabel(m)} · {m.moviesAuthored} added
                         </td>
@@ -780,10 +759,7 @@ export function RosterSection() {
   );
 }
 
-// The field keeps its own state so a keystroke re-renders the form and nothing
-// else. Held in RosterSection it re-rendered every roster row per character, and a
-// row is not cheap: an avatar with a layout effect, cred chips, a menu, and a
-// freshly built action array.
+// Own state so a keystroke does not re-render every (expensive) roster row.
 function AddMemberForm({
   onCreated,
 }: {

@@ -13,9 +13,8 @@ import (
 	"moviepickarr/internal/integration"
 )
 
-// SqliteRadarrRepository is the single persistence boundary for Radarr setup,
-// Acquisition state, and the webhook outbox. Configuration and lifecycle
-// methods are split across radarr_*.go files, but share this writer.
+// SqliteRadarrRepository persists Radarr setup, Acquisitions, and the webhook
+// outbox. Its methods span the radarr_*.go files.
 type SqliteRadarrRepository struct {
 	pool *db.Pool
 }
@@ -24,8 +23,7 @@ func NewSqliteRadarrRepository(pool *db.Pool) *SqliteRadarrRepository {
 	return &SqliteRadarrRepository{pool: pool}
 }
 
-// RadarrRemoveOutcome reports whether an unused setup row was removed or a
-// used row was archived to preserve Acquisition history.
+// RadarrRemoveOutcome reports whether a setup row was deleted or, when used, archived.
 type RadarrRemoveOutcome string
 
 const (
@@ -187,10 +185,8 @@ func (r *SqliteRadarrRepository) UpdateInstanceState(
 	return requireFoundUpdate(result)
 }
 
-// RemoveInstance hard-deletes an instance and its presets when no Acquisition
-// has used that setup. A used instance and its referenced presets stay archived
-// for history, while unreferenced child presets are deleted. The active-target
-// guard applies to both paths.
+// RemoveInstance deletes an unused instance and archives a used one, so
+// Acquisition history keeps its references. Unreferenced presets are deleted.
 func (r *SqliteRadarrRepository) RemoveInstance(
 	ctx context.Context,
 	id int64,
@@ -440,10 +436,7 @@ func (r *SqliteRadarrRepository) SetPresetValidity(
 	return requireFoundUpdate(result)
 }
 
-// RemovePreset hard-deletes a preset that no Acquisition has selected,
-// including unused setup archived by the former archive-only behavior. Once a
-// preset appears in history, removal archives it and preserves the snapshot's
-// foreign-key attribution.
+// RemovePreset deletes an unused preset and archives one that history references.
 func (r *SqliteRadarrRepository) RemovePreset(
 	ctx context.Context,
 	id int64,

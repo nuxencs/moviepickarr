@@ -30,10 +30,8 @@ func TestToAPIMovieMeta_FoldsMetadata(t *testing.T) {
 		t.Fatalf("expected empty imdbId, got %q", bare.IMDbID)
 	}
 
-	// The omitempty contract the frontend (web/src/types/Response.ts) relies on:
-	// enriched keys are absent from the wire format when the movie isn't enriched,
-	// while the stable tmdbId is present. Assert against the marshaled bytes so a
-	// dropped omitempty tag or renamed json tag is caught here, not at runtime.
+	// Assert on the marshaled bytes so a dropped omitempty or renamed json tag
+	// fails here (contract: web/src/types/Response.ts).
 	bareJSON, err := json.Marshal(bare)
 	if err != nil {
 		t.Fatalf("marshal bare: %v", err)
@@ -155,9 +153,8 @@ func TestToAPIMovieMeta_FoldsCredits(t *testing.T) {
 	}
 }
 
-// The detail payload carries the movie's real status, so a surface holding a
-// full record can tell a stash movie from a pool one without a proxy. Asserted
-// against the marshaled bytes: the frontend reads the wire key.
+// Lets a surface holding a full record tell a stash movie from a pool one.
+// Asserted on the marshaled bytes: the frontend reads the wire key.
 func TestToFullMovie_CarriesStatus(t *testing.T) {
 	t.Parallel()
 
@@ -177,8 +174,7 @@ func TestToFullMovie_CarriesStatus(t *testing.T) {
 	}
 }
 
-// The tile class does not carry status, whatever the movie's real status is.
-// The watched list ships hundreds of these, so the tile does not grow.
+// The watched list ships hundreds of tiles, so the tile does not grow.
 func TestToLeanTile_OmitsStatus(t *testing.T) {
 	t.Parallel()
 
@@ -266,11 +262,8 @@ func TestMovieLinkDerivation(t *testing.T) {
 	}
 }
 
-// The Members boards ship lean tiles: even a fully enriched, credited movie
-// must serialize without the modal-only fields (backdrop/tagline/overview/
-// cast/crew). The board grids read tile data only; the modal lazy-loads the
-// full record from GET /movies/:id. Assert against the marshaled userResponse
-// so a type regressed back to fullMovie is caught here, not on the wire.
+// The boards read tile data only; the modal lazy-loads GET /movies/:id. Assert on
+// the marshaled userResponse so a type regressed to fullMovie fails here.
 func TestToAPIUserMeta_ShipsLeanTiles(t *testing.T) {
 	t.Parallel()
 
@@ -297,15 +290,12 @@ func TestToAPIUserMeta_ShipsLeanTiles(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	// Tile fields survive.
 	for _, want := range []string{`"posterPath":"/p.jpg"`, `"runtime":136`, `"voteAverage":8.2`} {
 		if !strings.Contains(string(respJSON), want) {
 			t.Fatalf("expected tile field %s in %s", want, respJSON)
 		}
 	}
-	// Modal-only fields, status included, are structurally absent from the
-	// board payload: the tile stays byte-for-byte what it was, and the boards
-	// already know which list a tile came from.
+	// Status is absent too: the boards already know which list a tile came from.
 	for _, key := range []string{"backdropPath", "tagline", "overview", "cast", "crew", "status"} {
 		if strings.Contains(string(respJSON), `"`+key+`"`) {
 			t.Fatalf("expected %q omitted from lean board tile, got %s", key, respJSON)

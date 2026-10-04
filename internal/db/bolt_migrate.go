@@ -15,8 +15,8 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-// boltIMDbIDRegex extracts the IMDb id from a legacy Bolt link. Duplicated here
-// (rather than importing the server package) to respect the db→server layering.
+// boltIMDbIDRegex extracts the IMDb id from a legacy Bolt link. Duplicated so
+// db does not import server.
 var boltIMDbIDRegex = regexp.MustCompile(`(?i)tt\d{7,8}`)
 
 type boltUser struct {
@@ -40,9 +40,7 @@ type boltMovie struct {
 
 type boltSettings struct {
 	PoolLocked bool `json:"poolLocked"`
-	// JSON tags stay on the legacy Bolt keys (nextPickerID/nextPickerName): they
-	// mirror what the pre-rename app wrote to disk, so the one-time import must
-	// still read them. Only the Go-side names move to the next-up vocabulary.
+	// JSON tags keep the legacy Bolt keys that old installs wrote to disk.
 	NextUpID   string `json:"nextPickerID"`
 	NextUpName string `json:"nextPickerName"`
 }
@@ -304,8 +302,7 @@ func upsertBoltMovie(
 	addedAt := parseTimeOrNow(movie.AddedAt)
 	watchedAt := watchedAtFor(movie, status)
 
-	// The link column was dropped (migration 005); identity lives in imdb_id,
-	// derived from the legacy Bolt link. Enrichment fills the rest later.
+	// Migration 005 dropped the link column; keep only the IMDb id from it.
 	var imdbID *string
 	extractedIMDbID := ""
 	canonicalMovieID := 0
@@ -354,9 +351,8 @@ func upsertBoltMovie(
 	return nil
 }
 
-// watchedAtFor yields a watched_at binding that satisfies the schema's
-// status <-> watched_at CHECK: watched rows always get a time (the recorded
-// one, else the added time, else now), everything else stores NULL.
+// watchedAtFor satisfies the status/watched_at CHECK: watched rows always get a
+// time (recorded, else added, else now), others NULL.
 func watchedAtFor(movie boltMovie, status string) *int64 {
 	if status != "watched" {
 		return nil
@@ -417,5 +413,3 @@ func fileExists(path string) (bool, error) {
 	}
 	return false, err
 }
-
-// keep filepath import? ensure unused

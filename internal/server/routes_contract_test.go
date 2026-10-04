@@ -6,12 +6,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// The frontend (web/src/api/APIClient.ts, the `users` block) depends on this
-// exact set of member and movie routes for the Members board. They were renamed
-// from /users* to /members* + /movies* in the authz reshape (PR #96/#110), but
-// the frontend kept calling the old /users* paths, so every Members-tab request
-// 404'd and the board hung in its loading skeleton. This test locks the contract
-// so a later rename can't silently break the board again without failing here.
+// Locks the routes the Members board calls (web/src/api/APIClient.ts, `users` block).
+// The /users* rename in PR #96/#110 once 404'd every Members-tab request.
 func TestFrontendMemberMovieRoutesRegistered(t *testing.T) {
 	app := fiber.New()
 	// Registration only takes method values off the handler; it never calls them,
@@ -40,8 +36,7 @@ func TestFrontendMemberMovieRoutesRegistered(t *testing.T) {
 		}
 	}
 
-	// The old /users* movie paths must stay gone: their return would signal a
-	// half-done rename that reintroduces the original bug.
+	// The old /users* paths must stay gone: their return signals a half-done rename.
 	for _, gone := range []string{
 		"GET /api/v1/users",
 		"POST /api/v1/users/:userID/movies",

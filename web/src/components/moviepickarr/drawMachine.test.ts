@@ -15,8 +15,7 @@ import type { MovieDetail, MovieDrawPayload, MovieTile } from "@/types/Response"
 
 const T0 = "2026-07-17T20:00:00Z";
 const T0_PLUS = (ms: number) => new Date(Date.parse(T0) + ms).toISOString();
-/** The client's wall clock when a spin is built. Arbitrary and independent of
- *  the server timestamps above: only differences against it are ever read. */
+/** The client's wall clock at spin build. Arbitrary: only differences against it are read. */
 const NOW = 1_000_000;
 
 function env(overrides: Partial<DrawEnv> = {}): DrawEnv {
@@ -189,15 +188,13 @@ describe("RESUME", () => {
 
   it("times the reveal deadline to the same absolute instant", () => {
     const [state] = reduce(initialDrawState, { type: "RESUME", current: current(), pool }, env());
-    // 16.5s deadline − 2s already elapsed: this client reaches the reveal at
-    // the same instant as everyone else's reel.
+    // 16.5s deadline − 2s elapsed: the reveal lands with everyone else's reel.
     expect(state.spin!.deadlineAtMs).toBe(NOW + 14_500);
   });
 
   it("schedules the draw-anchored self-heal fallback on resume", () => {
     const [, commands] = reduce(initialDrawState, { type: "RESUME", current: current(), pool }, env());
-    // 14.5s left on the deadline + 5s grace: the same absolute revealAt + grace
-    // instant as a fresh draw, measured from serverNow.
+    // 14.5s left + 5s grace: the same instant as a fresh draw's fallback.
     expect(commands).toEqual([{ cmd: "scheduleFallback", afterMs: 19_500 }]);
   });
 
@@ -239,8 +236,7 @@ describe("settle and reveal", () => {
   it("SCROLL_DONE settles without rescheduling the fallback (it is draw-anchored)", () => {
     const [state, commands] = reduce(spinning(), { type: "SCROLL_DONE" }, env());
     expect(state.phase).toBe("settled");
-    // The fallback was scheduled at spin start, so an early skip (an early
-    // SCROLL_DONE) can't pull it in: settling emits no new timer.
+    // Scheduled at spin start, so an early SCROLL_DONE cannot pull it in.
     expect(commands).toEqual([]);
   });
 

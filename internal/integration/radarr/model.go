@@ -47,9 +47,8 @@ const (
 	IdentityIMDb IdentityKind = "imdb"
 )
 
-// ExactIdentity names exactly one external provider identity. Construct values
-// with TMDBIdentity or IMDbIdentity so callers cannot accidentally fall back to
-// title matching for an exact lookup.
+// ExactIdentity names one provider identity. Build it with TMDBIdentity or
+// IMDbIdentity, so an exact lookup cannot fall back to title matching.
 type ExactIdentity struct {
 	Kind   IdentityKind
 	TMDBID int
@@ -88,9 +87,8 @@ type SecretCodec interface {
 	Decrypt([]byte) (string, error)
 }
 
-// Client is the complete Radarr seam used by Acquisition orchestration. The
-// HTTP adapter keeps Radarr wire resources, credentials, and release keys
-// behind this interface.
+// Client is the Radarr seam for Acquisition orchestration. Wire resources,
+// credentials, and release keys stay behind it.
 type Client interface {
 	VerifyAndCatalog(context.Context) (Catalog, error)
 	LookupMovie(context.Context, ExactIdentity) (MovieCandidate, error)

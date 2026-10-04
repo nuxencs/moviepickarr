@@ -211,9 +211,8 @@ test("opening and closing a movie modal keeps shared navigation fixed", async ({
   await expect(opener).toBeInViewport();
   const openerBox = await opener.boundingBox();
   expect(openerBox).not.toBeNull();
-  // Use the pointer at the visible tile coordinates. WebKit's locator click
-  // can scroll the body horizontally while it performs scrollIntoView(),
-  // which is outside the modal transition measured by this test.
+  // Click by coordinates: WebKit's locator click can scroll the body horizontally
+  // during scrollIntoView(), outside the transition under test.
   const viewport = page.viewportSize();
   expect(viewport).not.toBeNull();
   await page.mouse.click(

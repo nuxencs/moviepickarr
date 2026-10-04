@@ -17,26 +17,20 @@ import (
 // BackupConfig controls the pre-migration snapshot taken by
 // RunMigrationsWithBackup.
 type BackupConfig struct {
-	// Path is the SQLite database file; backups are written alongside it as
-	// <Path>.v<version>-<utc timestamp>.backup. Must be set when MaxBackups > 0.
+	// Path is the database file; backups go beside it. Required when MaxBackups > 0.
 	Path string
-	// MaxBackups is how many backup files to retain (oldest pruned first).
-	// 0 disables backups entirely.
+	// MaxBackups is how many backups to keep; 0 disables backups.
 	MaxBackups int
 }
 
 const backupSuffix = ".backup"
 
-// backupLog tags this file's lines with component=db. Backups run during boot,
-// before any component sub-logger exists, so they derive from the zerolog global
-// rather than an injected logger. Derived at the top of a function, never inside
-// a loop: the return is a fresh Logger each call, not a shared one.
+// backupLog derives from the zerolog global: backups run before any injected logger exists.
 func backupLog() zerolog.Logger {
 	return zlog.With().Str("component", "db").Logger()
 }
 
-// backupTimeFormat sorts lexicographically, so retention can order backups by
-// filename alone.
+// backupTimeFormat sorts lexicographically, so retention orders by filename.
 const backupTimeFormat = "20060102T150405Z"
 
 func backupBeforeMigrations(ctx context.Context, db *sql.DB, cfg BackupConfig, lastApplied int) error {
@@ -44,8 +38,7 @@ func backupBeforeMigrations(ctx context.Context, db *sql.DB, cfg BackupConfig, l
 		return fmt.Errorf("db backup: path required when MaxBackups > 0")
 	}
 
-	// Never snapshot a corrupt file: a backup that cannot be restored is worse
-	// than none, because it looks like a safety net.
+	// A backup that cannot be restored is worse than none: it looks like a safety net.
 	if err := checkIntegrity(ctx, db); err != nil {
 		return err
 	}
@@ -92,8 +85,7 @@ func createBackup(ctx context.Context, db *sql.DB, path string, version int) (st
 	target := fmt.Sprintf("%s.v%03d-%s%s",
 		path, version, time.Now().UTC().Format(backupTimeFormat), backupSuffix)
 
-	// VACUUM INTO writes a compacted, self-consistent copy in one statement and
-	// refuses to overwrite an existing file — no partial backups on error.
+	// VACUUM INTO is atomic and never overwrites a file, so no partial backups.
 	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", target); err != nil {
 		return "", fmt.Errorf("db backup to %s: %w", target, err)
 	}
@@ -117,8 +109,7 @@ func cleanupBackups(path string, maxBackups int) error {
 		}
 	}
 
-	// Version is zero-padded and the timestamp is lexicographically ordered, so
-	// a plain ascending name sort is oldest-first.
+	// Zero-padded version and sortable timestamp: name order is age order.
 	slices.Sort(backups)
 
 	log := backupLog()

@@ -8,12 +8,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// rosterMemberResponse is one row of the admin roster: identity plus the
-// presence-derived login state the surface renders as chips. Link-state is never
-// a stored flag: the three booleans are the existence of a credential / invite /
-// archive row. moviesAuthored lets the surface preview whether a remove will
-// hard-delete (frees the name) or archive (keeps attribution) before committing.
-// lastSeenAt is the newest session touch, omitted for members who never had one.
+// rosterMemberResponse is one admin roster row. The booleans are derived from
+// row existence, never stored. moviesAuthored previews whether a remove will
+// hard-delete or archive.
 type rosterMemberResponse struct {
 	ID                int         `json:"id"`
 	Name              string      `json:"name"`
@@ -27,9 +24,8 @@ type rosterMemberResponse struct {
 	LastSeenAt        string      `json:"lastSeenAt,omitempty"`
 }
 
-// handleGetRoster returns the admin roster (admin only): every member, active and
-// archived, with presence-derived login state. Ordering is active-before-archived
-// then oldest-first, so the surface splits the sections without re-sorting.
+// handleGetRoster returns every member, active first then oldest first, so the
+// client splits sections without sorting.
 func (h *handler) handleGetRoster(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -59,10 +55,9 @@ func (h *handler) handleGetRoster(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(rows)
 }
 
-// handleSetRole promotes or demotes a member (admin only). Role is the app-owned
-// enum {member, guest, admin}. Demoting the Next up holder to Guest requires an
-// explicit retry because the same transaction also hands off the turn. The repo
-// refuses demoting the last admin. Sessions stay valid and read the live role.
+// handleSetRole changes a member's role. Demoting the Next up holder to Guest
+// needs an explicit retry, as it also hands off the turn. The repo refuses to
+// demote the last admin.
 func (h *handler) handleSetRole(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err

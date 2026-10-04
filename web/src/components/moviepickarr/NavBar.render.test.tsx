@@ -1,17 +1,5 @@
-/* ============================================================
-   Render test for the navbar's role-gated Admin tab (#140).
-
-   Which tabs an actor gets is a pure question and nav.test.ts owns it: the
-   whole role matrix is asserted there against tabsForRole, and none of it is
-   repeated here. What that pure test can't see is whether the answer survives
-   the trip into the DOM. The tab list is rendered twice (top bar and the phone
-   bottom bar) off a `me` that arrives from a query, so a gate that works in the
-   model can still leak a link a member shouldn't have.
-
-   That's all this file checks: an admin gets the Admin link, a member doesn't,
-   in both bars. The sliding underline is layout, and jsdom has no layout
-   engine, so it isn't asserted here.
-   ============================================================ */
+/* Render test for the role-gated Admin tab (#140) in both bars. The role matrix
+   is nav.test.ts's; this checks the gate survives the trip into the DOM. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
@@ -26,7 +14,6 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import type { MeResponse } from "@/types/Response";
 import type { ReactNode, Ref } from "react";
 
-// The tabs are router Links; outside a router there's no Link and no location.
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,
@@ -42,8 +29,7 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
-  // Run the real selector over a stub location, so tabFromPath still decides
-  // which tab is active rather than the mock hard-coding an answer.
+  // Run the real selector, so tabFromPath still picks the active tab.
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: "/" } }),
   useNavigate: () => vi.fn(),
@@ -68,8 +54,6 @@ function renderNav(role: MeResponse["role"]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  // Seed the actor rather than let the query fetch: the gate is the subject,
-  // not the request that feeds it.
   client.setQueryData(AuthKeys.me(), actor(role));
 
   render(
@@ -96,7 +80,7 @@ describe("the Admin tab", () => {
     renderNav("member");
 
     expect(screen.queryByRole("link", { name: "Admin" })).toBeNull();
-    // The tabs a member does get are still there, so this isn't an empty render.
+    // Not an empty render.
     expect(screen.getAllByRole("link", { name: "Movies" }).length).toBeGreaterThan(0);
   });
 });

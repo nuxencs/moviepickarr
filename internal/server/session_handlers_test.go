@@ -55,9 +55,8 @@ func (e *authTestEnv) sessions(t *testing.T, cookie string) []sessionResponse {
 	return rows
 }
 
-// sessionID finds the public handle of the caller's current device
-// (current=true) or another one (current=false). The list is the only place a
-// client can learn one.
+// sessionID finds the public handle of the caller's current device or another
+// one. The list is the only place a client can learn one.
 func (e *authTestEnv) sessionID(t *testing.T, cookie string, current bool) string {
 	t.Helper()
 	for _, r := range e.sessions(t, cookie) {

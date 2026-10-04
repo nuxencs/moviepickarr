@@ -12,7 +12,6 @@ func TestHashPassword_ProducesPHCString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	// PHC format: $argon2id$v=19$m=19456,t=2,p=1$<salt>$<key>
 	if !strings.HasPrefix(hash, "$argon2id$v=19$") {
 		t.Errorf("hash is not a PHC argon2id string: %q", hash)
 	}
@@ -25,8 +24,6 @@ func TestHashPassword_ProducesPHCString(t *testing.T) {
 }
 
 func TestHashPassword_SaltedPerHash(t *testing.T) {
-	// Same password hashed twice must differ: a per-hash random salt, not a
-	// deterministic digest.
 	const pw = "same-password"
 	a, err := HashPassword(pw)
 	if err != nil {
@@ -69,9 +66,7 @@ func TestVerifyPassword_AcceptsCorrectRejectsWrong(t *testing.T) {
 }
 
 func TestVerifyPassword_RehashSignalOnParamMismatch(t *testing.T) {
-	// A hash created with stronger-than-configured params still verifies, but
-	// must flag needsRehash so the login path can upgrade it. The library
-	// default (64 MiB, t=3, p=2) differs from our OWASP-minimum configuration.
+	// The library default params differ from our OWASP-minimum configuration.
 	const pw = "rehash-me"
 	stale, err := argon2id.CreateHash(pw, argon2id.DefaultParams)
 	if err != nil {
@@ -94,8 +89,6 @@ func TestVerifyPassword_RehashSignalOnParamMismatch(t *testing.T) {
 }
 
 func TestVerifyPassword_NoRehashSignalOnWrongPassword(t *testing.T) {
-	// needsRehash must never be true when the password is wrong, even if the
-	// stored hash has stale params: a failed login must not trigger a rehash.
 	stale, err := argon2id.CreateHash("real", argon2id.DefaultParams)
 	if err != nil {
 		t.Fatalf("CreateHash: %v", err)
@@ -133,7 +126,6 @@ func TestVerifyPassword_MalformedHash(t *testing.T) {
 }
 
 func TestConfiguredParams_MatchOWASPMinimum(t *testing.T) {
-	// Pin the params so an accidental edit can't silently weaken hashing.
 	want := argon2id.Params{Memory: 19456, Iterations: 2, Parallelism: 1, SaltLength: 16, KeyLength: 32}
 	if !paramsEqual(configuredParams, &want) {
 		t.Errorf("configuredParams = %+v, want %+v", *configuredParams, want)
@@ -141,9 +133,7 @@ func TestConfiguredParams_MatchOWASPMinimum(t *testing.T) {
 }
 
 func TestDummyVerify_RunsWithoutPanic(t *testing.T) {
-	// The dummy hash must be a valid argon2id string so the verify actually runs
-	// (and burns the equivalent time). It always returns non-match, but the
-	// point is that it doesn't error or panic on any input.
+	// The dummy hash must parse, or the verify would skip the work that equalizes timing.
 	DummyVerify("anything")
 	DummyVerify("")
 

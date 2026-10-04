@@ -24,8 +24,7 @@ func (r *fakeNextUpRepo) Get(_ context.Context) (*domain.User, error) {
 			return &c, nil
 		}
 	}
-	// The stored holder is no longer eligible. The real repository's join drops
-	// the pointer so the service runs its SetFirstEligible repair path.
+	// Like the real repo's join, drop an ineligible holder to force the repair path.
 	return nil, sql.ErrNoRows
 }
 

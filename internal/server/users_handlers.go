@@ -17,11 +17,7 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// Only pool/stash movies are rendered on the users board, so fetch exactly
-	// those (both status-indexed) instead of loading the entire movies table —
-	// including the ever-growing watched history — only to filter it back down
-	// in Go. The bucketing loop below relies on each row's Status, which the two
-	// status-scoped queries set correctly.
+	// Fetch only pool and stash rows, not the whole table with its watched history.
 	pooled, err := h.movieService.Pooled(ctx)
 	if err != nil {
 		return writeError(c, err)
@@ -34,9 +30,7 @@ func (h *handler) handleGetUsers(c *fiber.Ctx) error {
 	visible = append(visible, pooled...)
 	visible = append(visible, stashed...)
 
-	// Boards render tile-level data only, so build lean tiles and skip the
-	// credits batch-load (GetCreditsByMovieIDs over every board movie) — a
-	// read-path saving on its own, on top of the smaller wire payload.
+	// Boards render tiles only, so skip the credits batch-load.
 	meta := h.metaFor(c, visible)
 	poolByUser := make(map[int]map[string]leanMovieTile)
 	stashByUser := make(map[int]map[string]leanMovieTile)
@@ -109,16 +103,14 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 	}
 
 	ctx := c.UserContext()
-	// Onboarding is one lifecycle write: the placeholder, eligible initial
-	// next-up assignment, and first invite commit together. The raw claim token
-	// is kept outside persistence and returned only by this direct response.
+	// Placeholder, initial next-up and first invite commit together. The raw
+	// claim token is never persisted and only returned here.
 	createdUser, rawToken, err := h.invites.CreateMemberWithInvite(ctx, name, parsedRole, actorMemberID(c))
 	if err != nil {
 		return writeError(c, err)
 	}
 
-	// Stats list every roster member (zero rows included), so a new member
-	// must show up there immediately, not after the cache TTL.
+	// Stats list every member, so do not wait for the cache TTL.
 	h.invalidateStatsCache()
 
 	payload := userResponse{
@@ -129,8 +121,7 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 		CreatedAt:   formatTime(createdUser.CreatedAt),
 	}
 
-	// The broadcast carries the roster row only: the claim URL is a one-time
-	// secret and goes solely in the direct response to the issuing admin.
+	// Roster row only: the claim URL is a one-time secret for the issuing admin.
 	h.broker.Broadcast(event{Type: "user:created", Data: payload})
 
 	return c.Status(fiber.StatusCreated).JSON(createMemberResponse{
@@ -139,24 +130,20 @@ func (h *handler) handleCreateUser(c *fiber.Ctx) error {
 	})
 }
 
-// createMemberResponse is the POST /members payload: the new roster row plus the
-// one-time claim URL. The claim URL is response-only (never broadcast).
+// createMemberResponse is the POST /members payload. The claim URL is never
+// broadcast.
 type createMemberResponse struct {
 	userResponse
 	ClaimURL string `json:"claimUrl"`
 }
 
-// removeMemberResponse reports which of the two removal paths ran, so the roster
-// UI can show "deleted" (gone for good) vs "archived" (restorable, attribution
-// kept) after the same admin action.
+// removeMemberResponse reports whether removal deleted or archived the member.
 type removeMemberResponse struct {
 	Outcome domain.RemoveOutcome `json:"outcome"`
 }
 
-// handleDeleteUser removes a member as one admin action with two outcomes: a
-// hard delete when they authored nothing, or an archive that preserves their
-// watch-history attribution. Both leave the active roster, so both broadcast
-// user:deleted; the response body carries the outcome for the follow-up toast.
+// handleDeleteUser hard-deletes a member who authored nothing, else archives
+// them to keep watch-history attribution. Both broadcast user:deleted.
 func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -180,11 +167,8 @@ func (h *handler) handleDeleteUser(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(removeMemberResponse{Outcome: outcome})
 }
 
-// handleRestoreUser reactivates an archived member and re-issues their claim
-// link as one admin action: archiving stripped the credentials, so a fresh
-// invite is what lets them log back in. It returns the roster row plus the
-// one-time claim URL (response-only, like member-create) and broadcasts the
-// member back onto the active board.
+// handleRestoreUser reactivates an archived member with a fresh invite, since
+// archiving stripped their credentials.
 func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -201,9 +185,8 @@ func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// Build the response from the member projection read before the lifecycle
-	// commit. SSE consumers use user:created as an invalidation and refetch the
-	// member's movie rows, so no fallible read can lose this one-time claim URL.
+	// Built from the pre-commit read, so no fallible read after the commit can
+	// lose the one-time claim URL.
 	payload := userResponse{
 		ID:          restoredUser.ID,
 		Name:        restoredUser.Name,
@@ -214,8 +197,7 @@ func (h *handler) handleRestoreUser(c *fiber.Ctx) error {
 
 	h.invalidateStatsCache()
 
-	// The claim URL is a one-time secret, so it goes only in the direct response;
-	// the broadcast carries the roster row alone.
+	// Roster row only: the claim URL is a one-time secret.
 	h.broker.Broadcast(event{Type: "user:created", Data: payload})
 
 	return c.Status(fiber.StatusOK).JSON(createMemberResponse{

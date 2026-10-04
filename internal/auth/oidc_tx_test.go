@@ -58,12 +58,10 @@ func TestOIDCTxCodec_Expiry(t *testing.T) {
 	codec, _ := NewOIDCTxCodec("a secret", WithTxClock(func() time.Time { return clk }))
 	sealed, _ := codec.Seal(OIDCTx{State: "st", Intent: IntentLogin})
 
-	// Just inside the window: still valid.
 	clk = now.Add(OIDCTxTTL - time.Second)
 	if _, err := codec.Open(sealed); err != nil {
 		t.Fatalf("open within TTL = %v, want ok", err)
 	}
-	// Past the window: rejected.
 	clk = now.Add(OIDCTxTTL + time.Second)
 	if _, err := codec.Open(sealed); err != ErrTxInvalid {
 		t.Fatalf("open past TTL = %v, want ErrTxInvalid", err)

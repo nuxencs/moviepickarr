@@ -1,25 +1,19 @@
-/* The Members page: a rail of members beside one board pane (#231), the pane
-   holding that member's stash as a wall of untitled posters (#232).
-   Namespaced under .mem*, colours and motion from the global tokens
-   (index.css).
-
-   CSS owns the column counts, cell sizes, and shell height. JavaScript reads
-   the resolved grid only for keyboard movement. */
+/* Members page: a member rail beside one board pane (#231, #232). CSS owns
+   the column counts, cell sizes and shell height; JS reads the resolved grid
+   only for keyboard movement. */
 
 .mem {
-  /* The rail's width is not a chosen number: it is three pool posters plus
-     their gaps plus the drawer's padding. The poster size is the choice and
-     the column follows, so everything in the rail shares a right edge with the
-     third poster. */
+  /* The rail width is three pool posters plus gaps and padding, so rail
+     items share the third poster's right edge. */
   --mem-post: 128px;
   --mem-gap: 14px;
   --mem-pad: 16px;
   --mem-row: 52px;
 }
 
-/* One column by default; the two-column shell starts at 761 (below that is the
-   mobile push, #236). Every track takes minmax(0, 1fr): a bare 1fr floors at
-   the track's max-content width, which is what overflows the page at 375. */
+/* The two-column shell starts at 761px (below that is the mobile push,
+   #236). minmax(0, 1fr) because a bare 1fr floors at max-content and
+   overflows at 375px. */
 .mem__shell {
   --mem-head-space: 0px;
   display: grid;
@@ -29,9 +23,9 @@
   align-items: start;
 }
 .mem__shell--with-head {
-  /* The 30px section head plus its 22px bottom margin. Above 760 it used to
-     sit outside the fixed-height board. Loaded rail screens now own it, so
-     only those shells add the space back. The skeleton keeps its old height. */
+  /* The 30px section head plus its 22px margin, which sit inside the
+     fixed-height board. Only loaded rail screens hold the head inside the
+     shell; the skeleton's head sits above it. */
   --mem-head-space: 52px;
 }
 .mem-rail-screen,
@@ -39,14 +33,11 @@
   grid-area: screen;
 }
 
-/* ---- two scrollers, not one page -------------------------------------- */
-
-/* The roster and the stash are separate things to move through, so at 761 and
-   above they scroll separately and the page itself does not scroll: reaching the
-   bottom of a 40-movie stash used to drag the roster off screen with it. */
+/* At 761px and up the rail and the stash scroll separately and the page does
+   not, so a long stash does not drag the roster off screen. */
 @media (min-width: 761px) {
-  /* The shell's 110px bottom padding clears the phone tab bar and the rubber
-     band. With nothing below the fold there is nothing to clear. */
+  /* The default 110px clears the phone tab bar; nothing is below the fold
+     here. */
   .shell:has(.mem) {
     padding-bottom: 30px;
   }
@@ -61,14 +52,13 @@
     column-gap: 32px;
     row-gap: 0;
     align-items: stretch;
-    /* Fixed chrome above and below, all of it px in index.css: the 63px nav,
-       the shell's 40px top padding, the section head, and the padding below. */
+    /* Fixed px chrome from index.css: 63px nav, 40px shell top padding,
+       section head, bottom padding. */
     --mem-chrome: 185px;
     height: calc(100dvh - var(--mem-chrome) + var(--mem-head-space));
   }
-  /* The wrapper is a real screen below 761. Here it flattens into the board's
-     grid so the page head still spans both columns and the rail and pane keep
-     their original tracks. */
+  /* Below 761px the wrapper is a real screen; here it flattens into the
+     shell grid. */
   .mem-rail-screen {
     display: contents;
   }
@@ -86,46 +76,37 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    /* A classic scrollbar takes width out of a column whose width was chosen
-       to fit three posters exactly, so it is out of the layout and a fade at
-       the bottom edge is the cue instead. */
+    /* The column fits three posters exactly, so no classic scrollbar; the
+       fade is the cue. */
     scrollbar-width: none;
   }
   .mem-rail::-webkit-scrollbar {
     width: 0;
   }
-  /* Only when there is more rail below. Painted over a rail that fits, the
-     fade would just be dimming the last member's name. The flag behind it is a
-     comparison, not a measured layout value (see UsersTab). */
+  /* Fade only when more rail is below. The flag is a comparison, not a
+     measurement (see UsersTab). */
   .mem-rail[data-overflow="true"] {
     mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   }
 
-  /* The rail and the pane are one screen here, so the count lives in the rail
-     row: it is on every row in every state, and a second copy in the pane
-     600px away put "who has the deepest stash" across two type scales. The
-     pushed screen is where it comes back (#236). The skeleton's block is on
-     the same rule rather than a rule of its own, so the two cannot disagree
-     about which widths carry a count (#239). */
+  /* Beside the rail the count lives in the rail row; the pushed screen shows
+     it in the pane (#236). The skeleton block shares this rule (#239). */
   .mem-stash__id .sec-count,
   .mem-stash__id .mem-skel__ct {
     display: none;
   }
 
-  /* The back bar and the drawer's stash link belong to the pushed screen
-     alone: beside the rail the pane is already on screen, so a link to it
-     would go nowhere and a way back would be a way back from nothing. Hidden
-     here rather than left unrendered, so a resize does not depend on a React
-     flag — and the drawer keeps the height it has at every width. */
+  /* Pushed-screen controls only. Hidden in CSS rather than unrendered, so a
+     resize needs no React flag and the drawer height is the same at every
+     width. */
   .mem-backbar,
   .mem-tostash,
   .mem-skel__tostash {
     display: none;
   }
 
-  /* The pane keeps its scrollbar, unlike the rail: nothing about its width is
-     derived from a poster, so the few px cost nothing, and a stash deeper than
-     the pane needs to say so. */
+  /* Unlike the rail, the pane keeps its scrollbar: its width is not
+     poster-derived. */
   .mem-pane {
     min-height: 0;
     overflow-y: auto;
@@ -134,48 +115,30 @@
     border-left: 1px solid var(--line);
   }
 
-  /* A height, not a max-height, and a whole number of rows of it.
-     Sized to its contents the box collapsed by several hundred pixels between a
-     14-movie member and a 0-movie one and dragged everything under it up with it,
-     which is the per-member jitter this layout spent three tickets removing and
-     worst at the moment the wall has nothing to look at. Reserved in full,
-     every member's pane is the same height and only the contents change.
-
-     The number of rows is what the pane has room for, rounded down, rather than
-     a constant: the pane's own height comes from the viewport, so a constant
-     either overflows the pane on a short window (putting the head and the
-     wall's bottom edge out of reach behind a second scrollbar) or strands a few
-     hundred pixels of nothing under the wall on a tall one. Rounding down is
-     what keeps the last row whole — the incumbent's 380px box cut its last row
-     clean in half. It still depends on the viewport alone, so it does not move
-     between one member and the next.
-
-     Below 761 the wall stops being a scroller and the page carries it (#236),
-     so the reserve belongs to the two-column shell alone. */
+  /* A fixed height of whole rows (the room the viewport gives, rounded
+     down), so the pane does not jump between members with different stash
+     sizes and the last row is never cut. Below 761px the page scrolls the
+     wall (#236). */
   .mem-wallbox {
-    /* The room under the head, plus one gap: rows are counted by their pitch
-       (a row and the gap above the next), and the last row has no gap after. */
+    /* Room under the head plus one gap: rows count by pitch, and the last
+       row has no gap after it. */
     --mem-avail: calc(100dvh - var(--mem-chrome) - var(--mem-headh) + var(--mem-wgap));
     --mem-pitch: calc(var(--mem-rowh) + var(--mem-wgap));
     height: calc(max(var(--mem-pitch), round(down, var(--mem-avail), var(--mem-pitch))) - var(--mem-wgap));
     overflow-y: auto;
     overscroll-behavior: contain;
-    /* The cell width is measured against .mem-stash, which does not know a
-       classic scrollbar has taken width out of the box inside it — the last
-       column ends up clipped. Out of the layout, with the fade as the cue. */
+    /* The cell width comes from .mem-stash, which does not see a classic
+       scrollbar, so one would clip the last column. The fade is the cue. */
     scrollbar-width: none;
   }
   .mem-wallbox::-webkit-scrollbar {
     width: 0;
   }
-  /* Only when there is more wall below; over one that fits it would just dim
-     the last row. Same comparison-not-a-size as the rail's. */
+  /* Fade only when more wall is below, same flag as the rail's. */
   .mem-wallbox[data-overflow="true"] {
     mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
   }
 }
-
-/* ---- the rail ---------------------------------------------------------- */
 
 .mem-rail {
   display: flex;
@@ -183,12 +146,9 @@
   gap: 2px;
 }
 
-/* The selection is a 2px accent line down the row's left edge, the nav bar's
-   tab underline turned on its side. Not a filled box and not a sliding marker:
-   a row's height depends on whether it is open, so a fixed pitch cannot place
-   one and measuring in JS would duplicate layout state. The open row draws the line down
-   its own full height, drawer included, and the drawer's opening is the
-   movement. */
+/* Selection is a 2px accent line down the row's left edge, full height on an
+   open row. Not a sliding marker: row height varies with the drawer, and
+   measuring it in JS would duplicate layout state. */
 .mem-row {
   position: relative;
 }
@@ -219,8 +179,7 @@
   background: var(--surface-2);
   color: var(--ink);
 }
-/* The line carries the selection, so the row takes no fill of its own. The
-   name goes gold, the way an active nav tab goes to full ink. */
+/* The line carries the selection, so no fill; the name goes gold. */
 .mem-row__link[aria-current="page"] {
   background: none;
   color: var(--ink);
@@ -234,8 +193,7 @@
   gap: 1px;
   min-width: 0;
 }
-/* One line and an ellipsis, never a wrap: the shut row's pitch is fixed.
-   Desktop leaves this about 333px, roughly 40 characters. */
+/* Never wrap: the shut row's pitch is fixed. */
 .mem-row__nm {
   font-size: 14px;
   font-weight: 600;
@@ -244,14 +202,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* .mono for the tabular figures: this is a column of counts, one per member,
-   and proportional digits make it rag. */
+/* .mono for tabular figures, so the column of counts does not rag. */
 .mem-row__ct {
   font-size: 11px;
   color: var(--ink-3);
 }
 
-/* What the row says when it is shut. Open, the pool itself is right there. */
 .mem-pips {
   display: inline-flex;
   gap: 3px;
@@ -267,15 +223,9 @@
   border-color: var(--accent);
 }
 
-/* ---- the drawer -------------------------------------------------------- */
-
-/* 0fr → 1fr, so the drawer opens without anything measuring a height.
-
-   Every drawer stays mounted, open or not. Unmounting the shut one's contents
-   collapses it instantly while the new one animates, so the rail loses a
-   drawer's height and grows it back — and 0fr → 1fr needs both rows present to
-   interpolate at all. Mounted, the two transitions are the same curve over the
-   same duration in opposite directions and they sum to a constant. */
+/* 0fr to 1fr opens the drawer without measuring a height. Every drawer stays
+   mounted, so the opening and closing transitions sum to a constant and the
+   rail height does not jump on a switch. */
 .mem-drop {
   display: grid;
   grid-template-rows: 0fr;
@@ -288,9 +238,8 @@
   overflow: hidden;
   min-height: 0;
 }
-/* The padding lives one level in from the grid item. On the item it outlives
-   the row collapsing to 0fr, so every shut drawer keeps its padding and the
-   pair stops summing to a constant across a switch. */
+/* Padding one level in: on the grid item it would survive 0fr and break the
+   constant sum. */
 .mem-drop__body {
   padding: 6px var(--mem-pad) 18px;
 }
@@ -298,32 +247,20 @@
   .mem-drop { transition: none; }
 }
 
-/* Three pool posters across the rail, which is exactly as wide as they are.
-   Empty slots are drawn (.pslot--empty, index.css) and aria-hidden: always
-   exactly the pool size in slots, never reordered — the draw is random, so a
-   slot carries no priority. No heading, because the drawer hangs off the
-   member's own row. */
+/* Always exactly the pool size in slots, empty ones drawn (.pslot--empty,
+   index.css). Never reordered: the draw is random, so a slot has no
+   priority. */
 .mem-pool {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--mem-gap);
 }
 
-/* ---- posters ----------------------------------------------------------- */
-
-/* The poster is the button, on both bands and on every board: it opens the
-   movie's record, which is the one way into it from this page. Two SIBLING
-   interactive layers per cell, never nested — this one filling the cell, the
-   corner action (.mem-act) sitting over it — so the corner action's own hit
-   area is its own and a poster cannot contain a button.
-
-   The focus ring is drawn rather than outlined, and it is the one place on this
-   page where that is not the app's ordinary treatment. An outline cannot work
-   here in either direction: outward it is shaved off by the pool slot's clip
-   and by the wall's scroller at the top row, and inward the poster paints over
-   it — the art is a positioned, isolated layer of its own, the same reason a
-   ring does not work on the stats people cards (DESIGN.md §3). So it is a layer
-   instead, over the art, hugging the poster's own radius. */
+/* The poster is the button that opens the movie. The corner action
+   (.mem-act) is a sibling layer, never nested. The focus ring is an inset
+   layer, not an outline: the pool slot and the wall scroller clip an outer
+   outline, and the isolated poster art paints over an inner one (as on the
+   stats people cards, DESIGN.md §3). */
 .mem-open {
   position: relative;
   display: block;
@@ -349,13 +286,10 @@
   pointer-events: none;
 }
 
-/* One corner action per poster: promote on a stash tile, demote on a pool one, and
-   never both. Hover-revealed, so at rest your wall and a guest's are
-   pixel-identical and hover is what asks "can I act here" — a truthful yes on
-   yours. Persistent on desktop would put sixty buttons on sixty posters. It is
-   also the only thing a guest board is missing, so on someone else's board its
-   absence says "not your board" and nothing else — and only that, since #234
-   took the lock off it: a refusal now stays put and goes inert instead. */
+/* One corner action per poster: promote on the stash, demote in the pool.
+   Hover-revealed, so your wall and a guest's look identical at rest; on a
+   guest board, its absence on hover says "not your board". A refused action
+   stays and goes inert (#234). */
 .mem-act {
   position: absolute;
   right: 7px;
@@ -380,10 +314,9 @@
   width: 15px;
   height: 15px;
 }
-/* Revealed by focus anywhere in the tile, not by focus on the control itself:
-   the wall is walked with the arrows now (#235), and Tab from the focused
-   poster is what reaches the action — so a keyboard user has to be able to see
-   it is there before pressing Tab into it. Same rule the poster zoom takes. */
+/* Revealed by focus anywhere in the tile: arrows walk the wall (#235) and
+   Tab reaches the action, so it must be visible first. Same rule as the
+   poster zoom. */
 .mem-tile:hover .mem-act,
 .pslot--filled:hover .mem-act,
 .mem-tile:has(:focus-visible) .mem-act,
@@ -396,18 +329,16 @@
   border-color: var(--accent-line);
   color: var(--accent);
 }
-/* A refused control is inert, not absent, and it is `aria-disabled` rather than
-   natively disabled so it can still take focus — which is what makes the reveal
-   rule above fire for a keyboard user and lets its name carry the reason.
-   Nothing else changes: the dim is on the ink, never on the opacity the reveal
-   owns, so a locked mid-draw board is pixel-identical at rest to an open one. */
+/* aria-disabled, not disabled, so it still takes focus (which fires the
+   reveal) and its name carries the reason. Dim the ink, never the opacity
+   the reveal owns. */
 .mem-act[aria-disabled="true"] {
   cursor: not-allowed;
   color: var(--ink-3);
   border-color: var(--line);
 }
 @media (hover: none) {
-  /* Nothing to hover with, so the one control has to sit on the poster. */
+  /* No hover, so the control stays visible. */
   .mem-act {
     opacity: 1;
     width: 26px;
@@ -419,18 +350,14 @@
     width: 13px;
     height: 13px;
   }
-  /* Persistent here, so a refused control is on screen at rest and the fade
-     does the work the hover reveal does on a pointer. */
+  /* The fade stands in for the hover reveal on a refused control. */
   .mem-act[aria-disabled="true"] {
     opacity: 0.6;
   }
 }
 
-/* The app's poster zoom, on the image inside the clipping frame and never as a
-   transform on the frame — the same treatment the Movies tiles, the search
-   results and the stats rail already take. No background change and no lift:
-   buttons in this language do not lift. Never gated on whose board it is: the
-   zoom is the tile answering that it opens, which it does on every board. */
+/* The app's poster zoom: on the image inside the clip frame, never on the
+   frame. On every board, since every tile opens. */
 .mem-tile:hover .poster__img,
 .mem-tile:has(:focus-visible) .poster__img,
 .pslot--filled:hover .poster__img,
@@ -442,11 +369,7 @@
   transform: scale(var(--poster-zoom-press));
 }
 
-/* ---- the pane: the stash wall ------------------------------------------ */
-
-/* The head is a fixed height, and --mem-headh is that height plus its margin:
-   the wall counts the rows it has room for and has to know what sits above it.
-   Keep the two in step. */
+/* Fixed height; keep --mem-headh (height plus margin) in step. */
 .mem-stash__head {
   display: flex;
   align-items: center;
@@ -460,21 +383,12 @@
   gap: 8px;
   min-width: 0;
 }
-/* The pane's one heading, and the last thing on it saying whose board this is.
-   The incumbent stash-head scale, reused rather than reinvented: under the
-   page's own "Members" at 20px, and the same size as a rail name, so a person's
-   name looks like a name wherever it appears here. Not the mono-uppercase `.l`
-   class the old pool label used — that ships "ADA'S STASH".
-
-   Not a flex row either: "Your" and "stash" are one phrase, and a flex gap
-   would open between the two words. Plain inline text, so the ellipsis is the
-   block's own, and never a wrap — a heading that wrapped would start one
-   member's wall a line lower than another's. */
+/* Plain inline text, not a flex row (a gap would split "Your stash"), and
+   never wrapping, so every member's wall starts on the same line. */
 .mem-stash__title {
   margin: 0;
   font-size: 14px;
-  /* Pinned, not inherited: the stacked head's height is one of these lines plus
-     the field, and --mem-headh is that sum written out. */
+  /* Pinned: the stacked head's --mem-headh adds this line to the field. */
   line-height: 21px;
   font-weight: 600;
   color: var(--ink-2);
@@ -483,18 +397,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Symmetric emphasis: the possessive token takes the ink and the noun steps
-   back, in both directions. Lifting "Your" alone would be a self-mark rendered
-   in colour, which this page has refused everywhere else. */
+/* The possessive takes the ink and the noun steps back, in both directions:
+   lifting only "Your" would be a coloured self-mark. */
 .mem-stash__who {
   color: var(--ink);
 }
 .mem-stash__id .sec-count {
   font-size: 12px;
 }
-/* The skeleton's block shares the rule rather than restating the numbers, so
-   the room it reserves is the room the real field takes and not an
-   approximation of it (#239). */
+/* Shared with the skeleton so it reserves the real field's size (#239). */
 .mem-stash__head .field,
 .mem-stash__head .mem-skel__field {
   height: var(--control-h-sm);
@@ -503,16 +414,10 @@
   margin-left: auto;
 }
 
-/* The wall fills the width it is given: the cell comes from the container's own
-   inline size against a responsive column count, so there is no dead gutter on
-   the right the way a fixed cell plus auto-fill leaves. Row height follows from
-   the cell.
-
-   Six columns is the desktop floor: the pane is what the rail leaves
-   over, and four columns across it puts a stash poster above the rail's 128px
-   pool poster, inverting the ranking the two bands exist to express. 96px is
-   the smallest useful size. Wider containers add columns before a cell can grow
-   beyond the 128px pool poster. */
+/* Cells fill the container width, with no dead right gutter as auto-fill
+   leaves. Six columns is the desktop floor: fewer would make a stash poster
+   larger than the 128px pool poster. Wider containers add columns before a
+   cell can outgrow it. */
 .mem-stash {
   container-type: inline-size;
 }
@@ -538,9 +443,8 @@
 @container (min-width: 1589px) { .mem-wallbox { --mem-cols: 12; } }
 @container (min-width: 1735px) { .mem-wallbox { --mem-cols: 13; } }
 @container (min-width: 1881px) { .mem-wallbox { --mem-cols: 14; } }
-/* Centred in the height the box holds, per DESIGN.md §8. Left in the first row
-   band it would read as a poster that failed to load rather than as a statement
-   about the wall. The auto row is what lets it centre. */
+/* Centred per DESIGN.md §8; in the first row it would read as a failed
+   poster. The auto row lets it centre. */
 .mem-wall--empty {
   height: 100%;
   grid-auto-rows: auto;
@@ -548,9 +452,7 @@
 }
 .mem-wall__empty {
   grid-column: 1 / -1;
-  /* The wall carries no captions, but any text that does land in a narrow cell
-     has to break inside a word: a long single word runs out over its
-     neighbour. */
+  /* Break inside a word: a long single word would overflow a narrow cell. */
   overflow-wrap: anywhere;
 }
 
@@ -558,10 +460,8 @@
   position: relative;
 }
 
-/* Adding a movie is an act on the stash, so it is the stash's first cell rather
-   than a button floating above the pane. Unlabelled: a dashed cell with a plus
-   in it is not ambiguous, and the words were the only text left in a pane made
-   of art, which made them read as a heading. */
+/* The add action is the stash's first cell. No label: in a pane of art the
+   words read as a heading. */
 .mem-addtile {
   display: grid;
   place-items: center;
@@ -585,9 +485,9 @@
   color: var(--accent);
 }
 
-/* The wall sheds a column at a time down the range: six at 1200, five at 1000,
-   four at 900, three at 800. The steps sit a pixel inside each width so the
-   width itself keeps the count named for it. */
+/* One column fewer per step: six at 1200, five at 1000, four at 900, three
+   at 800. Each step sits a pixel inside the width so the width keeps its
+   count. */
 @media (max-width: 1199px) {
   .mem-wallbox { --mem-cols: 5; }
 }
@@ -598,72 +498,36 @@
   .mem-wallbox { --mem-cols: 3; }
 }
 
-/* One step down, on the 900 the rest of the app already uses (DESIGN.md §13). */
+/* The app-wide 900px step (DESIGN.md §13). */
 @media (max-width: 900px) {
-  /* The rail cannot go on taking 444px out of a 900px page. Still three
-     posters wide, and still larger than a stash poster. */
+  /* A narrower rail, still larger than a stash poster. */
   .mem { --mem-post: 112px; --mem-gap: 12px; }
   .mem__shell { column-gap: 24px; }
   .mem-pane { padding-left: 24px; }
-  /* The bottom tab bar arrives here (index.css), so the board stops above it
-     rather than under it. */
+  /* Stop above the bottom tab bar (index.css). */
   .shell:has(.mem) { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
   .mem__shell { --mem-chrome: calc(231px + env(safe-area-inset-bottom)); }
-  /* The pane is too narrow to hold the heading and the field on one line. */
-  /* The 21px heading line and the 34px field with 10px between them. */
+  /* Stacked: the 21px heading line, a 10px gap, and the 34px field. */
   .mem-stash__head { flex-direction: column; align-items: stretch; gap: 10px; height: 65px; }
   .mem-stash__head .field,
   .mem-stash__head .mem-skel__field { width: 100%; margin-left: 0; }
   .mem-wallbox { --mem-headh: 77px; }
 }
 
-/* ---- the push, below 761 ----------------------------------------------- */
+/* ---- the push, below 761 (Members.styles.test.ts slices on this banner) */
 
-/* Two columns become two screens (#236). The rail is the whole screen, where
-   selecting a member opens their pool in place exactly as it does beside the
-   pane, and `stash` in the URL pushes that member's movies over the top of it.
-   Both halves are the address, so they survive a resize by construction — a
-   flag built at 375px would have to mean something at 1440px — and the second
-   one is inert up there, where the pane is already beside the rail.
+/* Below 761px two columns become two screens (#236): the rail, and the
+   member's stash pushed over it by `stash` in the URL. The screen comes from
+   the media query and data-pushed, never a JS width; UsersTab mirrors the
+   query for focus and `inert`. */
 
-   Which screen is drawn is this media query and the data attribute, never a
-   width measured in JS. UsersTab mirrors the query for the focus handoff and
-   the `inert` state of the screen being left.
-
-   The negation of the two-column block rather than `max-width: 760px`, so the
-   two of them partition the axis exactly. A fractional viewport width, which
-   browser zoom and a non-integer device pixel ratio both produce routinely,
-   falls between 760 and 761 and matches neither query. No decimal is enough,
-   since whatever the number there is a width just above it. This page
-   cannot afford that gap: the back bar and the drawer's stash link are drawn
-   here and hidden there, so falling through both puts two unstyled controls on
-   a layout that is neither screen. `not all and` is the Level 3 spelling, which
-   keeps this rule valid across Vite 7's browser baseline. */
-
-/* The swap between the two screens is one number, and it is declared out here,
-   above the width query, deliberately (#266). --mem-in is 1 on the screen you
-   are on and 0 on the screen you are not; the transform and the opacity that
-   move it are both read off it inside the query and neither is ever
-   transitioned itself. So the only thing carrying a duration depends on the
-   address alone: crossing 761 changes what the number is used for and never
-   the number, and a resize animates nothing. Put these declarations inside the
-   query instead and every resize past 760 would play a push.
-
-   Registered so it interpolates. An unregistered custom property is a token
-   and would jump from 1 to 0. Where @property is missing it jumps, and a jump
-   is the hard cut this replaces.
-
-   `display` rides along with allow-discrete because display: none has no exit
-   frame: going to none it holds the old value until the end, and coming back
-   from none it flips on the first, which is exactly the asymmetry a screen
-   leaving and a screen arriving want. Resting on none rather than on a hidden
-   box is what keeps a stash wall nobody is looking at from laying out and
-   fetching sixty posters behind the rail. Focus and the accessibility tree are
-   not on this timer: the screen being left goes `inert` on the frame of the
-   navigation (see UsersTab).
-
-   The exit runs one step faster than the entrance and takes --ease-exit, per
-   DESIGN.md §6. */
+/* The swap is one number, declared outside the width query so a resize
+   animates nothing (#266): --mem-in is 1 on the current screen and 0 on the
+   other, and only it transitions. @property makes it interpolate. `display`
+   with allow-discrete keeps the leaving screen to the end, and resting on
+   display: none stops a hidden wall from laying out and fetching posters.
+   UsersTab sets `inert` at once. The exit is faster, with --ease-exit
+   (DESIGN.md §6). */
 @property --mem-in {
   syntax: "<number>";
   inherits: false;
@@ -683,17 +547,13 @@
     --mem-in var(--dur-base) var(--ease-exit),
     display var(--dur-base) allow-discrete;
 }
-/* The skeleton is built out of these same containers (#239), so it would play
-   the swap too. A cold load would then slide twice, once as filler and
-   once as the page. It is aria-hidden filler and arrives with the page's own
-   entrance. Specific enough to outrank both rules above, since one of them is
-   an attribute deep. */
+/* The skeleton uses these containers (#239); without this a cold load slides
+   twice. Specific enough to beat both rules above. */
 .mem[data-pushed] .mem-skel .mem-rail-screen,
 .mem[data-pushed] .mem-skel .mem-pane {
   transition: none;
 }
 
-/* A hard cut both ways: the number snaps and the box goes on the same frame. */
 @media (prefers-reduced-motion: reduce) {
   .mem-rail-screen,
   .mem-pane,
@@ -704,28 +564,19 @@
 }
 
 @media not all and (min-width: 761px) {
-  /* Nothing in this block carries a duration, which is the whole point: the two
-     properties the swap is made of are not in any transition-property, so
-     crossing 761 cannot animate either of them. The motion is the number above
-     interpolating and these values following it frame by frame.
-
-     `display` is the exception, and a deliberate one: it is set here and
-     transitioned above, so a resize past 760 does start its discrete
-     transition. It has nothing to show. The screen it holds is already at
-     opacity 0 by then, since that value is not on a timer, so what it costs is
-     a box that outstays the resize by --dur-base and nothing visible at all. */
+  /* No durations here, so crossing 761px does not animate: the values follow
+     --mem-in. `display` does start a discrete transition on resize, but its
+     screen is already at opacity 0. `not all and` rather than max-width:
+     760px, so a fractional width (zoom, non-integer DPR) cannot fall between
+     the two queries; it is the Level 3 syntax for Vite 7's browser baseline. */
   .mem-rail-screen,
   .mem-pane {
-    /* Far enough to read as one screen pushing the other and no further: the
-       screens cross-fade as well as slide, so a full-width travel spends most
-       of itself invisible. */
+    /* Short travel: the screens also cross-fade, so a full-width slide is
+       mostly invisible. */
     --mem-slide: 18%;
     opacity: var(--mem-in);
   }
-  /* Away to the left and back in from the left; away to the right and back in
-     from the right. One expression each, so a direction's way out and its way
-     back are the same path travelled opposite ways. That is the thing the
-     hard cut had no way of saying. */
+  /* Each screen leaves and returns along the same path. */
   .mem-rail-screen {
     transform: translateX(calc((var(--mem-in) - 1) * var(--mem-slide)));
   }
@@ -735,11 +586,8 @@
 
   .mem[data-pushed="true"] .mem-rail-screen,
   .mem[data-pushed="false"] .mem-pane {
-    /* Out of the flow on the frame it is left, so the screen arriving is still
-       the only thing sizing the page. The rail screen owns its page head, so
-       both screens start at the shell's stable top edge. The box itself goes at
-       the end of the transition (see above); until then it is drawn and
-       unreachable. */
+    /* Out of flow at once, so only the arriving screen sizes the page;
+       display: none waits for the transition end. */
     position: absolute;
     inset-inline: 0;
     top: 0;
@@ -747,10 +595,7 @@
     pointer-events: none;
   }
 
-  /* The starting frame for a screen arriving from none. A newly rendered
-     element takes it too, so a cold load onto either screen plays the entrance
-     once. That is the same motion arriving by tap, at the moment there is
-     nothing to compare it against. */
+  /* Also applies on first render, so a cold load plays the entrance once. */
   @starting-style {
     .mem[data-pushed="false"] .mem-rail-screen,
     .mem[data-pushed="true"] .mem-pane {
@@ -758,29 +603,23 @@
     }
   }
 
-  /* The screen arriving slides in from off its own edge, so the shell has to
-     clip or the page grows a horizontal scroll for the length of the swap.
-     `clip` rather than `hidden`, which would make it a scroll container. The
-     margin is the focus ring's reach: a 2px outline at 2px offset (index.css),
-     so 4px, rounded up to leave the ring a pixel either side. A bare clip
-     would shave off the rail rows' left and right edges. */
+  /* Clip the slide so the page does not scroll sideways. `clip`, not
+     `hidden`, which makes a scroll container. The 6px margin keeps the focus
+     ring (2px at 2px offset, index.css). */
   .mem__shell {
     position: relative;
     overflow-x: clip;
     overflow-clip-margin: 6px;
   }
 
-  /* The pane's left inset is the gutter between it and the rail, and there is
-     no rail beside it here — kept, it is 24px of dead indent that narrows
-     every cell in the wall (77px a poster becomes 71px). */
+  /* No rail beside the pane here, so drop the gutter that narrows every
+     cell. */
   .mem-pane {
     padding-left: 0;
   }
 
-  /* The way on to the open member's movies, and the whole reason the rail keeps
-     its drawers on a phone: the row opens a pool, this leaves for the wall. A
-     row across the drawer's full width, so the target is the width of the
-     three posters above it and there is nothing to miss. */
+  /* The way on to the open member's stash, full drawer width. The reason the
+     phone rail keeps its drawers. */
   .mem-tostash {
     display: flex;
     align-items: center;
@@ -796,8 +635,7 @@
     font-weight: 600;
     text-decoration: none;
   }
-  /* The count sits with the word rather than at the far edge: the chevron is
-     what owns the right end, and it is what says this leads somewhere. */
+  /* The count sits with the word; the chevron owns the right end. */
   .mem-tostash__ct {
     color: var(--ink-3);
     font-weight: 500;
@@ -814,66 +652,45 @@
     background: var(--accent-soft);
   }
 
-  /* The whole head goes on the pushed screen, `Members / 6 people` included
-     and not just the status line: the pushed screen's title is the possessive
-     heading, the line counts every member on a screen about one, and two
-     titles do not fit at 375px. The visually-hidden live region is a sibling
-     of the head rather than a child of it (see UsersTab), so this does not
-     take it with it — it is that screen's only round-state signal, and a
-     display: none live region announces nothing. */
+  /* Hide the page head on the pushed screen: its title is the possessive
+     heading, and two titles do not fit at 375px. The live region is a
+     sibling of the head (see UsersTab), so it is still announced. */
   .mem[data-pushed="true"] > .sec-head {
     display: none;
   }
 
-  /* The wall stops being a scroller and the page carries it: one flick, one
-     scroller. At 761 and above, the fixed height answers a collapse between a
-     14-movie member and a 0-movie one that cannot happen here. The push hides the
-     rail and the pool with it, so there is nothing above the wall to move and no
-     second member's wall to match. What it did instead was put a ~498px inner
-     scroller into ~363px of room, clipped by the tab bar and eating the flick
-     meant for the page. (The height and the fade are both inside the min-width
-     block, so there is nothing to undo; this is the note saying that is
-     deliberate.)
-
-     The empty wall needs a floor instead: the line is centred in the height
-     the box used to hold, and with none it sits jammed under the field. */
+  /* The page scrolls the wall here: the fixed height and fade live in the
+     min-width block on purpose, since an inner scroller would take the
+     page's flick. The empty wall needs a floor to centre in. */
   .mem-wall--empty {
     height: auto;
     min-height: 220px;
   }
 
-  /* Four columns at about 78px on a 375px screen, from the same container
-     arithmetic the wider walls use. Three across would put a stash poster at
-     the size of a pool one. */
+  /* About 78px a cell at 375px; three columns would match a pool poster's
+     size. */
   .mem-wallbox {
     --mem-cols: 4;
     --mem-wgap: 10px;
   }
 
-  /* Nothing on this screen is pinned, the back bar included. The app scrolls
-     under a fixed 63px nav, so `top: 0` parks a sticky bar behind it and
-     clearing it hard-codes the nav's height in a second place; the bar would
-     also need a background and a hairline to stop posters sliding under bare
-     text, which is a permanent band of chrome across a screen made of art. */
+  /* Not sticky: under the fixed nav that needs the nav height in a second
+     place and a background band over the art. */
   .mem-backbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 18px;
-    /* The bar is as tall as the one control in it, written here as well as on
-       .mem-back so the skeleton's shorter block reserves the same band (#239)
-       instead of starting the wall higher than the loaded page does. */
+    /* Also on .mem-back, so the skeleton's shorter block reserves the same
+       band (#239). */
     min-height: 44px;
   }
   .mem-back {
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    /* This is the only way off the screen and the screen is a phone's, so the
-       target is the touch minimum (DESIGN.md §13) rather than the height of
-       13.5px of text. Padding on the right too: the hit area runs past the
-       word, and there is nothing beside it to reach by mistake. */
+    /* Touch minimum (DESIGN.md §13): the only way off this screen. */
     min-height: 44px;
     padding: 0 12px 0 0;
     background: none;
@@ -882,7 +699,7 @@
     font-size: 13.5px;
     cursor: pointer;
   }
-  /* Both, per DESIGN.md §6: what hover says, focus has to say too. */
+  /* Hover and focus both, per DESIGN.md §6. */
   .mem-back:hover,
   .mem-back:focus-visible {
     color: var(--ink);
@@ -892,46 +709,37 @@
     height: 16px;
   }
 
-  /* ---- the skeleton, on the phone ---- */
-
-  /* The way on to the wall is the whole point of the drawer here, so the
-     skeleton reserves it, hidden with the real link at 761 and above rather than
-     base-hidden, so the two are switched by the same pair of queries. Matched
-     to .mem-tostash's own touch minimum. */
+  /* Reserved like the real link and hidden by the same query at 761px and
+     up. */
   .mem-skel__tostash {
     display: block;
     height: 44px;
     margin-top: 14px;
     border-radius: var(--r-md);
   }
-  /* The count comes back with the pushed screen, so its block does too. */
+  /* The count returns on the pushed screen, so its block does too. */
   .mem-skel__ct {
     width: 22px;
     height: 11px;
   }
-  /* The wall stops being a scroller here and the page carries it, so there is
-     no ceiling left to clip the overdraw against and the tail would become
-     page length instead: nine rows of shimmer to flick past on a screen that
-     holds three. Cut to roughly one screen — in CSS, not a width branch in JS,
-     keeping the no-measurement rule intact. */
+  /* No ceiling clips the overdraw here, so cap it at about one screen, in
+     CSS rather than a JS measurement. */
   .mem-skel__wall .mem-wall > :nth-child(n + 13) {
     display: none;
   }
 }
 
-/* ---- the loading skeleton (#239) --------------------------------------- */
+/* ---- the loading skeleton (Members.styles.test.ts slices on this banner) */
 
-/* Everything above is shared with the loaded page by construction: the
-   skeleton renders the same containers, so the shell, the rail, the pane, the
-   head, the wall box and every cell in it are the boxes this file already
-   describes. What is left here is only what has no real counterpart. */
+/* Skeleton-only rules (#239). The skeleton renders the page's own
+   containers, so everything above already applies. */
 
-/* The rail row is a link in the real thing. Same box, no interaction. */
+/* Same box as the real row link, no interaction. */
 .mem-skel .mem-row__link:hover {
   background: none;
 }
-/* The heading's own line box, so the head is the same column below 900 as it
-   is loaded and the bar sits where the words will. */
+/* The heading's line box, so the stacked head matches the loaded one below
+   900px. */
 .mem-skel .mem-stash__id {
   align-items: center;
   height: 21px;
@@ -940,14 +748,9 @@
   border-radius: 1px;
 }
 
-/* Overdraw and clip. The box is the same reserved height it is on the loaded
-   page, so the tail simply falls outside it — no tile count matched to a
-   stash, and nothing measured. `hidden` rather than the real box's `auto`,
-   because the tail is filler and must not be reachable.
-
-   Both classes in the selector, so this outranks the two-column block's
-   overflow-y on specificity rather than on being further down the file: an
-   append below here would otherwise take the clip away silently. */
+/* Overdraw clipped by the reserved box; `hidden`, not `auto`, so the filler
+   is not scrollable. Both classes, to beat the two-column overflow-y on
+   specificity rather than source order. */
 .mem-wallbox.mem-skel__wall {
   overflow: hidden;
 }

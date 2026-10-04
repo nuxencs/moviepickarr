@@ -131,8 +131,6 @@ func TestUpsertMetadata_Idempotent(t *testing.T) {
 		t.Fatalf("expected genres replaced, got %v", got.Genres)
 	}
 
-	// Still exactly one row for this movie (no longer a backfill candidate
-	// once the credits marker is stamped too).
 	if err := credits.ReplaceCredits(ctx, movieID, nil); err != nil {
 		t.Fatalf("stamp credits: %v", err)
 	}
@@ -182,7 +180,7 @@ func TestGetMetadataByMovieIDs_BatchAndPartial(t *testing.T) {
 		t.Fatalf("batch get: %v", err)
 	}
 
-	// Enriched ids present; the un-enriched id is simply absent (async enrichment).
+	// Enrichment is async, so the un-enriched id is absent, not an error.
 	if len(got) != 2 {
 		t.Fatalf("expected 2 enriched rows, got %d", len(got))
 	}
@@ -225,7 +223,6 @@ func TestSetExternalIDs_RoundTrip(t *testing.T) {
 	ctx, _, movies, users := setupMetadataRepos(t)
 	movieID := seedMovie(t, ctx, users, movies, "Zed")
 
-	// Fresh movie has no ids.
 	m, err := movies.FindByID(ctx, movieID)
 	if err != nil {
 		t.Fatalf("find: %v", err)
@@ -248,7 +245,7 @@ func TestSetExternalIDs_RoundTrip(t *testing.T) {
 		t.Fatalf("ids not persisted: %v / %v", m.TMDBID, m.IMDbID)
 	}
 
-	// Resetting to nil clears them (the edit-changed-link path).
+	// nil clears them: the edit-changed-link path.
 	if err := movies.SetExternalIDs(ctx, movieID, nil, nil); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
@@ -269,7 +266,7 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 	identifyMovieForEnrichment(t, ctx, movies, idA)
 	identifyMovieForEnrichment(t, ctx, movies, idB)
 
-	// Backfill (zero time): both un-enriched movies are candidates.
+	// Zero cutoff is the backfill scan.
 	backfill, err := meta.NeedsEnrichment(ctx, time.Time{}, 100)
 	if err != nil {
 		t.Fatalf("backfill query: %v", err)
@@ -278,7 +275,6 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 		t.Fatalf("expected both movies as backfill candidates, got %v", backfill)
 	}
 
-	// Enrich A fully (metadata + credits stamp). Now backfill returns only B.
 	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: idA}); err != nil {
 		t.Fatalf("upsert A: %v", err)
 	}
@@ -296,8 +292,6 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 		t.Fatalf("B should still be a backfill candidate")
 	}
 
-	// Stale scan with a future cutoff: A's fresh enriched_at is < future, so A
-	// is stale and returned again (plus B, which has no row).
 	future, err := meta.NeedsEnrichment(ctx, time.Now().Add(time.Hour), 100)
 	if err != nil {
 		t.Fatalf("stale query (future): %v", err)
@@ -306,8 +300,6 @@ func TestNeedsEnrichment_BackfillAndStale(t *testing.T) {
 		t.Fatalf("A should be stale against a future cutoff")
 	}
 
-	// Stale scan with a past cutoff: A's fresh enriched_at is NOT < past, so A
-	// is not stale; only B (no row) is returned.
 	past, err := meta.NeedsEnrichment(ctx, time.Now().Add(-time.Hour), 100)
 	if err != nil {
 		t.Fatalf("stale query (past): %v", err)
@@ -326,7 +318,6 @@ func TestMarkEnrichmentStale_RetriggersNeedsEnrichment(t *testing.T) {
 	id := seedMovie(t, ctx, users, movies, "Hal")
 	identifyMovieForEnrichment(t, ctx, movies, id)
 
-	// Fully enriched: not a candidate.
 	if err := meta.UpsertMetadata(ctx, domain.MovieMetadata{MovieID: id}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
@@ -341,8 +332,7 @@ func TestMarkEnrichmentStale_RetriggersNeedsEnrichment(t *testing.T) {
 		t.Fatalf("enriched movie should not be a candidate")
 	}
 
-	// Identity changed: the cleared marker makes the next drain re-select the
-	// movie even when the in-memory enqueue is lost.
+	// The cleared marker re-selects the movie even if the in-memory enqueue is lost.
 	if err := meta.MarkEnrichmentStale(ctx, id); err != nil {
 		t.Fatalf("mark stale: %v", err)
 	}
@@ -420,8 +410,7 @@ func TestFindByStatus_WatchedScansAllColumns(t *testing.T) {
 		t.Fatalf("mark watched: %v", err)
 	}
 
-	// Regression: the "watched" query variant must SELECT the same columns
-	// scanMovie expects (tmdb_id/imdb_id included) or Scan fails with a 500.
+	// The watched query variant must SELECT every column scanMovie expects, or Scan fails.
 	watched, err := movies.FindByStatus(ctx, "watched")
 	if err != nil {
 		t.Fatalf("find watched: %v", err)
@@ -443,7 +432,7 @@ func TestMetadata_CascadeDeleteWithMovie(t *testing.T) {
 		t.Fatalf("delete movie: %v", err)
 	}
 
-	// FK ON DELETE CASCADE (foreign_keys pragma is on via the DSN) removes the row.
+	// The cascade needs the foreign_keys pragma from the DSN.
 	if _, err := meta.GetMetadata(ctx, movieID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected metadata removed by cascade, got %v", err)
 	}

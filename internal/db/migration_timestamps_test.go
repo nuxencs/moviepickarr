@@ -10,11 +10,8 @@ import (
 	"time"
 )
 
-// TestMigration007_NormalizesTimestamps applies the 007 SQL against a post-006
-// schema seeded with the three timestamp formats found in production (bare
-// CURRENT_TIMESTAMP, Go time.Time with local offset, Go time.Time with
-// fractional seconds + UTC offset) and asserts every value lands as INTEGER
-// unix epoch seconds — the fix for the text-sorted watched list.
+// The seed rows hold the three timestamp text formats found in production;
+// 007 must turn each into INTEGER epoch seconds.
 func TestMigration007_NormalizesTimestamps(t *testing.T) {
 	ctx := context.Background()
 	pool, err := OpenSQLite(filepath.Join(t.TempDir(), "m.db"))
@@ -45,7 +42,6 @@ func TestMigration007_NormalizesTimestamps(t *testing.T) {
 			FOREIGN KEY (movie_id) REFERENCES movies(id) ON UPDATE CASCADE ON DELETE CASCADE)`,
 		`INSERT INTO users (id, name, created_at, updated_at)
 			VALUES (1, 'alice', '2025-11-17 15:08:44 +0100 CET', '2025-11-17 15:08:44 +0100 CET')`,
-		// CET (+0100), CEST (+0200), fractional UTC, and bare rows.
 		`INSERT INTO movies (title, status, added_at, added_by_id, watched_at) VALUES
 			('cet',   'watched', '2025-11-17 15:08:44 +0100 CET', 1, '2026-03-06 21:28:41.97003533 +0000 UTC'),
 			('cest',  'watched', '2025-06-01 10:00:00 +0200 CEST', 1, '2026-03-06 22:00:00 +0100 CET'),
@@ -53,9 +49,7 @@ func TestMigration007_NormalizesTimestamps(t *testing.T) {
 			('inpool', 'pool',   '2026-06-27 11:20:58', 1, NULL)`,
 		`INSERT INTO movie_metadata (movie_id, enriched_at, credits_refreshed_at)
 			VALUES (1, '2026-06-27 11:20:58', NULL)`,
-		// Bump the AUTOINCREMENT high-water mark past the surviving rows, as if
-		// the highest-id movie had been deleted; 007 must preserve it so dead
-		// ids are never reused after the rebuild.
+		// Raise the AUTOINCREMENT high-water mark, as if the top row was deleted.
 		`INSERT INTO movies (id, title, status, added_at, added_by_id) VALUES
 			(99, 'deleted-later', 'pool', '2026-06-27 11:20:58', 1)`,
 		`DELETE FROM movies WHERE id = 99`,
@@ -99,7 +93,7 @@ func TestMigration007_NormalizesTimestamps(t *testing.T) {
 		}
 	}
 
-	// The whole point: integer DESC order matches chronological order.
+	// Text sort broke the watched list order (the reason for 007).
 	rows, err := pool.Read.QueryContext(ctx,
 		`SELECT title FROM movies WHERE status='watched' ORDER BY watched_at DESC`)
 	if err != nil {
@@ -118,7 +112,6 @@ func TestMigration007_NormalizesTimestamps(t *testing.T) {
 		t.Errorf("watched DESC order = %s, want bare,cet,cest", got)
 	}
 
-	// Everything is a real INTEGER now — users, movies, and metadata alike.
 	var nonInt int
 	if err := pool.Read.QueryRowContext(ctx, `
 		SELECT (SELECT COUNT(*) FROM movies WHERE typeof(added_at) != 'integer'
@@ -141,8 +134,7 @@ func TestMigration007_NormalizesTimestamps(t *testing.T) {
 		t.Errorf("user created_at = %d, want %d", userCreated, wantUser)
 	}
 
-	// The rebuild must not lower the AUTOINCREMENT sequence: the next insert
-	// gets a fresh id above the deleted row's 99, not a reused one.
+	// The rebuild must not lower AUTOINCREMENT, or deleted ids get reused.
 	res, err := pool.Write.ExecContext(ctx,
 		`INSERT INTO movies (title, status, added_by_id) VALUES ('fresh', 'pool', 1)`)
 	if err != nil {
@@ -157,8 +149,6 @@ func TestMigration007_NormalizesTimestamps(t *testing.T) {
 	}
 }
 
-// TestMigration007_Constraints runs the full chain on a fresh DB and exercises
-// each invariant the rebuilt tables enforce.
 func TestMigration007_Constraints(t *testing.T) {
 	ctx := context.Background()
 	pool, err := OpenSQLite(filepath.Join(t.TempDir(), "m.db"))
@@ -187,7 +177,7 @@ func TestMigration007_Constraints(t *testing.T) {
 	mustExec(`INSERT INTO users (name) VALUES ('alice')`)
 	mustExec(`INSERT INTO movies (title, status, added_by_id, tmdb_id) VALUES ('Heat', 'pool', 1, 949)`)
 
-	// STRICT: a raw time.Time bind arrives as TEXT and is rejected outright.
+	// A raw time.Time binds as TEXT, which STRICT rejects.
 	wantErr("raw time.Time bind rejected by STRICT",
 		`INSERT INTO movies (title, status, added_at, added_by_id) VALUES ('Bad', 'pool', ?, 1)`,
 		time.Date(2026, 7, 7, 12, 0, 0, 0, time.FixedZone("CET", 3600)))
@@ -202,17 +192,14 @@ func TestMigration007_Constraints(t *testing.T) {
 	wantErr("user delete restricted while movies exist",
 		`DELETE FROM users WHERE id = 1`)
 
-	// Canonical binds pass, and a second NULL tmdb_id row is fine.
 	mustExec(`INSERT INTO movies (title, status, added_by_id, watched_at) VALUES ('Seen', 'watched', 1, ?)`,
 		ToUnix(time.Now()))
 	mustExec(`INSERT INTO movies (title, status, added_by_id) VALUES ('No tmdb yet', 'pool', 1)`)
 
-	// Only one movie may be current at a time (movies_single_current).
 	mustExec(`INSERT INTO movies (title, status, added_by_id) VALUES ('Now playing', 'current', 1)`)
 	wantErr("second current movie rejected",
 		`INSERT INTO movies (title, status, added_by_id) VALUES ('Also playing?', 'current', 1)`)
 
-	// The users_touch_updated_at trigger stamps renames.
 	mustExec(`UPDATE users SET updated_at = 0 WHERE id = 1`)
 	mustExec(`UPDATE users SET name = 'alice2' WHERE id = 1`)
 	var updatedAt int64

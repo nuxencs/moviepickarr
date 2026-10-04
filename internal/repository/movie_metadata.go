@@ -207,9 +207,7 @@ func (d *SqliteMovieMetadataRepository) MarkEnrichmentStale(ctx context.Context,
 }
 
 func (d *SqliteMovieMetadataRepository) NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]domain.EnrichmentCandidate, error) {
-	// A NULL credits_refreshed_at means credits were never ingested for an
-	// otherwise-enriched row, so existing libraries backfill credits on the
-	// first drain after the credits migration.
+	// A NULL credits_refreshed_at marks an enriched row whose credits need a backfill.
 	query := `
 		SELECT m.id
 		FROM movies m

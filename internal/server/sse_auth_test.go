@@ -20,9 +20,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// setupSSEApp builds a handler over a temp DB with the real csrfGuard then
-// requireSession chain in front of /events, plus a fast heartbeat so the
-// per-heartbeat session revalidation is observable within a test.
+// setupSSEApp mounts the real csrfGuard, requireSession chain on /events with a
+// fast heartbeat so per-heartbeat session revalidation is observable.
 func setupSSEApp(t *testing.T) (*handler, *fiber.App, *db.Pool) {
 	t.Helper()
 
@@ -55,8 +54,7 @@ func setupSSEApp(t *testing.T) (*handler, *fiber.App, *db.Pool) {
 	return h, app, dbConn
 }
 
-// The SSE handshake is authed before the stream opens: an invalid/absent session
-// gets 401 (not an opened stream that later errors).
+// 401 before the stream opens, not an opened stream that later errors.
 func TestSSE_HandshakeRejectsUnauthenticated(t *testing.T) {
 	t.Parallel()
 
@@ -75,8 +73,7 @@ func TestSSE_HandshakeRejectsUnauthenticated(t *testing.T) {
 	}
 }
 
-// A session revoked after the handshake stops receiving updates: the next
-// heartbeat revalidates it, fails, and closes the stream.
+// The next heartbeat revalidates the session, fails, and closes the stream.
 func TestSSE_RevokedMidStreamDropsOnHeartbeat(t *testing.T) {
 	t.Parallel()
 

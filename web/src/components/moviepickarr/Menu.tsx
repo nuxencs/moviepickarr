@@ -22,15 +22,11 @@ export interface MenuAction {
 }
 
 interface MenuProps {
-  /** Items shown top to bottom. */
   actions: MenuAction[];
-  /** Accessible label for the trigger and the menu. */
   label: string;
-  /** Trigger glyph; defaults to an ellipsis. */
   icon?: ReactNode;
   /** Which trigger edge the menu's near corner aligns to. */
   align?: "start" | "end";
-  /** Extra class on the trigger button. */
   className?: string;
   /** Prevent opening while the owning surface has an in-flight operation. */
   disabled?: boolean;
@@ -48,14 +44,8 @@ const GAP = 6;
 const MARGIN = 8;
 
 /**
- * Bespoke "more actions" menu — a portalled floating surface on the shared
- * mg-scaleIn/Out motion (see Modal), replacing the former Radix dropdown so the
- * app owns its focus behaviour. Every reason but an outside-click returns focus
- * to the trigger; on select that happens *before* the action's Modal mounts, so
- * the Modal captures the trigger as its opener and moves focus inside itself —
- * the trigger never sits focused behind a dialog where Enter would reopen the menu.
- * The other direction works too: a menu opened from inside a dialog is the topmost
- * surface, so Esc closes the menu and leaves the dialog behind it up (#220).
+ * Bespoke "more actions" menu, a portalled floating surface. Inside a dialog it
+ * is the topmost surface, so Esc closes only the menu (#220).
  */
 export function Menu({ actions, label, icon, align = "end", className, disabled = false }: MenuProps) {
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -78,9 +68,8 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
     show();
   }, [show]);
 
-  // Return focus to the trigger for every dismissal except an outside click.
-  // On select this runs synchronously before the action's Modal mounts, so the
-  // Modal adopts the trigger as opener and immediately traps focus inside.
+  // On select this runs before the action's Modal mounts, so the Modal adopts
+  // the trigger as opener; else Enter on the focused trigger reopens the menu.
   const requestClose = useCallback(
     (reason: CloseReason) => dismiss({ restoreFocus: reason !== "outside" }),
     [dismiss],
@@ -114,9 +103,8 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
     });
   }, [align]);
 
-  // Position the menu and keep focus inside when a live action transition
-  // replaces the focused item, such as an invite expiring while the menu is
-  // open. Leave an existing enabled item alone.
+  // Keep focus inside when a live update disables the focused item (an invite
+  // expiring while the menu is open).
   useLayoutEffect(() => {
     if (!open || closing) return;
     place();
@@ -132,13 +120,10 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
     }
   }, [open, closing, place, actionSignature]);
 
-  // Keep it anchored while scrolling/resizing; dismiss on Esc or outside click.
   useEffect(() => {
     if (!open || closing) return;
 
-    // Scroll fires many times per frame and place() reads two rects, so a raw
-    // listener forces layout on every tick. Coalesce the burst into one pass on
-    // the next frame, which is the soonest the move can be painted anyway.
+    // One place() per frame: it reads rects, and scroll fires many times a frame.
     let frame: number | null = null;
     const reposition = () => {
       if (frame !== null) return;
@@ -147,8 +132,7 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
         place();
       });
     };
-    // Both listeners are on `document` and capture before anything else sees
-    // the event, so they defer to a surface opened on top of the menu (#220).
+    // Capture-phase document listeners: defer to a surface on top (#220).
     const onPointerDown = (e: PointerEvent) => {
       if (!isTopmost()) return;
       const node = e.target as Node;

@@ -11,11 +11,7 @@ import type { MeResponse } from "@/types/Response";
 import { useDismissible } from "@/hooks/useDismissible";
 import { useLogout } from "@/hooks/useLogout";
 
-/**
- * Resolve dark/light from the `theme` value directly (not the DOM class): the
- * class is applied by the parent ThemeProvider's effect, which runs after this
- * child's, so reading it here would be stale.
- */
+// Not the DOM class: the parent ThemeProvider's effect sets it after this one runs.
 function resolveDark(theme: string): boolean {
   if (theme === "system") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -23,16 +19,7 @@ function resolveDark(theme: string): boolean {
   return theme === "dark";
 }
 
-/**
- * The top-right avatar and the profile panel it toggles: identity header, an
- * Account settings link, a Preferences section (theme plus the inline
- * draw-sound control), and a danger-styled single-device Log out.
- *
- * The panel rides the shared dismissal machine so its open/close motion and its
- * Escape / outside-click behaviour match the app's other popovers, and it's
- * anchored top-right and width-capped to the viewport so it never overflows on
- * phones (where the avatar sits in the same top bar).
- */
+/** The top-right avatar and the profile panel it toggles. */
 export function ProfilePanel({ me }: { me: MeResponse }) {
   const { theme, setTheme } = useTheme();
   const isDark = resolveDark(theme);
@@ -45,15 +32,11 @@ export function ProfilePanel({ me }: { me: MeResponse }) {
 
   const { open, closing, show, dismiss, isTopmost } = useDismissible({ restoreFocusTo: triggerRef });
 
-  // Focus returns to the avatar on every dismissal except an outside click,
-  // where focus follows the pointer instead.
   const requestClose = useCallback(
     (outside: boolean) => dismiss({ restoreFocus: !outside }),
     [dismiss],
   );
 
-  // Dismiss on Escape or a click outside the trigger+panel root, matching the
-  // menu / date-range popovers.
   useEffect(() => {
     if (!open || closing) return;
     const onPointerDown = (e: PointerEvent) => {

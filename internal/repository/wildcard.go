@@ -208,9 +208,7 @@ func (d *SqliteMoviesRepository) StartWildcard(
 		return nil, domain.ErrActiveWildcard
 	}
 
-	// Resolve an existing identity before inserting. A new TMDB result is born
-	// directly in Wildcard state and returns to the recording member's Stash if
-	// canceled.
+	// A new TMDB result starts as a Wildcard and goes to the member's Stash if canceled.
 	var movie *domain.Movie
 	created := false
 	if selection.ExistingMovieID != nil {

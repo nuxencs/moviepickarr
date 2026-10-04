@@ -53,8 +53,7 @@ import { useDismissible } from "@/hooks/useDismissible";
 import { useFlipRail } from "@/hooks/useFlipRail";
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
 
-// Stable reference for the pre-load / empty state so the filters useMemo below
-// doesn't recompute on every render while the server options are in flight.
+// Stable reference, so the filters useMemo does not rerun while options load.
 const EMPTY_FILTER_OPTIONS: FilterOptions = { genres: [], actors: [], crew: [], years: [], adders: [] };
 
 const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
@@ -65,14 +64,12 @@ const WINDOWS: { id: StatsWindow; label: string; calendar?: boolean }[] = [
   { id: "custom", label: "Custom", calendar: true },
 ];
 
-/** A rolling count plus its noun ("4 movies") — the number animates, the noun is a
- *  static suffix. Replaces plural(n, "movie") wherever the count should roll. */
+/** A rolling plural(n, "movie"). */
 function MovieCount({ value, animateOnMount }: { value: number; animateOnMount?: boolean }) {
   return <StatNumber value={value} animateOnMount={animateOnMount} suffix={` ${value === 1 ? "movie" : "movies"}`} />;
 }
 
-/** Rolling "Xh Ym" runtime (mirrors `runtimeLabel`: minutes unpadded, hours dropped
- *  under an hour). Each part animates independently; `prefix` is static lead text. */
+/** A rolling runtimeLabel. */
 function RuntimeCount({ minutes, prefix, animateOnMount }: { minutes: number; prefix?: string; animateOnMount?: boolean }) {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -96,49 +93,32 @@ function topHour(items: StatsHourCount[]) {
   return [...items].sort((a, b) => b.count - a.count || a.hour - b.hour)[0];
 }
 export function StatsTab() {
-  // The Stats page hangs off the pathless `_app` layout route (router.tsx), so
-  // its route id is `/_app/stats` while its URL stays `/stats`. useSearch keys
-  // off the route id; useNavigate keys off the URL — hence the two spellings.
+  // useSearch takes the route id (pathless `_app` layout), useNavigate the URL.
   const search = useSearch({ from: "/_app/stats" });
   const navigate = useNavigate({ from: "/stats" });
   const rangeId = useId();
   const customRef = useRef<HTMLButtonElement>(null);
 
-  // The custom-range popover rides the shared dismissal machine (closing plays
-  // the CSS daterange--closing exit, focus returns to the trigger, unmount
-  // after exitDelayMs, the same lockstep as the Menu/Modal). hideNow is the
-  // hard-hide for when the view changes out from under the popover.
+  // hideNow is for when the view changes out from under the popover.
   const range = useDismissible({ restoreFocusTo: customRef });
   const { dismiss: dismissRange } = range;
 
-  // Adapter for DateRangePopover's (restoreFocus, after?) dismiss signature.
   const closeRange = useCallback(
     (restoreFocus: boolean, after?: () => void) => dismissRange({ restoreFocus, after }),
     [dismissRange],
   );
 
-  // Opening the modal pushes a history entry, so browser Back closes it (#196).
-  // A genre/year chip inside it is a same-route /stats→/stats nav that never
-  // unmounts StatsTab; it replaces that entry rather than stacking on it, so
-  // the modal closes without this component reacting to the search change.
+  // A history entry per open modal, so browser Back closes it (#196).
   const { selected, isOpen, open, close, onClosed } = useMovieModal();
 
-  // The below-fold panels (leaderboard, weekday/hourly, genres/decades, the two
-  // people rails) carry the bulk of the Stats mount cost — FLIP rails, ~45
-  // avatars, and the chart DOM. Rather than mount them one frame after data
-  // (which just moves that cost off the first paint), we gate them on the
-  // viewport: an IntersectionObserver watching an anchor below the movies rail
-  // flips `panelsVisible` true only when the panels are about to scroll into
-  // view (see the effect below). A visit that reads the KPI strip + movies rail
-  // and leaves never pays for them. Latches true once shown, so filter changes —
-  // which keep StatsTab mounted — never re-gate or flicker the panels.
+  // The below-fold panels carry most of the mount cost, so they mount only as
+  // they near the viewport. Latches true, so filter changes never re-gate them.
   const [panelsVisible, setPanelsVisible] = useState(false);
   const panelsAnchorRef = useRef<HTMLDivElement>(null);
 
   const win = search.win;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
 
-  // The whole filter state is driven by the URL search params (see statsSearch).
   const customRange = useMemo(() => rangeFromSearch(search), [search]);
   const apiRange =
     win === "custom" && customRange?.start && customRange?.end
@@ -149,21 +129,13 @@ export function StatsTab() {
     StatsGetQueryOptions(win, timezone, apiRange, statsFiltersFromSearch(search)),
   );
 
-  // Filter options (actors/crew/genres/years/adders) come from a cached
-  // server endpoint that derives them from the watched library — the watched
-  // list itself now ships lean (no embedded credits), so they can't be rebuilt
-  // client-side. Watch years (below) still read the cached watched list, which
-  // keeps the per-movie watch dates.
+  // The watched list is lean (no credits), so filter options come from the server.
   const { data: watched } = useQuery(MoviesGetWatchedQueryOptions());
   const { data: filterOptionsData } = useQuery(FilterOptionsQueryOptions());
   const filterOptions: FilterOptions = filterOptionsData ?? EMPTY_FILTER_OPTIONS;
 
-  // Reveal the below-fold panels when their anchor nears the viewport (see
-  // panelsVisible). Latches, so it fires once and never unmounts them. The IO
-  // callback runs after first paint, so even when the anchor is already in view
-  // on a tall screen the panels still mount off the initial-paint path. Without
-  // IO support (or when there's nothing below the rail to reveal) fall back to
-  // showing them.
+  // The IO callback runs after first paint, so even an in-view anchor keeps the
+  // panels off the initial-paint path.
   useEffect(() => {
     if (panelsVisible) return;
     if (!stats || (stats.selectedWindowCount ?? 0) === 0) return;
@@ -185,7 +157,6 @@ export function StatsTab() {
     io.observe(el);
     return () => io.disconnect();
   }, [panelsVisible, stats]);
-  // Resolve the URL's id lists back into {id, name} chips for the FilterBar.
   const filters = useMemo(() => filtersFromSearch(search, filterOptions), [search, filterOptions]);
   const watchYears = useMemo(() => {
     const years = new Set<number>();
@@ -195,9 +166,7 @@ export function StatsTab() {
     return [...years].sort((a, b) => b - a);
   }, [watched]);
 
-  // Join the matched ids the stats endpoint returns back to the cached watched
-  // movies, so the movies-in-filter-view rail renders posters without a second
-  // fetch and its count can never drift from the "In window" KPI.
+  // Join matched ids to the cached watched list: no second fetch, no count drift.
   const watchedById = useMemo(() => {
     const map = new Map<number, MovieTile>();
     for (const movie of watched ?? []) map.set(movie.movieID, movie);
@@ -213,8 +182,7 @@ export function StatsTab() {
   // Render the open modal from the live list so an SSE refetch flows into it.
   const selectedLive = selected ? watchedById.get(selected.movieID) ?? selected : null;
 
-  // The watch-year quick-select is sugar over the custom window: it reads as
-  // "selected" only while the active custom range is exactly Jan 1 – Dec 31.
+  // Watch year is sugar over a custom range of exactly Jan 1 - Dec 31.
   const watchYear =
     win === "custom" &&
     customRange?.start &&
@@ -227,7 +195,6 @@ export function StatsTab() {
       ? customRange.start.getFullYear()
       : null;
 
-  // Every filter mutation writes to the URL; the components below are unchanged.
   const setFilters = (next: MovieFilters) =>
     navigate({ search: (prev) => ({ ...prev, ...filtersToSearch(next) }) });
 
@@ -247,8 +214,6 @@ export function StatsTab() {
     });
   };
 
-  // Rail clicks drill the whole page down: actors toggle into the actors
-  // filter, directors into the crew filter (any-of within a group).
   const togglePerson = (key: "actors" | "crew") => (person: StatsPersonCount) => {
     const ids = search[key];
     const next = (
@@ -279,9 +244,7 @@ export function StatsTab() {
       if (range.open && !range.closing) {
         closeRange(true);
       } else {
-        // Open, or interrupt an in-flight close and re-open, so a fast
-        // re-click during the exit fade isn't swallowed (show() clears the
-        // pending close timer).
+        // show() also cancels an in-flight close, so a fast re-click is not lost.
         range.show();
       }
       return;
@@ -305,8 +268,6 @@ export function StatsTab() {
         </div>
       </div>
 
-      {/* One filter system: the time-range presets and the metadata chips sit
-          in a single row, sharing the 30px rhythm and gold active states. */}
       <div className="statsfilters">
         <div className="win-control">
           <div className="seg">
@@ -407,15 +368,9 @@ export function StatsTab() {
             />
           </div>
 
-          {/* The movies rail always renders — it owns the single empty state for the
-              filter view (it is the visual expansion of the "In window" KPI). When
-              the count is zero every downstream section drops away with it: zeroed
-              member bars and empty charts under an empty filter view are noise, not
-              information. */}
+          {/* Owns the one empty state; count 0 drops every panel below. */}
           <MatchedMoviesRail movies={matchedMovies} count={count} filtered={filtered} onSelect={open} />
 
-          {/* Anchor the IntersectionObserver watches to reveal the below-fold
-              panels only as they approach the viewport (see panelsVisible). */}
           <div ref={panelsAnchorRef} aria-hidden="true" className="stats-panels-anchor" />
 
           {count > 0 && panelsVisible && (
@@ -458,12 +413,7 @@ export function StatsTab() {
   );
 }
 
-/**
- * Horizontal rail of the movies behind the current window/filters — the concrete
- * answer to the "In window" KPI. Posters reuse the Movies-tab tile visuals;
- * clicking one opens the detail modal. The heading count comes from the KPI
- * (the authoritative server count), so the two always agree.
- */
+/** The movies behind the "In window" KPI; the heading count is the server's. */
 function MatchedMoviesRail({
   movies,
   count,
@@ -475,22 +425,14 @@ function MatchedMoviesRail({
   filtered: boolean;
   onSelect: (movie: MovieTile) => void;
 }) {
-  // FLIP the matched-movies rail: movies present in both windows glide to their new
-  // spot (the 30d prefix of a 1y set has a zero delta and stays put), new movies
-  // pop in, dropped movies fade out then the rail tightens. Keyed by id; item data
-  // resolves live so an SSE refetch flows in without re-animating.
   const { containerRef, entries, itemProps } = useFlipRail<MovieTile>(movies, (m) => String(m.movieID));
   return (
-    // Flush under the KPI strip (which already closes with a bottom rule) — the
-    // rail is the expansion of the "In window" count, not a separate section.
     <section className="statsec statsec--flush">
       <h3 className="statsec__title">
         Movies in Filter View · <StatNumber value={count} />
       </h3>
       {entries.length === 0 ? (
-        // count > 0 with no posters means the cached watched list is still
-        // catching up to the stats count (transient); count 0 is a genuinely
-        // empty filter view, worded by whether a filter is narrowing it.
+        // count > 0 with no posters: the watched list is still catching up.
         <p className="empty">
           {count > 0
             ? "Loading movies…"
@@ -559,9 +501,6 @@ function StatItem({
 
 function AddedByMember({ rows }: { rows: StatsNamedCount[] }) {
   const max = Math.max(...rows.map((r) => r.count), 1);
-  // FLIP the leaderboard: when a window change reranks members, the rows glide to
-  // their new rank rather than snapping; new members pop in, dropped ones fade
-  // out then the column tightens. Bar widths still tween via the b-fill CSS.
   const { containerRef, entries, itemProps } = useFlipRail<StatsNamedCount>(rows, (r) => r.name);
   return (
     <section className="statsec">
@@ -637,13 +576,11 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
               <div
                 className="hcol"
                 key={entry.hour}
-                // Marks empty hours so touch (hover:none) reveals counts for
-                // active hours only — revealing all 24 would be a row of zeros.
+                // Touch reveals counts only for active hours, not a row of zeros.
                 data-empty={entry.count === 0 ? "" : undefined}
                 title={`${entry.count} at ${hh}:00`}
               >
                 <span className="hcol__n">{entry.count}</span>
-                {/* bar height is calc(--p * 88%); grows/tweens via index.css */}
                 <div
                   className="hcol__bar"
                   style={{ "--p": entry.count / max, opacity: entry.count === 0 ? 0.18 : 1 } as CSSProperties}
@@ -654,7 +591,6 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
         </div>
         <div className="hourchart__axis">
           {hours.map((entry) => (
-            // Label only every 6th hour to keep the axis legible across 24 columns.
             <span key={entry.hour}>{entry.hour % 6 === 0 ? String(entry.hour).padStart(2, "0") : ""}</span>
           ))}
         </div>
@@ -663,10 +599,8 @@ function HourlyActivity({ hours }: { hours: StatsHourCount[] }) {
   );
 }
 
-/** Top genres donut: top segments + "Other". The disc is decorative (one
- *  accent, stepped alphas — see the `--donut-*` ramp in index.css); the
- *  legend beside it carries the actual mapping, so color is never the only
- *  channel. */
+/** In step with the `--donut-*` ramp in index.css. The legend carries the
+ *  mapping, so color is never the only channel. */
 const DONUT_SEGMENTS = 6;
 
 function TopGenres({ rows }: { rows: StatsNamedCount[] }) {
@@ -709,11 +643,6 @@ function TopGenres({ rows }: { rows: StatsNamedCount[] }) {
   );
 }
 
-/**
- * Horizontally scrolling rail of clickable people cards (castcard visuals).
- * Clicking a card toggles that person in/out of the drill-down filter; the
- * corner link opens their TMDB page without touching the filter.
- */
 function PeopleRail({
   title,
   people,
@@ -725,10 +654,7 @@ function PeopleRail({
   activeIds: ReadonlySet<number>;
   onToggle: (person: StatsPersonCount) => void;
 }) {
-  // FLIP the ranking: when a window change reranks people, cards glide between
-  // ranks; new entries pop in, dropped ones fade out then the rail tightens.
-  // Keyed by personId only (not count) — a count change updates the card's static
-  // count text in place without re-animating the rail; order changes drive the glide.
+  // Keyed by personId only, so a count change does not re-animate the rail.
   const { containerRef, entries, itemProps } = useFlipRail<StatsPersonCount>(people, (p) => String(p.personId));
   if (entries.length === 0) return null;
   return (
@@ -754,8 +680,7 @@ function PeopleRail({
                   <span className="castcard__role">{plural(p.count, "movie")}</span>
                 </span>
               </button>
-              {/* Sibling, never nested in the toggle — its own tab stop, and a
-                  click here must not flip the filter. */}
+              {/* Not nested in the toggle: a click here must not flip the filter. */}
               <a
                 className="peoplecard__ext"
                 href={tmdbPersonUrl(p.personId)}
@@ -774,9 +699,7 @@ function PeopleRail({
 }
 
 function ReleaseDecades({ years }: { years: StatsYearCount[] }) {
-  // Bucket the per-year histogram into decades client-side ("1990s"), filling
-  // skipped decades with zero columns so the timeline reads chronologically —
-  // a gap is information, not something to collapse away.
+  // Skipped decades get zero columns: a gap is information.
   const buckets = new Map<number, number>();
   for (const y of years) {
     const decade = Math.floor(y.year / 10) * 10;
@@ -804,7 +727,6 @@ function ReleaseDecades({ years }: { years: StatsYearCount[] }) {
               data-empty={r.count === 0 ? "" : undefined}
               title={`${plural(r.count, "movie")} from the ${r.decade}s`}
             >
-              {/* counts always visible here (few columns) — see hourchart--decades */}
               <span className="hcol__n">{r.count}</span>
               <div
                 className="hcol__bar"

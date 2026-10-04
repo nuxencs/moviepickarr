@@ -1,36 +1,22 @@
 import type { MovieTile } from "@/types/Response";
 
 /**
- * The find-a-movie path on an untitled wall, and the arithmetic behind moving
- * around it with the keyboard.
- *
- * The wall drops the caption under the tile, so the field is the only way to
- * get from a title you can name to the poster that carries it — and the only
- * text the pane still has to compose. Both rules live here, away from the
- * markup, because both are about the term rather than about the layout.
- *
- * The keyboard rules join them for the same reason: which cell an arrow key
- * reaches is index arithmetic over a cell count and a column count, and it can
- * be stated and tested without a wall to render (#235).
+ * Search and keyboard rules for the untitled stash wall, kept out of the markup
+ * so they test without rendering (#235).
  */
 
 /** How much of the term the miss line echoes. It is raw user input. */
 const TERM_CAP = 32;
 
-/** The stash narrowed to what the term matches, by title, anywhere, any case. */
+/** The stash narrowed to titles containing the term, any case. */
 export function filterStash(stash: MovieTile[], filter: string): MovieTile[] {
   const q = filter.trim().toLowerCase();
-  // The same array back when there is no term: the wall is memoized per tile,
-  // and a fresh array on every keystroke would be a new list identity for a
-  // list that did not change.
+  // Same array back: the wall is memoized per tile, so a new identity would re-render it.
   if (!q) return stash;
   return stash.filter((movie) => movie.title.toLowerCase().includes(q));
 }
 
-/**
- * What a wall with no hits says. Identical on your own board and a guest's:
- * the term missed, and whose stash it missed in is the heading's job.
- */
+/** What a wall with no hits says, the same on every member's board. */
 export function missLine(filter: string): string {
   const term = filter.trim();
   const shown = term.length > TERM_CAP ? `${term.slice(0, TERM_CAP)}…` : term;
@@ -38,19 +24,10 @@ export function missLine(filter: string): string {
 }
 
 /**
- * Which cell a key reaches from the one holding focus, or null for a key the
- * wall does not answer and for a move that runs off the end.
- *
- * Left and right step through the wall in its own order, which is the reading
- * order the columns lay out, so at the end of a row they carry on onto the next
- * one: the wall is one A-Z run of movies and the responsive column count is the
- * stylesheet's business, which is the same reason it is not a `role="grid"`.
- * Up and down step by a row.
- *
- * A move with no cell at the other end is refused rather than clamped. Off the
- * first or last cell there is nowhere to go at all; off the last row, over a row
- * that is short, a Down that landed on the last movie would move by a distance
- * nobody asked for and sideways as well as down.
+ * The cell a key reaches from `from`, or null for an unhandled key or a move
+ * off the end. Left/Right wrap across rows (the wall is one A-Z run, not a
+ * `role="grid"`). Moves are refused, not clamped: a Down clamped onto a short
+ * last row would also move sideways.
  */
 export function nextCell(key: string, from: number, cells: number, columns: number): number | null {
   if (cells <= 0) return null;
@@ -75,13 +52,9 @@ export function nextCell(key: string, from: number, cells: number, columns: numb
 }
 
 /**
- * Where focus goes after the movie at `vacated` leaves a band that has `left`
- * cells now, or null when nothing is left to hold it.
- *
- * The same rule on both bands: the cell that slides into the vacated index, and
- * the one before it when the vacated index was the end. What a null means is
- * the band's own — the pane heading for the wall, the member's row for a pool
- * emptied of movies.
+ * Where focus goes after the movie at `vacated` leaves a band of `left` cells:
+ * the cell that slides in, or the one before when it was the end. Null means
+ * nothing is left; each band picks its own fallback.
  */
 export function landingCell(vacated: number, left: number): number | null {
   if (left <= 0) return null;
@@ -89,12 +62,8 @@ export function landingCell(vacated: number, left: number): number | null {
 }
 
 /**
- * How many columns a computed `grid-template-columns` describes.
- *
- * The wall's column count is a container-query artifact of the pane's width, so
- * it is read from the resolved track list rather than computed a second time in
- * JavaScript. One column is the floor: a wall that
- * cannot be measured still moves up and down, a movie at a time.
+ * How many columns a computed `grid-template-columns` describes. Read from CSS
+ * because the count comes from a container query; floors at one.
  */
 export function columnCount(template: string): number {
   const tracks = template.trim();

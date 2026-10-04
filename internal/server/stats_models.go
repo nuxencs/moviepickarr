@@ -35,15 +35,13 @@ type statsRuntime struct {
 	LongestTitle   string `json:"longestTitle,omitempty"`
 }
 
-// statsFilterPerson is one person in the filters echo, resolved to a display
-// name when any credit row references them.
+// statsFilterPerson is one person in the filters echo.
 type statsFilterPerson struct {
 	PersonID int    `json:"personId"` // TMDB person id
 	Name     string `json:"name,omitempty"`
 }
 
-// statsFiltersEcho mirrors the active filters back to the client, with the
-// people filters resolved to display names.
+// statsFiltersEcho mirrors the active filters back to the client.
 type statsFiltersEcho struct {
 	Genre         string              `json:"genre,omitempty"`
 	Actors        []statsFilterPerson `json:"actors,omitempty"`

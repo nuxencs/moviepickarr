@@ -1,26 +1,15 @@
-/* Admin roster surface. A dense one-row-per-member table, deliberately unlike
-   the movie boards: scannable columns, presence-derived login chips, per-member
-   actions folded into a row kebab. Colors come from the global tokens
-   (index.css). Everything is namespaced under .adm*. Ported from the locked
-   prototype direction (proto/auth-login-claim, Variant A "Roster table"). */
+/* Admin roster: a dense one-row-per-member table, deliberately unlike the movie
+   boards. Namespaced under .adm*. */
 
 .adm {
-  /* Width + centering come from the shell wrapper (index.css .shell, 1240px), so
-     the roster spans the same measure as the movie/member/stats boards. The
-     entrance is no longer a single page-level fade: the three peer regions
-     (head, active table, archived) carry the shared `.mg-rise` motion with a
-     per-region `--i` so they cascade in top-down (see RosterSection). */
+  /* Width comes from the shell wrapper (index.css .shell). */
   padding: 0 4px 64px;
 }
 
-/* ---------- section head: heading + add & invite ---------- */
-/* The head is the shared .sec-head/.sec-title (index.css), the same one Movies
-   and Members use, so the Roster section's title, its count, and the phone
-   stacking below 640 all come from the design system. It used to be a private
-   .adm-bar that reimplemented .sec-head and had drifted: it never inherited the
-   phone rule, which is why the add form stayed 220px wide on a 390px screen. */
+/* The section head is the shared .sec-head/.sec-title (index.css): do not fork it,
+   or it misses the 640px phone rule. */
 
-/* Secondary count used by the archived-section subheading (not the section title). */
+/* Archived-section subheading count, not the section title. */
 .adm-count {
   font-size: 13px;
   color: var(--ink-3);
@@ -29,9 +18,7 @@
   display: flex;
   gap: 8px;
 }
-/* The phone rule for both of these lives in index.css's 640 block, sharing a
-   selector with the members board's `.user-add` twin so the two forms can't
-   drift apart again. */
+/* Phone rule lives in index.css's 640 block, shared with `.user-add`. */
 .adm-field {
   width: 220px;
 }
@@ -40,7 +27,6 @@
   flex: none;
 }
 
-/* ---------- the table ---------- */
 .adm-tablewrap {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -87,16 +73,12 @@
   opacity: 0.72;
 }
 
-/* The sub-line's shed-column values. Rendered on every screen (RosterSection's
-   COLUMNS array feeds the cells and this line from one definition) and revealed
-   only where the columns themselves are gone. */
+/* Shed-column values, revealed only where the columns are gone. */
 .adm-id__extra {
   display: none;
 }
 
-/* Between the phone breakpoint and 720 the table still carries all six columns,
-   which don't fit: scroll it rather than squash it. Below 640 it sheds instead
-   (next block), so the min-width has to lift with them. */
+/* 641-720px: all columns do not fit, so scroll rather than squash. */
 @media (max-width: 720px) {
   .adm-tablewrap {
     overflow-x: auto;
@@ -106,12 +88,9 @@
   }
 }
 
-/* ---- Phone: the table becomes a compact member register ----
-   Role, Movies and Last active hide, and their values fold into the identity
-   sub-line (@ada · 38 movies · now). The remaining cells form two rows: member
-   and actions above, login state below. This keeps every action in the viewport
-   even when an invite status has long explanatory text. Keep the shed set in
-   step with COLUMNS in RosterSection.tsx. */
+/* Phone: shed columns fold into the identity sub-line, and the rest forms two
+   rows so every action stays in the viewport. Keep the shed set in step with
+   COLUMNS in RosterSection.tsx. */
 @media (max-width: 640px) {
   .adm-table [data-shed] {
     display: none;
@@ -173,8 +152,7 @@
   .adm-id__extra {
     display: inline;
   }
-  /* The sub-line now carries three facts, so let it wrap instead of truncating
-     the username, and tighten the row padding the columns used to justify. */
+  /* Wrap rather than truncate the username. */
   .adm-id__sub {
     line-height: 1.4;
   }
@@ -188,9 +166,7 @@
   .adm-add {
     flex-direction: column;
   }
-  /* The shared tablet rule gives the name field flex: 1 for a horizontal row.
-     Reset it when the form becomes a column, or its zero flex basis compresses
-     the control height. */
+  /* Undo the shared flex: 1, or its zero basis squashes the column's height. */
   .adm-add .adm-field {
     flex: none;
   }
@@ -201,7 +177,6 @@
   }
 }
 
-/* ---------- dimmed archived section ---------- */
 .adm-archived {
   margin-top: 26px;
 }
@@ -221,7 +196,6 @@
   font-size: 12px;
 }
 
-/* ---------- identity cluster ---------- */
 .adm-id {
   display: flex;
   align-items: center;
@@ -271,7 +245,6 @@
   color: var(--ink-2);
 }
 
-/* ---------- login-state chips ---------- */
 .adm-chips {
   display: flex;
   gap: 6px;
@@ -356,7 +329,6 @@
   padding: 5px 9px;
 }
 
-/* ---------- inline note (reused in the invite ceremony) ---------- */
 .adm-note {
   display: flex;
   align-items: flex-start;
@@ -384,7 +356,6 @@
   color: color-mix(in oklab, var(--danger) 55%, var(--ink));
 }
 
-/* one-time invite reveal */
 .adm-invite__head {
   display: flex;
   gap: 12px;
@@ -425,7 +396,6 @@
   background: color-mix(in oklab, var(--accent) 70%, var(--ink));
 }
 
-/* remove confirm + unlink guard */
 .adm-confirm {
   text-align: center;
 }
@@ -458,7 +428,6 @@
   margin-top: 20px;
 }
 
-/* set / reset local login: a small credential form */
 .adm-form {
   display: flex;
   flex-direction: column;
@@ -470,10 +439,6 @@
   height: 42px;
 }
 
-/* =========================================================
-   Forbidden state: a first-class "Admins only" screen, not a
-   404 mask. Fills the shell so it reads as a real page.
-   ========================================================= */
 .adm-forbidden {
   max-width: 440px;
   margin: 0 auto;

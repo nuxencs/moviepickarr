@@ -13,9 +13,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// metaFor batch-loads enriched metadata for the given movies. A lookup failure
-// is non-fatal — it logs and returns an empty map so responses still render
-// (without enriched fields) rather than failing the whole request.
+// metaFor batch-loads metadata. A failure logs and returns an empty map, so the
+// response still renders.
 func (h *handler) metaFor(c *fiber.Ctx, movies []*domain.Movie) metaByID {
 	if h.movieMetadata == nil || len(movies) == 0 {
 		return metaByID{}
@@ -33,10 +32,7 @@ func (h *handler) metaFor(c *fiber.Ctx, movies []*domain.Movie) metaByID {
 	return meta
 }
 
-// creditsFor batch-loads ingested credits for the given movies. Same contract
-// as metaFor: a lookup failure is non-fatal — it logs and returns an empty map
-// so responses still render (without cast/crew) rather than failing the whole
-// request.
+// creditsFor batch-loads credits, with metaFor's failure contract.
 func (h *handler) creditsFor(c *fiber.Ctx, movies []*domain.Movie) creditsByID {
 	if h.movieCredits == nil || len(movies) == 0 {
 		return creditsByID{}
@@ -62,15 +58,12 @@ func (h *handler) getPooledMovies(c *fiber.Ctx) ([]leanMovieTile, error) {
 	return toLeanTiles(movies, h.metaFor(c, movies)), nil
 }
 
-// writeNotAdder is the uniform 403 for a member trying to change a movie they
-// did not add. There is deliberately no admin override: edits, deletes and moves
-// are the adder's alone.
+// writeNotAdder is the 403 for a non-adder. No admin override, on purpose.
 func writeNotAdder(c *fiber.Ctx) error {
 	return writeProblem(c, fiber.StatusForbidden, "not_adder", "only the member who added this movie can change it")
 }
 
 func (h *handler) handleAddMovie(c *fiber.Ctx) error {
-	// The adder is the session member, never a path id: no target user to spoof.
 	actorID := actorMemberID(c)
 
 	var body struct {
@@ -84,8 +77,7 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 
 	title := sanitizeInput(body.Title)
 
-	// Identity-first: a search add carries the TMDB id; a manual add carries an
-	// IMDb or TMDB movie link. No link is stored; it is derived from the id.
+	// No link is stored; it is derived from the id.
 	var tmdbID *int
 	var imdbID *string
 	if body.TMDBID != nil && *body.TMDBID > 0 {
@@ -104,10 +96,7 @@ func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 
 	ctx := c.UserContext()
 
-	// Adds always land in the stash. Reaching the pool is a separate, explicit
-	// promotion (the move endpoint), so "Add to your stash" does exactly that.
-	// Identity lands in the same INSERT, so a duplicate fails before any row
-	// exists instead of relying on a second write and best-effort cleanup.
+	// Identity is in the same INSERT, so a duplicate fails before any row exists.
 	movieRecord, err := h.movieService.AddToStash(ctx, title, actorID, tmdbID, imdbID)
 	if err != nil {
 		if errors.Is(err, domain.ErrConflict) {
@@ -142,8 +131,6 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// A Members board path: tile-level data only, so ship lean tiles and skip
-	// the credits batch-load (the modal lazy-loads its full record instead).
 	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(c, movies)))
 }
 
@@ -205,8 +192,7 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// Watched stats include the movie title as well as watched_at, so every
-	// successful edit of a watched row invalidates them.
+	// Watched stats include the title, so any watched edit invalidates them.
 	if updatedMovie.Status == string(domain.MovieStatusWatched) {
 		h.invalidateStatsCache()
 	}
@@ -240,11 +226,8 @@ func (h *handler) handleDeleteMovie(c *fiber.Ctx) error {
 		return writeNotAdder(c)
 	}
 
-	// The state rules (deletable statuses, the freeze while a draw is unrevealed,
-	// and which of the two refusals the lock yields to) live in the service,
-	// which owns the active draw. Refusing the lock here instead would answer
-	// differently for the held winner than for the tile beside it, which is
-	// exactly the tell the freeze exists to remove.
+	// The service owns the state rules: refusing the lock here would treat the
+	// held winner differently from its neighbors and reveal it.
 	err = h.runPoolStateCommand(func() error {
 		poolLocked, err := h.settingsService.GetPoolLock(ctx)
 		if err != nil {
@@ -283,8 +266,6 @@ func (h *handler) handleGetStash(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// A Members board path: tile-level data only, so ship lean tiles and skip
-	// the credits batch-load (the modal lazy-loads its full record instead).
 	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(c, movies)))
 }
 
@@ -297,9 +278,7 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 
 	ctx := c.UserContext()
 
-	// The client names the destination ("pool" or "stash") instead of letting the
-	// server toggle on live status — a directional move is idempotent, so a
-	// duplicate click can only re-confirm the target, never reverse it.
+	// A named destination, not a toggle, so a duplicate click cannot reverse it.
 	var body struct {
 		Target string `json:"target"`
 	}
@@ -315,8 +294,6 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		}
 	}
 
-	// Authorize before touching state: only the movie's adder may move it, with no
-	// admin override.
 	movieRecord, err := h.movieService.Get(ctx, movieID)
 	if err != nil {
 		return writeError(c, err)
@@ -325,13 +302,10 @@ func (h *handler) handleMove(c *fiber.Ctx) error {
 		return writeNotAdder(c)
 	}
 
-	// The transition is enforced atomically in the service: it moves the movie
-	// only if it sits at the source (and, for a promotion, only if the owner's
-	// pool has room), so a duplicate click is an idempotent no-op and concurrent
-	// promotions can't overshoot the cap. `changed` reports whether a real move
-	// happened, so a no-op duplicate doesn't broadcast. Clients consume the event
-	// as an invalidation and refetch the affected queries, which keeps fallible
-	// projection reads out of the commit-to-publish path and pool-state lock.
+	// The service moves atomically, so duplicates are no-ops and promotions
+	// cannot overshoot the cap. Only a real move (changed) broadcasts. The payload
+	// is ids only: clients refetch, so no fallible read runs inside the
+	// pool-state lock after the commit.
 	err = h.runPoolStateCommand(func() error {
 		poolLocked, err := h.settingsService.GetPoolLock(ctx)
 		if err != nil {
@@ -376,11 +350,8 @@ func (h *handler) handleGetPooledMovies(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(movies)
 }
 
-// drawnPayload is the movie:drawn wire shape: the winning movie plus the reel
-// candidates (the pre-draw pool as lean tiles, winner included). Carrying the
-// candidates makes the reel self-contained — every client renders the full spin
-// regardless of whether it has the pool cached — and decouples the reel from each
-// client's local pool snapshot.
+// drawnPayload carries the reel candidates, so every client spins the same reel
+// without its own pool cache.
 type drawnPayload struct {
 	fullMovie
 	Candidates []leanMovieTile `json:"candidates"`
@@ -389,9 +360,7 @@ type drawnPayload struct {
 func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 
-	// The client identifies itself so only the drawer sees the reel's confirm
-	// button. Optional + best-effort: a malformed/absent body just means no drawer
-	// (every client's reel then auto-reveals on its countdown).
+	// Optional: without a client id, every reel auto-reveals on its countdown.
 	var body struct {
 		ClientID string `json:"clientId"`
 	}
@@ -409,9 +378,8 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		published := false
 		defer func() {
 			if !published {
-				// A future early return or panic still announces the persisted
-				// draw before its timer can reveal it. The full reel ceremony
-				// may be unavailable, but the lifecycle keeps progressing.
+				// An early return or panic still announces the persisted draw
+				// before its timer can reveal it.
 				drawn.ServerNow = formatTimePrecise(time.Now().UTC())
 				h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
 			}
@@ -419,39 +387,26 @@ func (h *handler) handleGetRandomMovie(c *fiber.Ctx) error {
 		}()
 
 		payload := toFullMovieBare(selectedMovie)
-		// Carry the authoritative draw time so the clicker (whose own SSE event may
-		// drop) and every other client resume the reveal spin from the same instant,
-		// the reveal deadline the server will enforce (clients time the confirm
-		// countdown off it), plus the drawer id so each client knows whether to
-		// show the confirm button.
 		payload.DrawnAt = formatTime(&activeDraw.DrawnAt)
 		payload.RevealAt = formatTimePrecise(activeDraw.RevealAt)
 		payload.DrawClientID = activeDraw.DrawClientID
 		drawn = drawnPayload{fullMovie: payload}
 
-		// Reel candidates are the pool snapshot captured before the winner became
-		// current. Metadata stays outside the draw mutex; only the candidate ids
-		// and movie fields need the draw publication boundary.
 		candidateMovies := drawResult.Candidates
 		candidateMeta := h.metaFor(c, candidateMovies)
 		drawn.Candidates = toLeanTiles(candidateMovies, candidateMeta)
 
-		// The candidates remain lean, but reveal needs the winning backdrop before
-		// the reel drops. The winner is in the captured candidate set, so reuse the
-		// same metadata batch instead of adding another read.
+		// Reveal needs the winner's backdrop; reuse the candidate metadata batch.
 		payload = toFullMovie(selectedMovie, candidateMeta[selectedMovie.ID], nil)
 		payload.DrawnAt = formatTime(&activeDraw.DrawnAt)
 		payload.RevealAt = formatTimePrecise(activeDraw.RevealAt)
 		payload.DrawClientID = activeDraw.DrawClientID
 		drawn.fullMovie = payload
 
-		// Stamp the server clock after candidate I/O, immediately before
-		// publication, so revealAt - serverNow is the actual remaining window.
+		// After candidate I/O, so revealAt - serverNow is the real remaining window.
 		drawn.ServerNow = formatTimePrecise(time.Now().UTC())
 
-		// Publish before arming the timer. If candidate construction consumed the
-		// whole reveal window, StartAutoReveal schedules an immediate callback,
-		// but movie:drawn has already entered the broker first.
+		// Publish before arming the timer, so movie:drawn always precedes reveal.
 		h.broker.Broadcast(event{Type: "movie:drawn", Data: drawn})
 		published = true
 		return nil
@@ -479,14 +434,11 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 	meta := h.metaFor(c, []*domain.Movie{movieRecord})
 	credits := h.creditsFor(c, []*domain.Movie{movieRecord})
 	resp := toFullMovie(movieRecord, meta[movieRecord.ID], credits[movieRecord.ID])
-	// When this movie is the active draw, hand the client the timing it needs to
-	// resume the reveal spin after a reload: when it was drawn, plus the server
-	// clock now (so elapsed is computed server-relative, free of client skew).
+	// The active draw carries its timing, so a reload resumes the reveal spin.
 	if ap, ok := h.movieService.ActiveDraw(); ok && ap.MovieID == movieRecord.ID {
 		resp.DrawnAt = formatTime(&ap.DrawnAt)
 		resp.RevealAt = formatTimePrecise(ap.RevealAt)
-		// Precise, like revealAt: the confirm countdown is revealAt − serverNow,
-		// so truncating this to the second would jitter the bar by up to a second.
+		// Precise, like revealAt, or the countdown bar jitters.
 		resp.ServerNow = formatTimePrecise(time.Now().UTC())
 		resp.DrawClientID = ap.DrawClientID
 		resp.Revealed = ap.Revealed
@@ -494,11 +446,8 @@ func (h *handler) handleGetCurrentMovie(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(resp)
 }
 
-// handleRevealCurrentMovie confirms the active draw — the drawer pressed the
-// reel's OK button. The movie service owns the whole flip: reveal-once, the
-// timer cancel, and the movie:revealed broadcast (via its OnRevealed hook).
-// Idempotent: a second confirm (or a confirm with no active draw) is a quiet
-// no-op, so racing clients don't double-fire the reveal.
+// handleRevealCurrentMovie confirms the active draw. The movie service owns the
+// reveal. Idempotent, so racing clients do not reveal twice.
 func (h *handler) handleRevealCurrentMovie(c *fiber.Ctx) error {
 	ran, err := h.runDrawCommand(c, func() error {
 		_, _, revealErr := h.movieService.RevealCurrentDrawContext(c.UserContext())
@@ -527,9 +476,8 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 			return watchErr
 		}
 
-		// The turn passes on Reveal, not here. Watching an unrevealed draw is
-		// that Reveal: the service already published movie:revealed and any
-		// next-up handoff through OnRevealed, then cleared the draw.
+		// The turn passes on Reveal, not here; the service already revealed an
+		// unrevealed draw.
 		h.invalidateStatsCache()
 
 		payload = toFullMovieBare(watched)
@@ -673,17 +621,10 @@ func (h *handler) handleGetWatchedMovies(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// Lean payload: the grid tiles render only poster/title/rating/adder, so
-	// this drops the per-movie cast/crew (and backdrop/tagline/overview) that
-	// made up the bulk of the bytes. The detail modal lazy-loads the full record
-	// from GET /movies/:id; Stats reads its actor/crew filter options from
-	// GET /movies/filter-options. Credits are no longer loaded here at all.
 	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(c, movies)))
 }
 
-// handleGetMovie returns the full enriched record for one movie — backdrop,
-// tagline, overview and cast/crew — for the detail modal, which lazy-loads it on
-// open rather than carrying credits in every list payload.
+// handleGetMovie returns one full record for the detail modal.
 func (h *handler) handleGetMovie(c *fiber.Ctx) error {
 	movieID, ok := parseInt(c.Params("movieID"))
 	if !ok {

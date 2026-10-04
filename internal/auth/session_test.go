@@ -12,8 +12,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// fakeSessionRepo is an in-memory SessionRepo so the manager's window and slide
-// logic is asserted against an injected clock, no SQL or sleeps involved.
+// fakeSessionRepo is an in-memory SessionRepo for clock-driven window tests.
 type fakeSessionRepo struct {
 	rows      map[string]*domain.AuthSession // keyed by token_hash
 	nextID    int64
@@ -98,8 +97,7 @@ func (f *fakeSessionRepo) ListLiveByUserID(_ context.Context, userID int, now, i
 			live = append(live, as.Session)
 		}
 	}
-	// The real store orders by last activity; sort here so assertions on the
-	// list don't ride on map iteration order.
+	// Match the real store's last-activity order, not map order.
 	slices.SortFunc(live, func(a, b domain.Session) int {
 		if c := b.LastSeenAt.Compare(a.LastSeenAt); c != 0 {
 			return c
@@ -208,8 +206,7 @@ func TestAuthenticate_AbsoluteExpiryBoundary(t *testing.T) {
 	m := NewSessionManager(repo, WithClock(clk.now))
 	raw := mintFor(t, m, 1)
 
-	// Isolate the absolute cap from the idle window: keep last_seen fresh at the
-	// clock so only expires_at can reject. One second before the cap is valid.
+	// Keep last_seen fresh so only the absolute cap can reject.
 	clk.t = base.Add(SessionAbsoluteTTL - time.Second)
 	repo.rows[HashToken(raw)].LastSeenAt = clk.t
 	if _, err := m.Authenticate(context.Background(), raw); err != nil {
@@ -230,14 +227,12 @@ func TestAuthenticate_IdleExpiryBoundary(t *testing.T) {
 	m := NewSessionManager(repo, WithClock(clk.now))
 	raw := mintFor(t, m, 1)
 
-	// last_seen stays at base (no request slides it). One second before the
-	// idle window is valid; at the window it is rejected.
 	clk.t = base.Add(SessionIdleTTL - time.Second)
 	if _, err := m.Authenticate(context.Background(), raw); err != nil {
 		t.Fatalf("just before idle window: %v", err)
 	}
 
-	// Re-mint so last_seen is base again (the check above slid it forward).
+	// Re-mint: the check above slid last_seen forward.
 	repo2 := newFakeSessionRepo()
 	clk2 := &fakeClock{t: base}
 	m2 := NewSessionManager(repo2, WithClock(clk2.now))
@@ -251,7 +246,6 @@ func TestAuthenticate_IdleExpiryBoundary(t *testing.T) {
 func TestAuthenticate_SlidesOnlyWhenStale(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// Under the 1h threshold: no slide.
 	repo := newFakeSessionRepo()
 	clk := &fakeClock{t: base}
 	m := NewSessionManager(repo, WithClock(clk.now))
@@ -264,7 +258,6 @@ func TestAuthenticate_SlidesOnlyWhenStale(t *testing.T) {
 		t.Fatalf("touches = %d, want 0 (under threshold)", repo.touches)
 	}
 
-	// Over the 1h threshold: one slide to the current time.
 	repo2 := newFakeSessionRepo()
 	clk2 := &fakeClock{t: base}
 	m2 := NewSessionManager(repo2, WithClock(clk2.now))
@@ -281,16 +274,14 @@ func TestAuthenticate_SlidesOnlyWhenStale(t *testing.T) {
 	}
 }
 
-// Revalidate drops a revoked/expired session but, unlike Authenticate, never
-// slides the idle window — the SSE heartbeat relies on this so a long-held stream
-// can't keep an otherwise-idle session alive.
+// The SSE heartbeat relies on this, so a long-held stream cannot keep an idle
+// session alive.
 func TestRevalidate_DropsRevokedWithoutSliding(t *testing.T) {
 	repo := newFakeSessionRepo()
 	clk := &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	m := NewSessionManager(repo, WithClock(clk.now))
 	raw := mintFor(t, m, 5)
 
-	// Live session, well past the slide threshold: valid, and no last_seen write.
 	clk.advance(2 * time.Hour)
 	if err := m.Revalidate(context.Background(), raw); err != nil {
 		t.Fatalf("revalidate live session: %v", err)
@@ -299,12 +290,10 @@ func TestRevalidate_DropsRevokedWithoutSliding(t *testing.T) {
 		t.Fatalf("Revalidate slid the idle window (touches = %d, want 0)", repo.touches)
 	}
 
-	// Empty token is invalid.
 	if err := m.Revalidate(context.Background(), ""); !errors.Is(err, ErrSessionInvalid) {
 		t.Fatalf("empty token: got %v, want ErrSessionInvalid", err)
 	}
 
-	// Revoked (row deleted) is invalid.
 	if err := m.RevokeCurrent(context.Background(), raw); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
@@ -313,7 +302,6 @@ func TestRevalidate_DropsRevokedWithoutSliding(t *testing.T) {
 	}
 }
 
-// Revalidate honors the idle window: a session past its idle TTL is invalid.
 func TestRevalidate_RejectsIdleExpired(t *testing.T) {
 	repo := newFakeSessionRepo()
 	clk := &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
@@ -368,12 +356,10 @@ func TestSweep_UsesIdleCutoff(t *testing.T) {
 	m := NewSessionManager(repo, WithClock(clk.now))
 	raw := mintFor(t, m, 1)
 
-	// Fresh session, no sweep.
 	if n, err := m.Sweep(context.Background()); err != nil || n != 0 {
 		t.Fatalf("sweep fresh = (%d, %v), want (0, nil)", n, err)
 	}
 
-	// Past the idle window: swept even though the absolute cap is far off.
 	clk.advance(SessionIdleTTL + time.Hour)
 	if n, err := m.Sweep(context.Background()); err != nil || n != 1 {
 		t.Fatalf("sweep idle-expired = (%d, %v), want (1, nil)", n, err)
@@ -390,7 +376,6 @@ func TestList_LiveOnlyWithCurrentFlagged(t *testing.T) {
 	m := NewSessionManager(repo, WithClock(clk.now))
 	ctx := context.Background()
 
-	// An old device, then a fresh one an hour later, so last activity orders them.
 	old := mintFor(t, m, 1)
 	clk.advance(time.Hour)
 	current := mintFor(t, m, 1)
@@ -418,8 +403,6 @@ func TestList_LiveOnlyWithCurrentFlagged(t *testing.T) {
 		}
 	}
 
-	// Past the idle window every row stops authenticating, so none is a device
-	// you are signed in on any more.
 	clk.advance(SessionIdleTTL + time.Hour)
 	views, err = m.List(ctx, 1, current)
 	if err != nil {
@@ -469,7 +452,6 @@ func TestRevokeByPublicID_ScopedToOwner(t *testing.T) {
 		}
 	}
 
-	// Revoking another of your own devices leaves this one signed in.
 	wasCurrent, err := m.RevokeByPublicID(ctx, 1, otherID, current)
 	if err != nil {
 		t.Fatalf("revoke own other session: %v", err)
@@ -484,7 +466,7 @@ func TestRevokeByPublicID_ScopedToOwner(t *testing.T) {
 		t.Error("revoking another device closed the current one")
 	}
 
-	// Someone else's session handle matches nothing: not refused, unreachable.
+	// Another member's session is unreachable, not refused.
 	strangerID := repo.rows[HashToken(stranger)].PublicID
 	if _, err := m.RevokeByPublicID(ctx, 1, strangerID, current); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("revoking another member's session = %v, want ErrNotFound", err)
@@ -493,12 +475,11 @@ func TestRevokeByPublicID_ScopedToOwner(t *testing.T) {
 		t.Fatal("revoked another member's session")
 	}
 
-	// A row that is already gone reports not-found rather than a silent success.
 	if _, err := m.RevokeByPublicID(ctx, 1, otherID, current); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("revoking a gone session = %v, want ErrNotFound", err)
 	}
 
-	// Ending the device you're holding says so, so the caller clears the cookie.
+	// wasCurrent tells the caller to clear the cookie.
 	wasCurrent, err = m.RevokeByPublicID(ctx, 1, currentID, current)
 	if err != nil {
 		t.Fatalf("revoke current session: %v", err)

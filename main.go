@@ -22,12 +22,8 @@ var (
 var webFS embed.FS
 
 func main() {
-	// run() owns all fallible startup; main only reports a fatal exit. zerolog's
-	// Fatal logs then calls os.Exit(1), so it must stay at this outermost frame —
-	// never deep in a handler or worker, where it would skip graceful shutdown.
+	// Fatal calls os.Exit, so keep it in main: deeper, it would skip graceful shutdown.
 	if err := run(); err != nil {
-		// "server exited" read like a clean stop; this only fires when run()
-		// returned an error, which is the one exit worth waking someone for.
 		log.Fatal().Err(err).Msg("server exited with an error")
 	}
 }
@@ -40,8 +36,7 @@ func run() error {
 
 	return server.Run(context.Background(), server.Config{
 		Port: ":3030",
-		// DBFile left empty: server.Run resolves DB_FILE (env or .env), then
-		// falls back to "moviepickarr.db" in the working directory.
+		// Empty DBFile: server.Run resolves DB_FILE.
 		WebRoot: http.FS(webRoot),
 		Version: version,
 		Commit:  commit,

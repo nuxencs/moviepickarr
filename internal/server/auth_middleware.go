@@ -11,27 +11,20 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// sessionCookieName is the one opaque cookie every login path sets and
-// requireSession reads. HttpOnly + SameSite=Lax + Path=/ with a scheme-derived
-// Secure flag; the value is the raw session token, never anything derived from
+// sessionCookieName holds the raw session token, never anything derived from
 // the member.
 const sessionCookieName = "mpa_session"
 
-// Request-scoped keys for the actor requireSession attaches. Unexported so only
-// this package's handlers read them, via c.Locals.
+// c.Locals keys for the actor requireSession attaches.
 const (
 	localsMemberID = "memberID"
 	localsRole     = "role"
 )
 
-// cookieEpoch is a fixed past instant used to expire the session cookie on a
-// clear. It is a constant, not the session clock, so it stays deterministic.
 var cookieEpoch = time.Unix(0, 0)
 
-// isHTTPS reports whether the request reached us over TLS, so the session
-// cookie's Secure flag and the CSRF origin check derive the scheme the same
-// way. Honors X-Forwarded-Proto for a TLS-terminating proxy; omitted on plain
-// http so raw-http dev still works (documented residual: no Secure on http).
+// isHTTPS is the one scheme check for the cookie Secure flag and the CSRF
+// origin check. Plain http gets no Secure flag, so raw-http dev still works.
 func isHTTPS(c *fiber.Ctx) bool {
 	if strings.EqualFold(c.Get(fiber.HeaderXForwardedProto), "https") {
 		return true
@@ -39,8 +32,6 @@ func isHTTPS(c *fiber.Ctx) bool {
 	return c.Protocol() == "https"
 }
 
-// setSessionCookie writes the session cookie with a persistent 90-day Max-Age,
-// set once at mint. Secure tracks the request scheme.
 func setSessionCookie(c *fiber.Ctx, rawToken string) {
 	c.Cookie(&fiber.Cookie{
 		Name:     sessionCookieName,
@@ -53,9 +44,8 @@ func setSessionCookie(c *fiber.Ctx, rawToken string) {
 	})
 }
 
-// clearSessionCookie expires the session cookie. It mirrors the set attributes
-// (Path, HttpOnly, SameSite, Secure) so the browser matches and drops the right
-// cookie.
+// clearSessionCookie must mirror setSessionCookie's attributes, or the browser
+// keeps the cookie.
 func clearSessionCookie(c *fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{
 		Name:     sessionCookieName,
@@ -69,9 +59,8 @@ func clearSessionCookie(c *fiber.Ctx) {
 	})
 }
 
-// issueSession mints a fresh session for a member and sets its cookie. Every
-// login path calls this after establishing identity; it never adopts an inbound
-// cookie, so a fixed token can't be promoted into an authenticated one.
+// issueSession always mints a fresh session and never adopts an inbound cookie,
+// which prevents session fixation.
 func (h *handler) issueSession(c *fiber.Ctx, memberID int) error {
 	rawToken, _, err := h.sessions.Mint(c.UserContext(), memberID, stringPtrOrNil(c.Get(fiber.HeaderUserAgent)))
 	if err != nil {
@@ -81,15 +70,12 @@ func (h *handler) issueSession(c *fiber.Ctx, memberID int) error {
 	return nil
 }
 
-// sessionSweepInterval is how often expired sessions are swept in the
-// background. Lazy rejection in Authenticate already keeps expired rows
-// harmless, so this cadence is housekeeping, not a security boundary.
+// sessionSweepInterval is housekeeping only: Authenticate already rejects
+// expired rows.
 const sessionSweepInterval = time.Hour
 
-// startSessionSweeper sweeps expired sessions once now and then hourly until ctx
-// is cancelled. The startup sweep clears anything that expired while the process
-// was down; the ticker keeps the table from accumulating dead rows over a long
-// uptime. A sweep failure is logged and the loop continues.
+// startSessionSweeper sweeps expired sessions now and then hourly until ctx is
+// cancelled.
 func (h *handler) startSessionSweeper(ctx context.Context) {
 	h.sweepSessions(ctx)
 
@@ -110,8 +96,7 @@ func (h *handler) startSessionSweeper(ctx context.Context) {
 func (h *handler) sweepSessions(ctx context.Context) {
 	removed, err := h.sessions.Sweep(ctx)
 	if err != nil {
-		// The sweep is a periodic background tick: a failure costs nothing but
-		// some stale rows, and the next tick retries. Recoverable, so warn.
+		// Warn, not Error: the next tick retries.
 		h.log.Warn().Err(err).Msg("expired-session sweep failed, retrying next tick")
 		return
 	}
@@ -120,8 +105,8 @@ func (h *handler) sweepSessions(ctx context.Context) {
 	}
 }
 
-// requireSession is the gate: cookie → validate → attach live actor, or reject
-// with 401 and a cookie-clear. It runs after csrfGuard in the chain.
+// requireSession attaches the live actor or rejects with 401 and clears the
+// cookie. It runs after csrfGuard.
 func (h *handler) requireSession(c *fiber.Ctx) error {
 	as, err := h.sessions.Authenticate(c.UserContext(), c.Cookies(sessionCookieName))
 	if err != nil {
@@ -129,9 +114,7 @@ func (h *handler) requireSession(c *fiber.Ctx) error {
 			clearSessionCookie(c)
 			return writeProblem(c, fiber.StatusUnauthorized, "unauthorized", "authentication required")
 		}
-		// requireSession has not attached an actor yet, so this line carries the
-		// request only. That is the point: it is the one 500 whose cause is
-		// invisible from the access log alone.
+		// No actor attached yet: this line is the only trace of this 500.
 		h.reqLogBeforeRoute(c).Error().Err(err).Msg("session lookup failed")
 		return writeProblem(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 	}
@@ -141,11 +124,8 @@ func (h *handler) requireSession(c *fiber.Ctx) error {
 	return c.Next()
 }
 
-// csrfGuard rejects cross-origin state-changing requests before requireSession
-// runs. Rule (OWASP): safe methods pass; otherwise allow when Sec-Fetch-Site is
-// same-origin/none, else allow when the Origin header equals our origin, else
-// 403 (fail closed) when both signals are absent. Safe methods and the
-// read-only GETs (OIDC callback, claim) fall through here because they are GETs.
+// csrfGuard rejects cross-origin state-changing requests (OWASP
+// Sec-Fetch-Site, then Origin). It fails closed when both headers are absent.
 func csrfGuard(c *fiber.Ctx) error {
 	if isSafeMethod(c.Method()) {
 		return c.Next()
@@ -163,9 +143,7 @@ func csrfGuard(c *fiber.Ctx) error {
 	return writeProblem(c, fiber.StatusForbidden, "forbidden", "cross-origin request rejected")
 }
 
-// requestOrigin reconstructs this request's origin (scheme://host[:port]) so the
-// Origin header can be compared against it. Host carries any non-default port,
-// matching the Origin header's own format.
+// requestOrigin rebuilds scheme://host[:port] in the Origin header's format.
 func requestOrigin(c *fiber.Ctx) string {
 	scheme := "http"
 	if isHTTPS(c) {
@@ -174,8 +152,6 @@ func requestOrigin(c *fiber.Ctx) string {
 	return scheme + "://" + string(c.Request().Host())
 }
 
-// isSafeMethod reports whether an HTTP method is read-only and thus exempt from
-// the CSRF origin check.
 func isSafeMethod(method string) bool {
 	switch method {
 	case fiber.MethodGet, fiber.MethodHead, fiber.MethodOptions:
@@ -185,8 +161,7 @@ func isSafeMethod(method string) bool {
 	}
 }
 
-// stringPtrOrNil returns nil for an empty string so an absent User-Agent lands
-// as SQL NULL rather than an empty-string row.
+// stringPtrOrNil stores an absent User-Agent as SQL NULL, not "".
 func stringPtrOrNil(s string) *string {
 	if s == "" {
 		return nil

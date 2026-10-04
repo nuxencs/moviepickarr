@@ -9,13 +9,6 @@ import {
 } from "@/components/moviepickarr/account/account";
 import { Modal } from "@/components/moviepickarr/Modal";
 
-// The ceremonies that sit on top of the account surface: change an existing
-// password, set a first one (SSO-first members), confirm a log-out-everywhere,
-// and the last-credential unlink guard. Each is a controlled dialog rendered
-// inside the shared Modal (veil + focus trap + scale motion); the page owns the
-// mutations and passes pending / server-error state down.
-
-// A small inline validation/error row shared by the two credential forms.
 function DialogError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
@@ -26,9 +19,7 @@ function DialogError({ message }: { message: string | null }) {
   );
 }
 
-// Change an existing password: verify the current one, choose a new one. The
-// warn note makes the revoke-other-devices behaviour visible up front rather
-// than a surprise after the fact.
+// The warn note shows up front that other devices get signed out.
 export function ChangePasswordDialog({
   pending,
   serverError,
@@ -135,9 +126,7 @@ export function ChangePasswordDialog({
   );
 }
 
-// Set a first password for an SSO-first member. No current password to verify,
-// but they've never had a local login, so they also pick the username it uses.
-// The hint mirrors the claim flow: the username is immutable once set.
+// SSO-first members also pick a username, immutable once set (as in the claim flow).
 export function SetPasswordDialog({
   pending,
   serverError,
@@ -243,8 +232,7 @@ export function SetPasswordDialog({
   );
 }
 
-// Log out everywhere: revoke every session, this device included. The
-// other-device count is what makes the choice concrete rather than abstract.
+// Revokes every session, this device included.
 export function LogoutEverywhereDialog({
   otherSessions,
   pending,
@@ -288,9 +276,7 @@ export function LogoutEverywhereDialog({
   );
 }
 
-// The self-last-credential guard: unlinking SSO when it's the only way in would
-// lock the member out. Refused client-side (the server 409s as backstop) and
-// pointed at the fix (set a password) instead of dead-ending.
+// Points at the fix (set a password) instead of dead-ending; the server 409s too.
 export function UnlinkGuardDialog({
   onSetPassword,
   onClose,

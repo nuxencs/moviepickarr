@@ -1,10 +1,5 @@
-// The next-up turn gate: who may mark the current draw watched, draw, and reveal
-// that draw (the turn passes on reveal). Mirrors the backend requireNextUp rule
-// (only the member whose turn it is, admins included) so the board disables the
-// three controls for everyone else instead of hiding them, and the turn stays
-// legible. Admins move a stuck turn on with the Turn skip (`canSkip`). The rule is a pure function of the
-// session actor and the next-up member, unit-tested without rendering; the hook
-// at the bottom wires it to the two queries.
+// The next-up turn gate. Mirrors the backend requireNextUp rule (no admin exception);
+// the board disables, not hides, the controls so the turn stays legible.
 import { useQuery } from "@tanstack/react-query";
 
 import { MeQueryOptions, SettingsGetNextUpQueryOptions } from "@/api/queries";
@@ -12,48 +7,31 @@ import { MeQueryOptions, SettingsGetNextUpQueryOptions } from "@/api/queries";
 import { possessive } from "@/components/moviepickarr/possessive";
 
 export interface TurnGateInputs {
-  /** The session actor's role, undefined while /auth/me is still loading. */
+  /** Undefined while /auth/me is loading. */
   role: "member" | "guest" | "admin" | undefined;
-  /** The session actor's member id, undefined while loading. */
   meID: number | undefined;
-  /** The next-up member id; 0 (empty roster) or undefined (loading) means
-   *  unresolved. */
+  /** 0 (empty roster) or undefined (loading) means unresolved. */
   nextUpID: number | undefined;
-  /** The next-up member's display name, "" when unresolved. */
   nextUpName: string | undefined;
 }
 
 export interface TurnGate {
-  /** The viewer may act (the next-up member). Also true while the
-   *  gate is still loading, so the controls stay live and the backend
-   *  not_next_up is the backstop rather than a premature client-side lock. */
+  /** Also true while loading, so the backend not_next_up is the backstop, not a premature lock. */
   canAct: boolean;
-  /** Apply the disabled + tooltip treatment: the gate has resolved and the
-   *  viewer is not next-up. */
+  /** Resolved and not next-up: apply the disabled + tooltip treatment. */
   locked: boolean;
-  /** Next-up is a real member, not the empty-roster placeholder. Drives the
-   *  named tooltip vs the waiting fallback. */
+  /** Next-up is a real member, not the empty-roster placeholder. */
   resolved: boolean;
-  /** The viewer *is* the next-up member (their turn right now). Narrower than
-   *  `canAct`, which also covers the loading window. Drives the "Your turn" vs
-   *  "<name>'s turn" hero label. */
+  /** The viewer is next-up; narrower than `canAct`, which also covers loading. */
   isSelf: boolean;
-  /** The viewer is an admin and a real member holds the turn, so the Turn skip
-   *  control renders. Never true for anyone else: the control is hidden, not
-   *  disabled. */
+  /** Admin and a real member holds the turn. The skip control is hidden, not disabled, otherwise. */
   canSkip: boolean;
-  /** The viewer holds the read-mostly Guest role. */
   guest: boolean;
-  /** The next-up member's name, "" when unresolved. */
+  /** "" when unresolved. */
   nextUpName: string;
 }
 
-/**
- * The turn rule. `canAct` errs open while either query is still loading (so the
- * real next-up member never flashes a locked control on first paint); once both
- * have resolved it is next-up only. `locked` is the inverse, but only once
- * the gate is known — never during the loading window.
- */
+/** The turn rule. Errs open while loading, so the next-up member never sees a locked flash. */
 export function turnGate(input: TurnGateInputs): TurnGate {
   const ready = input.role !== undefined && input.nextUpID !== undefined;
   const isAdmin = input.role === "admin";
@@ -72,31 +50,25 @@ export function turnGate(input: TurnGateInputs): TurnGate {
   };
 }
 
-/** Shown when next-up hasn't resolved to a member yet (empty roster). */
 const WAITING_TIP = "Waiting for the next-up member.";
 
-/** Tooltip for the disabled Draw control. */
 export function drawLockedTip(gate: TurnGate): string {
   if (gate.guest) return "Guests can view the draw but cannot start one.";
   return gate.resolved ? `It's ${possessive(gate.nextUpName)} turn to draw.` : WAITING_TIP;
 }
 
-/** Tooltip for the disabled Reveal (OK) control. */
 export function revealLockedTip(gate: TurnGate): string {
   if (gate.guest) return "Guests can view the draw but cannot reveal it.";
   return gate.resolved ? `Only ${gate.nextUpName} can reveal this draw.` : WAITING_TIP;
 }
 
-/** Tooltip for the disabled Mark-watched control. */
 export function watchLockedTip(gate: TurnGate): string {
   if (gate.guest) return "Guests can view the draw but cannot mark it watched.";
   return gate.resolved ? `Only ${gate.nextUpName} can mark this watched.` : WAITING_TIP;
 }
 
-/** Tooltip for Wildcard actions that Guests can observe but not run. */
 export const guestWildcardTip = "Guests can view Wildcards but cannot change them.";
 
-/** Live turn gate, read from the session actor + next-up queries. */
 export function useTurnGate(): TurnGate {
   const { data: me } = useQuery(MeQueryOptions());
   const { data: nextUp } = useQuery(SettingsGetNextUpQueryOptions());

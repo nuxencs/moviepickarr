@@ -12,8 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// rosterHas reports whether GET /api/v1/members lists a member id (the active
-// roster), so the delete/archive tests can assert a member left the board.
+// rosterHas reports whether GET /api/v1/members (the active roster) lists memberID.
 func rosterHas(t *testing.T, app *fiber.App, memberID int) bool {
 	t.Helper()
 	resp := doAs(t, app, jsonReq(http.MethodGet, "/api/v1/members", ``), 1, "admin")
@@ -34,8 +33,7 @@ func rosterHas(t *testing.T, app *fiber.App, memberID int) bool {
 	return false
 }
 
-// A member who authored no movies is hard-deleted: 200 with outcome "deleted",
-// and they leave the active roster.
+// A member with no authored movies is hard-deleted and leaves the active roster.
 func TestHandleDeleteUser_HardDeleteReportsOutcome(t *testing.T) {
 	t.Parallel()
 
@@ -65,8 +63,7 @@ func TestHandleDeleteUser_HardDeleteReportsOutcome(t *testing.T) {
 	}
 }
 
-// A member who authored movies is archived: 200 with outcome "archived", they
-// leave the active roster, but the movie's attribution row survives.
+// A member who authored movies is archived; the movie's attribution survives.
 func TestHandleDeleteUser_ArchiveReportsOutcome(t *testing.T) {
 	t.Parallel()
 
@@ -149,8 +146,6 @@ func TestHandleDeleteUser_RefusesLastActiveAdmin(t *testing.T) {
 	}
 }
 
-// Restore reactivates an archived member and hands back a fresh claim URL in one
-// action; the member returns to the active roster.
 func TestHandleRestoreUser_ReactivatesAndReinvites(t *testing.T) {
 	t.Parallel()
 
@@ -193,7 +188,6 @@ func TestHandleRestoreUser_ReactivatesAndReinvites(t *testing.T) {
 	}
 }
 
-// Restoring a member who is not archived is a 404: there is nothing to restore.
 func TestHandleRestoreUser_NotArchived404(t *testing.T) {
 	t.Parallel()
 
@@ -211,8 +205,7 @@ func TestHandleRestoreUser_NotArchived404(t *testing.T) {
 	}
 }
 
-// Restore is admin-only: a plain member is refused with 403 admin_required
-// before any state changes.
+// 403 admin_required before any state changes.
 func TestHandleRestoreUser_AdminOnly(t *testing.T) {
 	t.Parallel()
 

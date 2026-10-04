@@ -1,18 +1,6 @@
-/* ============================================================
-   Render test for useLogout.
-
-   Logout used to be written out twice (the profile panel and the account
-   page), and the part that was easiest to get subtly wrong in one copy is the
-   ordering: the cached actor has to be gone *before* the login route is
-   entered, or the login page reads a stale "still signed in" and bounces
-   straight back into the app. That ordering is asserted here by reading the
-   cache from inside the navigate stub, so it's pinned as behaviour rather
-   than as a call sequence.
-
-   The other half is the failure path: a logout that didn't happen must leave
-   the member where they are, with the toast as the only sign. Both call sites
-   test the button they own; the sequence itself lives here, once.
-   ============================================================ */
+/* Render test for useLogout. The cached actor must be gone before the login
+   route mounts, or the login page sees a stale session and bounces back into
+   the app. A failed logout leaves the member in place with a toast. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
@@ -76,8 +64,7 @@ function renderHook({ all = false }: { all?: boolean } = {}) {
   return { client, button: screen.getByRole("button", { name: "Log out" }) };
 }
 
-/** react-query runs a mutation through a promise chain, so nothing has landed
- *  on the synchronous return from the click. */
+/** A mutation runs through a promise chain, so the call lands after the click returns. */
 async function clickAndSettle(button: HTMLElement) {
   await act(async () => {
     button.click();
@@ -118,8 +105,7 @@ describe("useLogout", () => {
     await clickAndSettle(button);
 
     expect(navigate).toHaveBeenCalledWith({ to: "/login" });
-    // Read from inside the navigate stub: by then the actor is already gone,
-    // so the login page can't see a stale session.
+    // Read from inside the navigate stub, so the order is pinned.
     expect(cachedAtNavigate).toBeUndefined();
     expect(client.getQueryData(AuthKeys.me())).toBeUndefined();
     expect(client.getQueryData(AuthKeys.sessions())).toBeUndefined();
@@ -136,8 +122,7 @@ describe("useLogout", () => {
     // The session may well still be live, so the cached actor stands.
     expect(client.getQueryData(AuthKeys.me())).toEqual(actor);
     expect(client.getQueryData(AuthKeys.sessions())).toBeDefined();
-    // The server's own wording, not the fallback: the two differ here so the
-    // branch is actually pinned.
+    // The server's wording, not the fallback.
     expect(toastError).toHaveBeenCalledWith("Session store is unreachable.");
   });
 

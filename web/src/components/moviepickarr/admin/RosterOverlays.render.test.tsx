@@ -1,28 +1,7 @@
-/* ============================================================
-   Render tests for the roster ceremonies (#140).
-
-   Same shape as the account dialogs: controlled, provider-free, and the thing
-   with no seam below the render is the wiring between props and the shared
-   Modal. Two behaviours here carry real consequence and only exist once the
-   component renders.
-
-   The remove confirm decides between a clean delete and an archive. Which one
-   applies is `removeOutcome`, and roster.test.ts owns that matrix. But an admin
-   acts on the copy and the button label, not on the function, so what's
-   asserted here is that the answer reaches both and they can't disagree.
-
-   The invite reveal is a copy-or-lose ceremony: the link is shown once, with
-   no resend. If the copy affordance silently fails the invite is gone, so the
-   clipboard write and the acknowledgement it flips to are worth pinning.
-
-   Modal.render.test.tsx covers the shell's own Escape / veil / pin behaviour;
-   what's checked here is only whether these dialogs pass `pending` down to it.
-
-   Unlike the account dialogs there's no inline error row to assert on: the
-   roster surface reports failures through a toast, so a refused save leaves
-   these components unchanged and there's nothing in the DOM to catch. The
-   submit gate (`canSubmit`) is the equivalent guard, and that is covered.
-   ============================================================ */
+/* Render tests for the roster ceremonies (#140). The remove confirm's copy and
+   button must agree on delete vs archive (removeOutcome is in roster.test.ts).
+   The invite link shows once with no resend, so the clipboard write is pinned.
+   Roster failures go to a toast, so there is no inline error row to assert. */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -88,7 +67,6 @@ describe("RemoveConfirm", () => {
 
     expect(button("Archive member")).not.toBeNull();
     expect(dialog.textContent).toContain("3 movies");
-    // The distinction the copy exists to make: this is not a delete.
     expect(dialog.textContent).toContain("archive");
     expect(screen.queryByRole("button", { name: "Delete member" })).toBeNull();
   });
@@ -220,8 +198,7 @@ describe("SetLoginDialog", () => {
 });
 
 describe("InviteReveal", () => {
-  // jsdom ships no clipboard, so it's defined rather than spied on, and has to
-  // be taken back off afterwards: restoreAllMocks doesn't undo defineProperty.
+  // jsdom has no clipboard to spy on, and restoreAllMocks does not undo defineProperty.
   afterEach(() => {
     Reflect.deleteProperty(navigator, "clipboard");
   });
@@ -293,6 +270,4 @@ describe("InviteReveal", () => {
   });
 });
 
-// UnlinkGuard has no test of its own: it's static copy over a Modal whose
-// close path Modal.render.test.tsx already covers, and it takes no state that
-// could be wired wrong. RosterSection.render.test.tsx covers reaching it.
+// UnlinkGuard is static copy over Modal; RosterSection.render.test.tsx covers reaching it.

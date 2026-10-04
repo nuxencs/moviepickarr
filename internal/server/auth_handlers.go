@@ -11,18 +11,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// writeInvalidCredentials writes the one uniform login failure: 401 with the
-// exact body {"error":"invalid credentials"}. Unknown username, wrong password,
-// no local login, and a locked account all land here so status and body stay
-// indistinguishable (the timing match is the service's dummy-verify job). It is
-// deliberately the plain {error} shape the login form expects, not the
-// problem+json the rest of the API uses.
+// writeInvalidCredentials writes the one uniform login failure, so every
+// credential failure looks the same. Plain {error}, not problem+json: the login
+// form expects it.
 func writeInvalidCredentials(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid credentials"})
 }
 
-// writeAuthError maps the auth package's sentinels to their HTTP shapes and
-// defers everything else (validation, conflict, not-found, infra) to writeError.
+// writeAuthError maps auth sentinels to HTTP and defers the rest to writeError.
 func (h *handler) writeAuthError(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
@@ -34,16 +30,12 @@ func (h *handler) writeAuthError(c *fiber.Ctx, err error) error {
 	}
 }
 
-// writeInternal logs an infrastructure fault and returns the opaque 500 every
-// auth handler shares, so the log-and-mask pair lives in one place.
+// writeInternal logs an infrastructure fault and returns an opaque 500.
 func (h *handler) writeInternal(c *fiber.Ctx, err error, msg string) error {
 	h.reqLog(c).Error().Err(err).Msg(msg)
 	return writeProblem(c, fiber.StatusInternalServerError, "internal_error", "internal server error")
 }
 
-// isAdmin reports whether the session actor holds the admin role. The admin
-// local-login routes gate on this inline until the per-route authz reshape
-// lands a shared admin middleware.
 func (h *handler) isAdmin(c *fiber.Ctx) bool {
 	return roleFromLocals(c) == domain.RoleAdmin
 }
@@ -60,8 +52,7 @@ func roleFromLocals(c *fiber.Ctx) domain.Role {
 	}
 }
 
-// requireAdmin writes the 403 an admin-only route returns to a non-admin and
-// reports whether the caller may proceed.
+// requireAdmin writes a 403 for a non-admin and reports whether to proceed.
 func (h *handler) requireAdmin(c *fiber.Ctx) (bool, error) {
 	if h.isAdmin(c) {
 		return true, nil
@@ -69,9 +60,8 @@ func (h *handler) requireAdmin(c *fiber.Ctx) (bool, error) {
 	return false, writeProblem(c, fiber.StatusForbidden, "admin_required", "admin role required")
 }
 
-// requireTurnParticipant refuses group-decision commands for Guests. The role
-// is checked on the server even when the client has already disabled the
-// control, so a stale or crafted request cannot alter the Pool or Hero state.
+// requireTurnParticipant refuses group-decision commands for Guests, so a stale
+// or crafted request cannot bypass a disabled control.
 func (h *handler) requireTurnParticipant(c *fiber.Ctx) (bool, error) {
 	if roleFromLocals(c).IsTurnParticipant() {
 		return true, nil
@@ -79,11 +69,8 @@ func (h *handler) requireTurnParticipant(c *fiber.Ctx) (bool, error) {
 	return false, writeProblem(c, fiber.StatusForbidden, "guest_restricted", "guest role cannot perform this action")
 }
 
-// requireNextUp gates the watch → draw → reveal turn: only the member whose
-// turn it is may run it, admins included. Anyone else gets 403 not_next_up.
-// The rotation advances on Reveal, so the drawer reveals their own draw and the
-// next member marks it watched before drawing. An admin moves a stuck turn on
-// with the explicit skip (handleSkipNextUp), never by acting in its place.
+// requireNextUp lets only the next-up member run the watch, draw, reveal turn,
+// even admins. Admins move a stuck turn with handleSkipNextUp.
 func (h *handler) requireNextUp(c *fiber.Ctx) (bool, error) {
 	if ok, err := h.requireTurnParticipant(c); !ok {
 		return false, err
@@ -93,19 +80,16 @@ func (h *handler) requireNextUp(c *fiber.Ctx) (bool, error) {
 	if err == nil && nextUp.ID == actorMemberID(c) {
 		return true, nil
 	}
-	// A real infra error surfaces as-is; sql.ErrNoRows (empty roster, no one up)
-	// falls through to the same not-your-turn refusal as a plain mismatch.
+	// sql.ErrNoRows (empty roster) is a plain not-your-turn refusal.
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, writeError(c, err)
 	}
 	return false, writeProblem(c, fiber.StatusForbidden, "not_next_up", "it is not your turn")
 }
 
-// runDrawCommand keeps the authorization snapshot, lifecycle command, and
-// synchronous event publication in one process-local critical section. A
-// manual reveal (or a watch that reveals) holds the section until next up
-// advances and its events publish, so the outgoing member cannot authorize
-// another command in the gap.
+// runDrawCommand runs the turn check, the command, and its event publication
+// under one lock, so the outgoing member cannot authorize another command
+// before next up advances.
 func (h *handler) runDrawCommand(c *fiber.Ctx, command func() error) (ran bool, err error) {
 	h.drawCommandMu.Lock()
 	defer h.drawCommandMu.Unlock()
@@ -124,10 +108,9 @@ func resolveMemberID(c *fiber.Ctx) (int, error) {
 	return 0, fmt.Errorf("%w: memberID path parameter is required", domain.ErrInvalidInput)
 }
 
-// handleLogin verifies outside SQLite, then records success and inserts a fresh
-// session under an expected-password-hash guard. Recovery that commits during
-// verification therefore wins: an old password cannot mint a later session or
-// overwrite the recovered hash. Every credential failure is the uniform 401.
+// handleLogin verifies outside SQLite, then commits the session under an
+// expected-password-hash guard, so a recovery that commits during verification
+// wins over the old password.
 func (h *handler) handleLogin(c *fiber.Ctx) error {
 	var body struct {
 		Username string `json:"username"`
@@ -142,8 +125,6 @@ func (h *handler) handleLogin(c *fiber.Ctx) error {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			return writeInvalidCredentials(c)
 		}
-		// Not a wrong password (that returned above). The credential check
-		// itself faulted. The old "login failed" read like a rejection.
 		return h.writeInternal(c, err, "verifying local login failed")
 	}
 
@@ -164,23 +145,19 @@ func (h *handler) handleLogin(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// authConfigResponse is the public GET /auth/config projection: the handful of
-// presence-derived facts an unauthenticated login page needs to render itself.
-// Today that is only whether an SSO provider is configured, so the login page
-// can render the SSO button (present, not disabled) exactly when it can work.
+// authConfigResponse is what the unauthenticated login page needs to render.
 type authConfigResponse struct {
 	OIDC bool `json:"oidc"`
 }
 
-// handleAuthConfig reports the auth capabilities visible to a caller with no
-// session yet. It is deliberately unauthenticated and carries no secrets: OIDC
-// enablement is already public (the SSO button either appears or it doesn't).
+// handleAuthConfig is unauthenticated on purpose: OIDC enablement is already
+// public through the SSO button.
 func (h *handler) handleAuthConfig(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(authConfigResponse{OIDC: h.oidcEnabled})
 }
 
-// meResponse is the GET /auth/me projection. Username serializes as null (not
-// omitted) when the member has no local login, matching the spec's username|null.
+// meResponse is the GET /auth/me body. Username is null, not omitted, without
+// a local login.
 type meResponse struct {
 	ID                int         `json:"id"`
 	DisplayName       string      `json:"displayName"`
@@ -190,9 +167,6 @@ type meResponse struct {
 	HasLinkedIdentity bool        `json:"hasLinkedIdentity"`
 }
 
-// handleMe returns the current session actor's identity plus its
-// presence-derived link-state flags. requireSession has already rejected an
-// invalid session with 401.
 func (h *handler) handleMe(c *fiber.Ctx) error {
 	memberID, _ := c.Locals(localsMemberID).(int)
 
@@ -211,19 +185,15 @@ func (h *handler) handleMe(c *fiber.Ctx) error {
 	})
 }
 
-// handleLogout revokes the actor's session(s) and clears the cookie. An empty
-// body or {} logs out just this device; {"all":true} revokes every session for
-// the member (the compromise-recovery path). It always clears the cookie and
-// returns 204, and revoking an already-gone session is a no-op, so logout is
-// idempotent.
+// handleLogout revokes this device's session, or every session with
+// {"all":true}. It is idempotent.
 func (h *handler) handleLogout(c *fiber.Ctx) error {
 	memberID, _ := c.Locals(localsMemberID).(int)
 
 	var body struct {
 		All bool `json:"all"`
 	}
-	// The body is optional: only parse when one was sent, so an empty POST
-	// (current-device logout) isn't rejected as a malformed body.
+	// An empty POST is a valid current-device logout, not a malformed body.
 	if len(c.Body()) > 0 {
 		if err := c.BodyParser(&body); err != nil {
 			return writeProblem(c, fiber.StatusBadRequest, "invalid_request", "invalid request body")
@@ -245,8 +215,7 @@ func (h *handler) handleLogout(c *fiber.Ctx) error {
 }
 
 // handleChangePassword verifies and hashes outside SQLite, then atomically
-// rewrites the credential, revokes every old session, and retires any current
-// recovery link. A fresh session rotates this device's token after commit.
+// rewrites the credential, revokes old sessions, and mints a fresh one.
 func (h *handler) handleChangePassword(c *fiber.Ctx) error {
 	memberID, _ := c.Locals(localsMemberID).(int)
 
@@ -282,10 +251,8 @@ func (h *handler) handleChangePassword(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// handleSetLocalLogin is the admin upsert of a member's local login. Creating a
-// first login needs {username, password}; an existing row is an admin reset
-// (password only, username immutable) that revokes all of the target's sessions
-// and clears any lockout.
+// handleSetLocalLogin is the admin upsert of a member's local login. A reset
+// keeps the username, revokes the target's sessions, and clears any lockout.
 func (h *handler) handleSetLocalLogin(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -311,8 +278,7 @@ func (h *handler) handleSetLocalLogin(c *fiber.Ctx) error {
 }
 
 // handleDeleteLocalLogin is the admin removal of a member's local login. The
-// self-last-credential guard (in the service) refuses an admin's own only
-// credential with a 409.
+// service refuses an admin's own last credential with a 409.
 func (h *handler) handleDeleteLocalLogin(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err

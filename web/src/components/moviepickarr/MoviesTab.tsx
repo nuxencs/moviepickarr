@@ -44,15 +44,10 @@ export function MoviesTab() {
   const { data: poolState } = useQuery(SettingsGetPoolStateQueryOptions());
   const isLocked = !!poolState?.poolLocked;
   const { data: me } = useQuery(MeQueryOptions());
-  // Locking the pool is admin-only server-side; disable (don't hide) the toggle
-  // for everyone else, matching the turn gate's treatment on the draw controls.
+  // Admin-only server-side; disabled, not hidden, like the turn gate's controls.
   const canLock = canLockPool(me?.role);
 
-  // FLIP enter/exit + glide for the pool grid — the same hook the Stats rails
-  // use. Tiles fade in when a movie is added/promoted, fade out when it's drawn
-  // (on reel-land), moved to the stash, or deleted; survivors glide to close the
-  // gap. `poolEntries` includes a just-removed tile until its exit finishes, so
-  // the grid render maps over it (not `pooled`) and gates on its length.
+  // `poolEntries` keeps a removed tile until its exit finishes, so render from it, not `pooled`.
   const {
     containerRef: poolRef,
     entries: poolEntries,
@@ -62,9 +57,7 @@ export function MoviesTab() {
   // Opening the modal pushes a history entry, so browser Back closes it (#196).
   const { selected, isOpen, open, close, onClosed } = useMovieModal();
 
-  // The modal renders from the live lists so SSE-driven refetches (enrichment
-  // lands seconds after an add) flow into an open modal; the stored object is
-  // only the fallback while the movie momentarily sits in neither list.
+  // Render from the live lists so SSE refetches (late enrichment) reach an open modal.
   const selectedLive = useMemo(() => {
     if (!selected) return null;
     return (
@@ -81,7 +74,6 @@ export function MoviesTab() {
 
   return (
     <>
-      {/* ---- In the Pool ---- */}
       <section className="mg-rise">
         <div className="sec-head">
           <div className="sec-title">
@@ -174,12 +166,7 @@ function openProps(onOpen: () => void) {
   };
 }
 
-/**
- * The Watched section: its search box, count, grid/list toggle and the list
- * itself. It owns the search state rather than MoviesTab so a keystroke
- * re-renders this section alone — on the tab, every keystroke also re-rendered
- * the pool rail above, twice over (the urgent pass and the deferred one).
- */
+/** Owns the search state, not MoviesTab, so a keystroke does not re-render the pool rail. */
 function WatchedSection({
   watched,
   isPending,
@@ -192,8 +179,6 @@ function WatchedSection({
   onOpen: (movie: MovieTile) => void;
 }) {
   const [search, setSearch] = useState("");
-  // Keystrokes update the input at once and the (expensive) list at React's
-  // convenience, so typing never blocks on filtering a large watched library.
   const deferredSearch = useDeferredValue(search);
   const [view, setView] = useState<WatchedView>("grid");
 
@@ -286,14 +271,8 @@ function WatchedSection({
 }
 
 /**
- * The watched grid/list, virtualized against the body document owner: only the rows
- * near the viewport are in the DOM, so a keystroke re-renders a screenful of
- * tiles instead of the whole library, and the DOM stays flat as it grows.
- *
- * Layout stays in the stylesheet. The container keeps its `.tile-grid` (or
- * `.watch-list`) class and `useGridMetrics` reads back the resolved column
- * count and gaps, so the responsive `repeat(auto-fill, minmax(…))` tracks and
- * their breakpoints are never restated in JS. The list view resolves to one lane.
+ * The watched grid/list, virtualized against the document scroll. Layout stays in CSS:
+ * `useGridMetrics` reads back the resolved columns and gaps, so breakpoints are not restated in JS.
  */
 function VirtualWatched({
   className,
@@ -303,7 +282,7 @@ function VirtualWatched({
 }: {
   className: string;
   movies: readonly MovieTile[];
-  /** Starting row height, in px; real heights are measured once rendered. */
+  /** Starting row height in px; real heights are measured once rendered. */
   estimateSize: number;
   render: (movie: MovieTile) => ReactNode;
 }) {
@@ -348,9 +327,7 @@ function VirtualWatched({
 function WatchedRow({ movie, onOpen }: { movie: MovieTile; onOpen: () => void }) {
   const [editOpen, toggleEdit] = useToggle(false);
   const { date, time } = dateTimeParts(movie.watchedAt);
-  // Editing is adder-only server-side (no admin override), so only the adder
-  // gets the edit control; everyone else sees the watched row read-only. Same
-  // ownership rule as the board, via isSelf (see ownership.ts).
+  // Editing is adder-only server-side, with no admin override.
   const { data: me } = useQuery(MeQueryOptions());
   const canEdit = isSelf(me?.id, movie.addedByID);
 

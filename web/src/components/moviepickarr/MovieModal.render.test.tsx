@@ -1,21 +1,6 @@
-/* ============================================================
-   Render tests for the movie detail modal (#178).
-
-   The modal is a lazy read: the tile's lean object paints first, then the
-   detail fills in behind it. That two-phase behaviour, and where the pieces
-   land once both phases exist, is what the rebuild is about — so it's asserted
-   here, through what a member sees.
-
-   Layout itself (880px surface, rail width, the rule between the credit
-   columns) is CSS, and jsdom has no layout engine — those are verified in a
-   real browser. What jsdom holds: the credit rows exist while loading (so the
-   block can't grow under the reader), the attribution sits in the credit block
-   instead of the overview's tail, the watched line is gated on a watched movie,
-   and the external links are links rather than buttons.
-
-   The router `Link` behind the genre/year chips and the detail fetch are the
-   two things a unit render can't have, so both are stubbed; nothing else is.
-   ============================================================ */
+/* Render tests for the movie detail modal (#178): the lean tile paints first,
+   then the lazy detail fills in. Layout is CSS and checked in a browser; jsdom
+   pins the markup. Only the router Link and the API are stubbed. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
@@ -29,10 +14,8 @@ import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import type { MeResponse, MovieDetail, MovieTile } from "@/types/Response";
 import type { ReactNode } from "react";
 
-// The chips deep-link to /stats and active attribution to /users; outside a
-// router there's no Link, and the modal isn't the place to test routing
-// (nav.test.ts owns that). The stub flattens `to` + `search` into an href and
-// puts `replace` on the element, which is all this file asks of a destination.
+// Routing is nav.test.ts's job: the stub flattens `to` + `search` into an href
+// and exposes `replace` as an attribute.
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,
@@ -61,9 +44,8 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-// The detail read never resolves on its own: a test that wants the landed
-// detail seeds the cache, so the "still loading" phase is the default. The
-// session and the pool lock are seeded the same way.
+// The detail read never resolves, so "still loading" is the default; tests seed
+// the detail, session and pool lock into the cache.
 vi.mock("@/api/APIClient", () => ({
   ApiError: class ApiError extends Error {
     readonly status: number;
@@ -171,12 +153,11 @@ function renderModal({
       <MovieModal movie={movie} open onRequestClose={onRequestClose} onClose={vi.fn()} />
     </QueryClientProvider>,
   );
-  // The action pair portals its dialogs to the body as siblings of the modal,
-  // so the first dialog is the record itself.
+  // The action pair's dialogs portal as siblings, so the first dialog is the record.
   return { client, dialog: screen.getAllByRole("dialog")[0], onRequestClose };
 }
 
-/** The record's own title, which the rail is read before. */
+/** The record's own title, which the rail precedes. */
 function title() {
   return screen.getByRole("heading", { name: "Apocalypse Now" });
 }
@@ -188,8 +169,7 @@ function confirmDialog() {
     .find((d) => within(d).queryByRole("heading", { name: "Delete movie" })) as HTMLElement;
 }
 
-/** Reading order, which is all jsdom can say about where a block sits: there is
- *  no layout engine here, so the browser owns the rest (see the header). */
+/** Reading order: all jsdom can say about where a block sits. */
 function comesBefore(first: HTMLElement, second: HTMLElement) {
   return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 }
@@ -227,7 +207,6 @@ describe("MovieModal", () => {
     // A person credited twice (Coppola wrote and directed) is named once per line.
     expect(screen.getAllByRole("link", { name: "Francis Ford Coppola" })).toHaveLength(2);
     expect(block.querySelectorAll(".moviemodal__credits__ghost")).toHaveLength(0);
-    // The attribution belongs to the credit block, not to the tail of a text block.
     expect(block.contains(attribution(dialog))).toBe(true);
   });
 
@@ -256,10 +235,7 @@ describe("MovieModal", () => {
     expect(attribution(dialog).textContent).not.toMatch(/Watched/);
   });
 
-  /* The adder's name is the way from a movie to the person who stashed it
-     (#238). The address is the rail's: /users?member=<id>. Asserted on the lean
-     object, with no detail seeded: the id is on the tile, so the link is there
-     from the first frame on every surface the modal opens from. */
+  // Lean object only (#238): the id is on the tile, so the link is there from the first frame.
   it("points the adder's name at their board", () => {
     const { dialog } = renderModal({ movie: lean({ addedByID: 7, addedByName: "Cleo" }) });
 
@@ -283,12 +259,8 @@ describe("MovieModal", () => {
   it("navigates over the modal's own entry, the way the chips do", () => {
     const { dialog } = renderModal({ movie: lean({ addedByID: 7, addedByName: "Cleo" }) });
 
-    // Replace, not push: the entry the link leaves is the modal's own, so
-    // consuming it is what closes the modal. A push would land back on an
-    // entry whose page renders no modal at all (see useMovieModalHistory).
-    // Only the prop is visible here, since the router is a stub — what the
-    // navigation actually does to the entry is pinned on a real router in
-    // UsersTab.render.test.tsx.
+    // Replace, not push: consuming the modal's own entry is what closes it (see
+    // useMovieModalHistory). The real navigation is pinned in UsersTab.render.test.tsx.
     expect(
       within(attribution(dialog)).getByRole("link", { name: "Cleo" }).getAttribute("data-replace"),
     ).toBe("true");
@@ -303,8 +275,7 @@ describe("MovieModal", () => {
       expect(link.getAttribute("rel")).toContain("noopener");
       expect(link.className).not.toContain("btn");
     }
-    // …and they live in the rail beside the record, not in a trailing row: the
-    // rail is read before the title, which is where a trailing row would be.
+    // In the rail, not a trailing row: the rail comes before the title.
     expect(comesBefore(screen.getByRole("link", { name: "IMDb" }), title())).toBe(true);
   });
 
@@ -341,8 +312,7 @@ describe("MovieModal hero", () => {
   it("does not stand the poster in for the backdrop while the detail loads", async () => {
     const { client, dialog } = renderModal();
 
-    // The lean object has no backdropPath, but the detail is about to bring
-    // one: painting the poster here means a visible swap a moment later.
+    // The detail is about to bring a backdrop; painting the poster now means a visible swap.
     expect(heroPreload(dialog)?.src ?? "").not.toContain("poster.jpg");
 
     act(() => {
@@ -357,9 +327,8 @@ describe("MovieModal hero", () => {
     expect(heroPreload(dialog)?.src ?? "").toContain("poster.jpg");
   });
 
-  // The rail below the hero shows the same poster sharp, so a stand-in that
-  // reads at full brightness looks like the poster printed twice. The muted
-  // wash makes it a colour field and needs only a small source.
+  // The rail shows the same poster sharp; a muted wash keeps the stand-in from
+  // reading as a duplicate, and needs only a small source.
   it("mutes the stand-in poster and asks for a small one", () => {
     const { dialog } = renderModal({ detail: detailed({ backdropPath: undefined }) });
     const preload = heroPreload(dialog)!;
@@ -389,8 +358,8 @@ describe("MovieModal hero", () => {
 
     expect(backdrop(dialog).style.backgroundImage).toContain("backdrop.jpg");
     expect(backdrop(dialog).style.backgroundImage).toContain("transparent 72%");
-    // Do not let the fade and body mask meet on the same device-pixel edge.
-    // Safari and Firefox can round those independently and expose the backdrop.
+    // Keep the fade and body mask off the same device-pixel edge: Safari and
+    // Firefox round them independently and expose the backdrop.
     expect(backdrop(dialog).style.backgroundSize).toContain(
       "calc(var(--moviemodal-hero-height) + 1px)",
     );
@@ -399,14 +368,8 @@ describe("MovieModal hero", () => {
   });
 });
 
-/* ------------------------------------------------------------
-   The action pair (#237): rename and delete on the movie's own record.
-
-   Which refusal a delete meets and how it reads is pure, and refusals.test.ts
-   owns that table. Here is what only the rendered record can answer: who is
-   offered the pair, when it arrives, that a refused delete stays where it is
-   without being disabled, and where each success leaves the modal.
-   ------------------------------------------------------------ */
+/* The action pair (#237): rename and delete on the record. Refusal reasons
+   are refusals.test.ts's table. */
 describe("MovieModal actions", () => {
   const edit = () => screen.queryByRole("button", { name: "Edit" });
   const del = () => screen.queryByRole("button", { name: /^Delete/ });
@@ -416,16 +379,13 @@ describe("MovieModal actions", () => {
 
     expect(edit()).not.toBeNull();
     expect(del()).not.toBeNull();
-    // At the foot of the rail: after the last link, and still before the title,
-    // which is where the pair was not to go.
+    // At the foot of the rail: after the last link, before the title.
     expect(comesBefore(screen.getByRole("link", { name: "Letterboxd" }), edit()!)).toBe(true);
     expect(comesBefore(edit()!, title())).toBe(true);
   });
 
   it("keeps delete inert until the round state is known", () => {
-    // No lock seeded, so that query never lands: a pooled movie in a round the
-    // page can't describe yet must not offer a delete the server would refuse
-    // after the confirm.
+    // No lock seeded: a delete the server might refuse must not be offered yet.
     renderModal({ meID: ADDER_ID, detail: detailed({ status: "pool" }) });
 
     expect(edit()).not.toBeNull();
@@ -561,8 +521,7 @@ describe("MovieModal actions", () => {
 
     const button = del();
     expect(button?.getAttribute("aria-disabled")).toBe("true");
-    // Inert, never natively disabled: the reason is written on a control a
-    // keyboard user has to be able to reach.
+    // Never natively disabled: a keyboard user must reach the reason.
     expect(button).not.toHaveProperty("disabled", true);
     expect(button?.getAttribute("aria-label")).toBe("Delete, round closed");
     expect(button?.getAttribute("title")).toBe("Delete, round closed");
@@ -633,8 +592,7 @@ describe("MovieModal actions", () => {
     fireEvent.click(del()!);
     expect(screen.getByRole("heading", { name: "Delete movie" })).not.toBeNull();
 
-    // The confirm's own button, told apart from the rail's control by the
-    // surface it sits on rather than by its (identical) name.
+    // Same name as the rail's control, so scope to the confirm.
     fireEvent.click(within(confirmDialog()).getByRole("button", { name: "Delete" }));
 
     await vi.waitFor(() => expect(APIClient.board.deleteMovie).toHaveBeenCalledWith(MOVIE_ID));
@@ -672,8 +630,7 @@ describe("MovieModal actions", () => {
       .getByRole("button", { name: "Close" })
       .hasAttribute("disabled");
 
-    // The same physical button is still mounted during the request. A second
-    // activation must be inert, not a second call hidden behind the first.
+    // The button stays mounted during the request; a second activation must be inert.
     fireEvent.click(pendingConfirm);
     const submissions = vi.mocked(APIClient.board.deleteMovie).mock.calls.length;
 
@@ -748,8 +705,8 @@ describe("MovieModal actions", () => {
     fireEvent.click(edit()!);
     expect(screen.getByRole("heading", { name: "Edit movie" })).not.toBeNull();
 
-    // Browser Back pops the record's entry, which reaches the modal as `open`
-    // going false: the child dialog is gone at once while the record plays out.
+    // Browser Back arrives as `open` going false: the child dialog goes at once
+    // while the record plays its exit.
     view.rerender(
       <QueryClientProvider client={client}>
         <MovieModal movie={lean()} open={false} onRequestClose={vi.fn()} onClose={vi.fn()} />

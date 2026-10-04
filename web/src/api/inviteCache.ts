@@ -2,8 +2,7 @@ import { InvitesKeys, UsersKeys } from "@/api/query_keys";
 
 import type { QueryClient } from "@tanstack/react-query";
 
-/** Reconcile the invite generation and the roster credential projection as one
- * surface. Awaiting both keeps mutation busy states up until the rows agree. */
+/** Refetches invites and roster together; awaiting both keeps busy states up until they agree. */
 export function reconcileInviteSurfaces(queryClient: QueryClient) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: InvitesKeys.all }),

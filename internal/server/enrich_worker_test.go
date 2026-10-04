@@ -155,8 +155,7 @@ func TestRateLimiter_ReservedCallerWaitsInsteadOfRejectingFullQueue(t *testing.T
 	}
 }
 
-// countBatchEvents drains a broker client for "movies:enriched-batch" frames
-// until the channel goes quiet for `within`.
+// countBatchEvents counts "movies:enriched-batch" frames until the client is quiet for `within`.
 func countBatchEvents(client chan event, within time.Duration) int {
 	count := 0
 	for {
@@ -209,8 +208,7 @@ func TestEnrichRunner_StartupLogOmitsInactiveDrainConfiguration(t *testing.T) {
 	}
 }
 
-// A drain enriching many movies back-to-back must collapse to ONE batch event
-// and ONE stats-cache invalidation — the heart of the coalescing fix.
+// One batch event and one stats-cache invalidation per drain.
 func TestEnrichRunner_DrainCoalescesToSingleBroadcast(t *testing.T) {
 	broker := newEventBroker()
 	client, _ := broker.Subscribe()
@@ -233,8 +231,7 @@ func TestEnrichRunner_DrainCoalescesToSingleBroadcast(t *testing.T) {
 	}
 }
 
-// The debounce timer alone (no explicit flush, as on a sparse single enqueue)
-// must emit exactly one batch once the burst goes quiet.
+// No explicit flush, as on a sparse single enqueue.
 func TestEnrichRunner_DebounceTimerEmitsOnce(t *testing.T) {
 	broker := newEventBroker()
 	client, _ := broker.Subscribe()
@@ -245,7 +242,6 @@ func TestEnrichRunner_DebounceTimerEmitsOnce(t *testing.T) {
 	for i := range 3 {
 		r.recordEnriched(i)
 	}
-	// Don't flush explicitly — let the debounce timer fire.
 
 	if got := countBatchEvents(client, 200*time.Millisecond); got != 1 {
 		t.Fatalf("expected 1 debounced movies:enriched-batch, got %d", got)
@@ -255,7 +251,6 @@ func TestEnrichRunner_DebounceTimerEmitsOnce(t *testing.T) {
 	}
 }
 
-// flushBatch with nothing buffered must not broadcast or invalidate.
 func TestEnrichRunner_EmptyFlushIsNoop(t *testing.T) {
 	broker := newEventBroker()
 	client, _ := broker.Subscribe()
@@ -272,7 +267,6 @@ func TestEnrichRunner_EmptyFlushIsNoop(t *testing.T) {
 	}
 }
 
-// Two separated bursts must each emit their own batch.
 func TestEnrichRunner_SeparateBurstsEachFlush(t *testing.T) {
 	broker := newEventBroker()
 	client, _ := broker.Subscribe()

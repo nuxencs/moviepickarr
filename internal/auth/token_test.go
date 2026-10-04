@@ -13,12 +13,10 @@ func TestGenerateToken_Shape(t *testing.T) {
 		t.Fatalf("GenerateToken: %v", err)
 	}
 
-	// 32 bytes of entropy base64url-encode to 43 unpadded chars.
 	if len(tok.Raw) != 43 {
 		t.Errorf("Raw length = %d, want 43", len(tok.Raw))
 	}
 
-	// Decoding must yield exactly tokenBytes with no padding (RawURLEncoding).
 	raw, err := base64.RawURLEncoding.DecodeString(tok.Raw)
 	if err != nil {
 		t.Fatalf("Raw is not base64url-unpadded: %v", err)
@@ -34,8 +32,7 @@ func TestGenerateToken_HashMatchesRaw(t *testing.T) {
 		t.Fatalf("GenerateToken: %v", err)
 	}
 
-	// Hash is SHA-256(Raw), hex-encoded, and reproducible from the raw token so
-	// an inbound cookie can be matched against the stored token_hash.
+	// An inbound cookie must hash to the stored token_hash.
 	if tok.Hash != HashToken(tok.Raw) {
 		t.Errorf("Token.Hash = %q, want HashToken(Raw) = %q", tok.Hash, HashToken(tok.Raw))
 	}
@@ -49,8 +46,6 @@ func TestGenerateToken_HashMatchesRaw(t *testing.T) {
 }
 
 func TestGenerateToken_NeverPersistsRaw(t *testing.T) {
-	// The whole point of the hash-only design: the stored hash must not reveal
-	// the raw token. They must differ, and the hash must not contain the raw.
 	tok, err := GenerateToken()
 	if err != nil {
 		t.Fatalf("GenerateToken: %v", err)
@@ -61,7 +56,6 @@ func TestGenerateToken_NeverPersistsRaw(t *testing.T) {
 }
 
 func TestGenerateToken_Unique(t *testing.T) {
-	// Two calls must never collide; a repeated token would be a CSPRNG failure.
 	const n = 1000
 	seenRaw := make(map[string]struct{}, n)
 	seenHash := make(map[string]struct{}, n)

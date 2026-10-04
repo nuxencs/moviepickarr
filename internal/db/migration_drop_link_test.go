@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// TestRunMigrations_DropsLinkColumn runs the full chain on a fresh DB and
-// confirms 005 applied: the link column is gone and version 5 is recorded.
 func TestRunMigrations_DropsLinkColumn(t *testing.T) {
 	ctx := context.Background()
 	conn, err := OpenSQLite(filepath.Join(t.TempDir(), "m.db"))
@@ -48,7 +46,6 @@ func TestMigration005_BackfillsIMDbFromLink(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	// Post-004 movies shape (FK omitted; this test targets only the 005 SQL).
 	if _, err := conn.Write.ExecContext(ctx, `CREATE TABLE movies (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, link TEXT NOT NULL,
 		status TEXT NOT NULL, added_by_id INTEGER NOT NULL, tmdb_id INTEGER, imdb_id TEXT)`); err != nil {

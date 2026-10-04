@@ -18,6 +18,17 @@ async function takeTurn(page: Page) {
   throw new Error("Next up never reached the signed-in admin");
 }
 
+/** Hero height and where its actions sit; a pick must change neither (#305). Desktop only until #357. */
+async function heroGeometry(page: Page) {
+  const [hero, actions] = await Promise.all([
+    page.locator(".hero").boundingBox(),
+    page.locator(".hero__actions").boundingBox(),
+  ]);
+  expect(hero).not.toBeNull();
+  expect(actions).not.toBeNull();
+  return { height: Math.round(hero!.height), actionsTop: Math.round(actions!.y - hero!.y) };
+}
+
 test("draw spins, survives a tab remount, reveals on its deadline, and confirms", async ({ page }) => {
   const membersResponse = await page.request.get("/api/v1/members");
   expect(membersResponse.ok()).toBe(true);
@@ -89,6 +100,7 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   await confirm.click();
   await expect(reel).toBeHidden();
   await expect(page.getByRole("button", { name: "Mark as watched" })).toBeVisible();
+  const heroAtRest = await heroGeometry(page);
 
   // A Wildcard is watched without replacing this draw or moving Next up.
   const currentTitle = await page.locator(".hero__title").textContent();
@@ -110,6 +122,7 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   await expect(page.locator(".hero__nextup")).toHaveText(nextUp ?? "");
   await expect(page.getByRole("button", { name: "Mark as watched" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Cancel wildcard" })).toBeVisible();
+  expect(await heroGeometry(page), "the wildcard takeover resized the hero").toEqual(heroAtRest);
 
   const heldDraw = page.locator(".hero__held-draw");
   await heldDraw.getByRole("button", { name: currentTitle ?? "" }).click();
@@ -147,6 +160,7 @@ test("draw spins, survives a tab remount, reveals on its deadline, and confirms"
   // Restore a no-current-draw baseline for the next browser project.
   await page.getByRole("button", { name: "Mark as watched" }).click();
   await expect(page.getByRole("button", { name: "Draw random movie" })).toBeVisible();
+  expect(await heroGeometry(page), "the empty hero changed height").toEqual(heroAtRest);
 
   const restoreResponse = await page.request.post(`/api/v1/movies/${protectedMovie!.movieID}/move`, {
     data: { target: "pool" },

@@ -18,15 +18,30 @@ async function takeTurn(page: Page) {
   throw new Error("Next up never reached the signed-in admin");
 }
 
-/** Hero height and where its actions sit; a pick must change neither (#305). Desktop only until #357. */
+/** Hero height and where its actions sit at desktop, both phone tiers, and 320px. A pick must change neither (#305, #357). */
 async function heroGeometry(page: Page) {
-  const [hero, actions] = await Promise.all([
-    page.locator(".hero").boundingBox(),
-    page.locator(".hero__actions").boundingBox(),
-  ]);
-  expect(hero).not.toBeNull();
-  expect(actions).not.toBeNull();
-  return { height: Math.round(hero!.height), actionsTop: Math.round(actions!.y - hero!.y) };
+  // The reveal entrance translates the actions for about a second, and boundingBox includes transforms.
+  await page.locator(".hero").evaluate((hero) =>
+    Promise.all(
+      hero
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
+  const geometry: Record<number, { height: number; actionsTop: number }> = {};
+  for (const width of [1280, 430, 390, 320]) {
+    await page.setViewportSize({ width, height: 720 });
+    const [hero, actions] = await Promise.all([
+      page.locator(".hero").boundingBox(),
+      page.locator(".hero__actions").boundingBox(),
+    ]);
+    expect(hero).not.toBeNull();
+    expect(actions).not.toBeNull();
+    geometry[width] = { height: Math.round(hero!.height), actionsTop: Math.round(actions!.y - hero!.y) };
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  return geometry;
 }
 
 test("draw spins, survives a tab remount, reveals on its deadline, and confirms", async ({ page }) => {

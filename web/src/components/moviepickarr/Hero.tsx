@@ -476,36 +476,41 @@ export function Hero() {
             ) : wildcard ? (
               <>
                 <AsteriskIcon />
-                Active wildcard · added by{" "}
-                {wildcard.movie.addedByArchived ? (
-                  <span className="hero__by">{wildcard.movie.addedByName}</span>
-                ) : (
-                  <Link
-                    to="/users"
-                    search={{ member: wildcard.movie.addedByID }}
-                    className="hero__by"
-                    title={`See ${possessive(wildcard.movie.addedByName)} board`}
-                  >
-                    {wildcard.movie.addedByName}
-                  </Link>
-                )}
+                {/* One inline run, so a narrow wrap keeps the name in the text flow. */}
+                <span>
+                  Active wildcard · added by{" "}
+                  {wildcard.movie.addedByArchived ? (
+                    <span className="hero__by">{wildcard.movie.addedByName}</span>
+                  ) : (
+                    <Link
+                      to="/users"
+                      search={{ member: wildcard.movie.addedByID }}
+                      className="hero__by"
+                      title={`See ${possessive(wildcard.movie.addedByName)} board`}
+                    >
+                      {wildcard.movie.addedByName}
+                    </Link>
+                  )}
+                </span>
               </>
             ) : draw ? (
               <>
                 {/* A push, unlike the modal's replace, so Back returns to the draw (#238). */}
-                Current draw · added by{" "}
-                {draw.addedByArchived ? (
-                  <span className="hero__by">{draw.addedByName}</span>
-                ) : (
-                  <Link
-                    to="/users"
-                    search={{ member: draw.addedByID }}
-                    className="hero__by"
-                    title={`See ${possessive(draw.addedByName)} board`}
-                  >
-                    {draw.addedByName}
-                  </Link>
-                )}
+                <span>
+                  Current draw · added by{" "}
+                  {draw.addedByArchived ? (
+                    <span className="hero__by">{draw.addedByName}</span>
+                  ) : (
+                    <Link
+                      to="/users"
+                      search={{ member: draw.addedByID }}
+                      className="hero__by"
+                      title={`See ${possessive(draw.addedByName)} board`}
+                    >
+                      {draw.addedByName}
+                    </Link>
+                  )}
+                </span>
               </>
             ) : (
               "No movie selected"

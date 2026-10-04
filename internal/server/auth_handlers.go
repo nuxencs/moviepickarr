@@ -79,10 +79,10 @@ func (h *handler) requireTurnParticipant(c *fiber.Ctx) (bool, error) {
 	return false, writeProblem(c, fiber.StatusForbidden, "guest_restricted", "guest role cannot perform this action")
 }
 
-// requireNextUpOrAdmin gates the draw → reveal → watch cycle: only the member
-// whose turn it is, or an admin, may run the draw. Anyone else gets 403
-// not_next_up. Because the rotation advances only on watch, the same member
-// holds the turn across the whole cycle.
+// requireNextUpOrAdmin gates the watch → draw → reveal turn: only the member
+// whose turn it is, or an admin, may run it. Anyone else gets 403 not_next_up.
+// The rotation advances on Reveal, so the drawer reveals their own draw and the
+// next member marks it watched before drawing.
 func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
 	if ok, err := h.requireTurnParticipant(c); !ok {
 		return false, err
@@ -104,9 +104,10 @@ func (h *handler) requireNextUpOrAdmin(c *fiber.Ctx) (bool, error) {
 }
 
 // runDrawCommand keeps the authorization snapshot, lifecycle command, and
-// synchronous event publication in one process-local critical section. Watch
-// holds the section until next up advances and movie:watched is published, so
-// the outgoing member cannot authorize another command in the gap.
+// synchronous event publication in one process-local critical section. A
+// manual reveal (or a watch that reveals) holds the section until next up
+// advances and its events publish, so the outgoing member cannot authorize
+// another command in the gap.
 func (h *handler) runDrawCommand(c *fiber.Ctx, command func() error) (ran bool, err error) {
 	h.drawCommandMu.Lock()
 	defer h.drawCommandMu.Unlock()

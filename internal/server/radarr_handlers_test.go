@@ -360,7 +360,7 @@ func setupUsedRadarrRemovalHTTPTest(
 	if err := movies.StartDraw(ctx, movie.ID, now, now.Add(16*time.Second), "drawer"); err != nil {
 		t.Fatalf("start removal draw: %v", err)
 	}
-	if err := movies.RevealDraw(ctx, movie.ID, now.Add(17*time.Second)); err != nil {
+	if _, err := movies.RevealDrawAndAdvanceNextUp(ctx, movie.ID, now.Add(17*time.Second)); err != nil {
 		t.Fatalf("reveal removal draw: %v", err)
 	}
 	acquisitions, err := repo.ListAcquisitions(ctx, "")

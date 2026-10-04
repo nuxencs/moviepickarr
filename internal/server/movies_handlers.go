@@ -517,32 +517,19 @@ func (h *handler) handleWatchMovie(c *fiber.Ctx) error {
 	ctx := c.UserContext()
 	var payload fullMovie
 	ran, err := h.runDrawCommand(c, func() error {
-		watched, next, changed, watchErr := h.movieService.MarkCurrentAsWatchedAndAdvanceNextUp(ctx)
+		watched, watchErr := h.movieService.MarkCurrentAsWatched(ctx)
 		if watchErr != nil {
 			if !errors.Is(watchErr, domain.ErrNoCurrentDraw) {
 				h.reqLog(c).Error().
 					Err(watchErr).
-					Msg("watching the current movie and advancing next up failed")
+					Msg("watching the current movie failed")
 			}
 			return watchErr
 		}
 
-		// Rotation-on-watch (Model B): the turn passes only once the movie is
-		// actually watched, so the same member holds it across the whole draw →
-		// reveal → watch cycle. The service commits the watched row and handoff
-		// together; publish only after both are durable.
-		if changed {
-			h.broker.Broadcast(event{
-				Type: "settings:next-up-changed",
-				Data: map[string]any{
-					"id":   next.ID,
-					"name": next.Name,
-				},
-			})
-		}
-
-		// The service revealed an unrevealed reel after commit, then cleared the
-		// draw and its pending auto-reveal.
+		// The turn passes on Reveal, not here. Watching an unrevealed draw is
+		// that Reveal: the service already published movie:revealed and any
+		// next-up handoff through OnRevealed, then cleared the draw.
 		h.invalidateStatsCache()
 
 		payload = toFullMovieBare(watched)

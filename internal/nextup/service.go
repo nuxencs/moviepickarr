@@ -8,8 +8,8 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// Service owns next-up reads. The atomic watched movie plus turn handoff lives
-// in the movie store because it spans both durable records.
+// Service owns next-up reads. The turn handoff commits with the Reveal in the
+// movie store because it spans both durable records.
 type Service struct {
 	nextUpRepo domain.NextUpRepo
 }

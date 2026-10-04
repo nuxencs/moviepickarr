@@ -882,25 +882,36 @@ func (d *SqliteMoviesRepository) StartDraw(
 	return tx.Commit()
 }
 
-// RevealDraw persists the Acquisition visibility boundary before the movie
-// service flips its process-local draw or publishes movie:revealed. Repeating it
-// is safe: the first call starts the actionable preset-required condition; later
-// calls leave its version and timestamp unchanged.
-func (d *SqliteMoviesRepository) RevealDraw(ctx context.Context, movieID int, revealedAt time.Time) error {
+// RevealDrawAndAdvanceNextUp persists the Acquisition visibility boundary and
+// the rotation-on-reveal handoff before the movie service flips its
+// process-local draw or publishes movie:revealed. next is nil when the turn
+// stays put. Call it once per draw: the Acquisition write is idempotent, but
+// every call rotates. The movie service's reveal-once flip guarantees that.
+func (d *SqliteMoviesRepository) RevealDrawAndAdvanceNextUp(
+	ctx context.Context,
+	movieID int,
+	revealedAt time.Time,
+) (next *domain.User, err error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	found, err := revealAcquisitionTx(ctx, tx, movieID, revealedAt, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !found {
-		return fmt.Errorf("%w: acquisition for current movie %d", domain.ErrNotFound, movieID)
+		return nil, fmt.Errorf("%w: acquisition for current movie %d", domain.ErrNotFound, movieID)
 	}
-	return tx.Commit()
+	if next, err = advanceNextUpTx(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return next, nil
 }
 
 // revealAcquisitionTx crosses the admin visibility boundary and creates the
@@ -1090,17 +1101,19 @@ func (d *SqliteMoviesRepository) MarkAsWatched(ctx context.Context, id int, watc
 	return nil
 }
 
-// WatchCurrentAndAdvanceNextUp commits the watched lifecycle change and its
-// rotation-on-watch handoff as one writer transaction. Every dependent read
-// stays on tx: using the read pool here could derive the handoff from a
-// different snapshot than the watched update.
-func (d *SqliteMoviesRepository) WatchCurrentAndAdvanceNextUp(
+// WatchCurrentDraw marks the current draw watched in one writer transaction.
+// revealsDraw is true when the draw was still unrevealed: the watch is then also
+// its Reveal and commits the rotation-on-reveal handoff with the watched movie.
+// next is nil when the turn stays put. Every dependent read stays on tx: using
+// the read pool here could derive the handoff from a different snapshot.
+func (d *SqliteMoviesRepository) WatchCurrentDraw(
 	ctx context.Context,
 	watchedAt time.Time,
-) (watched *domain.Movie, next *domain.User, changed bool, err error) {
+	revealsDraw bool,
+) (watched *domain.Movie, next *domain.User, err error) {
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -1117,113 +1130,115 @@ func (d *SqliteMoviesRepository) WatchCurrentAndAdvanceNextUp(
 		if checkErr := tx.QueryRowContext(ctx,
 			"SELECT EXISTS(SELECT 1 FROM wildcards WHERE status = 'active')",
 		).Scan(&activeWildcard); checkErr != nil {
-			return nil, nil, false, checkErr
+			return nil, nil, checkErr
 		}
 		if activeWildcard {
-			return nil, nil, false, domain.ErrActiveWildcard
+			return nil, nil, domain.ErrActiveWildcard
 		}
-		return nil, nil, false, domain.ErrNoCurrentDraw
+		return nil, nil, domain.ErrNoCurrentDraw
 	}
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
 	}
 
 	// Watching an unrevealed draw is itself a Reveal. Keep that visibility and
 	// its actionable webhook outbox rows inside the same transaction as the
-	// watched movie and next-up handoff. Legacy current rows can have no
-	// Acquisition, so found=false remains valid on this compatibility path.
+	// watched movie. Legacy current rows can have no Acquisition, so found=false
+	// remains valid on this compatibility path.
 	if _, err = revealAcquisitionTx(ctx, tx, movieID, watchedAt, false); err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
 	}
 
 	watched, err = scanMovie(tx.QueryRowContext(ctx, movieSelect+" WHERE m.id = ?", movieID))
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
 	}
 
-	var poolRemains bool
-	if err = tx.QueryRowContext(ctx,
-		"SELECT EXISTS(SELECT 1 FROM movies WHERE status = 'pool')",
-	).Scan(&poolRemains); err != nil {
-		return nil, nil, false, err
-	}
-
-	if poolRemains {
-		rows, queryErr := tx.QueryContext(ctx, `
-			SELECT id, name, created_at, updated_at
-			FROM turn_participants
-			ORDER BY created_at ASC, id ASC
-		`)
-		if queryErr != nil {
-			return nil, nil, false, queryErr
-		}
-
-		users := make([]*domain.User, 0)
-		for rows.Next() {
-			user, scanErr := scanUser(rows)
-			if scanErr != nil {
-				_ = rows.Close()
-				return nil, nil, false, scanErr
-			}
-			users = append(users, user)
-		}
-		if err = rows.Err(); err != nil {
-			_ = rows.Close()
-			return nil, nil, false, err
-		}
-		if err = rows.Close(); err != nil {
-			return nil, nil, false, err
-		}
-
-		if len(users) > 1 {
-			var storedNextUp sql.NullInt64
-			err = tx.QueryRowContext(ctx,
-				"SELECT user_id FROM next_up WHERE id = 1",
-			).Scan(&storedNextUp)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return nil, nil, false, err
-			}
-
-			currentIndex := -1
-			if !storedNextUp.Valid {
-				// Advance historically self-seeds the first member, then rotates to
-				// the second. Preserve that fresh-install behavior in one write.
-				currentIndex = 0
-			} else {
-				for i := range users {
-					if int64(users[i].ID) == storedNextUp.Int64 {
-						currentIndex = i
-						break
-					}
-				}
-			}
-
-			nextIndex := 0
-			if currentIndex >= 0 {
-				nextIndex = (currentIndex + 1) % len(users)
-			}
-			next = users[nextIndex]
-
-			if _, err = tx.ExecContext(ctx, `
-				INSERT INTO next_up (id, user_id)
-				VALUES (1, ?)
-				ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
-			`, next.ID); err != nil {
-				return nil, nil, false, err
-			}
-			changed = true
+	if revealsDraw {
+		if next, err = advanceNextUpTx(ctx, tx); err != nil {
+			return nil, nil, err
 		}
 	}
 
 	if err = tx.Commit(); err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
 	}
 
 	// SQLite persists epoch seconds, but the successful request keeps the
 	// original UTC instant in its response.
 	watchedAt = watchedAt.UTC()
 	watched.WatchedAt = &watchedAt
-	return watched, next, changed, nil
+	return watched, next, nil
+}
+
+// advanceNextUpTx passes the turn to the Turn participant after the current
+// holder, in roster order. It returns nil without writing when fewer than two
+// Turn participants exist. A holder no longer in the rotation (archived or now
+// a Guest) hands the turn to the first participant.
+func advanceNextUpTx(ctx context.Context, tx *sql.Tx) (*domain.User, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, name, created_at, updated_at
+		FROM turn_participants
+		ORDER BY created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	users := make([]*domain.User, 0)
+	for rows.Next() {
+		user, scanErr := scanUser(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		users = append(users, user)
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(users) < 2 {
+		return nil, nil
+	}
+
+	var storedNextUp sql.NullInt64
+	err = tx.QueryRowContext(ctx, "SELECT user_id FROM next_up WHERE id = 1").Scan(&storedNextUp)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	currentIndex := -1
+	if !storedNextUp.Valid {
+		// Advance historically self-seeds the first member, then rotates to
+		// the second. Preserve that fresh-install behavior in one write.
+		currentIndex = 0
+	} else {
+		for i := range users {
+			if int64(users[i].ID) == storedNextUp.Int64 {
+				currentIndex = i
+				break
+			}
+		}
+	}
+
+	nextIndex := 0
+	if currentIndex >= 0 {
+		nextIndex = (currentIndex + 1) % len(users)
+	}
+	next := users[nextIndex]
+
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO next_up (id, user_id)
+		VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id
+	`, next.ID); err != nil {
+		return nil, err
+	}
+	return next, nil
 }
 
 func (d *SqliteMoviesRepository) Delete(ctx context.Context, id int) error {

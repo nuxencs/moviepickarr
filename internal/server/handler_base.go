@@ -154,15 +154,22 @@ func (h *handler) startRadarrWorkers(ctx context.Context) {
 }
 
 // revealBroadcaster is the movie.DrawConfig.OnRevealed adapter: it tells every
-// client to close its reel and reveal the winner in lockstep. The Service
-// invokes it exactly once per draw: manual confirm, server-owned auto-reveal,
-// and an early watch emit an identical frame.
-func revealBroadcaster(broker *eventBroker) func(movie.ActiveDraw) {
-	return func(ap movie.ActiveDraw) {
+// client to close its reel and reveal the winner in lockstep, then announces
+// the rotation-on-reveal handoff. The Service invokes it exactly once per draw:
+// manual confirm, server-owned auto-reveal, and an early watch emit identical
+// frames.
+func revealBroadcaster(broker *eventBroker) func(movie.Reveal) {
+	return func(r movie.Reveal) {
 		broker.Broadcast(event{Type: "movie:revealed", Data: map[string]any{
-			"movieID": ap.MovieID,
-			"drawnAt": formatTime(&ap.DrawnAt),
+			"movieID": r.MovieID,
+			"drawnAt": formatTime(&r.DrawnAt),
 		}})
+		if r.NextUp != nil {
+			broker.Broadcast(event{Type: "settings:next-up-changed", Data: map[string]any{
+				"id":   r.NextUp.ID,
+				"name": r.NextUp.Name,
+			}})
+		}
 	}
 }
 

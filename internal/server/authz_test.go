@@ -76,13 +76,14 @@ type pausingWatchMovieStore struct {
 	resume  <-chan struct{}
 }
 
-func (s *pausingWatchMovieStore) WatchCurrentAndAdvanceNextUp(
+func (s *pausingWatchMovieStore) WatchCurrentDraw(
 	ctx context.Context,
 	watchedAt time.Time,
-) (*domain.Movie, *domain.User, bool, error) {
+	revealsDraw bool,
+) (*domain.Movie, *domain.User, error) {
 	close(s.reached)
 	<-s.resume
-	return s.SqliteMoviesRepository.WatchCurrentAndAdvanceNextUp(ctx, watchedAt)
+	return s.SqliteMoviesRepository.WatchCurrentDraw(ctx, watchedAt, revealsDraw)
 }
 
 // A member who did not add a movie cannot edit, delete or move it: 403 not_adder,
@@ -268,9 +269,9 @@ func TestAuthz_DrawIsNextUpOrAdmin(t *testing.T) {
 	}
 }
 
-// Rotation-on-watch (Model B): the turn holds across draw → reveal and only
-// passes on watch, so next up == the runner for the whole cycle.
-func TestRotation_HoldsAcrossCycleAdvancesOnWatch(t *testing.T) {
+// Rotation-on-reveal: the drawer holds the turn through their own Reveal, then
+// the next member marks that draw watched and draws the following one.
+func TestRotation_PassesOnRevealNextMemberWatchesThenDraws(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -284,8 +285,6 @@ func TestRotation_HoldsAcrossCycleAdvancesOnWatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create second: %v", err)
 	}
-	// Two pooled movies so the pool is still non-empty after the watch, which is
-	// the condition under which the rotation advances.
 	for _, title := range []string{"Drive", "Collateral"} {
 		if _, err := movieRepo.Add(ctx, title, "pool", first.ID); err != nil {
 			t.Fatalf("seed pool: %v", err)
@@ -299,39 +298,56 @@ func TestRotation_HoldsAcrossCycleAdvancesOnWatch(t *testing.T) {
 		}
 		return up.ID
 	}
+	expectStatus := func(step string, resp *http.Response, want int) {
+		t.Helper()
+		if resp.StatusCode != want {
+			t.Fatalf("%s: expected %d, got %d", step, want, resp.StatusCode)
+		}
+	}
+	drawReq := func() *http.Request {
+		return jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`)
+	}
+	revealReq := func() *http.Request {
+		return httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil)
+	}
+	watchReq := func() *http.Request {
+		return httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil)
+	}
 
 	if got := nextUpID(); got != first.ID {
 		t.Fatalf("before draw: next up = %d, want %d", got, first.ID)
 	}
 
-	// Draw as the runner: the turn must NOT move on draw.
-	resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/random", `{"clientId":"c"}`), first.ID, "member")
-	if resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("draw: expected 200, got %d", resp.StatusCode)
-	}
+	// The turn must not move on draw: the drawer still confirms the Reveal.
+	expectStatus("first draw", doAs(t, app, drawReq(), first.ID, "member"), fiber.StatusOK)
 	if got := nextUpID(); got != first.ID {
 		t.Fatalf("after draw: next up = %d, want unchanged %d", got, first.ID)
 	}
 
-	// Reveal: still the runner's turn.
-	resp = doAs(t, app, httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/reveal", nil), first.ID, "member")
-	if resp.StatusCode != fiber.StatusNoContent {
-		t.Fatalf("reveal: expected 204, got %d", resp.StatusCode)
-	}
-	if got := nextUpID(); got != first.ID {
-		t.Fatalf("after reveal: next up = %d, want unchanged %d", got, first.ID)
+	expectStatus("first reveal", doAs(t, app, revealReq(), first.ID, "member"), fiber.StatusNoContent)
+	if got := nextUpID(); got != second.ID {
+		t.Fatalf("after reveal: next up = %d, want %d", got, second.ID)
 	}
 
-	// Watch: the turn passes to the next member.
-	resp = doAs(t, app, httptest.NewRequest(http.MethodPost, "/api/v1/movies/current/watch", nil), first.ID, "member")
-	if resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("watch: expected 200, got %d", resp.StatusCode)
+	// The drawer's turn is over; the next member marks it watched.
+	resp := doAs(t, app, watchReq(), first.ID, "member")
+	expectStatus("drawer watch", resp, fiber.StatusForbidden)
+	if code := problemCode(t, resp); code != "not_next_up" {
+		t.Fatalf("drawer watch: got problem %q, want not_next_up", code)
 	}
+	expectStatus("second watch", doAs(t, app, watchReq(), second.ID, "member"), fiber.StatusOK)
 	if got := nextUpID(); got != second.ID {
-		t.Fatalf("after watch: next up = %d, want %d", got, second.ID)
+		t.Fatalf("after watch: next up = %d, want unchanged %d", got, second.ID)
+	}
+
+	expectStatus("second draw", doAs(t, app, drawReq(), second.ID, "member"), fiber.StatusOK)
+	if got := nextUpID(); got != second.ID {
+		t.Fatalf("after second draw: next up = %d, want unchanged %d", got, second.ID)
 	}
 }
 
+// Watching an unrevealed draw is its Reveal, so the watch commits the handoff.
+// The command lock keeps the outgoing holder out until that commit publishes.
 func TestRotation_WatchOwnsTurnThroughCommit(t *testing.T) {
 	tests := []struct {
 		name       string

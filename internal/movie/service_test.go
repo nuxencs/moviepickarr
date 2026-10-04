@@ -25,6 +25,8 @@ type testMovieRepo struct {
 	durableRevealed    bool
 	revealCalls        int
 	revealErr          error
+	revealNextUp       *domain.User
+	watchRevealsDraw   []bool
 }
 
 func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, error) {
@@ -152,16 +154,20 @@ func (r *testMovieRepo) StartDraw(
 	return nil
 }
 
-func (r *testMovieRepo) RevealDraw(_ context.Context, movieID int, _ time.Time) error {
+func (r *testMovieRepo) RevealDrawAndAdvanceNextUp(
+	_ context.Context,
+	movieID int,
+	_ time.Time,
+) (*domain.User, error) {
 	r.revealCalls++
 	if r.revealErr != nil {
-		return r.revealErr
+		return nil, r.revealErr
 	}
 	if r.concealedMovieID != movieID {
-		return sql.ErrNoRows
+		return nil, sql.ErrNoRows
 	}
 	r.durableRevealed = true
-	return nil
+	return r.revealNextUp, nil
 }
 
 func (r *testMovieRepo) ConcealedCurrentDraw(
@@ -211,10 +217,12 @@ func (r *testMovieRepo) PromoteToPoolIfRoom(context.Context, int, int) (int64, e
 	panic("unexpected call")
 }
 
-func (r *testMovieRepo) WatchCurrentAndAdvanceNextUp(
+func (r *testMovieRepo) WatchCurrentDraw(
 	_ context.Context,
 	watchedAt time.Time,
-) (*domain.Movie, *domain.User, bool, error) {
+	revealsDraw bool,
+) (*domain.Movie, *domain.User, error) {
+	r.watchRevealsDraw = append(r.watchRevealsDraw, revealsDraw)
 	for _, movie := range r.movies {
 		if movie.Status != "current" {
 			continue
@@ -225,9 +233,12 @@ func (r *testMovieRepo) WatchCurrentAndAdvanceNextUp(
 			r.durableRevealed = true
 		}
 		watched := *movie
-		return &watched, nil, false, nil
+		if revealsDraw {
+			return &watched, r.revealNextUp, nil
+		}
+		return &watched, nil, nil
 	}
-	return nil, nil, false, domain.ErrNoCurrentDraw
+	return nil, nil, domain.ErrNoCurrentDraw
 }
 
 func (r *testMovieRepo) GetCurrent(context.Context) (*domain.Movie, error) {
@@ -355,16 +366,14 @@ func TestActiveDrawLifecycle(t *testing.T) {
 		t.Fatal("expected the active draw to remain, now marked revealed")
 	}
 
-	// Rotation-on-watch (Model B) at the movie layer: the drawn movie is the
-	// runner's pick and stays "current" across the reveal — it becomes "watched"
-	// only when watched. The next-up rotation in the atomic watch store therefore
-	// holds across draw → reveal and passes only here.
+	// The drawn movie stays "current" across the reveal and becomes "watched"
+	// only when the next member marks it watched.
 	if got := repo.movies[drawn.Movie.ID].Status; got != "current" {
 		t.Fatalf("after reveal: movie status = %q, want current (not yet watched)", got)
 	}
 
-	if _, _, _, err := svc.MarkCurrentAsWatchedAndAdvanceNextUp(ctx); err != nil {
-		t.Fatalf("MarkCurrentAsWatchedAndAdvanceNextUp: unexpected error: %v", err)
+	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
+		t.Fatalf("MarkCurrentAsWatched: unexpected error: %v", err)
 	}
 
 	if got := repo.movies[drawn.Movie.ID].Status; got != "watched" {
@@ -381,7 +390,7 @@ func TestRevealPersistsBeforePublication(t *testing.T) {
 	repo := poolRepo()
 	publishedAfterPersistence := false
 	svc := NewService(repo, DrawConfig{
-		OnRevealed: func(ActiveDraw) {
+		OnRevealed: func(Reveal) {
 			publishedAfterPersistence = repo.durableRevealed
 		},
 	})
@@ -408,7 +417,7 @@ func TestRevealPersistenceFailureKeepsDrawConcealed(t *testing.T) {
 	published := 0
 	reported := 0
 	svc := NewService(repo, DrawConfig{
-		OnRevealed: func(ActiveDraw) { published++ },
+		OnRevealed: func(Reveal) { published++ },
 		OnRevealError: func(err error) {
 			if errors.Is(err, persistErr) {
 				reported++
@@ -482,7 +491,7 @@ func TestPublishedDrawArmsAutoRevealAndStampsDeadline(t *testing.T) {
 	svc := NewService(poolRepo(), DrawConfig{
 		AutoRevealDelay: 5 * time.Second,
 		StartTimer:      ft.start,
-		OnRevealed:      func(ap ActiveDraw) { revealedDraws = append(revealedDraws, ap) },
+		OnRevealed:      func(r Reveal) { revealedDraws = append(revealedDraws, r.ActiveDraw) },
 	})
 
 	drawn, err := svc.DrawRandom(context.Background(), "c1")
@@ -690,7 +699,7 @@ func TestCloseStopsDelayedAndTriggeredAutoReveal(t *testing.T) {
 		notified := 0
 		svc := NewService(poolRepo(), DrawConfig{
 			StartTimer: ft.start,
-			OnRevealed: func(ActiveDraw) {
+			OnRevealed: func(Reveal) {
 				notified++
 			},
 		})
@@ -723,7 +732,7 @@ func TestManualRevealCancelsAutoRevealAndNotifiesOnce(t *testing.T) {
 	notified := 0
 	svc := NewService(poolRepo(), DrawConfig{
 		StartTimer: ft.start,
-		OnRevealed: func(ActiveDraw) { notified++ },
+		OnRevealed: func(Reveal) { notified++ },
 	})
 
 	drawn, err := svc.DrawRandom(context.Background(), "c1")
@@ -757,7 +766,7 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 	notified := 0
 	svc := NewService(poolRepo(), DrawConfig{
 		StartTimer: ft.start,
-		OnRevealed: func(ActiveDraw) { notified++ },
+		OnRevealed: func(Reveal) { notified++ },
 	})
 	ctx := context.Background()
 
@@ -770,8 +779,8 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 		t.Fatal("expected an active draw")
 	}
 	svc.StartAutoReveal(drawn.Movie.ID, ap.Generation)
-	if _, _, _, err := svc.MarkCurrentAsWatchedAndAdvanceNextUp(ctx); err != nil {
-		t.Fatalf("MarkCurrentAsWatchedAndAdvanceNextUp: %v", err)
+	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
+		t.Fatalf("MarkCurrentAsWatched: %v", err)
 	}
 	if ft.stops == 0 {
 		t.Fatal("expected the watch to cancel the pending auto-reveal")
@@ -787,6 +796,93 @@ func TestWatchClearsDrawAndCancelsAutoReveal(t *testing.T) {
 	}
 }
 
+// Rotation-on-reveal: the committed handoff reaches OnRevealed with the
+// Reveal, whether the drawer confirmed or an early watch revealed the draw.
+func TestRevealPublishesNextUpHandoff(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		reveal func(context.Context, *Service) error
+	}{
+		{
+			name: "confirm",
+			reveal: func(ctx context.Context, svc *Service) error {
+				_, _, err := svc.RevealCurrentDrawContext(ctx)
+				return err
+			},
+		},
+		{
+			name: "early watch",
+			reveal: func(ctx context.Context, svc *Service) error {
+				_, err := svc.MarkCurrentAsWatched(ctx)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := poolRepo()
+			repo.revealNextUp = &domain.User{ID: 7, Name: "Ben"}
+			var reveals []Reveal
+			svc := NewService(repo, DrawConfig{
+				StartTimer: (&fakeTimer{}).start,
+				OnRevealed: func(r Reveal) { reveals = append(reveals, r) },
+			})
+			ctx := context.Background()
+
+			drawn, err := svc.DrawRandom(ctx, "c1")
+			if err != nil {
+				t.Fatalf("DrawRandom: %v", err)
+			}
+			if err := tt.reveal(ctx, svc); err != nil {
+				t.Fatalf("reveal: %v", err)
+			}
+
+			if len(reveals) != 1 {
+				t.Fatalf("OnRevealed calls = %d, want 1", len(reveals))
+			}
+			if reveals[0].MovieID != drawn.Movie.ID || reveals[0].NextUp == nil || reveals[0].NextUp.ID != 7 {
+				t.Fatalf("reveal = %+v, want movie %d handed to member 7", reveals[0], drawn.Movie.ID)
+			}
+		})
+	}
+}
+
+// Once the draw is revealed the turn has already passed: marking it watched
+// must not ask the store to rotate again or publish a second Reveal.
+func TestWatchAfterRevealDoesNotRotate(t *testing.T) {
+	t.Parallel()
+
+	repo := poolRepo()
+	notified := 0
+	svc := NewService(repo, DrawConfig{
+		StartTimer: (&fakeTimer{}).start,
+		OnRevealed: func(Reveal) { notified++ },
+	})
+	ctx := context.Background()
+
+	if _, err := svc.DrawRandom(ctx, "c1"); err != nil {
+		t.Fatalf("DrawRandom: %v", err)
+	}
+	if _, _, err := svc.RevealCurrentDrawContext(ctx); err != nil {
+		t.Fatalf("RevealCurrentDrawContext: %v", err)
+	}
+	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
+		t.Fatalf("MarkCurrentAsWatched: %v", err)
+	}
+
+	if !slices.Equal(repo.watchRevealsDraw, []bool{false}) {
+		t.Fatalf("watch revealsDraw = %v, want [false]", repo.watchRevealsDraw)
+	}
+	if notified != 1 {
+		t.Fatalf("OnRevealed calls = %d, want 1 (the confirm only)", notified)
+	}
+}
+
 // A draw's auto-reveal timer belongs to THAT draw. time.AfterFunc can't
 // un-fire a callback that already triggered, so a stale deadline that runs
 // after its draw was watched and replaced must not reveal the replacement.
@@ -797,7 +893,7 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	var revealed []ActiveDraw
 	svc := NewService(poolRepo(), DrawConfig{
 		StartTimer: ft.start,
-		OnRevealed: func(ap ActiveDraw) { revealed = append(revealed, ap) },
+		OnRevealed: func(r Reveal) { revealed = append(revealed, r.ActiveDraw) },
 	})
 	ctx := context.Background()
 
@@ -815,8 +911,8 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	fireA := ft.fn
 
 	// A is watched (clearing the draw), then a fresh draw B takes the slot.
-	if _, _, _, err := svc.MarkCurrentAsWatchedAndAdvanceNextUp(ctx); err != nil {
-		t.Fatalf("MarkCurrentAsWatchedAndAdvanceNextUp: %v", err)
+	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
+		t.Fatalf("MarkCurrentAsWatched: %v", err)
 	}
 	if len(revealed) != 1 || revealed[0].MovieID != drawA.Movie.ID {
 		t.Fatalf("watch should reveal draw A once, got %+v", revealed)
@@ -1742,8 +1838,8 @@ func TestPooledDropsTheDrawnMovieOnceWatched(t *testing.T) {
 	if _, err := svc.DrawRandom(ctx, ""); err != nil {
 		t.Fatalf("DrawRandom: unexpected error: %v", err)
 	}
-	if _, _, _, err := svc.MarkCurrentAsWatchedAndAdvanceNextUp(ctx); err != nil {
-		t.Fatalf("MarkCurrentAsWatchedAndAdvanceNextUp: unexpected error: %v", err)
+	if _, err := svc.MarkCurrentAsWatched(ctx); err != nil {
+		t.Fatalf("MarkCurrentAsWatched: unexpected error: %v", err)
 	}
 
 	pooled, err := svc.Pooled(ctx)

@@ -4,7 +4,7 @@
 // (see docs/DEVELOPMENT.md), driven by `make dev/fixtures`.
 //
 // By default it refuses to touch a non-empty DB. Pass -reset (or run
-// `make dev/fixtures-reset`) to wipe and reload from empty.
+// `make dev/fixtures-reset`) to delete the DB file and load into a new one.
 package main
 
 import (
@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	reset := flag.Bool("reset", false, "wipe all existing data before loading (destructive)")
+	reset := flag.Bool("reset", false, "delete the DB file and load into a new one (destructive)")
 	flag.Parse()
 
 	if err := run(*reset); err != nil {
@@ -39,6 +39,12 @@ func run(reset bool) error {
 	// resolve through the shared helper so the two never disagree on the file.
 	_ = godotenv.Load()
 	dbFile := server.ResolveDBFile("")
+
+	if reset {
+		if err := devfixtures.RemoveDB(dbFile); err != nil {
+			return err
+		}
+	}
 
 	pool, err := db.OpenSQLite(dbFile)
 	if err != nil {
@@ -56,8 +62,8 @@ func run(reset bool) error {
 	if err != nil {
 		return err
 	}
-	if !empty && !reset {
-		return fmt.Errorf("%s already holds data; re-run with `make dev/fixtures-reset` to wipe and reload", dbFile)
+	if !empty {
+		return fmt.Errorf("%s already holds data; re-run with `make dev/fixtures-reset` to replace it", dbFile)
 	}
 
 	movies, err := devfixtures.LoadMovies()
@@ -77,11 +83,6 @@ func run(reset bool) error {
 	// Roll back on any error path; a successful Commit makes this a no-op.
 	defer func() { _ = tx.Rollback() }()
 
-	if reset && !empty {
-		if err := devfixtures.Wipe(ctx, tx); err != nil {
-			return err
-		}
-	}
 	if err := devfixtures.Apply(ctx, tx, plan, now); err != nil {
 		return err
 	}

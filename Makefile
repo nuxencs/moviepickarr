@@ -95,7 +95,8 @@ dev:
 
 # Load a full developer dataset (roster with logins, movies across every state,
 # watched history, an active turn holder) into the local DB. Refuses on a
-# non-empty DB; use dev/fixtures-reset to wipe and reload.
+# non-empty DB; use dev/fixtures-reset to delete the DB file (schema included) and
+# load into a new one. Stop the server first: it holds the file open.
 dev/fixtures:
 	go run ./cmd/devfixtures
 

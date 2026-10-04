@@ -4,8 +4,8 @@
 //
 // It is dev-only tooling driven by the cmd/devfixtures command, not part of the
 // shipped server. It is deliberately distinct from the break-glass admin *seed*
-// (internal/seed), which bootstraps a single admin on every boot: fixtures wipe
-// and reload a whole developer world, and never run in production.
+// (internal/seed), which bootstraps a single admin on every boot: fixtures load
+// or rebuild a whole developer world, and never run in production.
 package devfixtures
 
 import (

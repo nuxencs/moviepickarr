@@ -78,8 +78,14 @@ have to hand-build a roster and a movie backlog:
 
 ```bash
 make dev/fixtures         # load fixtures (refuses if the DB already has data)
-make dev/fixtures-reset   # wipe all data, then load fixtures from empty
+make dev/fixtures-reset   # delete the DB file, then load fixtures into a new one
 ```
+
+The reset deletes the DB file and its `-wal` and `-shm` files, then migrates a
+new file. This also removes schema drift, such as objects from an unmerged
+migration that reused a version number. It also removes admin settings stored in
+the DB, such as TMDB and Radarr, so enter them again after a reset. Stop the
+server before you reset: it keeps the old file open.
 
 It writes to the same DB the server uses (`DB_FILE`, or `moviepickarr.db` by
 default), so the usual flow is `make dev/fixtures` then `make dev`. The load runs

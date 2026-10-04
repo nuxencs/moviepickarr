@@ -494,9 +494,8 @@ func (r *SqliteRadarrRepository) ReclaimLockedReplacement(
 	return readRadarrAcquisition(ctx, r.pool.Write, id, true)
 }
 
-// RenewLockedRecreationLease is the final local fence before an AddMovie call.
-// Catalog and lookup requests can outlive an earlier claim. The revision check
-// prevents that stale worker from sending after another worker reclaimed it.
+// RenewLockedRecreationLease is the last fence before AddMovie. The revision
+// check stops a worker whose claim expired during slow lookups.
 func (r *SqliteRadarrRepository) RenewLockedRecreationLease(
 	ctx context.Context,
 	id, expectedRevision int64,

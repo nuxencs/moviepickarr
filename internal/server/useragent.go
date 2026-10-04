@@ -2,18 +2,11 @@ package server
 
 import "strings"
 
-// User-agent strings are a fiction every browser tells about itself: Chrome
-// claims Safari, Edge claims Chrome, Opera claims both. So the matching below
-// is ordered from most specific to least, and each list is short on purpose.
-// The label is display copy for a member's own device list ("Safari on iPhone"),
-// never an authorization or analytics input, so a wrong guess costs a slightly
-// vague row and nothing else. That is also why there is no dependency here: a
-// full UA database buys precision this surface has no use for.
+// The label is display copy only, never an auth or analytics input, so short
+// hand-written token lists beat a full UA database dependency.
 
-// deviceLabel turns a stored user agent into the one line the session list
-// shows. Either half may be unrecognized: an unknown browser falls back to the
-// platform alone, an unknown platform to the browser alone, and neither to
-// "Unknown device" (an API client, a curl, a stripped agent).
+// deviceLabel turns a stored user agent into a "Safari on iPhone" label. Either
+// half may be missing; with neither it returns "Unknown device".
 func deviceLabel(userAgent *string) string {
 	if userAgent == nil || *userAgent == "" {
 		return "Unknown device"
@@ -35,9 +28,8 @@ func deviceLabel(userAgent *string) string {
 	}
 }
 
-// token is one substring to look for and the name to report when it is there.
-// Both lists are ordered most-specific first, and firstMatch takes the first
-// hit, so the ordering IS the disambiguation rule.
+// token maps a UA substring to a name. firstMatch takes the first hit, so list
+// order is the disambiguation rule.
 type token struct{ needle, name string }
 
 func firstMatch(ua string, tokens []token) string {

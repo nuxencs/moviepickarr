@@ -166,10 +166,8 @@ func (s *radarrService) previewAndAdoptExistingAcquisitionTarget(
 		return observation.acquisition, err
 	}
 
-	// An exact movie that already exists in Radarr has no target decision left
-	// for an Admin to confirm. Adopt it without changing Radarr. The normal lock
-	// path completes an existing file, observes an active queue, or starts the
-	// selected acquisition mode.
+	// A movie already in Radarr needs no target decision: adopt it without
+	// changing Radarr.
 	now := s.now().UTC()
 	claimed, err := s.repo.BeginAcquisitionMutation(
 		ctx, observation.acquisition.ID, observation.acquisition.Revision, "adding", now,
@@ -673,8 +671,7 @@ func (s *radarrService) reconcileAmbiguousAdd(
 	if err != nil {
 		return s.actionForClientFailure(ctx, acquisition, err)
 	}
-	// The preview records whether this was already managed by Radarr before the
-	// confirmation mutation started. Preserve that fact across an ambiguous
+	// Preserve the pre-confirm "already in Radarr" fact across an ambiguous
 	// response so recovery never changes an adopted movie's configuration.
 	return s.lockRemoteMovie(
 		ctx, acquisition, *remote, acquisition.TargetPreviewExisting, catalog, actorID,
@@ -1322,9 +1319,8 @@ func (s *radarrService) transitionAbandonmentObservation(
 		)
 	}
 	if acquisition.MutationState != "idle" {
-		// Abandonment review is observational. Do not invalidate or shorten an
-		// in-flight mutation claim. The final abandon command still uses the
-		// observed revision as its compare-and-swap boundary.
+		// Review is observational: leave the in-flight mutation claim alone. The
+		// abandon command still compare-and-swaps on the observed revision.
 		return acquisition, nil
 	}
 	return s.repo.TransitionAcquisitionAtRevision(

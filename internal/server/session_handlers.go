@@ -10,11 +10,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// sessionResponse is one row of a member's own device list. The token hash and
-// internal row id never leave the store; an immutable random handle addresses a
-// revoke and is usable only by its owner because every delete scopes by member.
-// Device is derived from the stored user agent rather than shipping the raw
-// string: the member wants to recognize a device, not read a UA.
+// sessionResponse is one row of a member's device list. The token hash and row
+// id never leave the store; a random handle addresses a revoke.
 type sessionResponse struct {
 	ID         string `json:"id"`
 	Device     string `json:"device"`
@@ -22,10 +19,8 @@ type sessionResponse struct {
 	Current    bool   `json:"current"`
 }
 
-// handleListSessions returns the actor's own live sessions, most recently active
-// first. Self-only by construction: the member id comes from the session, never
-// from the request, so there is no id to authorize and no way to read someone
-// else's devices.
+// handleListSessions returns the actor's live sessions, most recent first. The
+// member id comes from the session, never the request.
 func (h *handler) handleListSessions(c *fiber.Ctx) error {
 	memberID := actorMemberID(c)
 
@@ -48,12 +43,9 @@ func (h *handler) handleListSessions(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(rows)
 }
 
-// handleRevokeSession signs one of the actor's own devices out. The delete is
-// scoped to the actor, so a session handle belonging to another member matches
-// nothing and comes back 404 rather than revoking anything. Revoking a row
-// that's already gone is also 404: the list the member acted on was stale, and
-// saying so is more use than a silent 204. Ending the current session is
-// allowed and clears the cookie, though the UI routes that through Log out.
+// handleRevokeSession signs out one of the actor's devices. The delete scopes
+// by actor, so another member's handle is a 404. A gone row is also 404, to
+// tell the client its list was stale.
 func (h *handler) handleRevokeSession(c *fiber.Ctx) error {
 	memberID := actorMemberID(c)
 
@@ -67,8 +59,7 @@ func (h *handler) handleRevokeSession(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 	if err != nil {
-		// Anything else is the store faulting, which must be logged rather than
-		// masked behind a bare 500.
+		// A store fault: log it, not a bare 500.
 		return h.writeInternal(c, err, "revoking session failed")
 	}
 

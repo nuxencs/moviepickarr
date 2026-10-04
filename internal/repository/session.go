@@ -11,9 +11,7 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteSessionRepository is the session store over the `sessions` table.
-// Reads route to the read pool, mutations to the write pool, matching the
-// single-writer discipline the rest of the repositories follow.
+// SqliteSessionRepository is the session store.
 type SqliteSessionRepository struct {
 	pool *db.Pool
 }
@@ -22,8 +20,7 @@ func NewSqliteSessionRepository(pool *db.Pool) *SqliteSessionRepository {
 	return &SqliteSessionRepository{pool: pool}
 }
 
-// sessionSelect is THE session-with-role projection: FindByTokenHash joins the
-// member's live role so requireSession validates and authorizes off one read.
+// sessionSelect joins the member's live role, so one read validates and authorizes.
 const sessionSelect = `
 	SELECT
 		s.id,
@@ -38,10 +35,8 @@ const sessionSelect = `
 	FROM sessions s
 	JOIN users u ON u.id = s.user_id AND u.archived_at IS NULL`
 
-// scanSession reads the bare session row (no role join) the device list needs.
-// It duplicates scanAuthSession's column order minus u.role rather than sharing
-// it: database/sql wants every destination in one Scan call, so the two shapes
-// can't be composed without a slice of anys and a cast per field.
+// scanSession reads a session row without the role join. Keep its column order
+// in step with scanAuthSession.
 func scanSession(scanner rowScanner) (*domain.Session, error) {
 	s := &domain.Session{}
 	var expiresAt, lastSeenAt, createdAt int64
@@ -167,10 +162,7 @@ func (d *SqliteSessionRepository) DeleteOthersByUserID(ctx context.Context, user
 }
 
 func (d *SqliteSessionRepository) DeleteByPublicIDForUser(ctx context.Context, publicID string, userID int) (string, error) {
-	// user_id is the authorization, not a filter: without it any member could
-	// revoke any session by guessing a public handle. RETURNING hands back what was
-	// actually removed, so the caller learns whether it just ended its own
-	// device in the same statement.
+	// user_id is the authorization: without it a guessed handle revokes anyone's session.
 	query := "DELETE FROM sessions WHERE public_id = ? AND user_id = ? RETURNING token_hash"
 	var tokenHash string
 	err := d.pool.Write.QueryRowContext(ctx, query, publicID, userID).Scan(&tokenHash)
@@ -184,9 +176,7 @@ func (d *SqliteSessionRepository) DeleteByPublicIDForUser(ctx context.Context, p
 }
 
 func (d *SqliteSessionRepository) ListLiveByUserID(ctx context.Context, userID int, now, idleCutoff time.Time) ([]domain.Session, error) {
-	// Live mirrors Authenticate's two windows (strict >), so the list holds
-	// exactly the sessions that would still authenticate. Ordered by most recent
-	// activity, id breaking ties, so the device list is stable across reads.
+	// Keep in step with Authenticate's two windows (strict >).
 	query := `
 		SELECT id, public_id, user_id, token_hash, expires_at, last_seen_at, user_agent, created_at
 		FROM sessions

@@ -11,24 +11,19 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// claimURL builds the one-time claim link shown to the admin at issuance. It is
-// a relative SPA path (`/claim/<token>`) with the raw token and no member id, so
-// the frontend router resolves it and the token is the only secret carried. The
-// admin delivers it out-of-band; there is no resend.
+// claimURL builds the relative SPA claim link. It carries no member id, so the
+// token is the only secret in it.
 func claimURL(rawToken string) string {
 	return "/claim/" + rawToken
 }
 
-// inviteResponse carries the one-time claim URL back to the issuing admin. It is
-// returned only in the direct HTTP response, never broadcast over SSE: the URL
-// is a single-use secret.
+// inviteResponse is never broadcast over SSE: the claim URL is a secret.
 type inviteResponse struct {
 	ClaimURL string `json:"claimUrl"`
 }
 
-// claimResponse drives the SPA /claim/<token> page. Mode is "placeholder" (set a
-// fresh username + password) or "reset" (password only, username already set).
-// The options block reports which credential paths to offer.
+// claimResponse drives the /claim/<token> page. Mode is "placeholder" (new
+// username and password) or "reset" (password only).
 type claimResponse struct {
 	DisplayName string `json:"displayName"`
 	Mode        string `json:"mode"`
@@ -38,10 +33,8 @@ type claimResponse struct {
 	} `json:"options"`
 }
 
-// writeClaimError maps the invite sentinels to the two distinct claim-page
-// states and defers everything else (validation, conflict, infra) to writeError.
-// Invalid/expired/revoked collapse to one 404 "no longer valid"; an already-used
-// invite is a distinct 410 "already set up".
+// writeClaimError maps invalid, expired, and revoked invites to one 404 and a
+// used invite to 410. The rest goes to writeError.
 func (h *handler) writeClaimError(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, auth.ErrInviteUsed):
@@ -53,10 +46,7 @@ func (h *handler) writeClaimError(c *fiber.Ctx, err error) error {
 	}
 }
 
-// handleValidateClaim is the read-only claim-page data endpoint (unauthenticated,
-// GET, CSRF-exempt). It returns the greet-by name, placeholder-vs-reset mode, and
-// the credential options, or one of the two distinct no-longer-valid / already-set-up
-// states.
+// handleValidateClaim is the unauthenticated, read-only claim-page data.
 func (h *handler) handleValidateClaim(c *fiber.Ctx) error {
 	cc, err := h.invites.Validate(c.UserContext(), c.Params("token"))
 	if err != nil {
@@ -68,17 +58,13 @@ func (h *handler) handleValidateClaim(c *fiber.Ctx) error {
 		resp.Mode = "reset"
 	}
 	resp.Options.Password = cc.Options.Password
-	// OIDC is an onboarding choice, not a password-reset bypass. The invite
-	// manager doesn't know provider config, so enablement is layered on here.
+	// OIDC is an onboarding choice, not a password-reset bypass.
 	resp.Options.OIDC = h.oidcEnabled && !cc.IsReset
 	return c.Status(fiber.StatusOK).JSON(resp)
 }
 
-// handleClaimPassword redeems an invite via the password path (unauthenticated:
-// the member has no session yet). Placeholder takes username + password; reset
-// takes password only and revokes every existing session (the invite doubles as
-// a locked-out recovery). Credential, invite use, old-session revocation, and
-// the replacement session commit together.
+// handleClaimPassword redeems an invite with a password. A reset also revokes
+// every old session. All writes commit together.
 func (h *handler) handleClaimPassword(c *fiber.Ctx) error {
 	body, ok := parseCredentialBody(c)
 	if !ok {
@@ -176,12 +162,9 @@ func (h *handler) handleRevokeInvite(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// inviteOverviewResponse is one row of the admin invites surface. status is the
-// server's snapshot (open / expired), derived per read rather than stored.
-// serverNow lets the client advance that state without using its own clock.
-// issuedBy is omitted when the invite has no recorded issuer. There is no claim
-// URL here: only the token's hash is stored, so an existing link is unrecoverable
-// by construction.
+// inviteOverviewResponse is one admin invites row. It has no claim URL: only
+// the token hash is stored. serverNow lets the client expire rows without its
+// own clock.
 type inviteOverviewResponse struct {
 	ID         string `json:"id"`
 	MemberID   int    `json:"memberId"`
@@ -197,9 +180,8 @@ type invitesOverviewResponse struct {
 	Items     []inviteOverviewResponse `json:"items"`
 }
 
-// handleListInvites returns every current invite an admin can act on (admin
-// only), including explicit password-reset links for credentialed members.
-// Each row is tagged open or expired and carries an immutable generation handle.
+// handleListInvites returns every current invite an admin can act on,
+// including password-reset links.
 func (h *handler) handleListInvites(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -251,8 +233,8 @@ func (h *handler) handleDismissInvite(c *fiber.Ctx) error {
 
 var invitePublicIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{20,64}$`)
 
-// resolveInviteID reads the immutable public handle carried in :inviteID.
-// Both migrated hex ids and newly minted base64url ids fit this alphabet.
+// resolveInviteID reads :inviteID. Migrated hex ids and new base64url ids both
+// fit the alphabet.
 func resolveInviteID(c *fiber.Ctx) (string, error) {
 	value := c.Params("inviteID")
 	if invitePublicIDPattern.MatchString(value) {
@@ -261,10 +243,8 @@ func resolveInviteID(c *fiber.Ctx) (string, error) {
 	return "", fmt.Errorf("%w: inviteID path parameter is invalid", domain.ErrInvalidInput)
 }
 
-// handleSelfServeLocalLogin is the authed credential-completeness path
-// (POST /auth/local-login): a logged-in member with no local login sets their
-// first username + password. The session is the proof, so there is no
-// current-password check; a member who already has a local login gets 409.
+// handleSelfServeLocalLogin sets a first local login for a logged-in member.
+// The session is the proof, so there is no current-password check.
 func (h *handler) handleSelfServeLocalLogin(c *fiber.Ctx) error {
 	body, ok := parseCredentialBody(c)
 	if !ok {
@@ -278,9 +258,8 @@ func (h *handler) handleSelfServeLocalLogin(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// credentialBody is the shared {username, password} request shape for the claim
-// and self-serve credential paths. parseCredentialBody parses it, returning ok
-// false when the body is unreadable so each caller writes the same 400.
+// credentialBody is the {username, password} body of the claim and self-serve
+// paths.
 type credentialBody struct {
 	Username string `json:"username"`
 	Password string `json:"password"`

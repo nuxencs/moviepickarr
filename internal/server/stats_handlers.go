@@ -23,27 +23,19 @@ const (
 	statsWindowAllTime statsWindow = "all-time"
 	statsWindowCustom  statsWindow = "custom"
 
-	// Sanity bounds for the releaseYear filter (movie history through a
-	// comfortable future margin).
+	// Sanity bounds for the releaseYear filter.
 	statsMinReleaseYear = 1870
 	statsMaxReleaseYear = 2100
 
 	// statsTopPeopleLimit caps the topDirectors/topActors lists.
 	statsTopPeopleLimit = 12
 
-	// statsMaxGenreLength bounds the genre filter; TMDB genre names are short,
-	// so anything longer is junk that would only bloat the cache key space.
+	// Longer genre or people filters are junk that only bloats the cache key space.
 	statsMaxGenreLength = 64
 
-	// statsMaxPeopleFilterIDs bounds the actorIds/crewIds lists; real
-	// drill-downs select a handful of people, so anything longer is junk that
-	// would only bloat the cache key space.
 	statsMaxPeopleFilterIDs = 25
 
-	// statsCacheMaxEntries caps the response cache. Real usage needs a handful
-	// of window/filter combos, but the key space is request-controlled, so a
-	// cap keeps junk filter spam from growing the map unboundedly between
-	// invalidations.
+	// The cache key space is request-controlled, so cap it against junk filters.
 	statsCacheMaxEntries = 256
 )
 
@@ -94,8 +86,7 @@ func (h *handler) handleGetStats(c *fiber.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// Every member gets a leaderboard row even with zero matching movies, so
-	// the list needs the member roster, not just the watched history.
+	// Every member gets a leaderboard row, even with zero matching movies.
 	users, err := h.userService.List(ctx)
 	if err != nil {
 		return writeError(c, err)
@@ -105,9 +96,8 @@ func (h *handler) handleGetStats(c *fiber.Ctx) error {
 		members = append(members, users[i].Name)
 	}
 
-	// Stats aggregate enriched data, so a metadata/credits load failure fails
-	// the request — wrong stats are worse than a 500 (unlike the render-path
-	// metaFor/creditsFor, which degrade gracefully).
+	// Unlike metaFor/creditsFor, a load failure fails the request: wrong stats
+	// are worse than a 500.
 	ids := make([]int, len(watched))
 	for i := range watched {
 		ids[i] = watched[i].ID
@@ -135,8 +125,7 @@ func buildStatsCacheKey(selectedWindow statsWindow, timezone string, customRange
 		end = customRange.EndDate
 	}
 
-	// The filter segment comes from the filters value itself, which owns the
-	// genre fold shared with the matcher (see statsFilters).
+	// statsFilters owns the genre fold shared with the matcher.
 	return fmt.Sprintf("%s|%s|%s|%s|%s",
 		selectedWindow, timezone, start, end, filters.cacheKeySegment())
 }
@@ -179,8 +168,7 @@ func (h *handler) invalidateStatsCache() {
 	clear(h.statsCache)
 	h.statsCacheMu.Unlock()
 
-	// The filter options derive from the same watched metadata/credits, so they
-	// go stale on exactly the same events (watch, edit, enrich, user add/remove).
+	// Filter options derive from the same data, so they go stale on the same events.
 	h.invalidateFilterOptionsCache()
 }
 
@@ -208,8 +196,7 @@ func parseStatsWindow(raw string) (statsWindow, error) {
 }
 
 func resolveStatsLocation(raw string) (*time.Location, string, error) {
-	// Clone: the raw value is fiber's zero-copy view of the request buffer,
-	// but the timezone echo outlives the handler inside the stats cache.
+	// Clone: fiber's value is zero-copy, but the echo outlives the handler in the cache.
 	timezone := strings.Clone(strings.TrimSpace(raw))
 	if timezone == "" {
 		return time.UTC, "UTC", nil
@@ -339,17 +326,14 @@ func buildStatsResponse(
 	actorCounts := make(map[int]*statsPersonCount)
 	releaseYearCounts := make(map[int]int)
 	selectedRange := rangeForSelectedWindow(selectedWindow, now, customRange)
-	// The six preset window ranges depend only on `now`, never on a movie, so
-	// compute them once here rather than recomputing all six (each allocating a
-	// heap time pointer) for every watched movie inside the loop below.
+	// Preset ranges depend only on now, so compute them once, not per movie.
 	presetRanges := make([]statsRange, len(statsWindowOrder))
 	for j := range statsWindowOrder {
 		presetRanges[j] = rangeForPresetWindow(statsWindowOrder[j], now)
 	}
 	selectedWindowCount := 0
-	// The concrete movies behind selectedWindowCount, in watch-recency order (the
-	// watched list arrives most-recent-first) — the client renders them as a
-	// poster rail, so this stays the single source of truth for "what matched".
+	// The movies behind selectedWindowCount, most recent first; the client's
+	// poster rail renders them.
 	matchedIDs := make([]int, 0)
 	runtimeTotal, runtimeMovies, longestRuntime := 0, 0, 0
 	longestTitle := ""
@@ -362,13 +346,11 @@ func buildStatsResponse(
 
 		md := meta[watched[i].ID]
 		movieCredits := credits[watched[i].ID]
-		// Filters narrow EVERY aggregate — countsByWindow and the all-time
-		// member ordering included — to the matching subset.
+		// Filters narrow every aggregate, countsByWindow and member order included.
 		if !filters.matches(md, movieCredits) {
 			continue
 		}
-		// Added-by is a movie-level filter (not metadata), so it gates here rather
-		// than in statsFilters.matches: any-of across the selected adders.
+		// Added-by is movie-level, not metadata, so it gates here, not in matches.
 		if len(filters.AddedByIDs) > 0 && !slices.Contains(filters.AddedByIDs, watched[i].AddedByID) {
 			continue
 		}
@@ -383,8 +365,7 @@ func buildStatsResponse(
 		for j := range statsWindowOrder {
 			if containsTimeRange(watchedAt, now, presetRanges[j]) {
 				countsByWindow[statsWindowOrder[j]]++
-				// All-time total per member — used purely for a stable row order
-				// so the member list doesn't jump when switching windows.
+				// Only for a stable member order across windows.
 				if statsWindowOrder[j] == statsWindowAllTime {
 					allTimeByUser[name]++
 				}
@@ -403,9 +384,8 @@ func buildStatsResponse(
 
 		watchedByUser[name]++
 
-		// Enrichment-derived tallies for the selected window. Unenriched
-		// movies simply don't contribute (and runtime/rating skip their
-		// zero-value denominators, so averages stay honest).
+		// Unenriched movies do not count; runtime and rating skip zero values so
+		// averages stay honest.
 		if md != nil {
 			for _, genre := range md.Genres {
 				genreCounts[genre]++
@@ -437,11 +417,8 @@ func buildStatsResponse(
 		}
 	}
 
-	// Seed every member AND every all-time adder into the window map (0 when
-	// nothing of theirs matches the window or the active filters) so rows
-	// never appear/disappear — not between ranges, and not under drill-downs.
-	// Members cover the roster (including someone yet to add); the all-time
-	// adders keep history visible for names no longer on the roster.
+	// Seed every member and every all-time adder with 0 so rows never appear or
+	// disappear across ranges and filters. Adders cover names off the roster.
 	for _, name := range members {
 		if strings.TrimSpace(name) == "" {
 			continue
@@ -492,9 +469,8 @@ func buildStatsResponse(
 	}
 }
 
-// tallyPerson bumps a person's in-window count, capturing their name/photo on
-// first sight. Credits are deduped per (movie, person, kind, job) at ingest,
-// so each movie contributes at most one tally per person and role.
+// tallyPerson bumps a person's in-window count. Ingest dedupes credits, so a
+// movie counts at most once per person and role.
 func tallyPerson(counts map[int]*statsPersonCount, credit domain.MovieCredit) {
 	entry, ok := counts[credit.Person.ID]
 	if !ok {
@@ -536,9 +512,7 @@ func buildWindowCounts(counts map[statsWindow]int) []statsWindowCount {
 }
 
 // buildMemberCounts returns one row per member with their in-window count,
-// ordered by all-time total (descending) then name. Ordering by the stable
-// all-time total — not the window count — keeps rows in the same positions as
-// the user switches ranges, so the list no longer jumps around.
+// ordered by all-time total so rows keep their place across ranges.
 func buildMemberCounts(windowCounts, allTime map[string]int) []statsNamedCount {
 	output := make([]statsNamedCount, 0, len(windowCounts))
 	for name, count := range windowCounts {
@@ -591,8 +565,7 @@ func buildPersonCounts(counts map[int]*statsPersonCount, limit int) []statsPerso
 		if a.Count != b.Count {
 			return b.Count - a.Count
 		}
-		// Distinct people can share a display name; break the tie on the id so
-		// the order — and which of them survives the cap — is deterministic.
+		// Names can collide; tie-break on id so the cap is deterministic.
 		if c := strings.Compare(a.Name, b.Name); c != 0 {
 			return c
 		}
@@ -605,8 +578,8 @@ func buildPersonCounts(counts map[int]*statsPersonCount, limit int) []statsPerso
 	return output
 }
 
-// buildYearCounts returns the release-year histogram, year ascending. Decade
-// bucketing is a presentation concern, left to the frontend.
+// buildYearCounts returns the release-year histogram, year ascending. The
+// frontend buckets decades.
 func buildYearCounts(counts map[int]int) []statsYearCount {
 	output := make([]statsYearCount, 0, len(counts))
 	for year, count := range counts {

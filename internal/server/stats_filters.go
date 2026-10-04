@@ -9,14 +9,9 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// statsFilters narrows the stats computation to a subset of the watched
-// library. Zero values mean "no filter". The people lists are any-of within a
-// list and AND-ed across lists (and with genre/year).
-//
-// This value is the whole filter module: the cache-key segment, the matcher,
-// and the echo are all methods on it, and genre case-folding goes through the
-// single genreFold() below, so "same cache key" ⇒ "same match set" holds by
-// construction instead of by three call sites agreeing.
+// statsFilters narrows stats to a subset of the watched library. Zero values
+// mean no filter. Cache key, matcher and echo all live here so the same key
+// always means the same match set.
 type statsFilters struct {
 	Genre         string // case-insensitive genre name (display casing kept for the echo)
 	ActorIDs      []int  // TMDB person ids, sorted+deduped; matched against cast credits
@@ -55,8 +50,7 @@ func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw, addedBy
 		filters.ReleaseYear = v
 	}
 
-	// A decade selection ("1990s") is the alternative to an exact year: the UI
-	// offers one or the other, so reject both at once rather than guess.
+	// The UI offers a year or a decade, so reject both at once instead of guessing.
 	decadeRaw = strings.TrimSpace(decadeRaw)
 	if decadeRaw != "" {
 		if filters.ReleaseYear != 0 {
@@ -73,18 +67,15 @@ func parseStatsFilters(genreRaw, actorsRaw, crewRaw, yearRaw, decadeRaw, addedBy
 	return filters, nil
 }
 
-// genreFold is THE genre case-folding: the cache key, the matcher, and the
-// echo all fold through here, never inline. ToLower (not EqualFold): the two
-// relations differ on exotic runes (U+0130 "İ" lowercases to "i" but has no
-// simple case folding), and a fold drift between the key and the matcher
-// would let a cache hit return the wrong match set.
+// genreFold is the only genre case-folding; key, matcher and echo must all use
+// it, or a cache hit can return the wrong match set. ToLower, not EqualFold:
+// they differ on runes such as U+0130.
 func (f statsFilters) genreFold() string {
 	return strings.ToLower(f.Genre)
 }
 
 // cacheKeySegment serializes the filters for the stats cache key. Equivalent
-// selections serialize identically: the genre is folded and the id lists are
-// already sorted+deduped at parse time.
+// selections serialize identically.
 func (f statsFilters) cacheKeySegment() string {
 	return fmt.Sprintf("%s|%s|%s|%d|%d|%s",
 		f.genreFold(), joinIDs(f.ActorIDs), joinIDs(f.CrewIDs),
@@ -92,8 +83,7 @@ func (f statsFilters) cacheKeySegment() string {
 }
 
 // matches reports whether a watched movie passes the active filters.
-// Unenriched movies (no metadata/credits) fail any active filter: their
-// genre/year/people are unknown, and guessing would skew the stats.
+// Unenriched movies fail any active filter, as guessing would skew the stats.
 func (f statsFilters) matches(md *domain.MovieMetadata, credits []domain.MovieCredit) bool {
 	if f.Genre != "" {
 		want := f.genreFold()
@@ -111,9 +101,8 @@ func (f statsFilters) matches(md *domain.MovieMetadata, credits []domain.MovieCr
 			return false
 		}
 	}
-	// People filters are any-of within a list, AND-ed across lists. Crew rows
-	// are already whitelisted to a handful of jobs at ingest, so crewIds need
-	// no job check here.
+	// Any-of within a list, AND across lists. Ingest already whitelists crew
+	// jobs, so no job check here.
 	if len(f.ActorIDs) > 0 && !creditsContainPerson(credits, domain.CreditKindCast, f.ActorIDs) {
 		return false
 	}
@@ -123,10 +112,8 @@ func (f statsFilters) matches(md *domain.MovieMetadata, credits []domain.MovieCr
 	return true
 }
 
-// echo returns the active filters for the response, resolving each person
-// filter to a display name from any credit row that references them and the
-// genre to its stored canonical casing (matching is case-insensitive, so
-// canonicalizing keeps the echo identical across cache hits).
+// echo returns the active filters with display names and canonical genre
+// casing, so the echo is identical across cache hits.
 func (f statsFilters) echo(meta metaByID, credits creditsByID) statsFiltersEcho {
 	out := statsFiltersEcho{
 		Genre:         f.Genre,
@@ -153,10 +140,9 @@ func (f statsFilters) echo(meta metaByID, credits creditsByID) statsFiltersEcho 
 	return out
 }
 
-// parseIDList parses a comma-separated list of positive TMDB person ids into
-// the canonical sorted-and-deduped form: "6384,530" and "530,6384,530" both
-// yield [530 6384], so equivalent selections share one cache key. Empty input
-// returns nil (never an empty slice) so the filters echo can omit the field.
+// parseIDList parses comma-separated positive ids, sorted and deduped so
+// equivalent selections share one cache key. Empty input returns nil so the
+// echo omits the field.
 func parseIDList(param, raw string) ([]int, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -192,8 +178,8 @@ func joinIDs(ids []int) string {
 	return strings.Join(parts, ",")
 }
 
-// creditsContainPerson reports whether any credit of the given kind references
-// one of the (sorted) person ids.
+// creditsContainPerson reports whether any credit of kind references one of
+// the sorted ids.
 func creditsContainPerson(credits []domain.MovieCredit, kind string, ids []int) bool {
 	return slices.ContainsFunc(credits, func(c domain.MovieCredit) bool {
 		if c.Kind != kind {
@@ -204,8 +190,7 @@ func creditsContainPerson(credits []domain.MovieCredit, kind string, ids []int) 
 	})
 }
 
-// releaseYearOf extracts the year from the metadata's "YYYY-MM-DD" release
-// date, or 0 when the metadata or date is absent/unparseable.
+// releaseYearOf returns the release year, or 0 when unknown.
 func releaseYearOf(md *domain.MovieMetadata) int {
 	if md == nil || len(md.ReleaseDate) < 4 {
 		return 0
@@ -217,19 +202,15 @@ func releaseYearOf(md *domain.MovieMetadata) int {
 	return year
 }
 
-// resolveFilterPeople maps filter ids (already sorted, so the echo order is
-// deterministic across cache hits) to display names from any credit row that
-// references them. Ids with no credit row keep an empty name: the client
-// carries its own labels for those.
+// resolveFilterPeople maps filter ids to display names. Ids with no credit row
+// keep an empty name; the client has its own labels for those.
 func resolveFilterPeople(ids []int, credits creditsByID) []statsFilterPerson {
 	if len(ids) == 0 {
 		return nil
 	}
 
 	names := make(map[int]string, len(ids))
-	// Stop as soon as every filter id has a name: this is a best-effort label
-	// lookup over the full (~thousands of rows) credits map, and the handful of
-	// filter people are usually found in the first few movies.
+	// Stop once every id has a name; the credits map has thousands of rows.
 	for _, movieCredits := range credits {
 		if len(names) == len(ids) {
 			break

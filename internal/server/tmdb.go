@@ -44,8 +44,6 @@ func (c *tmdbClient) Search(ctx context.Context, query string) ([]tmdbMovie, err
 	return payload.Results, nil
 }
 
-// --- Enrichment: reverse lookup + full details -----------------------------
-
 var (
 	errTMDBNotFound       = errors.New("tmdb: not found")
 	errTMDBNotConfigured  = errors.New("tmdb: api key not configured")
@@ -150,14 +148,8 @@ func (c *tmdbClient) MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDet
 	return payload, nil
 }
 
-// DiscoverPopularPosters fetches one /discover/movie page of the most popular
-// movies and returns their poster paths in popularity order, dropping any result
-// with no poster. It is instance-independent (it never reads the pool) so a fresh
-// instance still gets a full wall and no member's real pool leaks pre-auth. The
-// pinned filters keep the wall safe and recognizable: popularity-sorted, a
-// vote-count floor to cut noise, no adult titles, English metadata. It rides the
-// shared doRequest path, so it reuses the retry/backoff/rate-limit machinery and
-// returns errTMDBNotConfigured when no key is set.
+// DiscoverPopularPosters returns poster paths of popular movies in popularity
+// order. It never reads the pool, so no member's pool leaks before login.
 func (c *tmdbClient) DiscoverPopularPosters(ctx context.Context) ([]string, error) {
 	q := url.Values{}
 	q.Set("sort_by", "popularity.desc")
@@ -181,10 +173,8 @@ func (c *tmdbClient) DiscoverPopularPosters(ctx context.Context) ([]string, erro
 	return paths, nil
 }
 
-// doRequest is the shared GET helper for the enrichment endpoints. It paces
-// every request through the rate limiter, maps status codes to the error
-// taxonomy, honors 429 Retry-After, and retries 5xx/network errors with
-// exponential backoff + jitter until maxRetries is reached or ctx is done.
+// doRequest is the shared GET helper for the enrichment endpoints. It is rate
+// limited, honors 429 Retry-After, and retries 5xx and network errors.
 func (c *tmdbClient) doRequest(ctx context.Context, requestURL string, out any) error {
 	return c.doRequestWithAdmission(ctx, requestURL, out, false)
 }
@@ -235,9 +225,7 @@ func (c *tmdbClient) doRequestWithAdmission(
 		switch {
 		case resp.StatusCode == http.StatusOK:
 			err := json.UnmarshalRead(resp.Body, out)
-			// Drain the trailing bytes before Close so the keep-alive connection
-			// is pooled for the next back-to-back enrichment request rather than
-			// torn down and re-handshaked.
+			// Drain before Close so the keep-alive connection is reused.
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			return err

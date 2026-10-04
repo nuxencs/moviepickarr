@@ -1,10 +1,5 @@
-// Command devfixtures loads a coherent developer dataset into the local DB:
-// a roster with working logins, movies across every lifecycle state, watched
-// history spread over time, and an active turn holder. It is dev-only tooling
-// (see docs/DEVELOPMENT.md), driven by `make dev/fixtures`.
-//
-// By default it refuses to touch a non-empty DB. Pass -reset (or run
-// `make dev/fixtures-reset`) to delete the DB file and load into a new one.
+// Command devfixtures loads the developer dataset into the local DB (see
+// docs/DEVELOPMENT.md). It refuses a non-empty DB unless -reset is passed.
 package main
 
 import (
@@ -35,8 +30,7 @@ func main() {
 func run(reset bool) error {
 	ctx := context.Background()
 
-	// Load .env so DB_FILE resolves the same way the server's Run does, then
-	// resolve through the shared helper so the two never disagree on the file.
+	// Resolve DB_FILE the same way server.Run does.
 	_ = godotenv.Load()
 	dbFile := server.ResolveDBFile("")
 
@@ -52,8 +46,6 @@ func run(reset bool) error {
 	}
 	defer pool.Close()
 
-	// Migrate first: a fresh file needs the schema before anything is written,
-	// and an existing dev DB is brought up to date the same as on server boot.
 	if err := db.RunMigrations(ctx, pool.Write); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
@@ -80,7 +72,6 @@ func run(reset bool) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	// Roll back on any error path; a successful Commit makes this a no-op.
 	defer func() { _ = tx.Rollback() }()
 
 	if err := devfixtures.Apply(ctx, tx, plan, now); err != nil {

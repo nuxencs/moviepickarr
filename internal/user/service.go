@@ -8,17 +8,13 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// Repo is what the member service needs from persistence: the movie-board
-// UserRepo plus the admin roster read and role write. One SqliteUserRepository
-// satisfies all of it; composing the interfaces here keeps the roster/role
-// methods off the narrower UserRepo the rest of the app depends on.
+// Repo composes the roster methods here to keep them off the narrower UserRepo.
 type Repo interface {
 	domain.UserRepo
 	domain.RosterRepo
 }
 
-// Service owns member management. Creation also seeds the next-up rotation on
-// a fresh roster (see Create).
+// Service owns member management.
 type Service struct {
 	userRepo   Repo
 	nextUpRepo domain.NextUpRepo
@@ -31,9 +27,8 @@ func NewService(userRepo Repo, nextUpRepo domain.NextUpRepo) *Service {
 	}
 }
 
-// Create adds a member to the roster. The first member ever created becomes
-// next up immediately, so the rotation has a starting point before the first
-// draw.
+// Create adds a member. The first member becomes next up, so the rotation has a
+// starting point.
 func (s *Service) Create(ctx context.Context, name string) (*domain.User, error) {
 	user, err := s.userRepo.Create(ctx, name)
 	if err != nil {
@@ -54,18 +49,14 @@ func (s *Service) Create(ctx context.Context, name string) (*domain.User, error)
 	return user, nil
 }
 
-// Remove deletes or archives a member as one admin action, chosen by whether
-// they authored movies: zero authored movies hard-deletes the row, one or more
-// archives it so the group's watch-history attribution survives. It returns
-// which path ran so the caller can report delete-vs-archive. The repository
-// refuses to remove the last active admin.
+// Remove deletes a member who authored no movies and archives one who did, so
+// watch-history attribution survives. The repo refuses the last active admin.
 func (s *Service) Remove(ctx context.Context, id int) (domain.RemoveOutcome, error) {
 	return s.userRepo.Remove(ctx, id)
 }
 
-// Restore reactivates an archived member (clears archived_at). Archiving stripped
-// their credentials, so the caller re-issues a claim invite to let them log back
-// in; this only reopens the membership.
+// Restore reactivates an archived member. The caller re-issues a claim invite,
+// since archiving stripped their credentials.
 func (s *Service) Restore(ctx context.Context, id int) error {
 	return s.userRepo.Restore(ctx, id)
 }
@@ -83,15 +74,13 @@ func (s *Service) List(ctx context.Context) ([]*domain.User, error) {
 	return users, nil
 }
 
-// Roster returns the admin roster: every member, active and archived, with the
-// presence-derived login state the admin surface renders.
+// Roster returns every member, active and archived, with derived login state.
 func (s *Service) Roster(ctx context.Context) ([]*domain.RosterMember, error) {
 	return s.userRepo.Roster(ctx)
 }
 
-// SetRole changes an active member's role. The repository atomically checks a
-// required turn-handoff confirmation, changes the role, and moves Next up when
-// needed. Sessions remain valid because authorization reads the live role.
+// SetRole changes an active member's role, moving Next up atomically when
+// needed. Sessions stay valid because authorization reads the live role.
 func (s *Service) SetRole(ctx context.Context, change domain.RoleChange) (domain.RoleChangeResult, error) {
 	if change.MemberID <= 0 || !change.Role.Valid() {
 		return domain.RoleChangeResult{}, domain.ErrInvalidInput

@@ -49,8 +49,7 @@ type Config struct {
 	Date    string
 }
 
-// shutdownTimeout bounds how long Fiber gets to drain in-flight requests. Named
-// so the log line that fires when it expires can report the budget it blew.
+// shutdownTimeout bounds how long Fiber gets to drain in-flight requests.
 const shutdownTimeout = 10 * time.Second
 
 func logHTTPShutdownError(log zerolog.Logger, err error) {
@@ -76,9 +75,8 @@ func logTMDBEnvironmentIssues(rootLog zerolog.Logger, issues []integrationtmdb.E
 	}
 }
 
-// dbMaxBackups resolves DB_BACKUP_MAX: how many pre-migration snapshots to
-// keep next to the DB file. 0 disables backups; invalid values fall back to
-// the default with a warning rather than failing startup.
+// dbMaxBackups resolves DB_BACKUP_MAX, the number of pre-migration snapshots to
+// keep. 0 disables backups; invalid values fall back to the default.
 func dbMaxBackups(log zerolog.Logger) int {
 	const defaultMaxBackups = 3
 	raw := os.Getenv("DB_BACKUP_MAX")
@@ -94,11 +92,9 @@ func dbMaxBackups(log zerolog.Logger) int {
 	return n
 }
 
-// ResolveDBFile picks the SQLite path the app opens: an explicit value wins,
-// then DB_FILE from the environment (populate it from .env with godotenv.Load
-// first), then the "moviepickarr.db" default in the working directory. Both the
-// server (Run) and the dev-fixtures command resolve the DB the same way so they
-// never disagree about which file is "the dev DB".
+// ResolveDBFile picks the SQLite path: explicit value, then DB_FILE, then
+// "moviepickarr.db". The server and the dev-fixtures command share it so they
+// open the same file.
 func ResolveDBFile(explicit string) string {
 	if explicit != "" {
 		return explicit
@@ -115,16 +111,14 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Port == "" {
 		cfg.Port = ":3030"
 	}
-	// Resolved after godotenv.Load() above so DB_FILE works from a .env file
-	// too, not just the process environment.
+	// After godotenv.Load so DB_FILE also works from .env.
 	cfg.DBFile = ResolveDBFile(cfg.DBFile)
 	if cfg.WebRoot == nil {
 		return fmt.Errorf("web root is required")
 	}
 
-	// Build the root logger first so everything below is observable. Mirror it
-	// to the zerolog global (zlog) so package-level call sites — e.g. the env
-	// parsers in enrich_worker — log through the same configured writer.
+	// Mirror to the zerolog global so package-level call sites (enrich_worker
+	// env parsers) use the same writer.
 	rootLog := logger.New(logger.FromEnv())
 	zlog.Logger = rootLog
 	rootLog.Info().
@@ -150,10 +144,8 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 
-	// Boot ordering is migrate → seed → serve: the break-glass admin seed runs
-	// on the freshly migrated schema, before any request can be served. A
-	// misconfigured seed fails boot loudly rather than leaving a login-less
-	// deploy.
+	// Seed before serving; a misconfigured seed fails boot instead of leaving a
+	// deploy with no login.
 	adminCfg, adminConfigured := seed.AdminConfigFromEnv(rootLog)
 	if err := seed.BreakGlassAdmin(ctx, repository.NewSqliteAdminSeedRepository(pool), adminCfg, adminConfigured, rootLog); err != nil {
 		_ = pool.Close()
@@ -191,9 +183,7 @@ func Run(ctx context.Context, cfg Config) error {
 			rootLog.Error().Err(err).Msg("starting TMDB startup refresh failed")
 		}
 	}
-	// Warm the public poster wall in the background: nil (no key) means the wall
-	// never warms and the endpoint serves []. Async, so boot is never blocked by
-	// the TMDB round trip.
+	// Async so boot never waits on TMDB; with no key the wall serves [].
 	h.posterWall.Start(ctx)
 
 	app := fiber.New(fiber.Config{
@@ -204,19 +194,13 @@ func Run(ctx context.Context, cfg Config) error {
 		JSONDecoder: func(data []byte, value any) error {
 			return json.Unmarshal(data, value)
 		},
-		// Cheap hardening: cap how long a (possibly half-open) client can hold a
-		// connection while sending its request or sitting idle between keep-alive
-		// requests. Deliberately NO WriteTimeout — it would sever the long-lived
-		// /api/v1/events SSE stream mid-response.
+		// No WriteTimeout: it would cut the long-lived /api/v1/events SSE stream.
 		ReadTimeout: 15 * time.Second,
 		IdleTimeout: 120 * time.Second,
 	})
 
-	// Middleware order is deliberate: requestid sets the X-Request-ID response
-	// header on the way in; fiberzerolog reads it on the way out, so requestid
-	// must precede it. fiberzerolog also sits ahead of recover so a recovered
-	// panic still yields one access-log line carrying the error. It reuses the
-	// handler's component=http logger so access and app logs share one derivation.
+	// Order matters: requestid before fiberzerolog (which reads the ID), and
+	// fiberzerolog before recover so a recovered panic still gets an access line.
 	app.Use(requestid.New())
 	app.Use(fiberzerolog.New(fiberzerolog.Config{
 		Logger: &h.log,
@@ -232,18 +216,13 @@ func Run(ctx context.Context, cfg Config) error {
 		},
 		Messages: []string{"http server error", "http client error", "http request"},
 		Levels:   []zerolog.Level{zerolog.ErrorLevel, zerolog.WarnLevel, zerolog.InfoLevel},
-		// Emit request_id/bytes_sent rather than fiberzerolog's default
-		// requestId/bytesSent, so an access line and the app lines from the same
-		// request join on one key. See docs/LOGGING.md.
+		// request_id matches the app log key so lines join. See docs/LOGGING.md.
 		FieldsSnakeCase: true,
-		// The SSE stream is long-lived: its "latency" would span the whole
-		// session and it logs one line per open — noise, so skip it.
+		// The SSE stream's latency spans the whole session: noise.
 		SkipURIs: []string{"/api/v1/events"},
 	}))
 	app.Use(recover.New())
-	// Gzip JSON responses and the embedded SPA assets. The SSE stream is excluded:
-	// compression buffers the response body, which would break the per-event flush
-	// that keeps the event stream real-time.
+	// Not the SSE stream: compression buffers the body and breaks per-event flush.
 	app.Use(compress.New(compress.Config{
 		Next: func(c *fiber.Ctx) bool { return c.Path() == "/api/v1/events" },
 	}))
@@ -251,24 +230,14 @@ func Run(ctx context.Context, cfg Config) error {
 
 	registerRoutes(app, h)
 
-	// Unmatched API routes must 404 as JSON rather than fall through to the SPA
-	// fallback below — otherwise a mistyped endpoint would return index.html.
-	// Real /api routes are registered above and terminate the chain, so this
-	// only fires for paths no handler matched.
+	// Unmatched API routes 404 as JSON instead of falling through to index.html.
 	app.Use("/api", func(c *fiber.Ctx) error {
 		return writeProblem(c, fiber.StatusNotFound, "not_found", "unknown API endpoint")
 	})
 
-	// Freshness headers for the embedded SPA. Vite emits content-hashed files
-	// under /assets/ (e.g. index-DfysZQP7.css) whose name changes on every
-	// content change, so they're safe to cache forever; everything else
-	// (index.html and the SPA fallback) must stay uncached so a new deploy's
-	// asset URLs are always loaded. This matters because WebRoot is a
-	// go:embed FS, which reports a zero ModTime — the filesystem middleware
-	// below then emits NO freshness signal at all (no Cache-Control, no
-	// Last-Modified, no ETag), so without this every load re-pulls and
-	// re-compresses the whole bundle. The middleware leaves Cache-Control alone
-	// (its MaxAge defaults to 0), so the header set here survives.
+	// Vite content-hashes /assets/ names, so cache them forever; keep index.html
+	// uncached. The go:embed FS has zero ModTime, so the filesystem middleware
+	// sends no freshness headers of its own.
 	app.Use("/", func(c *fiber.Ctx) error {
 		if strings.HasPrefix(c.Path(), "/assets/") {
 			c.Set(fiber.HeaderCacheControl, "public, max-age=31536000, immutable")
@@ -278,10 +247,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return c.Next()
 	})
 
-	// Serve the embedded SPA. NotFoundFile makes unknown paths fall back to
-	// index.html so client-side routes (e.g. /stats, /users) resolve on a hard
-	// refresh or shared deep-link instead of 404ing. Non-API paths only — the
-	// /api catch-all above keeps API 404s as JSON.
+	// NotFoundFile lets client-side routes resolve on a hard refresh.
 	app.Use("/", filesystem.New(filesystem.Config{Root: cfg.WebRoot, NotFoundFile: "index.html"}))
 
 	shutdownCh := make(chan os.Signal, 1)
@@ -291,13 +257,8 @@ func Run(ctx context.Context, cfg Config) error {
 	shutdown := func() {
 		shutdownOnce.Do(func() {
 			rootLog.Info().Msg("gracefully shutting down")
-			// Close the event broker FIRST: every SSE stream blocks in a select
-			// on its event channel, and only the broker closing those channels
-			// unwinds them. Closing here lets each stream return so Fiber can
-			// drain immediately — otherwise ShutdownWithContext burns its full
-			// 10s timeout waiting on idle-but-open SSE goroutines (a real tax on
-			// every dev restart). Close is idempotent and marks the broker closed
-			// so a late Subscribe can't re-stall.
+			// Close the broker first: only that unblocks open SSE streams, else
+			// ShutdownWithContext waits the full timeout. Close is idempotent.
 			h.Close()
 
 			ctxTimeout, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -306,12 +267,10 @@ func Run(ctx context.Context, cfg Config) error {
 			if err := app.ShutdownWithContext(ctxTimeout); err != nil {
 				logHTTPShutdownError(rootLog, err)
 			}
-			// Stop the worker after Fiber has drained (no handler can enqueue)
-			// but before the DB closes (in-flight enrichment still reads it).
+			// After Fiber drains (no new enqueues), before the DB closes.
 			if h.enrichRunner != nil {
 				h.enrichRunner.Stop()
 			}
-			// Stop the poster-wall refresh loop too; nil-safe when keyless.
 			h.posterWall.Stop()
 			h.Close()
 			if err := pool.Close(); err != nil {
@@ -487,14 +446,10 @@ func newHandlerChecked(pool *db.Pool, rootLog zerolog.Logger) (*handler, error) 
 	runner := newEnrichRunner(singleMovieEnricher, broker, enrichCfg, enrichLog)
 	runner.initialDrain = false
 
-	// The public wall stays empty while TMDB is unavailable. It shares the same
-	// revision-scoped client and pacing as search and enrichment.
+	// Shares the revision-scoped TMDB client and pacing with search and enrichment.
 	posterLog := rootLog.With().Str("component", "poster-wall").Logger()
 	posterWall := newPosterWallCache(tmdbGateway.DiscoverPopularPosters, posterWallRefreshInterval, posterLog)
 
-	// The local-account repo backs LocalAuth reads and password verification.
-	// InviteManager gets the scoped store that commits credential and invite
-	// transitions together.
 	localAccountRepo := repository.NewSqliteLocalAccountRepository(pool)
 	localAuth := auth.NewLocalAuth(localAccountRepo)
 
@@ -529,15 +484,10 @@ func newHandlerChecked(pool *db.Pool, rootLog zerolog.Logger) (*handler, error) 
 		sseHeartbeatInterval: sseHeartbeatInterval,
 	}
 
-	// Stats now aggregate enriched metadata/credits, so every successful
-	// enrichment invalidates the cached stats payloads.
+	// Stats aggregate enriched metadata, so each enrichment invalidates them.
 	runner.onEnriched = h.invalidateStatsCache
 	wireTMDBRunEnriched(tmdbRuns, runner)
 
-	// OIDC is presence-derived: wired only when the config quartet is set. A tx
-	// codec or a discovery failure leaves SSO off (routes unmounted, claim page
-	// hides the option) rather than failing boot, so the app still serves local
-	// login.
 	if oidcCfg, enabled := auth.OIDCConfigFromEnv(); enabled {
 		wireOIDC(h, oidcCfg, rootLog)
 	}
@@ -568,9 +518,8 @@ func integrationKeyFilePath(pool *db.Pool) string {
 	return path + ".integration.key"
 }
 
-// wireOIDC builds the relying party (running discovery once) and tx-cookie AEAD
-// codec, attaching them to the handler and flipping oidcEnabled. Any failure
-// leaves OIDC off, so a bad provider never takes the whole app down.
+// wireOIDC enables OIDC on h. Any failure leaves SSO off instead of failing boot,
+// so local login still works.
 func wireOIDC(h *handler, cfg auth.OIDCConfig, log zerolog.Logger) {
 	txCodec, err := auth.NewOIDCTxCodec(os.Getenv("MPA_OIDC_TX_SECRET"))
 	if err != nil {
@@ -578,8 +527,7 @@ func wireOIDC(h *handler, cfg auth.OIDCConfig, log zerolog.Logger) {
 		return
 	}
 
-	// Discovery is a network round trip; bound it so a slow or down provider
-	// doesn't stall boot.
+	// Bound discovery so a slow provider cannot stall boot.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	rp, err := auth.NewRelyingParty(ctx, cfg)
@@ -596,66 +544,42 @@ func wireOIDC(h *handler, cfg auth.OIDCConfig, log zerolog.Logger) {
 
 func registerRoutes(app *fiber.App, h *handler) {
 	v1 := app.Group("/api/v1")
-	// csrfGuard runs first on the whole group so a forged cross-origin
-	// state-changing call never reaches a session lookup or a login verify.
+	// First, so a forged cross-origin call never reaches a session lookup or login.
 	v1.Use(csrfGuard)
 
-	// Auth-establishing routes sit ahead of requireSession: login and claim have
-	// no session yet, so they declare their own (absent) auth per-route. All are
-	// still behind csrfGuard above (the claim-validate GET is exempt as a safe
-	// method; the password claim POST carries the same-origin CSRF signal).
-	// Public auth capabilities for the unauthenticated login page (presence of an
-	// SSO provider today). GET + no secrets, so it sits ahead of requireSession
-	// alongside the other pre-auth routes.
+	// Pre-session routes: login and claim have no session yet.
 	v1.Get("/auth/config", h.handleAuthConfig)
-	// Poster wall for the unauthenticated login/claim panel. GET + no secrets
-	// (poster paths are public artwork), so it sits ahead of requireSession beside
-	// /auth/config and rides the csrfGuard safe-method exemption.
 	v1.Get("/auth/poster-wall", h.handlePosterWall)
 	v1.Post("/auth/login", h.handleLogin)
 	v1.Get("/auth/claim/:token", h.handleValidateClaim)
 	v1.Post("/auth/claim/:token/password", h.handleClaimPassword)
 
-	// OIDC initiation + callback are unauthenticated (login and claim carry no
-	// session; the callback re-authenticates itself for the link intent) and
-	// mounted only when a provider is configured. All are GETs: csrfGuard exempts
-	// them, and the callback's CSRF defense is its own state/PKCE. link + unlink
-	// are authed, registered below.
+	// Pre-session GETs: csrfGuard exempts them, so the callback's CSRF defense is
+	// its own state and PKCE.
 	if h.oidcEnabled {
 		v1.Get("/auth/oidc/login", h.handleOIDCLogin)
 		v1.Get("/auth/oidc/callback", h.handleOIDCCallback)
 		v1.Get("/auth/claim/:token/oidc", h.handleClaimOIDC)
 	} else {
-		// SSO off: the whole OIDC surface is a clean 404, registered ahead of
-		// requireSession so a probe sees "no such feature" instead of the blanket
-		// 401 the session gate would otherwise return for an unmatched path.
+		// Before requireSession, so a probe gets 404 instead of the session 401.
 		v1.All("/auth/oidc/*", ssoDisabled)
 		v1.Get("/auth/claim/:token/oidc", ssoDisabled)
 		v1.All("/auth/linked-identity", ssoDisabled)
 		v1.All("/members/:memberID/linked-identity", ssoDisabled)
 	}
 
-	// requireSession turns the session cookie into a live actor (401 +
-	// cookie-clear when it can't); everything registered after this point is
-	// authenticated. The shared registerV1Routes carries no auth of its own, so
-	// the per-route authz reshape can layer on later without moving this wiring.
+	// Everything registered after this point is authenticated.
 	v1.Use(h.requireSession)
 
-	// Self-serve identity routes. The admin local-login routes sit under a
-	// temporary in-handler admin guard until the per-route authz reshape lands;
-	// they use the /members surface the reshape will settle on.
+	// The admin local-login routes check the role inside the handler.
 	v1.Get("/auth/me", h.handleMe)
 	v1.Post("/auth/password", h.handleChangePassword)
-	// Session logout: empty/{} ends this device, {"all":true} ends every session
-	// for the member. Always clears the cookie, 204, idempotent.
+	// Empty body ends this device, {"all":true} ends every session. Idempotent.
 	v1.Post("/auth/logout", h.handleLogout)
-	// The member's own device list and per-device sign-out. Self-only by
-	// construction: both read the member id off the session, so there is no
-	// target id to authorize and no path to anyone else's sessions.
+	// Self-only: the member id comes from the session, not the path.
 	v1.Get("/auth/sessions", h.handleListSessions)
 	v1.Delete("/auth/sessions/:sessionID", h.handleRevokeSession)
-	// Self-serve credential completeness: an authed member with no local login
-	// sets a first username + password (the session is the proof).
+	// First local login for an authed member; the session is the proof.
 	v1.Post("/auth/local-login", h.handleSelfServeLocalLogin)
 	v1.Put("/members/:memberID/local-login", h.handleSetLocalLogin)
 	v1.Delete("/members/:memberID/local-login", h.handleDeleteLocalLogin)
@@ -667,9 +591,7 @@ func registerRoutes(app *fiber.App, h *handler) {
 	v1.Delete("/invites/:inviteID", h.handleRevokeInvite)
 	v1.Post("/invites/:inviteID/dismiss", h.handleDismissInvite)
 
-	// Authed OIDC surface: link (start the link intent for the session member) and
-	// unlink (self + admin), mounted only when a provider is configured. When off,
-	// these paths are handled by the pre-session 404 stubs above.
+	// When SSO is off, the pre-session stubs above 404 these paths.
 	if h.oidcEnabled {
 		v1.Get("/auth/oidc/link", h.handleOIDCLink)
 		v1.Delete("/auth/linked-identity", h.handleUnlinkSelf)
@@ -716,12 +638,11 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/integration-runs", h.handleListIntegrationRuns)
 	v1.Delete("/integration-runs/:runID", h.handleCancelTMDBRun)
 
-	// Roster: reads are any-authenticated; create/delete are admin-only (guarded
-	// inside the handlers). The actor is always the session member, never a path id.
+	// Writes are admin-only, checked in the handlers. The actor is always the
+	// session member, never a path id.
 	v1.Get("/members", h.handleGetUsers)
-	// The admin roster is a distinct read: every member (active + archived) with
-	// presence-derived login state, admin-gated inside the handler. It sits beside
-	// the lean movie-board GET /members rather than widening it.
+	// Admin-only, with archived members and login state; kept apart from the lean
+	// GET /members.
 	v1.Get("/members/roster", h.handleGetRoster)
 	v1.Post("/members", h.handleCreateUser)
 	v1.Patch("/members/:memberID/role", h.handleSetRole)
@@ -730,12 +651,10 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/members/:memberID/pool", h.handleGetPool)
 	v1.Get("/members/:memberID/stash", h.handleGetStash)
 
-	// Movie mutations carry no actor id: the adder is the session member. Edit,
-	// delete and move are adder-only (403 not_adder, no admin override), enforced
-	// inside each handler.
+	// The adder is the session member. Edit, delete and move are adder-only (403
+	// not_adder, no admin override).
 	v1.Post("/movies", h.handleAddMovie)
-	// Literal wildcard routes must precede the :movieID routes. In particular,
-	// DELETE /movies/wildcard would otherwise be parsed as a movie id.
+	// Before the :movieID routes, else DELETE /movies/wildcard parses as an id.
 	v1.Get("/movies/wildcard", h.handleGetActiveWildcard)
 	v1.Post("/movies/wildcard", h.handleSelectWildcard)
 	v1.Delete("/movies/wildcard", h.handleCancelWildcard)
@@ -749,8 +668,7 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/movies/current", h.handleGetCurrentMovie)
 	v1.Post("/movies/current/reveal", h.handleRevealCurrentMovie)
 	v1.Get("/movies/watched", h.handleGetWatchedMovies)
-	// Literal /movies/* GETs are registered before the :movieID param route so
-	// they take precedence; the param route serves the lazy detail modal.
+	// Literal GETs before the :movieID route so they take precedence.
 	v1.Get("/movies/filter-options", h.handleGetFilterOptions)
 	v1.Get("/movies/:movieID", h.handleGetMovie)
 	v1.Post("/movies/current/watch", h.handleWatchMovie)

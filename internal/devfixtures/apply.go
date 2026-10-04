@@ -12,16 +12,13 @@ import (
 	"moviepickarr/internal/db"
 )
 
-// querier is the read surface IsEmpty needs: satisfied by both *sql.DB and
-// *sql.Tx, so the guard can run on either the pool or inside a transaction.
+// querier is satisfied by both *sql.DB and *sql.Tx.
 type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// IsEmpty reports whether the DB holds no developer data yet. A freshly
-// migrated DB is "empty" despite carrying the next_up singleton and the
-// pool_locked setting (both seeded by migration 001), so the guard keys off the
-// two tables fixtures actually own: users and movies.
+// IsEmpty reports whether users and movies are empty. Migrations seed other
+// tables, so a fresh DB still counts as empty.
 func IsEmpty(ctx context.Context, q querier) (bool, error) {
 	var n int
 	err := q.QueryRowContext(ctx,
@@ -32,11 +29,9 @@ func IsEmpty(ctx context.Context, q querier) (bool, error) {
 	return n == 0, nil
 }
 
-// RemoveDB deletes the SQLite file at path and its -wal and -shm sidecars, so
-// a reset migrates a new file. Wiping rows instead would keep schema drift: the
-// migration ledger records only version numbers, so objects from a draft that
-// reused a number are never repaired. Missing files are not an error. The
-// .integration.key file is kept.
+// RemoveDB deletes the SQLite file and its -wal and -shm sidecars, but keeps
+// .integration.key. Not a row wipe: the ledger records only version numbers,
+// so schema drift from a reused number would survive.
 func RemoveDB(path string) error {
 	for _, f := range []string{path, path + "-wal", path + "-shm"} {
 		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -46,11 +41,8 @@ func RemoveDB(path string) error {
 	return nil
 }
 
-// Apply writes the whole plan inside tx. Members come first so their ids exist
-// for the movie, login, and next-up foreign keys; movies, logins, the turn
-// holder, and the pool lock follow. now stamps the archived member's
-// archived_at. Passwords are hashed here (not in the plan) because hashing is
-// an app concern the pure builder should not carry.
+// Apply writes the whole plan inside tx. now stamps the archived member's
+// archived_at. Passwords are hashed here to keep BuildPlan pure.
 func Apply(ctx context.Context, tx *sql.Tx, plan Plan, now time.Time) error {
 	memberIDs := make([]int64, len(plan.Members))
 

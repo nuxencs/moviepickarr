@@ -11,17 +11,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// filterPersonOption is one selectable person (actor, crew member, or adder) in
-// the Stats filter bar — id plus display name.
+// filterPersonOption is one actor, crew member, or adder in the Stats filter bar.
 type filterPersonOption struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
 
-// filterOptionsResponse is the full set of Stats filter choices, derived
-// server-side from the watched library. It replaces the client-side
-// filterOptionsFrom() that used to rebuild these from the credits embedded in
-// every /movies/watched payload — so that payload can now ship lean.
+// filterOptionsResponse is the Stats filter choices, built on the server so
+// /movies/watched can stay lean.
 type filterOptionsResponse struct {
 	Genres []string             `json:"genres"` // A→Z
 	Actors []filterPersonOption `json:"actors"` // A→Z by name
@@ -61,10 +58,8 @@ func (h *handler) handleGetFilterOptions(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(payload)
 }
 
-// buildFilterOptions mirrors the old client-side filterOptionsFrom(watched):
-// unique genres, the distinct cast and crew people (split, matching the
-// actors/crew filter split), the distinct adders, and the distinct release
-// years — each in the same display order the UI expects.
+// buildFilterOptions returns the distinct values of each filter in the display
+// order the UI expects.
 func buildFilterOptions(watched []*domain.Movie, meta metaByID, credits creditsByID) filterOptionsResponse {
 	genres := make(map[string]struct{})
 	actors := make(map[int]string)
@@ -126,7 +121,7 @@ func sortedPeople(byID map[int]string) []filterPersonOption {
 	for id, name := range byID {
 		out = append(out, filterPersonOption{ID: id, Name: name})
 	}
-	// Name A→Z, id as a stable tiebreak for distinct people sharing a name.
+	// Name A-Z, id as a stable tiebreak for people sharing a name.
 	slices.SortFunc(out, func(a, b filterPersonOption) int {
 		return cmp.Or(
 			cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),

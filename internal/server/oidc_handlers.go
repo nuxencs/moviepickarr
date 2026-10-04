@@ -10,25 +10,20 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// oidcTxCookieName is the encrypted transaction cookie set at initiation and
-// cleared at the callback. HttpOnly + SameSite=Lax + Path=/ with a
-// scheme-derived Secure flag; the value is an AEAD ciphertext, never anything
-// readable.
+// oidcTxCookieName names the AEAD-encrypted transaction cookie that lives from
+// initiation to callback.
 const oidcTxCookieName = "mpa_oidc_tx"
 
-// SPA landing routes the callback redirects to. The OIDC contract is
-// redirect-only (302 with ?error= / ?linked=), the deliberate opposite of local
-// login's XHR 204/401. These are frontend routes owned by the SPA; the config
-// slice can rename them without touching the dispatch logic.
+// SPA routes the callback redirects to. OIDC is redirect-only (302 with ?error=
+// or ?linked=), unlike local login's XHR 204/401.
 const (
 	oidcHomeRedirect  = "/"
 	oidcLoginRedirect = "/login"
 	oidcLinkRedirect  = "/settings"
 )
 
-// Public callback error buckets. Every failed callback outcome collapses to one
-// of these in a ?error= query param; the frontend maps them to copy. They never
-// carry provider detail or tokens.
+// Public ?error= buckets the frontend maps to copy. They never carry provider
+// detail or tokens.
 const (
 	errOIDCDenied         = "oidc_denied"
 	errOIDCExpired        = "oidc_expired"
@@ -38,9 +33,7 @@ const (
 	errOIDCSessionExpired = "oidc_session_expired"
 )
 
-// setOIDCTxCookie writes the encrypted transaction cookie with a Max-Age matched
-// to the tx TTL, so a browser drops it around the same time the payload expires.
-// Secure tracks the request scheme, mirroring the session cookie.
+// setOIDCTxCookie writes the tx cookie with Max-Age matched to the tx TTL.
 func (h *handler) setOIDCTxCookie(c *fiber.Ctx, value string) {
 	c.Cookie(&fiber.Cookie{
 		Name:     oidcTxCookieName,
@@ -53,9 +46,8 @@ func (h *handler) setOIDCTxCookie(c *fiber.Ctx, value string) {
 	})
 }
 
-// clearOIDCTxCookie expires the transaction cookie. The callback always clears
-// it (the tx is single-use), mirroring the set attributes so the browser drops
-// the right cookie.
+// clearOIDCTxCookie expires the tx cookie. Attributes must match
+// setOIDCTxCookie, or the browser keeps it.
 func (h *handler) clearOIDCTxCookie(c *fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{
 		Name:     oidcTxCookieName,
@@ -69,15 +61,12 @@ func (h *handler) clearOIDCTxCookie(c *fiber.Ctx) {
 	})
 }
 
-// redirectError sends the browser to an SPA route carrying a ?error= bucket. It
-// is the single unhappy-path exit for the whole OIDC surface.
+// redirectError is the single unhappy-path exit for the OIDC surface.
 func redirectError(c *fiber.Ctx, dest, bucket string) error {
 	return c.Redirect(dest+"?error="+bucket, fiber.StatusFound)
 }
 
-// destForIntent picks the SPA landing an error redirect returns to: link errors
-// belong on the settings page the member started from; login and claim errors
-// land on the login page.
+// destForIntent picks the error landing: settings for link, login otherwise.
 func destForIntent(intent string) string {
 	if intent == auth.IntentLink {
 		return oidcLinkRedirect
@@ -85,10 +74,8 @@ func destForIntent(intent string) string {
 	return oidcLoginRedirect
 }
 
-// beginOIDC seals a fresh transaction into the tx cookie and 302s to the
-// provider authorize URL. Initiation is a top-level navigation, so a seal
-// failure redirects to the login page with a generic error rather than
-// returning JSON the browser would render as a raw page.
+// beginOIDC seals tx into the cookie and redirects to the provider. Failures
+// redirect, not JSON, because initiation is a top-level navigation.
 func (h *handler) beginOIDC(c *fiber.Ctx, tx auth.OIDCTx, dest string) error {
 	sealed, err := h.oidcTx.Seal(tx)
 	if err != nil {
@@ -99,9 +86,7 @@ func (h *handler) beginOIDC(c *fiber.Ctx, tx auth.OIDCTx, dest string) error {
 	return c.Redirect(h.oidc.AuthCodeURL(tx), fiber.StatusFound)
 }
 
-// handleOIDCLogin starts the login intent (unauthenticated): mint a tx, stash
-// it, and hand the browser to the provider. The callback dispatches on
-// intent=login.
+// handleOIDCLogin starts the unauthenticated login intent.
 func (h *handler) handleOIDCLogin(c *fiber.Ctx) error {
 	tx, err := auth.NewOIDCTx(auth.IntentLogin)
 	if err != nil {
@@ -111,9 +96,8 @@ func (h *handler) handleOIDCLogin(c *fiber.Ctx) error {
 	return h.beginOIDC(c, tx, oidcLoginRedirect)
 }
 
-// handleOIDCLink starts the link intent (authenticated): the tx carries the
-// session member so the callback can re-check the session still matches before
-// binding the identity.
+// handleOIDCLink starts the link intent. The tx carries the session member so
+// the callback can check the session still matches.
 func (h *handler) handleOIDCLink(c *fiber.Ctx) error {
 	tx, err := auth.NewOIDCTx(auth.IntentLink)
 	if err != nil {
@@ -124,18 +108,14 @@ func (h *handler) handleOIDCLink(c *fiber.Ctx) error {
 	return h.beginOIDC(c, tx, oidcLinkRedirect)
 }
 
-// handleClaimOIDC starts the onboarding claim intent (unauthenticated): it
-// validates the invite up front (so a dead or password-reset link doesn't send
-// the member to the provider), then stashes the invite token hash in the tx and
-// starts the flow. The callback re-validates the invite, links, consumes, and
-// mints.
+// handleClaimOIDC starts the claim intent. It validates the invite first so a
+// dead or password-reset link never reaches the provider.
 func (h *handler) handleClaimOIDC(c *fiber.Ctx) error {
 	token := c.Params("token")
 	claim, err := h.invites.Validate(c.UserContext(), token)
 	if err != nil || claim.IsReset {
-		// A no-longer-valid or already-used invite: bounce to the SPA claim page,
-		// which re-validates and shows the right terminal state. Password-reset
-		// links also stay on that page because their only claim path is password.
+		// The SPA claim page shows the right terminal state, or the password form
+		// for a reset link.
 		return c.Redirect("/claim/"+token, fiber.StatusFound)
 	}
 
@@ -148,17 +128,13 @@ func (h *handler) handleClaimOIDC(c *fiber.Ctx) error {
 	return h.beginOIDC(c, tx, oidcLoginRedirect)
 }
 
-// handleOIDCCallback is the single callback every intent returns to. It runs the
-// validation ladder in the spec's order (provider error → tx decrypt → state →
-// code exchange + ID-token verify + nonce), then dispatches on the tx intent.
-// The tx cookie is single-use, so it is always cleared. Every outcome is a 302.
+// handleOIDCCallback validates in order (provider error, tx, state, code
+// exchange with ID-token and nonce), then dispatches on the tx intent.
 func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
-	// The tx is spent the moment we read it, success or fail: clear it on every
-	// exit so a replayed callback can't reuse it.
+	// Single-use: clear on every exit so a replayed callback cannot reuse it.
 	defer h.clearOIDCTxCookie(c)
 
-	// Provider-side refusal (user denied consent, provider error) comes first,
-	// before we even open the tx. Intent is unknown here, so land on login.
+	// Intent is unknown before the tx opens, so land on login.
 	if provErr := c.Query("error"); provErr != "" {
 		h.reqLog(c).Warn().
 			Str("provider_error", provErr).
@@ -170,8 +146,7 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 	tx, err := h.oidcTx.Open(c.Cookies(oidcTxCookieName))
 	if err != nil {
 		// Missing, tampered, or expired tx cookie: one uniform expired outcome.
-		// A tampered cookie and a member who left the tab open overnight are
-		// indistinguishable from here, so this stays warn.
+		// Tampering and a stale tab look the same here, so warn only.
 		h.reqLog(c).Warn().Err(err).Msg("oidc tx cookie missing, tampered, or expired")
 		return redirectError(c, oidcLoginRedirect, errOIDCExpired)
 	}
@@ -179,17 +154,14 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 	dest := destForIntent(tx.Intent)
 
 	if c.Query("state") != tx.State {
-		// The tx opened but its state does not match the callback's: a replayed
-		// or cross-session callback. Silent until now, which made a CSRF probe
-		// look identical to a clean run.
+		// Replayed or cross-session callback. Logged so a CSRF probe is visible.
 		h.reqLog(c).Warn().Str("intent", tx.Intent).Msg("oidc callback state mismatch")
 		return redirectError(c, dest, errOIDCFailed)
 	}
 
 	claims, err := h.oidc.Exchange(c.UserContext(), c.Query("code"), tx)
 	if err != nil {
-		// Code exchange, ID-token verification, or nonce comparison failed. Log the
-		// cause internally; the public bucket stays generic.
+		// Log the cause; the public bucket stays generic.
 		h.reqLog(c).Warn().Err(err).Str("intent", tx.Intent).
 			Msg("oidc code exchange or id-token verification failed")
 		return redirectError(c, dest, errOIDCFailed)
@@ -203,17 +175,14 @@ func (h *handler) handleOIDCCallback(c *fiber.Ctx) error {
 	case auth.IntentClaim:
 		return h.dispatchOIDCClaim(c, tx, claims)
 	default:
-		// We sealed this tx ourselves, so an intent we cannot dispatch means the
-		// mint and dispatch sides have drifted apart. That is a bug, not traffic.
+		// We sealed this tx, so an unknown intent is a bug, not traffic.
 		h.reqLog(c).Error().Str("intent", tx.Intent).Msg("oidc tx carries an unknown intent")
 		return redirectError(c, dest, errOIDCFailed)
 	}
 }
 
-// dispatchOIDCLogin matches the verified claims to a linked member. A match
-// refreshes snapshots, bumps last_login_at, mints a session, and lands home. An
-// unlinked identity is rejected ephemerally: nothing is persisted and the
-// attempt is WARN-logged (iss/sub/email, never tokens).
+// dispatchOIDCLogin signs in the linked member. An unlinked identity persists
+// nothing and is only warn-logged (never tokens).
 func (h *handler) dispatchOIDCLogin(c *fiber.Ctx, claims auth.OIDCClaims) error {
 	rawSession, session, err := h.sessions.PrepareMint(
 		0,
@@ -243,11 +212,9 @@ func (h *handler) dispatchOIDCLogin(c *fiber.Ctx, claims auth.OIDCClaims) error 
 	return c.Redirect(oidcHomeRedirect, fiber.StatusFound)
 }
 
-// dispatchOIDCLink binds the identity to the tx member. Because the callback is
-// unauthenticated, it re-authenticates the session cookie here and refuses if it
-// no longer matches the member who started the link (oidc_session_expired). A
-// collision on either UNIQUE is oidc_link_conflict with nothing written; a
-// same-member re-link is idempotent success.
+// dispatchOIDCLink binds the identity to the tx member. The callback is
+// unauthenticated, so it re-checks that the session still belongs to that member.
+// A same-member re-link is an idempotent success.
 func (h *handler) dispatchOIDCLink(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OIDCClaims) error {
 	as, err := h.sessions.Authenticate(c.UserContext(), c.Cookies(sessionCookieName))
 	if err != nil {
@@ -278,10 +245,9 @@ func (h *handler) dispatchOIDCLink(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OID
 	return c.Redirect(oidcLinkRedirect+"?linked=1", fiber.StatusFound)
 }
 
-// dispatchOIDCClaim links the identity to the invite's member, consumes the
-// invite, and creates the session in one transaction. It re-resolves the invite by the hash stashed in
-// the tx (it may have expired or been used during the provider round trip). A
-// collision writes nothing and does not consume the invite.
+// dispatchOIDCClaim links, consumes the invite and creates the session in one
+// transaction. It re-resolves the invite, which may have died during the
+// provider round trip.
 func (h *handler) dispatchOIDCClaim(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OIDCClaims) error {
 	rawSession, session, err := h.sessions.PrepareMint(
 		0,
@@ -309,9 +275,8 @@ func (h *handler) dispatchOIDCClaim(c *fiber.Ctx, tx auth.OIDCTx, claims auth.OI
 	return c.Redirect(oidcHomeRedirect, fiber.StatusFound)
 }
 
-// handleUnlinkSelf removes the caller's own linked identity
-// (DELETE /auth/linked-identity). The self-last-credential guard refuses it with
-// 409 when the identity is the member's only remaining credential.
+// handleUnlinkSelf removes the caller's linked identity; 409 when it is their
+// last credential.
 func (h *handler) handleUnlinkSelf(c *fiber.Ctx) error {
 	actor := actorMemberID(c)
 	if err := h.invites.UnlinkOIDC(c.UserContext(), actor, actor); err != nil {
@@ -320,10 +285,8 @@ func (h *handler) handleUnlinkSelf(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// handleUnlinkMember removes another member's linked identity (admin,
-// DELETE /members/{id}/linked-identity). Removing another member's last
-// credential is allowed (they fall back to a placeholder); the last-credential
-// guard only fires when an admin unlinks their own account.
+// handleUnlinkMember removes a member's linked identity (admin). Removing
+// another member's last credential is allowed; they become a placeholder.
 func (h *handler) handleUnlinkMember(c *fiber.Ctx) error {
 	if ok, err := h.requireAdmin(c); !ok {
 		return err
@@ -338,16 +301,12 @@ func (h *handler) handleUnlinkMember(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// ssoDisabled is the 404 every OIDC path returns when no provider is configured.
-// Registered ahead of requireSession so the miss reads as "SSO isn't configured"
-// (404), not the blanket "authentication required" (401) an unmatched
-// authenticated path would otherwise hit.
+// ssoDisabled answers every OIDC path with 404 when no provider is configured.
 func ssoDisabled(c *fiber.Ctx) error {
 	return writeProblem(c, fiber.StatusNotFound, "not_found", "sso is not configured")
 }
 
-// derefOr returns the pointed-to string or a fallback when nil, so a missing
-// snapshot claim logs as empty rather than panicking.
+// derefOr returns *s, or fallback when s is nil.
 func derefOr(s *string, fallback string) string {
 	if s == nil {
 		return fallback

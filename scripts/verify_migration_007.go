@@ -48,7 +48,7 @@ func main() {
 	pool, err := db.OpenSQLite(path)
 	must(err)
 
-	// --- BEFORE: capture raw text values and compute expected epochs in Go ---
+	// Expected epochs, computed in Go from the raw text before migrating.
 	rows, err := pool.Read.QueryContext(ctx,
 		`SELECT id, CAST(added_at AS TEXT), CAST(watched_at AS TEXT) FROM movies ORDER BY id`)
 	must(err)
@@ -77,10 +77,8 @@ func main() {
 	must(pool.Read.QueryRowContext(ctx, `SELECT COUNT(*) FROM movie_metadata`).Scan(&metaBefore))
 	must(pool.Read.QueryRowContext(ctx, `SELECT COUNT(*) FROM movie_credits`).Scan(&creditsBefore))
 
-	// --- MIGRATE ---
 	must(db.RunMigrations(ctx, pool.Write))
 
-	// --- AFTER ---
 	failures := 0
 	fail := func(format string, args ...any) {
 		failures++
@@ -115,8 +113,7 @@ func main() {
 		}
 	}
 
-	// Everything is a real INTEGER now — movies, users, and metadata alike
-	// (the STRICT tables enforce it for future writes; this checks the copy).
+	// STRICT tables enforce INTEGER for future writes; this checks the migrated rows.
 	var nonInt int
 	must(pool.Read.QueryRowContext(ctx, `
 		SELECT (SELECT COUNT(*) FROM movies WHERE typeof(added_at) != 'integer'
@@ -157,7 +154,6 @@ func main() {
 		}
 	}
 
-	// Integrity + schema shape.
 	var integrity string
 	must(pool.Read.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity))
 	if integrity != "ok" {

@@ -16,10 +16,8 @@ type settingsResponse struct {
 	DrawInProgress bool `json:"drawInProgress"`
 }
 
-// The Members boards render tile-level data only (poster, title, rating) and
-// the movie modal lazy-loads its full record from GET /movies/:id, so the
-// board payloads ship as leanMovieTile — the same lean-list win as the watched
-// list, and it also skips the per-request credits batch-load on the read path.
+// userResponse ships board movies as leanMovieTile: the modal lazy-loads the
+// full record from GET /movies/:id.
 type userResponse struct {
 	ID          int                      `json:"userID"`
 	Name        string                   `json:"name"`
@@ -28,16 +26,8 @@ type userResponse struct {
 	CreatedAt   string                   `json:"createdAt"`
 }
 
-// The movie wire shape comes in exactly two payload classes, enforced by the
-// type system: a handler returning []leanMovieTile CANNOT accidentally ship
-// credits or prose, so the lean list payloads (the 196→16 KB watched-list
-// win) are guarded by the compiler instead of by review.
-
-// leanMovieTile is the list/tile class: identity + the tile-level enriched
-// fields the grids render (poster, rating, release date, runtime, genres).
-// Pool, watched and member-board collections ship these, so the heavy
-// modal-only fields (backdrop, tagline, overview, credits) are structurally
-// absent: the modal lazy-loads the fullMovie from GET /movies/:id when it opens.
+// leanMovieTile is the list payload class. It has no credits or prose by type,
+// so lists stay lean (see docs/backend-layout.md).
 type leanMovieTile struct {
 	ID                int    `json:"movieID"`
 	Title             string `json:"title"`
@@ -49,17 +39,11 @@ type leanMovieTile struct {
 	WatchedAt         string `json:"watchedAt"`
 	WildcardOfMovieID int    `json:"wildcardOfMovieId,omitzero"`
 
-	// Stable external identities, exposed so the frontend can build links to
-	// IMDb / TMDB / Letterboxd (Letterboxd resolves via /tmdb/{id} or /imdb/{id}).
-	// Omitted when the movie carries no such id.
+	// External ids for IMDb, TMDB, and Letterboxd links.
 	TMDBID *int   `json:"tmdbId,omitzero"`
 	IMDbID string `json:"imdbId,omitempty"`
 
-	// Enriched TMDB tile fields. All optional: a movie may not be enriched
-	// yet (enrichment is async), so these are omitted when absent and the
-	// frontend degrades gracefully (placeholder poster, hidden chips).
-	// posterPath is a raw TMDB path (e.g. "/abc.jpg"); the frontend builds
-	// the image URL.
+	// Optional because enrichment is async. posterPath is a raw TMDB path.
 	PosterPath  string   `json:"posterPath,omitempty"`
 	ReleaseDate string   `json:"releaseDate,omitempty"`
 	Runtime     int      `json:"runtime,omitzero"`
@@ -67,33 +51,22 @@ type leanMovieTile struct {
 	VoteAverage float64  `json:"voteAverage,omitzero"`
 }
 
-// fullMovie is the detail class: everything on the tile plus the draw
-// coordination fields, the modal-only metadata, and the credits. Served by
-// detail, current, mutation and movie-event paths; JSON-flattened via the
-// embedding.
+// fullMovie is the detail class: the tile plus draw fields, modal-only
+// metadata, and credits.
 type fullMovie struct {
 	leanMovieTile
 
-	// Status is the movie's client-visible place in the app (pool / stash /
-	// current / watched). A held winner stays projected as pooled until reveal,
-	// matching the pool listings. Detail-class only: a surface holding a full
-	// record reads it instead of guessing membership from a proxy like "has no
-	// watchedAt". Always set, so no omitempty.
+	// Status is the client-visible place. A held winner stays pooled until
+	// reveal, matching the pool listings.
 	Status domain.MovieStatus `json:"status"`
 
-	// Draw-reveal coordination. Set only on the movie:drawn event and the
-	// current-movie endpoint. DrawnAt is when the current movie was drawn
-	// (drives resuming the cross-client reveal spin after a reload); RevealAt
-	// is the server's auto-reveal deadline (clients time the confirm
-	// countdown off it: the server owns the reveal timing); ServerNow is the
-	// server clock at response time so the client computes elapsed without
-	// trusting its own clock. All omitted when no draw is active.
+	// Set only on movie:drawn and GET /movies/current. RevealAt is the server's
+	// auto-reveal deadline; ServerNow lets the client avoid its own clock.
 	DrawnAt   string `json:"drawnAt,omitempty"`
 	RevealAt  string `json:"revealAt,omitempty"`
 	ServerNow string `json:"serverNow,omitempty"`
-	// DrawClientID is the client that initiated the draw; only that client shows
-	// the reel's confirm button. Revealed reports whether the draw was confirmed,
-	// so a reload after the reveal shows the result instead of re-opening the reel.
+	// Only the DrawClientID client shows the confirm button. Revealed stops a
+	// reload from reopening the reel.
 	DrawClientID string `json:"drawClientId,omitempty"`
 	Revealed     bool   `json:"revealed,omitzero"`
 
@@ -102,13 +75,11 @@ type fullMovie struct {
 	Tagline      string `json:"tagline,omitempty"`
 	Overview     string `json:"overview,omitempty"`
 
-	// Trimmed TMDB credits: top-billed cast (in billing order) and
-	// whitelisted crew jobs. Omitted until the movie's credits are ingested.
+	// Trimmed credits (see mapCredits).
 	Cast []creditPerson `json:"cast,omitempty"`
 	Crew []creditPerson `json:"crew,omitempty"`
 }
 
-// creditPerson is the wire shape of one cast or crew member on a movie.
 type creditPerson struct {
 	ID          int    `json:"id"` // TMDB person id
 	Name        string `json:"name"`
@@ -117,10 +88,8 @@ type creditPerson struct {
 	Job         string `json:"job,omitempty"`         // crew only
 }
 
-// metaByID maps a movie id to its enriched metadata (absent when unenriched).
 type metaByID map[int]*domain.MovieMetadata
 
-// creditsByID maps a movie id to its ingested credits (absent when none).
 type creditsByID map[int][]domain.MovieCredit
 
 func formatTime(value *time.Time) string {
@@ -130,18 +99,13 @@ func formatTime(value *time.Time) string {
 	return value.UTC().Format(timeFormat)
 }
 
-// formatTimePrecise keeps sub-second precision (RFC3339Nano). Used for
-// revealAt: the client derives the confirm countdown from revealAt − drawnAt,
-// and second-truncating both would jitter that window by up to ±0.5s per
-// draw. drawnAt itself stays second-precision: it is the draw's identity
-// string and must remain byte-identical across every payload that carries it.
+// formatTimePrecise is for revealAt, so the revealAt - drawnAt countdown does
+// not jitter. drawnAt stays second-precision: it is the draw's identity string.
 func formatTimePrecise(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
 }
 
-// movieLink derives the effective link from the movie's stable identity,
-// preferring IMDb, then TMDB. Returns "" if the movie has no identity (every
-// row carries an id post-enrichment, so this is effectively unreachable).
+// movieLink prefers IMDb, then TMDB.
 func movieLink(movie *domain.Movie) string {
 	if movie.IMDbID != nil {
 		imdbID := strings.ToLower(strings.TrimSpace(*movie.IMDbID))
@@ -155,7 +119,6 @@ func movieLink(movie *domain.Movie) string {
 	return ""
 }
 
-// toLeanTile builds the tile-class response.
 func toLeanTile(movie *domain.Movie, md *domain.MovieMetadata) leanMovieTile {
 	tile := leanMovieTile{
 		ID:              movie.ID,
@@ -186,13 +149,10 @@ func toLeanTile(movie *domain.Movie, md *domain.MovieMetadata) leanMovieTile {
 	return tile
 }
 
-// toFullMovie builds the detail-class response, folding the modal-only
-// metadata (backdrop, tagline, overview) and credits onto the tile.
 func toFullMovie(movie *domain.Movie, md *domain.MovieMetadata, credits []domain.MovieCredit) fullMovie {
 	resp := fullMovie{
 		leanMovieTile: toLeanTile(movie, md),
-		// domain.Movie.Status is still a bare string (the repo ports take one
-		// too); the wire class is where the value gets its type back.
+		// domain.Movie.Status is a bare string; the wire class types it.
 		Status: domain.MovieStatus(movie.Status),
 	}
 	if md != nil {
@@ -202,8 +162,7 @@ func toFullMovie(movie *domain.Movie, md *domain.MovieMetadata, credits []domain
 		resp.Tagline = md.Tagline
 		resp.Overview = md.Overview
 	}
-	// Credits arrive cast-first in billing order (repo ORDER BY), so a plain
-	// split by kind keeps both arrays in their display order.
+	// Depends on the repo's ORDER BY for billing order.
 	for i := range credits {
 		person := creditPerson{
 			ID:   credits[i].Person.ID,
@@ -224,9 +183,7 @@ func toFullMovie(movie *domain.Movie, md *domain.MovieMetadata, credits []domain
 	return resp
 }
 
-// toFullMovieBare builds a detail-class response without enriched metadata or
-// credits. Used for SSE broadcast payloads, where the frontend refetches
-// enriched data from the GET endpoints rather than reading the event body.
+// toFullMovieBare is for SSE payloads; clients refetch enriched data.
 func toFullMovieBare(movie *domain.Movie) fullMovie {
 	return toFullMovie(movie, nil, nil)
 }

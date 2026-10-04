@@ -17,8 +17,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 )
 
-// enrichConfig tunes the background enrichment worker. All fields are
-// overridable via environment variables (see loadEnrichConfig).
+// enrichConfig tunes the enrichment worker; loadEnrichConfig reads overrides.
 type enrichConfig struct {
 	MinInterval     time.Duration // min gap between TMDB requests
 	MaxRetries      int           // retry attempts per request
@@ -29,12 +28,8 @@ type enrichConfig struct {
 	RefreshInterval time.Duration // periodic stale-scan cadence (0 disables)
 	TTL             time.Duration // rows older than now-TTL are re-enriched
 
-	// Enriched-broadcast coalescing. A drain enriches many movies back-to-back;
-	// emitting one SSE event per movie makes the frontend invalidate-refetch
-	// every list per movie. Instead, ids accumulate and a single
-	// "movies:enriched-batch" fires once the burst goes quiet for BatchDebounce,
-	// with BatchMaxWait as a ceiling so a long backfill still shows periodic
-	// progress rather than one delayed dump at drain end.
+	// One SSE event per enriched movie made the frontend refetch every list per
+	// movie, so ids coalesce into "movies:enriched-batch" (see recordEnriched).
 	BatchDebounce time.Duration
 	BatchMaxWait  time.Duration
 }
@@ -125,8 +120,6 @@ func envDuration(key string) (time.Duration, bool) {
 	return d, true
 }
 
-// rateLimiter enforces a minimum interval between calls. Safe for concurrent
-// use; for the single worker it simply paces successive requests.
 const rateLimiterMaxPending = 32
 
 type tmdbRequestQueueFullError struct {
@@ -137,6 +130,7 @@ func (e *tmdbRequestQueueFullError) Error() string {
 	return fmt.Sprintf("tmdb request queue is full (%d pending)", e.Limit)
 }
 
+// rateLimiter enforces a minimum interval between calls. Safe for concurrent use.
 type rateLimiter struct {
 	interval time.Duration
 	next     time.Time
@@ -158,9 +152,8 @@ func (r *rateLimiter) wait(ctx context.Context) error {
 	return r.waitWithAdmission(ctx, true)
 }
 
-// waitReserved admits bounded internal workers even when interactive callers
-// fill the public queue. Internal concurrency is fixed by the worker and run
-// controller, so waiting here cannot create an unbounded goroutine set.
+// waitReserved admits internal workers even when interactive callers fill the
+// public queue. Their concurrency is fixed, so this cannot grow unbounded.
 func (r *rateLimiter) waitReserved(ctx context.Context) error {
 	return r.waitWithAdmission(ctx, false)
 }
@@ -212,18 +205,16 @@ func (r *rateLimiter) waitWithAdmission(ctx context.Context, rejectWhenFull bool
 	return nil
 }
 
-// enrichRunner owns the single background goroutine that enriches movies.
-// Auto-on-add ids arrive on queue; backfill and the periodic refresh are
-// triggered as a "drain" that pulls candidates and processes them inline —
-// so a large backlog can never overflow the bounded queue.
+// enrichRunner owns the single enrichment goroutine. Auto-on-add ids use the
+// queue; backfill and refresh run as an inline drain, so a large backlog cannot
+// overflow the bounded queue.
 type enrichRunner struct {
 	enricher   Enricher
 	broker     *eventBroker // optional SSE; nil-safe
 	onEnriched func()       // optional post-enrich hook (stats-cache invalidation); nil-safe
 	cfg        enrichConfig
 	log        zerolog.Logger
-	// Library-wide work is owned by tmdbRunController in production. Legacy
-	// worker tests and direct construction keep the initial drain enabled.
+	// False in production: tmdbRunController owns library-wide work.
 	initialDrain bool
 
 	queue    chan int
@@ -231,9 +222,7 @@ type enrichRunner struct {
 	inflight map[int]enrichClaim
 	mu       sync.Mutex // guards inflight only
 
-	// batch coalesces freshly-enriched ids into one SSE broadcast. batchMu guards
-	// these because the debounce timer fires on its own goroutine; flushBatch does
-	// the broker/onEnriched work outside the lock.
+	// batchMu guards the batch: the debounce timer fires on its own goroutine.
 	batchMu       sync.Mutex
 	pending       []int
 	flushTimer    *time.Timer
@@ -308,7 +297,7 @@ func (r *enrichRunner) Start(ctx context.Context) {
 	}
 
 	if r.initialDrain {
-		// Kick the initial backfill of un-enriched (and any already-stale) rows.
+		// Initial backfill of un-enriched and stale rows.
 		r.triggerDrain()
 	}
 }
@@ -323,15 +312,13 @@ func (r *enrichRunner) Stop() {
 	})
 }
 
-// Enqueue schedules a single movie for enrichment (auto-on-add). Non-blocking:
-// if the queue is full the id is dropped and the next scheduled drain re-selects
-// it. Dedup avoids queuing an id that is already pending.
+// Enqueue schedules one movie for enrichment without blocking. On a full queue
+// the id is dropped and the next drain picks it up.
 func (r *enrichRunner) Enqueue(movieID int) {
 	r.EnqueueWithTrigger(movieID, integration.RunTriggerMovieAdded)
 }
 
-// EnqueueWithTrigger schedules single-movie enrichment while preserving the
-// event that caused it for the integration run ledger.
+// EnqueueWithTrigger is Enqueue that keeps the trigger for the run ledger.
 func (r *enrichRunner) EnqueueWithTrigger(movieID int, trigger integration.RunTrigger) {
 	if !r.tryEnqueue(movieID, trigger) {
 		return
@@ -345,9 +332,8 @@ func (r *enrichRunner) EnqueueWithTrigger(movieID int, trigger integration.RunTr
 	}
 }
 
-// tryEnqueue claims a new queued movie. A duplicate for a queued movie is
-// already covered by its future read. A duplicate for a processing movie means
-// committed state changed after that read, so remember one coalesced rerun.
+// tryEnqueue claims a new queued movie. A duplicate for a movie already
+// processing means state changed after its read, so it requests one rerun.
 func (r *enrichRunner) tryEnqueue(movieID int, trigger integration.RunTrigger) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -367,9 +353,8 @@ func (r *enrichRunner) tryEnqueue(movieID int, trigger integration.RunTrigger) b
 	return true
 }
 
-// tryClaim marks a drain candidate in-flight, reporting false if it was already
-// queued or processing. A drain collision is deduplication, not evidence of a
-// newer edit, so it does not request a rerun.
+// tryClaim marks a drain candidate in-flight. A collision is deduplication, not
+// a newer edit, so it requests no rerun.
 func (r *enrichRunner) tryClaim(movieID int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -389,9 +374,8 @@ func (r *enrichRunner) markProcessing(movieID int) integration.RunTrigger {
 	return claim.trigger
 }
 
-// finishAttempt atomically either consumes one requested rerun while retaining
-// the claim, or releases the claim. Enqueue therefore lands on exactly one side
-// of the boundary: it marks this process dirty or creates a fresh queued claim.
+// finishAttempt atomically consumes one requested rerun (keeping the claim) or
+// releases the claim, so a concurrent Enqueue lands on exactly one side.
 type attemptFinish int
 
 const (
@@ -468,10 +452,9 @@ func (r *enrichRunner) scheduleLoop(ctx context.Context) {
 	}
 }
 
-// drain pulls every movie that needs enrichment (never-enriched OR stale) and
-// processes them synchronously. One query per drain (capped at BatchLimit);
-// failed rows simply reappear on the next scheduled drain — no re-query loop,
-// so a movie that can't be matched never spins the worker.
+// drain enriches never-enriched and stale movies with one query per drain.
+// Failures wait for the next drain, so an unmatchable movie cannot spin the
+// worker.
 func (r *enrichRunner) drain(ctx context.Context) {
 	staleBefore := time.Now().Add(-r.cfg.TTL)
 	candidates, err := r.enricher.NeedsEnrichment(ctx, staleBefore, r.cfg.BatchLimit)
@@ -488,9 +471,7 @@ func (r *enrichRunner) drain(ctx context.Context) {
 	r.log.Info().Int("count", len(candidates)).Msg("drain started")
 	var enriched, skipped, failed int
 	for _, c := range candidates {
-		// Skip a candidate already claimed by the auto-on-add queue — consume
-		// will process it once. Claiming here also blocks a concurrent Enqueue
-		// of the same id from double-processing while this drain runs it.
+		// Claiming also stops a concurrent Enqueue from processing the id twice.
 		if !r.tryClaim(c.MovieID) {
 			skipped++
 			continue
@@ -614,10 +595,8 @@ func (r *enrichRunner) notifyEnriched() {
 	r.onEnriched()
 }
 
-// recordEnriched buffers a freshly-enriched movie id and (re)arms the debounce
-// timer. Enrichments within BatchDebounce of each other coalesce into one flush;
-// BatchMaxWait caps how long the first id in a batch waits, so a long backfill
-// still emits periodic progress instead of one delayed dump at drain end.
+// recordEnriched buffers an id and rearms the BatchDebounce timer. BatchMaxWait
+// caps the wait, so a long backfill still shows periodic progress.
 func (r *enrichRunner) recordEnriched(movieID int) {
 	r.batchMu.Lock()
 	defer r.batchMu.Unlock()
@@ -639,11 +618,8 @@ func (r *enrichRunner) recordEnriched(movieID int) {
 	r.flushTimer.Reset(d)
 }
 
-// flushBatch emits one coalesced enrichment signal for the buffered burst: it
-// invalidates the stats cache once (onEnriched) and broadcasts a single
-// "movies:enriched-batch" SSE event. A no-op when nothing is pending, so it is
-// safe to call from the drain tail, the debounce timer, and Stop(). The broker
-// and onEnriched work runs outside the lock.
+// flushBatch runs onEnriched once and broadcasts one "movies:enriched-batch".
+// A no-op when nothing is pending, so any caller may flush.
 func (r *enrichRunner) flushBatch() {
 	r.batchMu.Lock()
 	if r.flushTimer != nil {

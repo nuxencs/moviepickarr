@@ -16,16 +16,12 @@ type MovieRepo interface {
 	AddToStash(ctx context.Context, title string, userID int, tmdbID *int, imdbID *string) (*Movie, error)
 	SetExternalIDs(ctx context.Context, id int, tmdbID *int, imdbID *string) error
 	UpdateStatus(ctx context.Context, id int, status string) error
-	// UpdateStatusIf conditionally transitions a movie: it sets status=to only
-	// WHERE the row currently has status=from, returning the number of rows
-	// affected (1 = transitioned, 0 = the precondition did not hold). This makes
-	// a status move idempotent and race-safe without a read-modify-write.
+	// UpdateStatusIf sets status=to only where status=from and returns rows
+	// affected, so a move is idempotent and race-safe.
 	UpdateStatusIf(ctx context.Context, id int, to, from string) (int64, error)
-	// PromoteToPoolIfRoom atomically moves a stashed movie into its owner's pool,
-	// but only when that pool holds fewer than maxPool movies. The source-status
-	// check and the per-user pool-count check happen in one statement, so
-	// concurrent promotions of distinct movies cannot overshoot the cap. Returns
-	// rows affected (1 = promoted, 0 = not — already pooled, not stashed, or full).
+	// PromoteToPoolIfRoom moves a stashed movie to its owner's pool only while
+	// the pool holds fewer than maxPool movies. One statement, so concurrent
+	// promotions cannot overshoot the cap.
 	PromoteToPoolIfRoom(ctx context.Context, id, maxPool int) (int64, error)
 	GetCurrent(ctx context.Context) (*Movie, error)
 	Delete(ctx context.Context, id int) error
@@ -48,14 +44,12 @@ type Movie struct {
 	AddedAt     *time.Time
 	AddedByID   int
 	AddedByName string
-	// AddedByArchived distinguishes preserved attribution from a member whose
-	// active board still exists.
+	// AddedByArchived marks attribution kept from an archived member.
 	AddedByArchived bool
 	WatchedAt       *time.Time
-	TMDBID          *int    // stable TMDB identity (nullable)
-	IMDbID          *string // stable IMDb identity (nullable)
-	// WildcardOfMovieID identifies the Current draw preserved by this watched
-	// movie. It is nil for ordinary watched movies and while a Wildcard is active.
+	TMDBID          *int
+	IMDbID          *string
+	// WildcardOfMovieID is the Current draw this watched Wildcard preserved.
 	WildcardOfMovieID *int
 }
 
@@ -91,48 +85,42 @@ type Wildcard struct {
 	CanceledAt         *time.Time
 }
 
-// MovieMetadata holds TMDB-derived display data for a movie, stored 1:1 in the
-// movie_metadata table. Stable identity (TMDB/IMDb ids) lives on the Movie row;
-// this holds only enriched display fields.
+// MovieMetadata holds TMDB display data. Stable ids live on the Movie row.
 type MovieMetadata struct {
 	MovieID      int
 	Overview     string
-	PosterPath   *string // nullable -> SQL NULL
-	BackdropPath *string // nullable -> SQL NULL
-	ReleaseDate  string  // TMDB "YYYY-MM-DD", stored verbatim
+	PosterPath   *string
+	BackdropPath *string
+	ReleaseDate  string // TMDB "YYYY-MM-DD", stored verbatim
 	Runtime      int
-	Genres       []string // marshaled to/from the genres JSON TEXT column in the repo
+	Genres       []string // JSON TEXT column
 	VoteAverage  float64
 	VoteCount    int
 	Tagline      string
 	EnrichedAt   *time.Time
 }
 
-// EnrichmentCandidate identifies a movie that needs enrichment. The worker
-// re-loads the full movie (incl. its ids/link) via FindByID before enriching.
+// EnrichmentCandidate identifies a movie that needs enrichment.
 type EnrichmentCandidate struct {
 	MovieID int
 }
 
-// MovieIdentity is the stable external identity used to decide whether fetched
-// enrichment still belongs to the current movie.
+// MovieIdentity is the external identity that decides whether fetched
+// enrichment still belongs to the movie.
 type MovieIdentity struct {
 	TMDBID *int
 	IMDbID *string
 }
 
-// MovieIdentityTarget is the one provider identity requested by an authored
-// edit. Exactly one field must be set. Unlike MovieIdentity, which snapshots
-// every known id for enrichment staleness, this is a selector: matching its
-// provider preserves all stored ids; a different target replaces them.
+// MovieIdentityTarget selects the one provider identity an edit asks for.
+// Matching the stored provider keeps all ids; a different one replaces them.
 type MovieIdentityTarget struct {
 	TMDBID *int
 	IMDbID *string
 }
 
-// MovieEnrichmentWrite carries one complete enrichment commit. Expected is the
-// identity observed before remote TMDB work; Resolved and the derived rows may
-// be stored only while that identity still matches.
+// MovieEnrichmentWrite is one enrichment commit. It applies only while the
+// identity still matches Expected, observed before the TMDB call.
 type MovieEnrichmentWrite struct {
 	MovieID  int
 	Expected MovieIdentity
@@ -144,19 +132,12 @@ type MovieEnrichmentWrite struct {
 type MovieMetadataRepo interface {
 	UpsertMetadata(ctx context.Context, md MovieMetadata) error
 	GetMetadata(ctx context.Context, movieID int) (*MovieMetadata, error)
-	// GetMetadataByMovieIDs batch-loads metadata for the given movie ids,
-	// keyed by movie id. Ids without a metadata row are simply absent from the
-	// returned map (enrichment is async, so a movie may not be enriched yet).
+	// GetMetadataByMovieIDs omits ids not enriched yet.
 	GetMetadataByMovieIDs(ctx context.Context, ids []int) (map[int]*MovieMetadata, error)
-	// NeedsEnrichment returns candidates that have no metadata row (backfill
-	// — pass the zero time), whose enriched_at is older than staleBefore
-	// (periodic refresh), or whose credits were never ingested (credits
-	// backfill). Results are capped at limit.
+	// NeedsEnrichment returns movies with no metadata, metadata older than
+	// staleBefore, or no credits, capped at limit.
 	NeedsEnrichment(ctx context.Context, staleBefore time.Time, limit int) ([]EnrichmentCandidate, error)
-	// MarkEnrichmentStale clears the credits marker so NeedsEnrichment re-selects
-	// the movie on the next drain. Used when a movie's external identity
-	// changes: the enrich queue is in-memory, so without this backstop a lost
-	// enqueue would leave the previous movie's metadata and credits in place
-	// until the periodic refresh TTL.
+	// MarkEnrichmentStale makes NeedsEnrichment re-select the movie. The enrich
+	// queue is in-memory, so this is the backstop for a lost enqueue.
 	MarkEnrichmentStale(ctx context.Context, movieID int) error
 }

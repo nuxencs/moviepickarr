@@ -19,11 +19,8 @@ func NewSqliteMovieCreditsRepository(pool *db.Pool) *SqliteMovieCreditsRepositor
 }
 
 func replaceMovieCredits(ctx context.Context, tx *sql.Tx, movieID int, credits []domain.MovieCredit) error {
-	// Upsert people first so the credit FKs resolve. A person's name/photo can
-	// change on TMDB, so re-enrichment refreshes the shared row. Both statements
-	// run ~15-40 times per movie, so prepare each once and reuse it — modernc's
-	// sqlite recompiles the SQL text on every bare ExecContext, and reusing the
-	// compiled statement also shortens the single shared connection's write hold.
+	// The upsert refreshes people because TMDB names and photos change. Prepared
+	// once: modernc recompiles bare ExecContext SQL, and these run ~15-40 times per movie.
 	upsertPerson, err := tx.PrepareContext(ctx, `
 		INSERT INTO people (id, name, profile_path) VALUES (?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -75,8 +72,7 @@ func (d *SqliteMovieCreditsRepository) ReplaceCredits(ctx context.Context, movie
 		return err
 	}
 
-	// Stamp the marker even when credits are empty, so genuinely credit-less
-	// titles stop being backfill candidates.
+	// Stamp even when credits are empty, so credit-less titles leave the backfill.
 	stamp := `UPDATE movie_metadata SET credits_refreshed_at = unixepoch() WHERE movie_id = ?`
 	if _, err := tx.ExecContext(ctx, stamp, movieID); err != nil {
 		return err
@@ -98,8 +94,7 @@ func (d *SqliteMovieCreditsRepository) GetCreditsByMovieIDs(ctx context.Context,
 		args[i] = id
 	}
 
-	// 'cast' sorts before 'crew', so each movie lists its cast (in billing
-	// order) first, then crew alphabetically.
+	// 'cast' sorts before 'crew'.
 	query := fmt.Sprintf(`
 		SELECT
 			mc.movie_id,

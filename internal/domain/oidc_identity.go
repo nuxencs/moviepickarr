@@ -5,11 +5,8 @@ import (
 	"time"
 )
 
-// OIDCIdentity is one row of the oidc_identities table: a member's link to the
-// external SSO provider. The (Issuer, Subject) pair is the sole match key on
-// login and is globally unique; UserID is unique too, so a member holds at most
-// one linked identity. Email and PreferredUsername are informational snapshots
-// refreshed on each login, never a match or gate key.
+// OIDCIdentity is a member's link to the SSO provider (at most one). (Issuer,
+// Subject) is the only match key; Email and PreferredUsername are snapshots.
 type OIDCIdentity struct {
 	ID                int64
 	UserID            int
@@ -20,29 +17,19 @@ type OIDCIdentity struct {
 	LastLoginAt       *time.Time
 }
 
-// OIDCIdentityRepo is the persistence port for the linked-identity flow over the
-// 009 oidc_identities table. The collision matrix (a member may hold at most one
-// identity; an identity may belong to at most one member) is enforced by the two
-// UNIQUE constraints and surfaced as ErrConflict at this boundary, so the
-// service layer never imports the driver. Timestamps are passed in rather than
-// defaulted in SQL so the flow runs off one injectable clock.
+// OIDCIdentityRepo persists linked identities. A UNIQUE violation becomes
+// ErrConflict here, so the service layer never imports the driver.
 type OIDCIdentityRepo interface {
-	// FindByIssuerSubject resolves the login/link match key for an active member,
-	// or returns sql.ErrNoRows when no active member owns it. An archived link is
-	// indistinguishable from an unlinked identity.
+	// FindByIssuerSubject returns sql.ErrNoRows when no active member owns the
+	// key. An archived link reads as unlinked.
 	FindByIssuerSubject(ctx context.Context, issuer, subject string) (*OIDCIdentity, error)
-	// FindByUserID returns an active member's linked identity, or sql.ErrNoRows
-	// when the member holds none or is archived.
+	// FindByUserID returns sql.ErrNoRows when the member has none or is archived.
 	FindByUserID(ctx context.Context, userID int) (*OIDCIdentity, error)
-	// Insert links a member to an (issuer, subject) with its snapshot fields. A
-	// violation of either UNIQUE (user_id, or issuer+subject) surfaces as
-	// ErrConflict; a missing or archived member returns ErrNotFound.
+	// Insert returns ErrConflict on a UNIQUE violation and ErrNotFound for a
+	// missing or archived member.
 	Insert(ctx context.Context, id OIDCIdentity, createdAt time.Time) error
-	// TouchLogin refreshes the informational snapshots (email, preferred_username)
-	// and bumps last_login_at/updated_at: the login-dispatch and idempotent
-	// same-member link both land here.
+	// TouchLogin refreshes the snapshots and bumps last_login_at.
 	TouchLogin(ctx context.Context, id int64, email, preferredUsername *string, lastLoginAt, updatedAt time.Time) error
-	// DeleteByUserID removes a member's linked identity (unlink), returning the
-	// rows affected so the caller can tell a real unlink from a no-op.
+	// DeleteByUserID returns the rows affected, so a no-op unlink is visible.
 	DeleteByUserID(ctx context.Context, userID int) (int64, error)
 }

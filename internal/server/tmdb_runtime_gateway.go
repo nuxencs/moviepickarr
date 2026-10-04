@@ -47,10 +47,9 @@ type cachedTMDBOperations struct {
 	client   tmdbOperations
 }
 
-// tmdbRuntimeGateway is the one runtime acquisition seam for search,
-// enrichment, and poster discovery. The cache preserves a shared rate limiter
-// and HTTP connection pool for a configuration revision. The mutex is held only
-// while resolving a client, never during remote work.
+// tmdbRuntimeGateway hands search, enrichment and poster discovery one client
+// per config revision, so they share its rate limiter and connection pool. The
+// mutex is never held during remote work.
 type tmdbRuntimeGateway struct {
 	runtime  tmdbRuntimeSource
 	factory  tmdbOperationsFactory

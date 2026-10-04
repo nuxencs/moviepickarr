@@ -12,9 +12,8 @@ import (
 	"moviepickarr/internal/domain"
 )
 
-// SqliteAuthTransitionStore owns the credential-plus-invite transitions whose
-// partial states would leave a reusable claim link after a credential changed.
-// Password hashing and OIDC exchange happen before these short writer txs.
+// SqliteAuthTransitionStore owns credential-plus-invite transitions, atomic so
+// no claim link stays usable after a credential change. Hash outside the tx.
 type SqliteAuthTransitionStore struct {
 	pool *db.Pool
 }
@@ -122,9 +121,7 @@ func (d *SqliteAuthTransitionStore) RedeemPasswordInvite(
 		}
 	}
 
-	// A credential-less member can still have sessions left from a prior
-	// credential removal or older application version. Treat every claim as a
-	// session rotation so none of those bearer tokens survives the new login.
+	// Old sessions can outlive a removed credential, so every claim rotates sessions.
 	if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", invite.userID); err != nil {
 		return domain.InviteClaimResult{}, err
 	}
@@ -392,9 +389,7 @@ func (d *SqliteAuthTransitionStore) RedeemOIDCInvite(
 	if err != nil {
 		return domain.InviteClaimResult{}, err
 	}
-	// A reset generation authorizes one operation: replace the existing local
-	// password. Do not turn that bearer link into a second credential path if a
-	// stale or hand-written client reaches the OIDC callback directly.
+	// A reset invite only replaces the local password; it must not link OIDC.
 	if invite.username.Valid {
 		return domain.InviteClaimResult{}, domain.ErrInviteInvalid
 	}

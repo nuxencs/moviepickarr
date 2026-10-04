@@ -41,8 +41,6 @@ describe("validateMembersSearch", () => {
     expect(validateMembersSearch({ member: "9007199254740993" })).toEqual({});
   });
 
-  // The second half of the address: whose pool the rail has open, and whether
-  // you have gone on to their movies (#236).
   it("takes the stash flag as a boolean and as the string off a URL", () => {
     expect(validateMembersSearch({ member: 4, stash: true })).toEqual({ member: 4, stash: true });
     expect(validateMembersSearch({ member: "4", stash: "true" })).toEqual({
@@ -52,16 +50,14 @@ describe("validateMembersSearch", () => {
   });
 
   it("only ever says yes: anything else drops out rather than becoming stash=false", () => {
-    // A dropped key leaves a plain /users, where a false one would have the
-    // router write ?stash=false into a URL nobody asked to complicate.
+    // A false value would make the router write ?stash=false into the URL.
     expect(validateMembersSearch({ member: 4, stash: false })).toEqual({ member: 4 });
     expect(validateMembersSearch({ member: 4, stash: "1" })).toEqual({ member: 4 });
     expect(validateMembersSearch({ member: 4, stash: 1 })).toEqual({ member: 4 });
   });
 
   it("keeps the flag when the id beside it is unusable", () => {
-    // The page resolves a dead id to your own board, and the screen you asked
-    // for is still the stash — losing the flag would land you on the rail.
+    // A dead id resolves to your own board; losing the flag would land you on the rail.
     expect(validateMembersSearch({ member: "ada", stash: true })).toEqual({ stash: true });
     expect(validateMembersSearch({ stash: true })).toEqual({ stash: true });
   });

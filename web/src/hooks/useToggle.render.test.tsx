@@ -1,13 +1,5 @@
-/* ============================================================
-   Render test for useToggle.
-
-   The hook is handed to memoized children (icon buttons, panels), and a fresh
-   closure per render silently defeats their memo — the child re-renders on
-   every parent render even though nothing it shows has changed. That only
-   exists once the hook is inside a rendering tree, so it's tested here,
-   through a memoized child: what's asserted is that the child stays put, not
-   how the hook achieves it.
-   ============================================================ */
+/* Render test for useToggle: a fresh closure per render would defeat the memo
+   of every child it is handed to. */
 
 import { act, render, screen } from "@testing-library/react";
 import { memo, useState } from "react";
@@ -26,8 +18,7 @@ const Panel = memo(function Panel({ onToggle }: { onToggle: () => void }) {
   );
 });
 
-/** A parent that re-renders for its own reasons (a counter), the way a real
- *  screen does, while handing the same toggle down to a memoized child. */
+/** A parent that re-renders on its own, handing the toggle to a memoized child. */
 function Harness() {
   const [on, toggle] = useToggle();
   const [tick, setTick] = useState(0);

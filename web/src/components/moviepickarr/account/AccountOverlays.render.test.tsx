@@ -1,32 +1,7 @@
-/* ============================================================
-   Render tests for the account ceremonies (#140).
-
-   These dialogs are controlled and provider-free: the page owns the mutations
-   and hands down pending / serverError, so each one renders from props alone.
-   What has no seam below the render is the wiring between those props and the
-   shared Modal: whether a refused submit reaches the reader as an inline
-   error, whether an in-flight request actually disables the way out, and
-   whether `pending` reaches Modal's `dismissible` so a save can't be dismissed
-   out from under itself.
-
-   That last one matters more than it looks. Modal.render.test.tsx already
-   proves the shell ignores Escape and veil clicks when pinned; what it can't
-   know is whether these dialogs ever pin it. A dropped `dismissible={!pending}`
-   would leave the shell's test green and still let a member Escape mid-save,
-   which is the race the prop exists to stop.
-
-   Validation itself belongs to account.test.ts and isn't re-litigated here;
-   these tests use one refused input each, only to prove the error surfaces.
-   Where a case does assert on a value (the trimmed username, the payload
-   handed to onSubmit), the subject is the dialog's own marshalling, not the
-   validator's verdict.
-
-   Opening a dialog from its trigger is a page concern, not a dialog one, and
-   lives in AccountPage.render.test.tsx: the page owns which row button maps to
-   which ceremony. Here each dialog is rendered directly, so a case can put it
-   in a state (pending, a server error already set) the page would have to be
-   walked through to reach.
-   ============================================================ */
+/* Render tests for the account ceremonies (#140), rendered from props alone.
+   They pin the prop wiring to Modal: inline server errors, and `pending`
+   reaching `dismissible` so Escape cannot dismiss a save mid-flight (the shell's
+   own test stays green if a dialog drops it). Validation is account.test.ts's. */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -141,9 +116,7 @@ describe("ChangePasswordDialog", () => {
     fill("Current password", "hunter2");
     fill("New password", "longenough");
     fill("Confirm new password", "longenough");
-    // No role/text way in: the button is disabled, which is the point. This
-    // submits the form directly to reach the guard behind it, the one that
-    // catches an Enter keypress the disabled button never sees.
+    // The button is disabled, so submit the form to reach the guard an Enter keypress hits.
     fireEvent.submit(screen.getByRole("dialog").querySelector("form") as HTMLFormElement);
 
     expect(onSubmit).not.toHaveBeenCalled();

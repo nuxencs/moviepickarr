@@ -1,37 +1,7 @@
-/* ============================================================
-   Render tests for the Members page: the status line (#230), the rail of
-   members beside one pane (#231), the pane's wall of posters (#232) and every
-   poster opening the movie modal (#233).
-
-   Which words the status line uses is a pure question and poolLock.test.ts
-   owns it: the whole state table is asserted there against membersStatus, and
-   none of it is repeated here. What that test can't see is the split that
-   makes the line bearable to listen to: the visible span carries every clause
-   and is silent, while a visually-hidden role="status" carries the round and
-   draw clauses alone. Merge them and every promote arriving over SSE re-reads
-   the whole string at anyone using a screen reader.
-
-   The rail's rules are split the same way. Which member the URL selects is
-   pure and membersSearch.test.ts owns it; what only exists once the page
-   renders is here: that a row is a link carrying an explicit id, what a row
-   announces, and that a shut drawer is inert. The wall's filter and its miss
-   line are pure too and stashWall.test.ts owns those.
-
-   Same split again for the refusals (#234): which reason wins and how it reads
-   is pure and refusals.test.ts owns the whole table. What is here is what only
-   the rendered board can answer — that the control stays, that it is inert
-   without being disabled, that a click does nothing while focus still lands on
-   it, and that a refused board is the same markup as an open one.
-
-   And again for the keyboard (#235): which cell a key reaches and where focus
-   lands after a movie moves are index arithmetic, and stashWall.test.ts owns
-   both tables. Here is what only the page can answer — how many tab stops the
-   wall is, that the stop moves with the arrows, that it resets on a filter and
-   a member switch, and that a movie leaving under focus hands focus on rather
-   than dropping it. jsdom has no layout, so it reads no column count off the
-   wall (columnCount floors at one there): up and down move a cell here, and
-   multi-column arithmetic is pinned with explicit fixtures in the pure test.
-   ============================================================ */
+/* Render tests for the Members page (#230-#236). The pure rules (status
+   words, member selection, wall filter and keys, refusal reasons) have their
+   own tests; this file pins only what needs the rendered page. jsdom has no
+   layout, so the wall is one column here. */
 
 import { onlineManager, QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -52,9 +22,7 @@ vi.mock("@/api/APIClient", () => ({
     board: { getAll: vi.fn(), moveMovie: vi.fn(), deleteMovie: vi.fn(), updateMovie: vi.fn() },
     settings: { getPoolState: vi.fn() },
     auth: { me: vi.fn() },
-    // The modal lazy-loads the full record on open. It never resolves here, so
-    // what the modal shows is the tile's own lean object — which is the point:
-    // the poster that was clicked is the movie that opens.
+    // Never resolves, so the modal shows the clicked tile's own lean object.
     movies: { get: vi.fn(() => new Promise<never>(() => {})) },
   },
 }));
@@ -141,19 +109,16 @@ async function renderTab({
   return { client, router };
 }
 
-/** The visually-hidden live region, whatever it currently says. */
 const liveRegion = () => document.querySelector('[role="status"]');
 
-/** The rail's rows, in DOM order. Every drawer also holds a link to that
- *  member's stash (#236); in a browser only the open drawer's is reachable,
- *  since the rest are inert, but jsdom does not model that — so the rows are
- *  picked out by class rather than by counting links. */
+/** Rail rows by class: each drawer also holds a stash link (#236), and jsdom ignores inert. */
 const railRows = () =>
   within(screen.getByRole("navigation", { name: "Members" }))
     .getAllByRole("link")
     .filter((link) => link.classList.contains("mem-row__link"));
 
 describe("the Members status line", () => {
+  // Split so an SSE promote does not re-read the whole line to a screen reader.
   it("puts every clause on the visible span and keeps it out of the live region", async () => {
     await renderTab({ users: [member(1, 3), member(2, 3)], locked: true });
 
@@ -162,7 +127,6 @@ describe("the Members status line", () => {
     expect(visible?.getAttribute("role")).toBeNull();
     expect(visible?.getAttribute("aria-live")).toBeNull();
 
-    // The round clause alone reaches the region, and the region is hidden.
     expect(liveRegion()?.textContent).toBe("round closed");
     expect(liveRegion()?.className).toContain("vis-hidden");
   });
@@ -200,10 +164,8 @@ describe("the Members status line", () => {
   });
 });
 
-/* The skeleton is shape, and jsdom has no layout — so what is asserted here is
-   what the shape is made of, and everything that would let a real number leak
-   into it. The pixel-identical claim against the loaded page is a browser
-   question and the verify-frontend pass owns it. */
+/* jsdom has no layout: this pins what the skeleton is made of. Pixel parity
+   with the loaded page is a browser check. */
 describe("the Members loading skeleton", () => {
   const skeleton = () => document.querySelector(".mem-skel");
 
@@ -217,8 +179,7 @@ describe("the Members loading skeleton", () => {
     expect(skel?.querySelector(".mem-rail")).toBeTruthy();
     expect(skel?.querySelector(".mem-pane")).toBeTruthy();
     expect(skel?.querySelector(".mem-wallbox")).toBeTruthy();
-    // The clip, not a scroller: the overdrawn tail is filler and must not be
-    // reachable, which is a class rather than the real box's overflow-y.
+    // A clip, not a scroller: the overdrawn filler must not be reachable.
     expect(skel?.querySelector(".mem-wallbox")?.classList.contains("mem-skel__wall")).toBe(true);
     // No fade, which would promise a scroller there is none of.
     expect(skel?.querySelector("[data-overflow]")).toBeNull();
@@ -229,9 +190,7 @@ describe("the Members loading skeleton", () => {
 
     const rows = skeleton()?.querySelectorAll(".mem-row") ?? [];
     expect(rows.length).toBe(6);
-    // Nothing in the rail is a link or names anybody, row 0 included: drawing
-    // your own name there is available (the session resolves before the route
-    // renders) and refused.
+    // Row 0 included, though the session resolves before the route renders.
     expect(skeleton()?.querySelectorAll("a").length).toBe(0);
     expect(skeleton()?.textContent).toBe("");
     expect(skeleton()?.querySelector("[data-active]")).toBeNull();
@@ -248,8 +207,7 @@ describe("the Members loading skeleton", () => {
   it("shimmers the pips and the pool slots rather than drawing the marks they stand in for", async () => {
     await renderTab({});
 
-    // An unfilled pip says "0 of 3 filled" and a dashed cell says "this pool is
-    // empty". Both are claims a loading state does not get to make.
+    // An empty pip or dashed cell would claim an empty pool.
     const pips = skeleton()?.querySelectorAll(".mem-pips > *") ?? [];
     expect(pips.length).toBeGreaterThan(0);
     for (const pip of pips) expect(pip.classList.contains("skel")).toBe(true);
@@ -271,8 +229,7 @@ describe("the Members loading skeleton", () => {
     await renderTab({});
 
     expect(skeleton()?.getAttribute("aria-hidden")).toBe("true");
-    // The one thing the pushed screen says out loud, and the head it sits
-    // beside is the head the push takes away — so it is a sibling, not a child.
+    // The push removes the head, so the region is its sibling, not its child.
     const region = liveRegion();
     expect(region).toBeTruthy();
     expect(region?.closest(".mem-skel")).toBeNull();
@@ -280,16 +237,12 @@ describe("the Members loading skeleton", () => {
   });
 
   it("spends the flight on the screen a deep link is arriving at", async () => {
-    // Below 761 the pushed screen is the pane and the rail is off-canvas, and
-    // which one is drawn is CSS off this flag — which is the URL while the
-    // roster is still in flight, not once it lands.
+    // Below 761 CSS draws the screen off this flag, read from the URL while the roster loads.
     await renderTab({ href: "/users?member=2&stash=true" });
 
     expect(document.querySelector(".mem")?.getAttribute("data-pushed")).toBe("true");
     expect(skeleton()).toBeTruthy();
-    // The page head goes with the rail on that screen, in this state and in
-    // the loaded one alike (members.css) — so it is still rendered here, and
-    // the rule that removes it is the same one.
+    // Still rendered: members.css hides the head on that screen in both states.
     expect(document.querySelector(".sec-head")).toBeTruthy();
   });
 
@@ -329,15 +282,8 @@ describe("the rail of members", () => {
   it("announces a row from its contents: name, stash depth, pool occupancy", async () => {
     await renderTab({ users: roster, meID: 2 });
 
-    // Three parts, in DOM order, none of them authored as an aria-label, so
-    // the visible and the spoken strings cannot drift. The avatar's initials
-    // are aria-hidden, or the row would open with "AD".
-    //
-    // The name is run together here because jsdom has no layout and the
-    // accessible-name algorithm separates on display: a browser blockifies
-    // these spans (the row is a grid, the text a flex column) and reads
-    // "Ada, 14 in stash, 2 of 3 slots filled". What this pins is the parts and
-    // their order.
+    // No authored aria-label, so visible and spoken text cannot drift. jsdom has
+    // no layout, so it runs the parts together; a browser separates them.
     const ada = railRows()[1];
     expect(ada.getAttribute("aria-label")).toBeNull();
     expect(ada).toBe(screen.getByRole("link", { name: "Ada14 in stash1 of 3 slots filled" }));
@@ -358,8 +304,7 @@ describe("the rail of members", () => {
 
     const drawers = document.querySelectorAll(".mem-drop__inner");
     expect(drawers.length).toBe(3);
-    // Three slots in every drawer, open or shut: the pool is always drawn at
-    // its full size, filled or dashed.
+    // The pool is always drawn at full size, filled or dashed.
     drawers.forEach((d) => expect(d.querySelectorAll(".pslot").length).toBe(3));
     expect(drawers[0].hasAttribute("inert")).toBe(false);
     expect(drawers[1].hasAttribute("inert")).toBe(true);
@@ -371,8 +316,7 @@ describe("the rail of members", () => {
     const rail = screen.getByRole("navigation", { name: "Members" });
     const heightRead = vi.spyOn(rail, "scrollHeight", "get").mockReturnValue(100);
 
-    // Let the mount-time frame finish, then count only work caused by the
-    // transition events below.
+    // Count only reads caused by the transition events below.
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     heightRead.mockClear();
 
@@ -404,7 +348,6 @@ describe("the rail of members", () => {
     const rows = railRows();
     expect(rows[2].getAttribute("aria-current")).toBe("page");
     expect(rows[0].getAttribute("aria-current")).toBeNull();
-    // The pane is that member's: "Cleo's stash", not the session member's.
     expect(screen.getByRole("region", { name: "Cleo's stash" })).toBeTruthy();
   });
 
@@ -428,15 +371,11 @@ describe("the rail of members", () => {
   });
 });
 
-/* The wall (#232). What the cells look like is CSS and belongs to the browser
-   pass — the column count, the reserved height and the hover reveal are all
-   sizes, and jsdom has no layout. What is here is what the markup decides:
-   whose stash the pane says it is, what names it, how many controls a tile
-   carries, and which of the four empty states renders. */
+/* The wall (#232). Sizes and hover are CSS and belong to the browser pass;
+   this pins the markup. */
 describe("the stash wall", () => {
   const roster = [member(1, 1, 3, "Ada"), member(2, 0, 0, "Cleo Sands")];
 
-  /** The pane's wall, whatever it currently holds. */
   const wall = () => document.querySelector(".mem-wall") as HTMLElement;
   const typeFilter = (term: string) =>
     fireEvent.change(screen.getByRole("textbox", { name: /^Search / }), {
@@ -449,8 +388,7 @@ describe("the stash wall", () => {
 
     cleanup();
     await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
-    // The first name, not the full one the rail carries: "Cleo's stash" reads
-    // like speech where "Cleo Sands' stash" reads like a record.
+    // First name only: "Cleo Sands' stash" reads like a record.
     const heading = screen.getByRole("heading", { level: 3 });
     expect(heading.textContent).toBe("Cleo's stash");
     expect(heading.getAttribute("title")).toBe("Cleo's stash");
@@ -474,16 +412,14 @@ describe("the stash wall", () => {
     const tiles = wall().querySelectorAll(".mem-tile");
     expect(tiles.length).toBe(3);
     tiles.forEach((tile, i) => {
-      // Two buttons and no more: the poster itself, which opens the record
-      // (#233), and the one corner action.
+      // The poster (opens the record, #233) and the one corner action.
       const controls = within(tile as HTMLElement).getAllByRole("button");
       expect(controls.map((c) => c.getAttribute("aria-label"))).toEqual([
         `Movie ${100 + i}`,
         "Move to pool",
       ]);
     });
-    // Edit, delete and the link out are gone from the tile: they belong to the
-    // movie modal, which is where every poster on this page now goes.
+    // Edit, delete and the link out live in the movie modal.
     expect(within(wall()).queryByRole("link")).toBeNull();
     expect(within(wall()).queryByRole("button", { name: "More actions" })).toBeNull();
 
@@ -492,8 +428,6 @@ describe("the stash wall", () => {
     const guestTiles = wall().querySelectorAll(".mem-tile");
     expect(guestTiles.length).toBe(3);
     guestTiles.forEach((tile, i) => {
-      // The poster and nothing beside it: the corner action is the whole of
-      // what a guest board is missing.
       const controls = within(tile as HTMLElement).getAllByRole("button");
       expect(controls.map((c) => c.getAttribute("aria-label"))).toEqual([`Movie ${100 + i}`]);
     });
@@ -527,7 +461,7 @@ describe("the stash wall", () => {
     await renderTab({ users: [member(1, 0, 0, "Ada")], meID: 1 });
 
     expect(within(wall()).getByRole("button", { name: "Add to Ada's stash" })).toBeTruthy();
-    // No prose beside it: the add tile is the empty state, not a route to one.
+    // No prose: the add tile is the empty state.
     expect(wall().querySelector(".mem-wall__empty")).toBeNull();
   });
 
@@ -551,24 +485,20 @@ describe("the stash wall", () => {
   it("leaves the pane head one control: the search field", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // No sort control, in either direction and under no key. The order is fixed
-    // title-ascending and the field is the only way to act on the wall's shape.
+    // No sort control: the order is fixed title-ascending.
     const head = document.querySelector(".mem-stash__head") as HTMLElement;
     expect(within(head).queryAllByRole("button")).toEqual([]);
     expect(within(head).getAllByRole("textbox").length).toBe(1);
   });
 });
 
-/* Every poster opens the modal (#233). The point of the ticket is what a board
-   you cannot act on is made of: the same buttons as your own, minus the corner
-   action. So each case here is asserted on both boards, and the empty pool slot
-   is the one cell that answers nothing on either. */
+/* Every poster opens the modal (#233). Each case runs on both boards: a guest
+   board is your own minus the corner action. */
 describe("opening a movie's record", () => {
   // Ada: two of three pool slots, three in stash. Cleo: one and two.
   const roster = [member(1, 2, 3, "Ada"), member(2, 1, 2, "Cleo Sands")];
 
   const wall = () => document.querySelector(".mem-wall") as HTMLElement;
-  /** The selected member's pool, which is the only drawer that is not inert. */
   const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;
   const dialog = () => screen.getByRole("dialog");
 
@@ -608,8 +538,7 @@ describe("opening a movie's record", () => {
   it("makes every filled poster a button, on your own board and on a guest's", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // Named by the movie, not by an authored verb: the poster is the movie, and
-    // the role already says it is a button. Both bands, one language.
+    // Named by the movie, not a verb: the role already says button.
     expect(
       Array.from(openPool().querySelectorAll<HTMLElement>(".pslot--filled .mem-open")).map((b) =>
         b.getAttribute("aria-label"),
@@ -652,29 +581,24 @@ describe("opening a movie's record", () => {
 
     router.history.back();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    // Back landed on the board it was opened from, not on the page before it:
-    // the entry the open pushed carries the same URL and differs only by state.
+    // The pushed entry has the same URL and differs only by state.
     expect(router.state.location.href).toBe("/users?member=2");
   });
 
-  /* The record's attribution is a link to the adder's board (#238). It is a
-     link on every surface, this one included: under replace it consumes the
-     modal's own entry, so clicking it here reads as the modal closing onto the
-     board it names, the same as a genre chip clicked on Stats. */
+  /* The adder link (#238) navigates with replace, so it spends the modal's own
+     history entry and reads as the modal closing onto that board. */
   it("goes from a movie to whoever added it, closing the record onto their board", async () => {
     const { router } = await renderTab({ users: roster, meID: 1 });
 
     fireEvent.click(wall().querySelectorAll(".mem-open")[0] as HTMLElement);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeNull());
 
-    // Every movie here was added by member 1; open one from Ada's own board and
-    // follow the name to member 1's board.
+    // The fixture names member 1 ("Cleo") as the adder of every movie.
     fireEvent.click(within(dialog()).getByRole("link", { name: "Cleo" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(router.state.location.href).toBe("/users?member=1");
-    // Replaced, not stacked: the entry the open pushed is the one that was
-    // spent, so Back leaves the page rather than returning to the record.
+    // Replaced, not stacked: Back leaves the page rather than reopening the record.
     expect(router.state.location.state.movieModal).toBeUndefined();
   });
 
@@ -688,29 +612,26 @@ describe("opening a movie's record", () => {
     const guest = Array.from(openPool().querySelectorAll(".pslot--empty")).map((s) => s.outerHTML);
 
     expect(guest.length).toBe(2);
-    // Same markup down to the attribute: an empty slot is a statement about the
-    // pool, never about who is looking at it.
+    // Same markup: an empty slot says nothing about who is looking.
     expect(new Set([...own, ...guest]).size).toBe(1);
     guest.forEach((slot) => expect(slot).toContain('aria-hidden="true"'));
     expect(openPool().querySelectorAll(".pslot--empty button").length).toBe(0);
   });
 });
 
-/* The three refusals (#234): a full pool, a locked round, a draw in flight.
-   All three are temporary, so none of them takes a control away — absence is
-   the permanent boundary, which the block above pins on a guest board. */
+/* The three refusals (#234). All are temporary, so none removes a control:
+   absence is for guest boards only. */
 describe("a refused action", () => {
   /** Ada: two of three pool slots filled, two in stash. Her own board. */
   const roster = [member(1, 2, 2, "Ada"), member(2, 0, 0, "Bo")];
-  /** Every corner action on the page, pool band then wall, in DOM order. */
+  /** Every corner action, pool band then wall. */
   const actions = () => Array.from(document.querySelectorAll<HTMLElement>(".mem-act"));
   const named = () => actions().map((a) => a.getAttribute("aria-label"));
 
   it("keeps the control where it is and puts the reason on it", async () => {
     await renderTab({ users: roster, meID: 1, locked: true });
 
-    // Four controls, the same four an open round draws: two demotes on the
-    // pool band, two promotes on the wall. Locked used to delete the demotes.
+    // The same four controls an open round draws: two demotes, two promotes.
     expect(named()).toEqual([
       "Move back to stash, round closed",
       "Move back to stash, round closed",
@@ -719,12 +640,10 @@ describe("a refused action", () => {
     ]);
     actions().forEach((a) => {
       expect(a.getAttribute("aria-disabled")).toBe("true");
-      // The tooltip and the accessible name are one string, so what is hovered
-      // and what is spoken cannot drift.
+      // One string for tooltip and name, so they cannot drift.
       expect(a.getAttribute("title")).toBe(a.getAttribute("aria-label"));
-      // Never natively disabled: that would drop it out of the tab order, kill
-      // the focus reveal and leave a keyboard user tabbing a locked wall
-      // without ever meeting the action or the reason.
+      // Never natively disabled: that drops it from the tab order, so a keyboard
+      // user never meets the reason.
       expect(a.hasAttribute("disabled")).toBe(false);
     });
   });
@@ -768,8 +687,7 @@ describe("a refused action", () => {
   it("says round closed on a locked full pool, which used to report the full one", async () => {
     await renderTab({ users: [member(1, 3, 2, "Ada")], meID: 1, locked: true });
 
-    // Full is on screen twice already, as three filled slots and three gold
-    // pips. Locked is only in the status line, so the control says that.
+    // Full already shows as slots and pips; locked is only in the status line.
     expect(new Set(named())).toEqual(
       new Set(["Move back to stash, round closed", "Move to pool, round closed"]),
     );
@@ -851,8 +769,7 @@ describe("a refused action", () => {
 
     const demotes = Array.from(document.querySelectorAll<HTMLElement>(".pslot--filled .mem-act"));
     expect(demotes.length).toBe(3);
-    // Down to the markup: any per-tile difference at all would say which movie
-    // was drawn before the reveal.
+    // Any per-tile difference would give away the drawn movie before the reveal.
     expect(new Set(demotes.map((d) => d.outerHTML)).size).toBe(1);
   });
 
@@ -862,8 +779,7 @@ describe("a refused action", () => {
     expect(named()).toEqual([
       "Move back to stash, a draw is in progress",
       "Move back to stash, a draw is in progress",
-      // A draw does not reach the stash, so the promote falls through to the
-      // lock rather than picking up the draw's reason.
+      // A draw does not reach the stash, so the promote falls through to the lock.
       "Move to pool, round closed",
       "Move to pool, round closed",
     ]);
@@ -873,8 +789,7 @@ describe("a refused action", () => {
     /** The board with the reason strings blanked: everything but the words. */
     const boardShape = () => {
       const board = document.querySelector(".mem__shell")?.cloneNode(true) as HTMLElement;
-      // The page status now travels with the rail screen, but refusal words are
-      // exactly what this comparison removes. Its subject remains the boards.
+      // The status line holds refusal words too; this compares the boards only.
       board.querySelector(".sec-head")?.remove();
       return board.innerHTML
         .replace(/ aria-disabled="true"/g, "")
@@ -887,10 +802,7 @@ describe("a refused action", () => {
     cleanup();
     await renderTab({ users: roster, meID: 1 });
 
-    // No glyph on the tile, no chip on the pool head, no banner over the page:
-    // every refusal here is true of the whole wall at once, so a mark would be
-    // one page-wide fact stamped across sixty posters. Same markup, and the
-    // rest is the dim on the control, which is CSS.
+    // A refusal is page-wide, so it gets no mark: the only difference is the CSS dim.
     expect(refused).toBe(boardShape());
   });
 });
@@ -994,10 +906,10 @@ describe("a pending move", () => {
   });
 });
 
-/* The keyboard and the focus behaviour of the wall (#235). One rule over the
-   whole page: focus moves only when the thing it is sitting on goes away. */
+/* Keyboard and focus on the wall (#235). Focus moves only when the element
+   under it goes away. */
 describe("moving around the wall with the keyboard", () => {
-  /** Ada's board, holding exactly these movies. Her own board unless said. */
+  /** Ada's board, holding exactly these movies. */
   function ada({ pool = [], stash = [] }: { pool?: number[]; stash?: number[] }): User {
     return {
       userID: 1,
@@ -1015,7 +927,6 @@ describe("moving around the wall with the keyboard", () => {
   const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;
   /** The wall's cells, in DOM order: the add tile, then the movies. */
   const cells = () => Array.from(wall().querySelectorAll<HTMLElement>("[data-cell]"));
-  /** Everything in the wall a Tab could reach, in DOM order. */
   const tabStops = () => Array.from(wall().querySelectorAll<HTMLElement>('[tabindex="0"]'));
   const named = (el: Element | null) => el?.getAttribute("aria-label") ?? null;
   const press = (key: string) =>
@@ -1028,9 +939,7 @@ describe("moving around the wall with the keyboard", () => {
   it("is a list, not a grid", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // The responsive column count belongs to CSS, and the wall is an A-Z list
-    // of movies: grid coordinates would announce the stylesheet. No row and no
-    // cell roles either.
+    // The wall is an A-Z list; grid coordinates would announce the CSS column count.
     expect(document.querySelector('[role="grid"]')).toBeNull();
     expect(wall().getAttribute("role")).toBeNull();
     expect(wall().querySelector('[role="row"], [role="gridcell"]')).toBeNull();
@@ -1044,15 +953,13 @@ describe("moving around the wall with the keyboard", () => {
 
     cells()[0].focus();
     press("ArrowRight");
-    // A movie cell, and the whole wall: the poster and its own corner action.
-    // Every other poster and every other action is out of the tab order.
+    // The whole wall is two stops: this poster and its corner action.
     expect(tabStops().map(named)).toEqual(["Movie 100", "Move to pool"]);
-    // Two per movie and the add tile, nine controls in a four-movie wall.
+    // Nine controls: two per movie plus the add tile.
     expect(wall().querySelectorAll(".mem-open, .mem-act, .mem-addtile").length).toBe(9);
 
     cleanup();
     await renderTab({ users: roster, meID: 2, href: "/users?member=1" });
-    // A guest board has no corner action at all, so its wall is one stop.
     expect(tabStops().map(named)).toEqual(["Movie 100"]);
   });
 
@@ -1070,8 +977,7 @@ describe("moving around the wall with the keyboard", () => {
     press("Home");
     expect(named(document.activeElement)).toBe("Add to Ada's stash");
 
-    // In jsdom the wall is one column wide (no layout to read), so a row is a
-    // cell. Multi-column movement is stashWall.test.ts's table.
+    // jsdom has one column, so a row is a cell (multi-column: stashWall.test.ts).
     press("ArrowDown");
     expect(named(document.activeElement)).toBe("Movie 100");
     press("ArrowUp");
@@ -1095,8 +1001,7 @@ describe("moving around the wall with the keyboard", () => {
     cells()[0].focus();
     press("ArrowRight");
 
-    // Tab from the poster reaches its own corner action, which is where an
-    // arrow is as likely to be pressed as on the poster itself.
+    // Tab from the poster lands here, so arrows must work here too.
     const action = wall().querySelector(".mem-tile .mem-act") as HTMLElement;
     action.focus();
     press("ArrowRight");
@@ -1106,17 +1011,14 @@ describe("moving around the wall with the keyboard", () => {
   it("takes the index to wherever focus lands, so a pointer and the arrows agree", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // A click on a poster opens the movie's record and leaves focus on it. The
-    // next arrow has to move from there, not from wherever the index was last
-    // left — mixing the two is the ordinary way to use this page.
+    // A click leaves focus on the poster; the next arrow must start from there.
     cells()[3].focus();
     await waitFor(() => expect(tabStops().map(named)).toEqual(["Movie 102", "Move to pool"]));
 
     press("ArrowRight");
     expect(named(document.activeElement)).toBe("Movie 103");
 
-    // The corner action counts as its own tile's cell, so an arrow from there
-    // starts from that tile too.
+    // The corner action counts as its tile's cell.
     const action = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act")[0];
     action.focus();
     await waitFor(() => expect(tabStops()).toContain(action));
@@ -1170,8 +1072,7 @@ describe("moving around the wall with the keyboard", () => {
     press("End");
 
     typeFilter("Movie 10");
-    // The add tile is gone under a filter, so the first cell is the first
-    // match: Tab out of the field lands on it and not on the fourth movie.
+    // No add tile under a filter, so the first cell is the first match.
     expect(tabStops().map(named)).toEqual(["Movie 100", "Move to pool"]);
   });
 
@@ -1187,8 +1088,7 @@ describe("moving around the wall with the keyboard", () => {
 
   it("puts Tab out of the field on Add on your own board and on the first match on a guest's", async () => {
     await renderTab({ users: roster, meID: 1 });
-    // Inside the roving list rather than a stop before it, which is what makes
-    // this the same tab stop the arrows then move.
+    // Inside the roving list, so it is the same stop the arrows move.
     expect(named(tabStops()[0])).toBe("Add to Ada's stash");
 
     cleanup();
@@ -1201,8 +1101,7 @@ describe("moving around the wall with the keyboard", () => {
 
     typeFilter("zzz");
     expect(tabStops()).toEqual([]);
-    // Nothing focusable in it either, so Tab goes past the wall to the line
-    // that is already there.
+    // Nothing focusable either, so Tab passes the wall.
     expect(within(wall()).queryAllByRole("button")).toEqual([]);
     expect(wall().querySelector(".mem-wall__empty")?.textContent).toBe('Nothing matches "zzz"');
   });
@@ -1213,12 +1112,10 @@ describe("moving around the wall with the keyboard", () => {
     const promote = wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act")[1];
     promote.focus();
     fireEvent.click(promote);
-    // The move and the roster are separate round trips; this is the roster
-    // coming back over SSE without the promoted movie in it.
+    // The roster arriving over SSE, separate from the move request.
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10, 101], stash: [100, 102, 103] }), bo]);
 
-    // The poster, never that cell's corner action: the third promote fills the
-    // pool, which would strand focus on a control that has just been refused.
+    // The poster, not its corner action: once the pool fills, that action is refused.
     await waitFor(() => expect(named(document.activeElement)).toBe("Movie 102"));
     expect((document.activeElement as HTMLElement).className).toBe("mem-open");
   });
@@ -1237,8 +1134,7 @@ describe("moving around the wall with the keyboard", () => {
   it("falls back to the pane heading when the promote empties the wall", async () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
 
-    // Under a filter, so the wall really does empty: your own unfiltered wall
-    // always keeps the add tile.
+    // Filtered, because your own unfiltered wall always keeps the add tile.
     typeFilter("Movie 103");
     const promote = wall().querySelector(".mem-tile .mem-act") as HTMLElement;
     promote.focus();
@@ -1252,8 +1148,7 @@ describe("moving around the wall with the keyboard", () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
 
     fireEvent.click(wall().querySelectorAll<HTMLElement>(".mem-tile .mem-act")[1]);
-    // Clicking a control is not a promise to stay on it. The roster lands a
-    // moment later, by which time the person is typing.
+    // The roster lands after the person has moved on to typing.
     const field = screen.getByRole("textbox", { name: /^Search / });
     field.focus();
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10, 101], stash: [100, 102, 103] }), bo]);
@@ -1395,8 +1290,7 @@ describe("moving around the wall with the keyboard", () => {
     fireEvent.click(demote);
     client.setQueryData(UsersKeys.list(), [ada({ pool: [11], stash: [10, 100] }), bo]);
 
-    // The slot does not reflow around an empty one and an empty slot is not
-    // focusable, so focus goes to the movie that is now in that slot.
+    // An empty slot is not focusable, so focus goes to the movie now in that slot.
     await waitFor(() => expect(named(document.activeElement)).toBe("Movie 11"));
   });
 
@@ -1568,9 +1462,7 @@ describe("moving around the wall with the keyboard", () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
     cells()[1].focus();
 
-    // Somebody else's edit, or your own from another tab: the movie goes and
-    // takes the focused poster with it. Left alone, focus falls to the document
-    // and Tab starts again from the top of the page.
+    // Another person's edit, or another tab. Left alone, focus falls to the document.
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10], stash: [101, 102, 103] }), bo]);
 
     await waitFor(() => expect(document.activeElement).toBe(heading()));
@@ -1590,9 +1482,7 @@ describe("moving around the wall with the keyboard", () => {
     const { client } = await renderTab({ users: roster, meID: 1 });
     cells()[1].focus();
 
-    // Focus left the wall of its own accord before the tile went. Nothing was
-    // taken from under it, so nothing is handed on: the heading does not steal
-    // focus from the field somebody is typing in.
+    // Focus left the wall before the tile went, so nothing is handed on.
     screen.getByRole("textbox", { name: /^Search / }).focus();
     client.setQueryData(UsersKeys.list(), [ada({ pool: [10], stash: [101, 102, 103] }), bo]);
 
@@ -1601,33 +1491,22 @@ describe("moving around the wall with the keyboard", () => {
   });
 });
 
-/* The mobile push (#236). Below 761px the two columns are two screens: the rail,
-   where selecting a member opens their pool in place, and the pushed board over
-   the top of it. The address has two halves to match — `member` says whose pool
-   the rail has open, `stash` says you have gone on to their movies — because one
-   key saying both would mean tapping a member always left the rail, and nobody
-   else's pool would be reachable on a phone at all.
-
-   Which screen is drawn is CSS and jsdom has no layout, so what is here is what
-   the markup and the focus rules decide: that `stash` is the pushed flag and a
-   rail row does not set it, that the live region is out of the head the push
-   removes, what the back bar carries, and where focus goes on the way in and
-   out. The four columns at 375, the single scroller and the head's removal are
-   sizes, and they belong to the browser pass. */
+/* The mobile push (#236). Below 761px the rail and the pushed board are two
+   screens: `member` selects whose pool the rail opens, `stash` pushes to their
+   movies. Layout is CSS and belongs to the browser pass; this pins the flag,
+   the live region, the back bar and focus. */
 describe("the mobile push", () => {
   const pushQuery = "not all and (min-width: 761px)";
   const levelFourPushQuery = "not (min-width: 761px)";
   const roster = [member(1, 1, 3, "Ada"), member(2, 2, 2, "Bo")];
   const heading = () => screen.getByRole("heading", { level: 3 });
   const pushedFlag = () => document.querySelector(".mem")?.getAttribute("data-pushed");
-  /** The open drawer's way on to that member's movies. */
+  /** The open drawer's link to that member's stash. */
   const toStash = () =>
     document.querySelector(".mem-drop__inner:not([inert]) .mem-tostash") as HTMLAnchorElement;
   const openPool = () => document.querySelector(".mem-drop__inner:not([inert])") as HTMLElement;
 
-  // The push's width is a media query, and jsdom answers every one of them
-  // "no" (see setupDom). A phone is that one query saying yes; everything else
-  // still says no, so nothing else in the tree changes with it.
+  // jsdom answers every media query "no" (see setupDom); a phone flips only the push queries.
   const realMatchMedia = window.matchMedia;
   const mediaListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
   let mediaWidth = Number.POSITIVE_INFINITY;
@@ -1692,10 +1571,8 @@ describe("the mobile push", () => {
   };
   const mediaListenerCount = (query: string) => mediaListeners.get(query)?.size ?? 0;
   const onAPhone = () => atWidth(375);
-  // Browser zoom and non-integer device pixel ratios can produce 760.5 CSS
-  // pixels. That width is on CSS's pushed side of the desktop partition, but
-  // it is not at or below the old integer max-width query. Level 4 boolean
-  // syntax is disabled here because Vite 7's browser baseline predates it.
+  // Zoom or a fractional DPR can give 760.5px: pushed in CSS, but above `max-width: 760px`.
+  // Level 4 syntax is off because Vite 7's browser baseline predates it.
   const atFractionalPushWidth = () => atWidth(760.5, false);
   afterEach(() => {
     window.matchMedia = realMatchMedia;
@@ -1716,8 +1593,7 @@ describe("the mobile push", () => {
   it("selects a member without leaving the rail, so every pool stays reachable", async () => {
     const { router } = await renderTab({ users: roster, meID: 1 });
 
-    // A rail row carries the member and nothing else. On a phone that opens
-    // Bo's pool where it stands; the wall is a second, deliberate move.
+    // A rail row carries only the member: on a phone it opens the pool in place.
     expect(railRows().map((r) => r.getAttribute("href"))).toEqual([
       "/users?member=1",
       "/users?member=2",
@@ -1726,7 +1602,6 @@ describe("the mobile push", () => {
     await router.navigate({ to: "/users", search: { member: 2 } });
     await waitFor(() => expect(railRows()[1].getAttribute("aria-current")).toBe("page"));
     expect(pushedFlag()).toBe("false");
-    // Bo's pool, open on the rail screen: two filled slots of three.
     expect(openPool().querySelectorAll(".pslot--filled").length).toBe(2);
   });
 
@@ -1734,8 +1609,7 @@ describe("the mobile push", () => {
     const { router } = await renderTab({ users: roster, meID: 1, href: "/users?member=2" });
 
     expect(toStash().getAttribute("href")).toBe("/users?member=2&stash=true");
-    // Every drawer holds one, so the rail keeps its height across a switch,
-    // but a shut drawer is inert and its link is not reachable.
+    // Every drawer holds one so the rail height stays put; shut drawers are inert.
     expect(document.querySelectorAll(".mem-tostash").length).toBe(2);
     expect(toStash().textContent).toBe("Stash2");
 
@@ -1747,9 +1621,7 @@ describe("the mobile push", () => {
   it("keeps the live region out of the head the pushed screen removes", async () => {
     await renderTab({ users: roster, meID: 1, locked: true, href: "/users?member=2&stash=true" });
 
-    // A display: none live region announces nothing, and the head goes whole on
-    // this screen — so the region cannot be inside it. It is the pushed
-    // screen's only round-state signal.
+    // The head is display: none here, and a hidden live region announces nothing.
     expect(liveRegion()?.closest(".sec-head")).toBeNull();
     expect(liveRegion()?.textContent).toBe("round closed");
   });
@@ -1772,13 +1644,11 @@ describe("the mobile push", () => {
 
     // The pane is keyed on the member, so the bar is re-queried after a switch.
     const bar = () => document.querySelector(".mem-backbar") as HTMLElement;
-    // Two things and no more: the rail is a screen away, so the pips are the
-    // only occupancy signal here and they have to announce as one.
+    // The rail is a screen away, so the pips are the only occupancy signal here.
     expect(within(bar()).getByRole("button").textContent).toBe("All members");
     expect(within(bar()).getByRole("img").getAttribute("aria-label")).toBe("2 of 3 slots filled");
 
-    // Plain history-back, not a link to the rail: the entry before this one is
-    // wherever you came from, and on a cold deep link that is out of the app.
+    // History back, not a link to the rail: on a cold deep link that leaves the app.
     await router.navigate({ to: "/users", search: { member: 1, stash: true } });
     await waitFor(() => expect(heading().textContent).toBe("Your stash"));
     fireEvent.click(within(bar()).getByRole("button"));
@@ -1788,8 +1658,7 @@ describe("the mobile push", () => {
   it("carries the stash count in the pane heading", async () => {
     await renderTab({ users: roster, meID: 1, href: "/users?member=2&stash=true" });
 
-    // Beside the rail the row carries the number and CSS hides this one; on the
-    // pushed screen the rail is another screen, so the heading is where it is.
+    // Beside the rail CSS hides this count; on the pushed screen the heading carries it.
     const id = heading().closest(".mem-stash__id") as HTMLElement;
     expect(id.querySelector(".sec-count")?.textContent).toBe("2");
   });
@@ -1800,8 +1669,7 @@ describe("the mobile push", () => {
 
     await router.navigate({ to: "/users", search: { member: 2, stash: true } });
 
-    // The rail has gone, so focus has to go somewhere, and the heading is the
-    // one guaranteed moment a screen-reader user meets the self-mark.
+    // The rail is gone, and the heading is where a screen reader meets the self-mark.
     await waitFor(() => expect(document.activeElement).toBe(heading()));
     expect(heading().textContent).toBe("Bo's stash");
   });
@@ -1831,8 +1699,7 @@ describe("the mobile push", () => {
     await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
 
     router.history.back();
-    // Back onto your own board is an arrival at a board, not a return to the
-    // rail: the heading takes focus the same way the push does.
+    // Back onto a board is an arrival, so the heading takes focus as on a push.
     await waitFor(() => expect(heading().textContent).toBe("Your stash"));
     expect(document.activeElement).toBe(heading());
   });
@@ -1846,12 +1713,8 @@ describe("the mobile push", () => {
 
     router.history.back();
 
-    // The control you left from, in the drawer that is open again — not the top
-    // of the page, and not your own row.
     await waitFor(() => expect(document.activeElement).toBe(left));
-    // And in the open drawer, which is the part jsdom cannot check for itself:
-    // it does not model `inert`, so a link in a shut drawer takes focus here
-    // and takes none in a browser. Asserted on the DOM instead.
+    // jsdom does not model `inert`, so check the drawer is the open one.
     expect(left.closest(".mem-drop__inner")?.hasAttribute("inert")).toBe(false);
   });
 
@@ -1862,12 +1725,8 @@ describe("the mobile push", () => {
     await router.navigate({ to: "/users", search: { member: 2, stash: true } });
     await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
 
-    // Only reachable by resizing mid-stack: switching member beside the rail
-    // and coming back pops from one member's board to another's rail. Bo's
-    // drawer is shut by then, and a shut drawer is inert, so its link cannot
-    // take focus — calling focus on it would report a restore that did not
-    // happen. Where focus does land is the pane's own rule (#235); what is
-    // pinned here is that it is not the link in the drawer nobody opened.
+    // Only reachable by resizing mid-stack. Bo's drawer is shut and inert, so
+    // focusing its link would fake a restore; where focus lands is #235's rule.
     await router.navigate({ to: "/users", search: { member: 1 } });
 
     await waitFor(() => expect(pushedFlag()).toBe("false"));
@@ -1881,8 +1740,7 @@ describe("the mobile push", () => {
     const rail = railRows()[1];
     rail.focus();
 
-    // Both rows are still on screen and so is the pool that just opened:
-    // nothing was taken away, so nothing is handed on.
+    // Nothing was taken away, so nothing is handed on.
     await router.navigate({ to: "/users", search: { member: 2 } });
     await waitFor(() => expect(railRows()[1].getAttribute("aria-current")).toBe("page"));
     expect(document.activeElement).toBe(rail);
@@ -1896,8 +1754,7 @@ describe("the mobile push", () => {
     await router.navigate({ to: "/users", search: { member: 2, stash: true } });
     await waitFor(() => expect(heading().textContent).toBe("Bo's stash"));
 
-    // Nothing was taken away: both columns are on screen, so a switch costs a
-    // desktop user neither their place in the rail nor an announcement.
+    // Both columns are on screen, so a switch moves no focus.
     expect(document.activeElement).toBe(rail);
   });
 
@@ -1905,8 +1762,7 @@ describe("the mobile push", () => {
     onAPhone();
     await renderTab({ users: roster, meID: 1, href: "/users?member=2&stash=true" });
 
-    // Arriving on a board is not a push, and the page has not taken anything
-    // away from anybody: focus starts where a loaded page starts.
+    // Arriving on a board is not a push: focus starts where a loaded page starts.
     expect(heading().textContent).toBe("Bo's stash");
     expect(document.activeElement).toBe(document.body);
   });
@@ -1917,11 +1773,8 @@ describe("the mobile push", () => {
     const rail = () => document.querySelector(".mem-rail-screen") as HTMLElement;
     const pane = () => document.querySelector(".mem-pane") as HTMLElement;
 
-    // The swap has an exit to play (#266), so the screen being left keeps its
-    // box for the length of it. `inert` is what display: none was doing for
-    // focus and for the accessibility tree, and it lands on the frame of the
-    // navigation rather than at the end of the transition. The screen on its
-    // way out is never a second copy of a control you can reach.
+    // The exit transition (#266) keeps the leaving screen's box, so `inert`
+    // takes it out of reach from the first frame.
     expect(pane().hasAttribute("inert")).toBe(true);
     expect(rail().hasAttribute("inert")).toBe(false);
 
@@ -1971,8 +1824,7 @@ describe("the mobile push", () => {
   it("leaves both screens reachable above 761, where they are one screen", async () => {
     await renderTab({ users: roster, meID: 1, href: "/users?member=2&stash=true" });
 
-    // `stash` does nothing up here: the pane is already beside the rail, so
-    // neither screen has replaced the other and neither goes inert.
+    // Above 761 the pane is beside the rail, so `stash` changes nothing.
     expect(document.querySelector(".mem-rail-screen")?.hasAttribute("inert")).toBe(false);
     expect(document.querySelector(".mem-pane")?.hasAttribute("inert")).toBe(false);
   });

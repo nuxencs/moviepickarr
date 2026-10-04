@@ -8,8 +8,7 @@ const has = (keys: readonly (readonly unknown[])[], key: readonly unknown[]) =>
   keys.some((k) => JSON.stringify(k) === JSON.stringify(key));
 
 describe("the invalidation table", () => {
-  // Exhaustiveness over SSEEventType is enforced at compile time by the
-  // Record type; this pins the runtime lookup path.
+  // The Record type enforces exhaustiveness; this pins the runtime lookup.
   it("answers every known event and rejects unknown ones", () => {
     for (const type of Object.keys(SSE_INVALIDATIONS)) {
       expect(invalidationsFor(type)).not.toBeNull();
@@ -27,9 +26,8 @@ describe("the invalidation table", () => {
   });
 
   it("a reveal releases the pool the server held for the reel", () => {
-    // The server hands the drawn movie back in every pool read until the reveal,
-    // so the refresh has to happen when the reveal lands — including on clients
-    // that never ran a reel and have no land of their own to hook.
+    // The server holds the drawn movie in pool reads until the reveal, and some
+    // clients never ran a reel to hook.
     const row = SSE_INVALIDATIONS["movie:revealed"];
     for (const key of [MoviesKeys.listpool(), UsersKeys.list(), SettingsKeys.poolLock()]) {
       expect(has(row, key)).toBe(true);
@@ -118,7 +116,6 @@ describe("the invalidation table", () => {
 describe("resyncKeys", () => {
   it("is the union of the table (deduped), pool included", () => {
     const keys = resyncKeys();
-    // Everything a missed event could have staled must be re-pulled.
     for (const key of [
       UsersKeys.list(),
       MoviesKeys.listpool(),
@@ -133,7 +130,6 @@ describe("resyncKeys", () => {
     ]) {
       expect(has(keys, key)).toBe(true);
     }
-    // Deduped: no key twice.
     const ids = keys.map((k) => JSON.stringify(k));
     expect(new Set(ids).size).toBe(ids.length);
   });

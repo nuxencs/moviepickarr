@@ -1,26 +1,6 @@
-/* ============================================================
-   Render tests for the avatar profile panel (#140).
-
-   The panel is the app's one popover whose dismissal splits two ways: Escape
-   and the in-panel links hand focus back to the avatar, an outside click
-   leaves focus where the pointer put it. That branch lives in the component
-   (it picks the `restoreFocus` flag per gesture), so there's no seam below the
-   render to test it at, which is what puts this file in the dom project.
-
-   The shared dismissal machine underneath is `useDismissible`, and the exit
-   motion means a dismissal is not done until its timer has run: the panel
-   stays mounted through the closing phase on purpose. Tests drive fake timers
-   past it rather than asserting on the intermediate state.
-
-   Note the split is deliberate, and the #140 brief has it wrong: it asks for
-   focus back on the trigger "in both cases". An outside click already put the
-   pointer somewhere, and yanking focus off it would be the bug. The panel's
-   own comment says as much, so the behaviour is pinned here, not the brief.
-
-   Routing and the logout call are the two things a unit render can't have, so
-   both are stubbed. Which tabs an actor sees is a pure question and belongs to
-   nav.test.ts; this file only cares that the panel's own chrome works.
-   ============================================================ */
+/* Render tests for the avatar profile panel (#140). Escape and in-panel links
+   return focus to the avatar; an outside click leaves it where the pointer put
+   it (deliberately unlike the #140 brief). Routing and logout are stubbed. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";
@@ -35,7 +15,6 @@ import type { ReactNode } from "react";
 
 const navigate = vi.fn();
 
-// Account settings is a real route link; outside a router there's no Link.
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
     <a
@@ -115,7 +94,6 @@ describe("opening the panel", () => {
 
     expect(panel()).not.toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    // The panel is only announced as the trigger's surface while it exists.
     expect(trigger.getAttribute("aria-controls")).toBe(panel()?.id);
   });
 
@@ -160,15 +138,12 @@ describe("dismissing the panel", () => {
     const { trigger } = renderPanel();
     fireEvent.click(trigger);
 
-    // Focus the outside button first. jsdom's pointerDown doesn't move focus
-    // on its own, so without this the assertion below would sit on <body> and
-    // pass whether or not the panel grabbed focus back.
+    // jsdom's pointerDown does not move focus; without this, <body> passes either way.
     outside.focus();
     fireEvent.pointerDown(outside);
     runExit();
 
     expect(panel()).toBeNull();
-    // The avatar must NOT steal focus back: the click had its own target.
     expect(document.activeElement).toBe(outside);
     outside.remove();
   });
@@ -177,7 +152,6 @@ describe("dismissing the panel", () => {
     const { trigger } = renderPanel();
     fireEvent.click(trigger);
 
-    // Escape starts the exit; the panel is still mounted, playing it out.
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(trigger);
 
@@ -209,8 +183,7 @@ describe("dismissing the panel", () => {
   });
 });
 
-/** react-query runs a mutation through a promise chain, so the call doesn't
- *  land on the synchronous return from the click. */
+/** A mutation runs through a promise chain, so the call lands after the click returns. */
 async function clickAndSettle(button: HTMLElement) {
   await act(async () => {
     fireEvent.click(button);

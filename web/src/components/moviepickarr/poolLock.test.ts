@@ -106,9 +106,7 @@ describe("membersStatus", () => {
   });
 
   it("holds the numerator whether or not a draw is in progress", () => {
-    // The pool stays frozen with the winner still in it until the reveal lands,
-    // so the count must read the same the whole way through. A numerator that
-    // dropped at reveal would say a movie had been drawn.
+    // The winner stays in the frozen pool until the reveal; a dropping count would leak it.
     for (const drawInProgress of [false, true]) {
       expect(membersStatus(partial, false, drawInProgress).text).toContain("9 of 12 slots filled");
     }

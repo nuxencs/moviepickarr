@@ -1,22 +1,6 @@
-/* ============================================================
-   Render tests for the movie modal's history entry (#196).
-
-   The modal is opened from a history entry rather than a plain boolean, so
-   browser Back closes it. What that's really made of is a hook and the Modal
-   shell talking to each other through a router, and none of the three can
-   show the behaviour alone: the hook's entry is meaningless without a surface
-   reacting to it, and the shell can't reach a router. So the subject here is
-   the wiring, mounted on a memory history the way both tabs mount it.
-
-   The tabs themselves aren't the subject. MoviesTab and StatsTab differ only
-   in which list they derive the live movie from, and seeding either one's
-   half-dozen queries would test the seeding. What they share is reproduced
-   below, once, and run against both surfaces.
-
-   "Browser Back" is `router.history.back()` here. That's not a shortcut: the
-   app's own dismiss gestures call exactly that, and against a memory history
-   it's the same code path the browser's button takes through popstate.
-   ============================================================ */
+/* Render tests for the movie modal's history entry (#196): the hook, the Modal
+   shell and a memory-history router wired the way both tabs wire them.
+   `router.history.back()` is the same path the browser's Back button takes. */
 
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,8 +13,7 @@ import { clearMovieModalHistory, useMovieModal } from "@/hooks/useMovieModalHist
 import { renderWithProviders } from "@/test/providers";
 
 const MOVIES = "/" as const;
-// The Stats view lives entirely in its search params, and the entry the modal
-// pushes must not disturb them, which is the bug that started the issue.
+// The modal's entry must not disturb Stats' search params (the bug behind #196).
 const STATS = "/stats?win=year&genres=27" as const;
 
 function movie(overrides: Partial<MovieTile> = {}): MovieTile {
@@ -45,8 +28,7 @@ function movie(overrides: Partial<MovieTile> = {}): MovieTile {
   };
 }
 
-/** What both tabs do: open pushes an entry, every dismiss pops it, and the
- *  surface outlives the entry just long enough to play its exit. */
+/** What both tabs do: open pushes an entry, every dismiss pops it. */
 function Subject({
   movies = [movie()],
   deleteResult,
@@ -152,8 +134,7 @@ describe.each([
     await runExit();
 
     expect(screen.queryByRole("dialog")).toBeNull();
-    // Popped, not merely hidden: a gesture that closed without going back
-    // would leave its entry behind and Back would then do nothing.
+    // Popped, not merely hidden, or Back would then do nothing.
     expect(router.history.canGoBack()).toBe(false);
   });
 });
@@ -175,8 +156,6 @@ describe("the history stack", () => {
     expect(screen.getByRole("dialog")).toBe(dialog);
     expect(dialog.classList.contains("modal--closing")).toBe(false);
 
-    // The first exit timer is gone, the same surface still owns focus, and the
-    // restored entry can be dismissed normally.
     await runExit();
     expect(screen.getByRole("dialog")).toBe(dialog);
     expect(document.activeElement).toBe(closeButton);
@@ -197,8 +176,7 @@ describe("the history stack", () => {
       await runExit();
     }
 
-    // Each open consumed the entry it pushed, so one more Back leaves the
-    // page instead of replaying three closed modals.
+    // Each open consumed its entry, so Back does not replay closed modals.
     expect(router.history.canGoBack()).toBe(false);
   });
 
@@ -213,8 +191,7 @@ describe("the history stack", () => {
     fireEvent.click(poster("Possession"));
     fireEvent.click(screen.getByRole("button", { name: "Delete movie" }));
 
-    // Spend Possession's entry before its request completes, then open another
-    // record. The old completion owns neither the new modal nor its entry.
+    // The old completion must own neither the new modal nor its entry.
     act(() => router.history.back());
     await runExit();
     fireEvent.click(poster("Stalker"));
@@ -234,9 +211,8 @@ describe("an entry left behind by navigating away", () => {
   it("doesn't hold the modal open when the same movie is opened again", async () => {
     const { router } = await mount(MOVIES);
 
-    // Leave with the modal up, which strands its entry. Let the abandoned
-    // surface finish closing before returning: coming back during that motion
-    // is an interrupted exit, covered above, not an abandoned modal.
+    // Strand the entry, and let the exit finish: returning mid-motion is the
+    // interrupted-exit case above.
     fireEvent.click(poster("Possession"));
     await act(async () => void (await router.navigate({ to: "/admin" })));
     await runExit();
@@ -246,9 +222,7 @@ describe("an entry left behind by navigating away", () => {
     await runExit();
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    // Same movie again: the stranded entry underneath still describes it, so
-    // an id would match and the dismissal below would land on a "still open"
-    // entry with every gesture already spent.
+    // Same movie: the stranded entry below still matches its id.
     fireEvent.click(poster("Possession"));
     expect(screen.queryByRole("dialog")).not.toBeNull();
 
@@ -266,8 +240,7 @@ describe("a reload with the modal open", () => {
     const href = router.history.location.href;
     expect(router.history.location.state.movieModal).toBeDefined();
 
-    // Location state survives a reload of its entry; this is what startup
-    // does before the first render, so nothing reads a stale open modal.
+    // Location state survives a reload; startup clears it before the first render.
     act(() => clearMovieModalHistory(router));
     await runExit();
 
@@ -275,8 +248,7 @@ describe("a reload with the modal open", () => {
     expect(router.history.location.href).toBe(href);
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    // The entry is spent, not merely emptied: Back after the reload goes to
-    // whatever was under the modal rather than re-opening it.
+    // Spent, not emptied: Back goes past the modal rather than reopening it.
     act(() => router.history.back());
     await runExit();
     expect(screen.queryByRole("dialog")).toBeNull();

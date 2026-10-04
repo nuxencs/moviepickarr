@@ -1,17 +1,6 @@
-/* ============================================================
-   Render test for the open Menu's scroll repositioning.
-
-   The menu is a fixed portal anchored to its trigger, so it re-reads both
-   rects while the page scrolls. Scroll fires far faster than the compositor
-   paints, and the measurement is layout-forcing, so the repositioning has to
-   coalesce to one pass per frame. That only exists once the menu is open and
-   listening, so it's tested through a rendered menu.
-
-   This one counts rect reads rather than querying what a member sees, against
-   the usual rule for this project (see vitest.config.ts). Deliberate: throttled
-   and unthrottled both land the menu in the same place, so the count of layout
-   reads per frame IS the property, and there's no pure seam under it to test.
-   ============================================================ */
+/* Render test for the open Menu's scroll repositioning: one layout-forcing
+   pass per frame. It counts rect reads, against the usual rule (see
+   vitest.config.ts), because throttled and unthrottled land in the same place. */
 
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -57,7 +46,7 @@ describe("Menu", () => {
     act(() => {
       for (let i = 0; i < 5; i++) window.dispatchEvent(new Event("scroll"));
     });
-    // Nothing measured yet — the burst is parked on a single frame request.
+    // Nothing measured yet: the burst waits on a single frame request.
     expect(rectSpy).not.toHaveBeenCalled();
 
     flushFrame();

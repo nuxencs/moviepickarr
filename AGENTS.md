@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## Development
+
+Commands, dev fixtures, and dev logins (`ada` / `devpassword`): `docs/DEVELOPMENT.md`. Seeded movie titles: `internal/devfixtures/data/movies.json`. Start the app with `make dev`.
+
+- Checks: `make test` and `make lint` from the root. Web only: `bun run test`, `bun run lint`, and `bunx tsc -b` in `web/`. There is no Prettier config and no `typecheck` script.
+- Playwright serves the Go binary with the embedded `web/dist`. `bun run test:e2e` builds first; a direct `bunx playwright test` does not, so run `bun run build` before it. Use `--project=chromium` locally: on macOS 27, Playwright Firefox hangs at launch when Firefox is installed (microsoft/playwright#42768), so CI covers it.
+- Guard layout and motion regressions in Playwright (`boundingBox`, `getComputedStyle`), never with vitest tests that read CSS as text.
+
 ## Comments
 
 Applies to Go, TypeScript, and CSS. Default to no comment. Add one only when it earns its place:

@@ -160,7 +160,7 @@ while checking navigation, expiry, and first-load behavior.
 
 ## Docs
 
-- [`../CONTEXT.md`](../CONTEXT.md): the project glossary. Use its terms in
+- [`../GLOSSARY.md`](../GLOSSARY.md): the project glossary. Use its terms in
   code, copy and issues.
 - [`PRODUCT.md`](PRODUCT.md): what the app is and who it is for.
 - [`DESIGN.md`](DESIGN.md): the design system. Read it before any web/UI work.

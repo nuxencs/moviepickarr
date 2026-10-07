@@ -29,5 +29,5 @@ For the full dev loop (Vite + Go side by side) run `make dev` from the repo root
 ## Docs
 
 - [`../docs/DESIGN.md`](../docs/DESIGN.md): the design system. Read it before any UI work.
-- [`../CONTEXT.md`](../CONTEXT.md): the glossary. Use its terms (draw, adder, next up).
+- [`../GLOSSARY.md`](../GLOSSARY.md): the glossary. Use its terms (draw, adder, next up).
 - [`../docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md): the dev/test/lint workflow.

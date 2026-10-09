@@ -33,7 +33,7 @@ env:
   REGISTRY: ghcr.io
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
   # renovate: datasource=github-releases depName=oven-sh/bun
-  BUN_VERSION: "1.4.0"
+  BUN_VERSION: "1.4.2"
 
 permissions:
   contents: read

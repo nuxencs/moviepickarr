@@ -2,6 +2,8 @@ module moviepickarr
 
 go 1.27.0
 
+toolchain go1.27.2
+
 require (
 	github.com/alexedwards/argon2id v1.0.0
 	github.com/coreos/go-oidc/v3 v3.20.0

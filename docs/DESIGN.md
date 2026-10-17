@@ -411,21 +411,27 @@ the moment of editing/deleting. We removed them:
 - `web/src/components/ui/{alert-dialog,button,input}.tsx` were **deleted**.
 - The user "more actions" menu is the bespoke `Menu` (`moviepickarr/Menu.tsx`): a
   portalled floating surface (`.mg-menu`) on the shared `mg-scaleIn` / `mg-scaleOut`
-  motion, scaling from the trigger corner. It owns its focus behaviour — Esc/Tab
-  return focus to the trigger, but selecting an item does not (the action's `Modal`
-  takes focus), so the trigger can't sit focused behind a dialog where Enter would
-  reopen it. This replaced the last Radix primitive (`ui/dropdown-menu.tsx`, deleted)
-  and dropped `@radix-ui/react-dropdown-menu` — **no Radix remains**.
+  motion, scaling from the trigger corner. It owns its focus behaviour: Esc, Tab, and a
+  pick return focus to the trigger. A pick returns it before the action's `Modal`
+  mounts, so the `Modal` adopts the trigger as its opener and takes focus from it. This
+  replaced the last Radix primitive (`ui/dropdown-menu.tsx`, deleted) and dropped
+  `@radix-ui/react-dropdown-menu`: **no Radix remains**. With `checked`
+  set on every action it is a choose-one menu (the stash sort): `menuitemradio` items with
+  a fixed check slot (`.mg-menu__check`), so the choice is a mark and not gold alone, and
+  it opens on the current choice.
 
 ### Decision: what the Members page deliberately leaves out
 
 These are answers, not gaps. Recorded so a later reader does not restore them as missing
 features.
 
-- **No sort control on the wall.** Order is fixed title-ascending. Title and date-added
-  are the only keys always present; the rest arrive with enrichment and would reorder the
-  wall under the reader as SSE lands, and an untitled tile makes no key but title
-  verifiable by looking. The filter field above the wall is the find-a-movie path instead.
+- **Sort by title or date added only.** The sort button beside the search field offers
+  Title A–Z (default), Title Z–A, Newest added, and Oldest added. These are the only keys
+  every movie has from the start; year, rating, and runtime arrive with enrichment and
+  would reorder the wall under the reader as SSE lands. The order is the viewer's
+  **Stash order** (GLOSSARY.md): kept per browser and used on every member's wall. Its
+  glyph changes with the order, so the button needs no other mark of a non-default sort.
+  The search field above the wall stays the find-a-movie path.
 - **No self-mark in the rail** — no chip, no tint, no border. On arrival your row is
   first and selected, and selection already speaks three times (the active row, its
   `aria-current`, and the pane beside it). The positive self-mark is the pane's
@@ -679,8 +685,8 @@ closes the movie record.
   a `role="grid"`: the Members wall's column count is a container-query artifact of the
   cell width, so grid coordinates would be announcing the stylesheet. The column count is
   read back off the resolved `grid-template-columns` rather than computed again in JS. The
-  roving index resets to the first cell on an explicit context change, a filter or switch of
-  subject, which also decides where Tab out of the field above it lands. Live keyed-list
+  roving index resets to the first cell on an explicit context change, a filter, a sort, or
+  a switch of subject, which also decides where Tab out of the field above it lands. Live keyed-list
   updates keep a surviving focused movie as the tab stop and carry its new cell index
   along, so the next arrow still starts from that movie.
 - **Focus moves only when the thing it is sitting on goes away**, and then to the nearest

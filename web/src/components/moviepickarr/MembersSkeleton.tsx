@@ -90,7 +90,7 @@ export function MembersSkeleton() {
         </div>
 
         <div className="mem-stash">
-          {/* The field is reserved even though the real one hides at zero
+          {/* The search row is reserved even though the real one hides at zero
               movies: below 900px the head stacks, and its arrival would push
               the wall down. The count hides above 760px like the real one. */}
           <div className="mem-stash__head">
@@ -98,7 +98,10 @@ export function MembersSkeleton() {
               <Skeleton w={132} h={15} />
               <Skeleton className="mem-skel__ct" />
             </div>
-            <Skeleton className="mem-skel__field" />
+            <div className="mem-stash__tools">
+              <Skeleton className="mem-skel__field" />
+              <Skeleton className="mem-skel__sort" />
+            </div>
           </div>
 
           <div className="mem-wallbox mem-skel__wall">

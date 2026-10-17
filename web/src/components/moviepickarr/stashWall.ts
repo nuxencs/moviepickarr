@@ -1,7 +1,7 @@
 import type { MovieTile } from "@/types/Response";
 
 /**
- * Search and keyboard rules for the untitled stash wall, kept out of the markup
+ * Search, order, and keyboard rules for the untitled stash wall, kept out of the markup
  * so they test without rendering (#235).
  */
 
@@ -14,6 +14,59 @@ export function filterStash(stash: MovieTile[], filter: string): MovieTile[] {
   // Same array back: the wall is memoized per tile, so a new identity would re-render it.
   if (!q) return stash;
   return stash.filter((movie) => movie.title.toLowerCase().includes(q));
+}
+
+/** The viewer's stash order. Only keys every movie has from the start (#254). */
+export type StashOrder = "title-asc" | "title-desc" | "added-desc" | "added-asc";
+
+/** Wording of every stash order, in menu order. */
+export const STASH_ORDER_LABELS: Record<StashOrder, string> = {
+  "title-asc": "Title A–Z",
+  "title-desc": "Title Z–A",
+  "added-desc": "Newest added",
+  "added-asc": "Oldest added",
+};
+
+export const STASH_ORDER_KEYS = Object.keys(STASH_ORDER_LABELS) as StashOrder[];
+
+const ORDER_KEY = "mp-stash-order";
+
+/** The order this browser last chose, or title A to Z. */
+export function readStashOrder(): StashOrder {
+  try {
+    const stored = localStorage.getItem(ORDER_KEY);
+    return STASH_ORDER_KEYS.find((order) => order === stored) ?? "title-asc";
+  } catch {
+    // Blocked storage (private mode, site data off) reads as the default.
+    return "title-asc";
+  }
+}
+
+/** Keeps the order for this browser. */
+export function writeStashOrder(order: StashOrder): void {
+  try {
+    localStorage.setItem(ORDER_KEY, order);
+  } catch {
+    // Blocked storage keeps the order for this visit only.
+  }
+}
+
+const byTitle = (a: MovieTile, b: MovieTile) =>
+  a.title.localeCompare(b.title) || a.movieID - b.movieID;
+const byAdded = (a: MovieTile, b: MovieTile) => Date.parse(a.addedAt) - Date.parse(b.addedAt);
+
+/**
+ * A sorted copy of the stash. Every tie resolves, so all viewers of one order
+ * see one wall; a date tie reads A to Z in both directions.
+ */
+export function sortStash(stash: MovieTile[], order: StashOrder): MovieTile[] {
+  const compare = {
+    "title-asc": byTitle,
+    "title-desc": (a: MovieTile, b: MovieTile) => byTitle(b, a),
+    "added-desc": (a: MovieTile, b: MovieTile) => byAdded(b, a) || byTitle(a, b),
+    "added-asc": (a: MovieTile, b: MovieTile) => byAdded(a, b) || byTitle(a, b),
+  }[order];
+  return [...stash].sort(compare);
 }
 
 /** What a wall with no hits says, the same on every member's board. */

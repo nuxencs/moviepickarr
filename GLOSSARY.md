@@ -168,6 +168,11 @@ A member's backlog of movies. Unlimited; not eligible for the draw. Private is
 write-scoped only: the member is the sole curator (add, edit, promote/demote),
 but the contents stay readable by any authenticated member.
 
+**Stash order**:
+The order a viewer sees a stash wall in: by title or by date added, either
+direction. A viewer's own preference, kept per browser, never a property of the
+stash. Other members see their own choice.
+
 **Pool**:
 The shared set of movies eligible for the next draw. Each member may hold at
 most 3 movies in it.

@@ -482,13 +482,14 @@ describe("the stash wall", () => {
     expect(wall().querySelector(".mem-wall__empty")?.textContent).toBe('Nothing matches "dune"');
   });
 
-  it("leaves the pane head one control: the search field", async () => {
+  it("gives the pane head a search field and one sort button, title A to Z by default", async () => {
     await renderTab({ users: roster, meID: 1 });
 
-    // No sort control: the order is fixed title-ascending.
     const head = document.querySelector(".mem-stash__head") as HTMLElement;
-    expect(within(head).queryAllByRole("button")).toEqual([]);
     expect(within(head).getAllByRole("textbox").length).toBe(1);
+    expect(within(head).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Sort stash, Title A–Z",
+    ]);
   });
 });
 

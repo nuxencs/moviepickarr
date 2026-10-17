@@ -1,7 +1,11 @@
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import {
+  ArrowDownAZIcon,
+  ArrowDownZAIcon,
   ArrowLeftIcon,
+  CalendarArrowDownIcon,
+  CalendarArrowUpIcon,
   ChevronRightIcon,
   MoveDownIcon,
   MoveUpIcon,
@@ -26,6 +30,7 @@ import { Avatar } from "@/components/moviepickarr/Bits";
 import { hueOf, plural } from "@/components/moviepickarr/lib";
 import { orderMembers, selectedMember } from "@/components/moviepickarr/membersSearch";
 import { MembersSkeleton } from "@/components/moviepickarr/MembersSkeleton";
+import { Menu } from "@/components/moviepickarr/Menu";
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { isSelf } from "@/components/moviepickarr/ownership";
 import { membersStatus, POOL_SIZE, type RosterOccupancy } from "@/components/moviepickarr/poolLock";
@@ -34,7 +39,18 @@ import { Poster } from "@/components/moviepickarr/Poster";
 import { actionLabel, type ActionKind, refusalOf, type Refusal } from "@/components/moviepickarr/refusals";
 import { SearchModal } from "@/components/moviepickarr/SearchModal";
 import { Skeleton } from "@/components/moviepickarr/Skeletons";
-import { columnCount, filterStash, landingCell, missLine, nextCell } from "@/components/moviepickarr/stashWall";
+import {
+  columnCount,
+  filterStash,
+  landingCell,
+  missLine,
+  nextCell,
+  readStashOrder,
+  sortStash,
+  STASH_ORDERS,
+  type StashOrder,
+  writeStashOrder,
+} from "@/components/moviepickarr/stashWall";
 import { toast } from "@/components/ui/toast-api";
 
 import type { MovieTile, MoveTarget, User } from "@/types/Response";
@@ -723,10 +739,18 @@ function PoolSlots({
   );
 }
 
+/** The sort button shows its order, so the wall needs no other mark of it. */
+const ORDER_ICONS: Record<StashOrder, React.ReactNode> = {
+  "title-asc": <ArrowDownAZIcon />,
+  "title-desc": <ArrowDownZAIcon />,
+  "added-desc": <CalendarArrowDownIcon />,
+  "added-asc": <CalendarArrowUpIcon />,
+};
+
 /**
  * The selected member's stash as a wall of untitled posters, plus the add tile
- * on your own board. Fixed title order, no sort control: other keys arrive
- * with enrichment and would reorder the wall as SSE lands. A roving-tabindex
+ * on your own board. Sorted by the viewer's stash order: title or date added
+ * only, as enrichment keys would reorder the wall as SSE lands. A roving-tabindex
  * list, not `role="grid"` (#235): two tab stops on your board, one on a guest's.
  */
 function StashPane({
@@ -763,11 +787,13 @@ function StashPane({
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState("");
+  const [order, setOrder] = useState(readStashOrder);
+  const chooseOrder = (next: StashOrder) => {
+    setOrder(next);
+    writeStashOrder(next);
+  };
 
-  const stash = useMemo(
-    () => Object.values(user.stash).sort((a, b) => a.title.localeCompare(b.title)),
-    [user.stash],
-  );
+  const stash = useMemo(() => sortStash(Object.values(user.stash), order), [user.stash, order]);
   const filteredStash = useMemo(() => filterStash(stash, filter), [stash, filter]);
 
   const pooled = Object.keys(user.currentPool).length;
@@ -815,12 +841,18 @@ function StashPane({
   );
 
   const syncedFilter = useRef(filter);
+  const syncedOrder = useRef(order);
 
-  // A new filter restarts the index at its first result (focus stays in the
-  // field). Otherwise follow the focused node: React keeps a keyed node focused
-  // when earlier movies change, with no focus event, so its cell shifts.
+  // A new filter or order restarts the index at its first result (focus stays
+  // in the field or on the sort button). Otherwise follow the focused node:
+  // React keeps a keyed node focused when earlier movies change, with no focus
+  // event, so its cell shifts.
   useLayoutEffect(() => {
-    if (syncedFilter.current !== filter) {
+    if (syncedOrder.current !== order) {
+      syncedOrder.current = order;
+      wallRef.current?.scrollTo({ top: 0 });
+    }
+    if (syncedFilter.current !== filter || syncedOrder.current !== order) {
       syncedFilter.current = filter;
       setRoving(0);
       return;
@@ -830,7 +862,7 @@ function StashPane({
     if (!grid || !(active instanceof HTMLElement) || !grid.contains(active)) return;
     const actual = wallCellOf(active);
     if (actual !== null) setRoving(actual);
-  }, [filter, filteredStash, addTile]);
+  }, [filter, order, filteredStash, addTile]);
 
   // Focus anywhere in the wall takes the index, so mouse and keyboard agree.
   // A corner action counts as its tile's cell.
@@ -985,16 +1017,29 @@ function StashPane({
             {/* Pushed screen only; members.css hides it at 761px and up. */}
             <span className="sec-count">{stash.length}</span>
           </div>
-          <label className="field">
-            <SearchIcon />
-            <input
-              name="stash-filter"
-              aria-label={`Search ${possessive(firstName)} stash`}
-              placeholder="Search stash…"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+          <div className="mem-stash__tools">
+            <label className="field">
+              <SearchIcon />
+              <input
+                name="stash-filter"
+                aria-label={`Search ${possessive(firstName)} stash`}
+                placeholder="Search stash…"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </label>
+            <Menu
+              label={`Sort stash, ${STASH_ORDERS[order]}`}
+              icon={ORDER_ICONS[order]}
+              className="mem-sort"
+              actions={(Object.keys(STASH_ORDERS) as StashOrder[]).map((option) => ({
+                label: STASH_ORDERS[option],
+                icon: ORDER_ICONS[option],
+                checked: option === order,
+                onSelect: () => chooseOrder(option),
+              }))}
             />
-          </label>
+          </div>
         </div>
 
         <div

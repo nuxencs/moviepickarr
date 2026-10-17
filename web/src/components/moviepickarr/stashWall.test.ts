@@ -6,16 +6,17 @@ import {
   landingCell,
   missLine,
   nextCell,
+  sortStash,
 } from "@/components/moviepickarr/stashWall";
 
 import type { MovieTile } from "@/types/Response";
 
-function movie(movieID: number, title: string): MovieTile {
+function movie(movieID: number, title: string, addedAt = "2026-07-01T00:00:00Z"): MovieTile {
   return {
     movieID,
     title,
     link: "",
-    addedAt: "2026-07-01T00:00:00Z",
+    addedAt,
     addedByID: 1,
     addedByName: "Ada",
   };
@@ -36,6 +37,39 @@ describe("filterStash", () => {
 
   it("returns nothing when no title matches", () => {
     expect(filterStash(stash, "zzz")).toEqual([]);
+  });
+});
+
+describe("sortStash", () => {
+  const wall = [
+    movie(4, "Arrival", "2026-07-03T00:00:00Z"),
+    movie(2, "Dune", "2026-07-01T00:00:00Z"),
+    movie(5, "Dune", "2026-07-02T00:00:00Z"),
+    movie(3, "Cure", "2026-07-02T00:00:00Z"),
+    movie(1, "Brazil", "2026-07-02T00:00:00Z"),
+  ];
+  const ids = (order: Parameters<typeof sortStash>[1]) => sortStash(wall, order).map((m) => m.movieID);
+
+  it("orders by title, a shared title by movie ID", () => {
+    expect(ids("title-asc")).toEqual([4, 1, 3, 2, 5]);
+  });
+
+  it("orders Z to A as the exact reverse of A to Z", () => {
+    expect(ids("title-desc")).toEqual([5, 2, 3, 1, 4]);
+  });
+
+  it("orders newest added first, a shared second by title A to Z", () => {
+    expect(ids("added-desc")).toEqual([4, 1, 3, 5, 2]);
+  });
+
+  it("orders oldest added first, a shared second still by title A to Z", () => {
+    expect(ids("added-asc")).toEqual([2, 1, 3, 5, 4]);
+  });
+
+  it("leaves the stash it was given in place", () => {
+    const before = wall.map((m) => m.movieID);
+    sortStash(wall, "added-desc");
+    expect(wall.map((m) => m.movieID)).toEqual(before);
   });
 });
 

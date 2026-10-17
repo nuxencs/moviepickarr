@@ -1,4 +1,4 @@
-import { EllipsisIcon } from "lucide-react";
+import { CheckIcon, EllipsisIcon } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -19,6 +19,8 @@ export interface MenuAction {
   icon?: ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  /** Set on every action to make a choose-one menu of radio items. */
+  checked?: boolean;
 }
 
 interface MenuProps {
@@ -42,6 +44,7 @@ interface Placement {
 
 const GAP = 6;
 const MARGIN = 8;
+const ITEMS = '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled])';
 
 /**
  * Bespoke "more actions" menu, a portalled floating surface. Inside a dialog it
@@ -114,9 +117,11 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
       !menu?.contains(focused) ||
       (focused instanceof HTMLButtonElement && focused.disabled)
     ) {
-      menu
-        ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')
-        ?.focus();
+      // A radio menu opens on its current choice.
+      (
+        menu?.querySelector<HTMLButtonElement>('[aria-checked="true"]:not([disabled])') ??
+        menu?.querySelector<HTMLButtonElement>(ITEMS)
+      )?.focus();
     }
   }, [open, closing, place, actionSignature]);
 
@@ -167,7 +172,7 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
       return;
     }
     const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [],
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(ITEMS) ?? [],
     );
     if (items.length === 0) return;
     e.preventDefault();
@@ -237,7 +242,8 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
               <button
                 key={action.label}
                 type="button"
-                role="menuitem"
+                role={action.checked === undefined ? "menuitem" : "menuitemradio"}
+                aria-checked={action.checked}
                 className={`mg-menu__item${action.danger ? " mg-menu__item--danger" : ""}`}
                 disabled={action.disabled}
                 onClick={() => {
@@ -247,6 +253,12 @@ export function Menu({ actions, label, icon, align = "end", className, disabled 
               >
                 {action.icon}
                 {action.label}
+                {action.checked !== undefined && (
+                  // Fixed slot: the choice reads as a mark, and labels never shift.
+                  <span className="mg-menu__check" aria-hidden="true">
+                    {action.checked && <CheckIcon />}
+                  </span>
+                )}
               </button>
             ))}
           </div>,

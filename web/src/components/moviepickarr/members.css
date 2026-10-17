@@ -405,13 +405,31 @@
 .mem-stash__id .sec-count {
   font-size: 12px;
 }
-/* Shared with the skeleton so it reserves the real field's size (#239). */
+/* Search field and sort button, one row at every width. Shared with the
+   skeleton so it reserves the real controls' size (#239). */
+.mem-stash__tools {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
 .mem-stash__head .field,
 .mem-stash__head .mem-skel__field {
   height: var(--control-h-sm);
   width: 210px;
   flex: none;
-  margin-left: auto;
+}
+/* Pinned to the field: the coarse-pointer .iconbtn (40px) would outgrow the
+   fixed head. Filled to match the field beside it. */
+.mem-stash__tools .mem-sort,
+.mem-stash__tools .mem-skel__sort {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  flex: none;
+}
+.mem-stash__tools .mem-sort {
+  background: var(--surface-2);
+  border-color: var(--line);
 }
 
 /* Cells fill the container width, with no dead right gutter as auto-fill
@@ -509,8 +527,9 @@
   .mem__shell { --mem-chrome: calc(231px + env(safe-area-inset-bottom)); }
   /* Stacked: the 21px heading line, a 10px gap, and the 34px field. */
   .mem-stash__head { flex-direction: column; align-items: stretch; gap: 10px; height: 65px; }
+  .mem-stash__tools { margin-left: 0; }
   .mem-stash__head .field,
-  .mem-stash__head .mem-skel__field { width: 100%; margin-left: 0; }
+  .mem-stash__head .mem-skel__field { width: auto; flex: 1; min-width: 0; }
   .mem-wallbox { --mem-headh: 77px; }
 }
 

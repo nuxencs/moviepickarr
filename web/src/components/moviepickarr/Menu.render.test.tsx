@@ -136,4 +136,30 @@ describe("Menu", () => {
     act(() => trigger.click());
     expect(document.activeElement).toBe(trigger);
   });
+
+  it("opens a radio menu on the checked item and arrows through every choice", () => {
+    render(
+      <Menu
+        label="Sort"
+        actions={[
+          { label: "First", checked: false, onSelect: () => {} },
+          { label: "Second", checked: true, onSelect: () => {} },
+          { label: "Third", checked: false, onSelect: () => {} },
+        ]}
+      />,
+    );
+    act(() => screen.getByRole("button", { name: "Sort" }).click());
+
+    const second = screen.getByRole("menuitemradio", { name: "Second" });
+    expect(second.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "First" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(document.activeElement).toBe(second);
+
+    act(() => {
+      second.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Third" }));
+  });
 });

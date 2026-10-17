@@ -19,13 +19,15 @@ export function filterStash(stash: MovieTile[], filter: string): MovieTile[] {
 /** The viewer's stash order. Only keys every movie has from the start (#254). */
 export type StashOrder = "title-asc" | "title-desc" | "added-desc" | "added-asc";
 
-/** Menu order and wording of every stash order. */
-export const STASH_ORDERS: Record<StashOrder, string> = {
+/** Wording of every stash order, in menu order. */
+export const STASH_ORDER_LABELS: Record<StashOrder, string> = {
   "title-asc": "Title A–Z",
   "title-desc": "Title Z–A",
   "added-desc": "Newest added",
   "added-asc": "Oldest added",
 };
+
+export const STASH_ORDER_KEYS = Object.keys(STASH_ORDER_LABELS) as StashOrder[];
 
 const ORDER_KEY = "mp-stash-order";
 
@@ -33,8 +35,7 @@ const ORDER_KEY = "mp-stash-order";
 export function readStashOrder(): StashOrder {
   try {
     const stored = localStorage.getItem(ORDER_KEY);
-    const known = Object.keys(STASH_ORDERS) as StashOrder[];
-    return known.find((order) => order === stored) ?? "title-asc";
+    return STASH_ORDER_KEYS.find((order) => order === stored) ?? "title-asc";
   } catch {
     // Blocked storage (private mode, site data off) reads as the default.
     return "title-asc";

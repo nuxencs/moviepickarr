@@ -411,11 +411,11 @@ the moment of editing/deleting. We removed them:
 - `web/src/components/ui/{alert-dialog,button,input}.tsx` were **deleted**.
 - The user "more actions" menu is the bespoke `Menu` (`moviepickarr/Menu.tsx`): a
   portalled floating surface (`.mg-menu`) on the shared `mg-scaleIn` / `mg-scaleOut`
-  motion, scaling from the trigger corner. It owns its focus behaviour — Esc/Tab
-  return focus to the trigger, but selecting an item does not (the action's `Modal`
-  takes focus), so the trigger can't sit focused behind a dialog where Enter would
-  reopen it. This replaced the last Radix primitive (`ui/dropdown-menu.tsx`, deleted)
-  and dropped `@radix-ui/react-dropdown-menu` — **no Radix remains**. With `checked`
+  motion, scaling from the trigger corner. It owns its focus behaviour: Esc, Tab, and a
+  pick return focus to the trigger. A pick returns it before the action's `Modal`
+  mounts, so the `Modal` adopts the trigger as its opener and takes focus from it. This
+  replaced the last Radix primitive (`ui/dropdown-menu.tsx`, deleted) and dropped
+  `@radix-ui/react-dropdown-menu`: **no Radix remains**. With `checked`
   set on every action it is a choose-one menu (the stash sort): `menuitemradio` items with
   a fixed check slot (`.mg-menu__check`), so the choice is a mark and not gold alone, and
   it opens on the current choice.

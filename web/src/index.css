@@ -1215,7 +1215,7 @@
   .mg-menu__item:hover, .mg-menu__item:focus-visible { background: var(--surface-3); }
   .mg-menu__item:disabled { opacity: 0.5; cursor: default; }
   .mg-menu__item--danger { color: var(--danger); font-weight: 600; }
-  /* Radio items (Menu.tsx): the check slot sits at the far edge. */
+  /* Radio items (Menu.tsx). */
   .mg-menu__check { display: inline-flex; align-items: center; width: 14px; flex: none; margin-left: auto; padding-left: 12px; box-sizing: content-box; }
   .mg-menu__check svg { width: 13px; height: 13px; color: var(--accent); }
   .mg-menu__item--danger:hover, .mg-menu__item--danger:focus-visible { background: color-mix(in oklab, var(--danger) 16%, transparent); }

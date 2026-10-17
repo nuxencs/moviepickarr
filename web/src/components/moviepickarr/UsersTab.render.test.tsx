@@ -5,7 +5,7 @@
 
 import { onlineManager, QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { APIClient } from "@/api/APIClient";
 import { AuthKeys, SettingsKeys, UsersKeys } from "@/api/query_keys";
@@ -995,6 +995,20 @@ describe("moving around the wall with the keyboard", () => {
     press("End");
     press("ArrowRight");
     expect(named(document.activeElement)).toBe("Movie 103");
+  });
+
+  it("restarts the tab stop at the first cell when the stash order changes", async () => {
+    onTestFinished(() => localStorage.removeItem("mp-stash-order"));
+    await renderTab({ users: roster, meID: 1 });
+    cells()[0].focus();
+    press("End");
+    expect(tabStops().map(named)).toEqual(["Movie 103", "Move to pool"]);
+
+    act(() => screen.getByRole("button", { name: "Sort stash, Title A–Z" }).click());
+    act(() => screen.getByRole("menuitemradio", { name: "Title Z–A" }).click());
+
+    expect(cells().slice(1).map(named)).toEqual(["Movie 103", "Movie 102", "Movie 101", "Movie 100"]);
+    expect(tabStops().map(named)).toEqual(["Add to Ada's stash"]);
   });
 
   it("answers the arrows from the corner action too", async () => {

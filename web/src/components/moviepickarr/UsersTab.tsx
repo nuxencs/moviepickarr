@@ -47,7 +47,8 @@ import {
   nextCell,
   readStashOrder,
   sortStash,
-  STASH_ORDERS,
+  STASH_ORDER_KEYS,
+  STASH_ORDER_LABELS,
   type StashOrder,
   writeStashOrder,
 } from "@/components/moviepickarr/stashWall";
@@ -848,12 +849,11 @@ function StashPane({
   // React keeps a keyed node focused when earlier movies change, with no focus
   // event, so its cell shifts.
   useLayoutEffect(() => {
-    if (syncedOrder.current !== order) {
-      syncedOrder.current = order;
-      wallRef.current?.scrollTo({ top: 0 });
-    }
-    if (syncedFilter.current !== filter || syncedOrder.current !== order) {
+    const reordered = syncedOrder.current !== order;
+    if (reordered && wallRef.current) wallRef.current.scrollTop = 0;
+    if (syncedFilter.current !== filter || reordered) {
       syncedFilter.current = filter;
+      syncedOrder.current = order;
       setRoving(0);
       return;
     }
@@ -1029,11 +1029,11 @@ function StashPane({
               />
             </label>
             <Menu
-              label={`Sort stash, ${STASH_ORDERS[order]}`}
+              label={`Sort stash, ${STASH_ORDER_LABELS[order]}`}
               icon={ORDER_ICONS[order]}
               className="mem-sort"
-              actions={(Object.keys(STASH_ORDERS) as StashOrder[]).map((option) => ({
-                label: STASH_ORDERS[option],
+              actions={STASH_ORDER_KEYS.map((option) => ({
+                label: STASH_ORDER_LABELS[option],
                 icon: ORDER_ICONS[option],
                 checked: option === order,
                 onSelect: () => chooseOrder(option),

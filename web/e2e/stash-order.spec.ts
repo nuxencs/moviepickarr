@@ -71,11 +71,15 @@ test("the sort menu reorders the stash wall and the order outlives a reload", as
 });
 
 async function expectSortBesideSearch(page: Page, headHeight: number) {
-  const button = page.getByRole("button", { name: /^Sort stash, / });
-  await expect(button).toBeInViewport();
-  const head = (await page.locator(".mem-pane:not([inert]) .mem-stash__head").boundingBox())!;
-  const field = (await page.locator(".mem-pane:not([inert]) .mem-stash__head .field").boundingBox())!;
-  const sort = (await button.boundingBox())!;
+  await expect(page.getByRole("button", { name: /^Sort stash, / })).toBeInViewport();
+  // One snapshot after entrances settle: separate reads can straddle animation frames.
+  const [head, field, sort] = await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((animation) => animation.finished));
+    const head = document.querySelector(".mem-pane:not([inert]) .mem-stash__head")!;
+    return [head, head.querySelector(".field")!, head.querySelector(".mem-sort")!].map((el) =>
+      el.getBoundingClientRect().toJSON(),
+    ) as DOMRect[];
+  });
 
   expect(Math.abs(head.height - headHeight)).toBeLessThan(0.5);
   expect(Math.abs(sort.height - field.height)).toBeLessThan(0.5);

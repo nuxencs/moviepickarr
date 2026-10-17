@@ -70,6 +70,23 @@ test("the sort menu reorders the stash wall and the order outlives a reload", as
   await expect(page.getByRole("button", { name: "Sort stash, Oldest added" })).toBeVisible();
 });
 
+test("the stash head's focus rings fit inside the pane scroller", async ({ page }) => {
+  for (const width of [1280, 820]) {
+    await page.setViewportSize({ width, height: 640 });
+    await page.goto("/users");
+    await expect(page.getByRole("button", { name: /^Sort stash, / })).toBeInViewport();
+    const room = await page.evaluate(() => {
+      const pane = document.querySelector<HTMLElement>(".mem-pane")!;
+      const clipTop = pane.getBoundingClientRect().top + pane.clientTop;
+      return [".mem-stash__head .field", ".mem-sort"].map(
+        (selector) => document.querySelector(selector)!.getBoundingClientRect().top - clipTop,
+      );
+    });
+    // The ring is 2px wide at a 2px offset.
+    for (const top of room) expect(top, `ring room above at ${width}px`).toBeGreaterThanOrEqual(4);
+  }
+});
+
 async function expectSortBesideSearch(page: Page, headHeight: number) {
   await expect(page.getByRole("button", { name: /^Sort stash, / })).toBeInViewport();
   // One snapshot after entrances settle: separate reads can straddle animation frames.

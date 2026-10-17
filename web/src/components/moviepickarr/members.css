@@ -113,6 +113,10 @@
     scrollbar-gutter: stable;
     padding-left: 32px;
     border-left: 1px solid var(--line);
+    /* Room inside the scroller for the head's focus rings (2px at 2px offset,
+       index.css), pulled back up so nothing moves. */
+    padding-top: 6px;
+    margin-top: -6px;
   }
 
   /* A fixed height of whole rows (the room the viewport gives, rounded

@@ -8,7 +8,7 @@
     "before 6am on monday"
   ],
   "dependencyDashboard": true,
-  "prConcurrentLimit": 3,
+  "prConcurrentLimit": 10,
   "postUpdateOptions": [
     "gomodTidy"
   ],
@@ -31,14 +31,17 @@
       "enabled": false
     },
     {
-      "description": "The toolchain directive is the exception. govulncheck judges the standard library against whatever it names, and goreleaser builds release binaries with it, so a stale value ships known-vulnerable binaries. Renovate does not touch the go directive, which stays a floor rather than a target.",
+      "description": "The toolchain directive is the exception. govulncheck judges the standard library against whatever it names, and goreleaser builds release binaries with it, so a stale value ships known-vulnerable binaries. Renovate does not touch the go directive, which stays a floor rather than a target. It skips the weekly window for the same reason: a Go patch release exists to fix CVEs, and govulncheck fails until it lands.",
       "matchManagers": [
         "gomod"
       ],
       "matchDatasources": [
         "golang-version"
       ],
-      "enabled": true
+      "enabled": true,
+      "schedule": [
+        "at any time"
+      ]
     },
     {
       "description": "Action bumps arrive as one PR rather than one per action.",
@@ -46,6 +49,46 @@
         "github-actions"
       ],
       "groupName": "github actions"
+    },
+    {
+      "description": "Minor and patch bumps of the web dependencies arrive as one PR. One PR per package filled the concurrency limit every week and left the rest waiting, while CI covers these bumps together just as well.",
+      "matchManagers": [
+        "bun"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "web dependencies"
+    },
+    {
+      "description": "@vitejs/plugin-react 6 requires vite 8, so either major alone fails CI.",
+      "matchPackageNames": [
+        "vite",
+        "@vitejs/plugin-react"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "groupName": "vite"
+    },
+    {
+      "description": "The bun version in CI and the bun base image move together, so the web build runs on one bun everywhere.",
+      "matchPackageNames": [
+        "oven-sh/bun",
+        "oven/bun"
+      ],
+      "groupName": "bun"
+    },
+    {
+      "description": "Hold TypeScript 7 until typescript-eslint supports it. typescript-eslint 8.71 accepts typescript <6.1.0, so the major fails lint.",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
     },
     {
       "description": "Let anything pulled from a public registry sit for a week before it is proposed. Compromised packages are usually caught and pulled within days, and nothing here is urgent enough to be worth being first. This deliberately overrides the three days that config:best-practices sets for npm, and extends the same wait to actions, which that preset does not cover. Renovate exempts security updates, so a real advisory still arrives immediately. Not applied to golang-version: a Go patch release exists to fix CVEs, so delaying it would work against the toolchain pin.",

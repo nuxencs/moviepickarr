@@ -5,7 +5,7 @@ import { defineConfig } from "vitest/config";
 
 // "node" is the default; "dom" (jsdom) is only for behaviour that needs a render
 // (#140, docs/DEVELOPMENT.md).
-const alias = { "@": path.resolve(__dirname, "./src") };
+const alias = { "@": path.resolve(import.meta.dirname, "./src") };
 
 export default defineConfig({
   resolve: { alias },

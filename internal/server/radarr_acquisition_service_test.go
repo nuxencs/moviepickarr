@@ -2317,7 +2317,10 @@ func TestAdminReleaseRemoteObservationsDoNotOverwriteNewerAction(t *testing.T) {
 			}
 			close(barrier.release)
 			select {
-			case <-done:
+			case err := <-done:
+				if err != nil && !errors.Is(err, domain.ErrConflict) {
+					t.Fatalf("delayed remote observation: %v", err)
+				}
 			case <-time.After(3 * time.Second):
 				t.Fatal("delayed remote observation did not finish")
 			}

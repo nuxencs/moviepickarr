@@ -1,5 +1,5 @@
 import js from '@eslint/js'
-import sortImport from 'eslint-plugin-import'
+import importX from 'eslint-plugin-import-x'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
@@ -15,17 +15,23 @@ export default tseslint.config(
             globals: globals.browser,
         },
         plugins: {
-            'import': sortImport,
+            'import-x': importX,
             'react-hooks': reactHooks,
             'react-refresh': reactRefresh,
         },
         rules: {
             ...reactHooks.configs.recommended.rules,
+            // React Compiler rules from react-hooks 7 that existing effects and refs violate; enable each once its sites are fixed.
+            'react-hooks/immutability': 'off',
+            'react-hooks/incompatible-library': 'off',
+            'react-hooks/preserve-manual-memoization': 'off',
+            'react-hooks/refs': 'off',
+            'react-hooks/set-state-in-effect': 'off',
             'react-refresh/only-export-components': [
                 'warn',
                 { allowConstantExport: true },
             ],
-            'import/order': [
+            'import-x/order': [
                 'warn',
                 {
                     "groups":

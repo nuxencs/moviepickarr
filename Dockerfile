@@ -11,7 +11,7 @@ COPY web ./
 RUN bun run build
 
 # build app
-FROM golang:1.27-alpine3.23@sha256:9e45f0eb4a63ed37ad6e604950407558b7c738e34e015ae77a5d4ad369cde079 AS app-builder
+FROM golang:1.27-alpine3.23@sha256:7fd63dd7c37f5ddaef15bd8fd3f3e4f90f0d50cd9cae255c7cf73887a494d8df AS app-builder
 
 ARG VERSION=dev
 ARG REVISION=dev

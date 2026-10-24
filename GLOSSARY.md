@@ -26,7 +26,7 @@ _Avoid_: user (survives only in code)
 
 **Guest**:
 A member holding the guest role. Can browse the app and manage their own Stash.
-Can add, edit, delete, and demote movies. Cannot promote a movie to the Pool.
+Can add, delete, and demote movies. Cannot promote a movie to the Pool.
 Cannot run group decisions in the Hero. These decisions include Draw, Reveal,
 mark Watched, and all Wildcard actions. Never holds Next up.
 
@@ -78,7 +78,8 @@ _Avoid_: admin override, pass
 A member holding the admin role: can create, delete/archive, and restore
 members, lock the pool, skip a turn, and manage integrations and settings. An
 admin has no exception to member rules: the Next up gate and the adder-only
-movie edits apply to admins too. Every other member
+delete and move apply to admins too. Movie correction is admin work, not an
+exception. Every other member
 holds the plain member or guest role. Role is app-owned and single-valued, never
 derived from a credential.
 
@@ -180,9 +181,16 @@ most 3 movies in it.
 **Pool lock**:
 An admin switch that fixes the pool's composition ahead of a draw. While it is
 set, no movie enters or leaves the pool: promote, demote, and deleting a pooled
-movie are all refused. The stash is untouched by it (adds, edits, and deletes
-there carry on), and an unrevealed draw outranks it, so a frozen tile reports
+movie are all refused. The stash is untouched by it (adds and deletes there
+carry on), and an unrevealed draw outranks it, so a frozen tile reports
 the draw rather than the lock.
+
+**Movie correction**:
+An admin repairing a movie that members cannot fix themselves: pointing it at a
+different TMDB movie, or changing its watched date. Any status qualifies. The
+adder never changes. Members have no way to edit a movie; a wrong stash or pool
+movie is deleted and added again.
+_Avoid_: edit movie
 
 **Promote / Demote**:
 Moving a movie from stash to pool, and back. The only transitions a member
@@ -252,6 +260,11 @@ maintenance operation can be one.
 
 ### TMDB
 
+**Title**:
+The movie's English name as TMDB lists it. Enrichment sets it and overwrites
+it on every run; no member sets it.
+_Avoid_: name, custom title
+
 **Enrichment**:
 The background fetch of TMDB data for a movie. Async: a movie is fully usable
 before enrichment lands, it just renders with a placeholder poster.
@@ -299,8 +312,8 @@ It is separate from later edits to the reusable preset.
 _Avoid_: destination, route
 
 **Acquisition identity**:
-The movie identity snapshot used for Radarr work. It is independent of later
-edits to the movie.
+The movie identity snapshot used for Radarr work. A Movie correction updates it
+only before target lock; after that it records the movie Radarr holds.
 _Avoid_: lookup identity
 
 **Downloaded**:

@@ -143,7 +143,7 @@ describe("Admin navigation", () => {
       expanded: false,
     });
 
-    expect(links.map((link) => link.textContent)).toEqual(["Roster", "Runs"]);
+    expect(links.map((link) => link.textContent)).toEqual(["Roster", "Runs", "Maintenance"]);
     expect(integrations).toBeTruthy();
     expect(within(navigation).getByRole("link", { name: "Roster", current: "page" }))
       .toBeTruthy();

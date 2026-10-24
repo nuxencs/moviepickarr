@@ -105,18 +105,20 @@ type tmdbCredits struct {
 }
 
 type tmdbMovieDetails struct {
-	ID           int         `json:"id"`
-	IMDbID       string      `json:"imdb_id"`
-	Overview     string      `json:"overview"`
-	PosterPath   *string     `json:"poster_path"`
-	BackdropPath *string     `json:"backdrop_path"`
-	ReleaseDate  string      `json:"release_date"`
-	Runtime      *int        `json:"runtime"` // null for some titles
-	Genres       []tmdbGenre `json:"genres"`
-	VoteAverage  float64     `json:"vote_average"`
-	VoteCount    int         `json:"vote_count"`
-	Tagline      string      `json:"tagline"`
-	Credits      tmdbCredits `json:"credits"` // populated via append_to_response=credits
+	ID            int         `json:"id"`
+	Title         string      `json:"title"`
+	OriginalTitle string      `json:"original_title"`
+	IMDbID        string      `json:"imdb_id"`
+	Overview      string      `json:"overview"`
+	PosterPath    *string     `json:"poster_path"`
+	BackdropPath  *string     `json:"backdrop_path"`
+	ReleaseDate   string      `json:"release_date"`
+	Runtime       *int        `json:"runtime"` // null for some titles
+	Genres        []tmdbGenre `json:"genres"`
+	VoteAverage   float64     `json:"vote_average"`
+	VoteCount     int         `json:"vote_count"`
+	Tagline       string      `json:"tagline"`
+	Credits       tmdbCredits `json:"credits"` // populated via append_to_response=credits
 }
 
 // FindByIMDb performs the TMDB reverse lookup: IMDb id -> TMDB movie.

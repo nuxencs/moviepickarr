@@ -14,19 +14,17 @@ import (
 )
 
 type testMovieRepo struct {
-	movies             map[int]*domain.Movie
-	updateTitleHit     int
-	updateWatchedAtHit int
-	concealedMovieID   int
-	concealedDrawnAt   time.Time
-	concealedRevealAt  time.Time
-	concealedClientID  string
-	concealedErr       error
-	durableRevealed    bool
-	revealCalls        int
-	revealErr          error
-	revealNextUp       *domain.User
-	watchRevealsDraw   []bool
+	movies            map[int]*domain.Movie
+	concealedMovieID  int
+	concealedDrawnAt  time.Time
+	concealedRevealAt time.Time
+	concealedClientID string
+	concealedErr      error
+	durableRevealed   bool
+	revealCalls       int
+	revealErr         error
+	revealNextUp      *domain.User
+	watchRevealsDraw  []bool
 }
 
 func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, error) {
@@ -39,56 +37,8 @@ func (r *testMovieRepo) FindByID(_ context.Context, id int) (*domain.Movie, erro
 	return &copyMovie, nil
 }
 
-func (r *testMovieRepo) EditMovie(
-	_ context.Context,
-	id, actorID int,
-	title string,
-	target domain.MovieIdentityTarget,
-	watchedAt *time.Time,
-) (*domain.Movie, bool, error) {
-	movie, ok := r.movies[id]
-	if !ok {
-		return nil, false, sql.ErrNoRows
-	}
-	if movie.AddedByID != actorID {
-		return nil, false, domain.ErrForbidden
-	}
-	if watchedAt != nil && movie.Status != string(domain.MovieStatusWatched) {
-		return nil, false, domain.ErrInvalidInput
-	}
-
-	currentIMDb := ""
-	if movie.IMDbID != nil {
-		currentIMDb = *movie.IMDbID
-	}
-	matchingTMDB := target.TMDBID != nil && movie.TMDBID != nil && *target.TMDBID == *movie.TMDBID
-	matchingIMDb := target.IMDbID != nil && currentIMDb != "" && *target.IMDbID == currentIMDb
-	identityChanged := !matchingTMDB && !matchingIMDb
-
-	movie.Title = title
-	r.updateTitleHit++
-	if watchedAt != nil {
-		at := watchedAt.UTC()
-		movie.WatchedAt = &at
-		r.updateWatchedAtHit++
-	}
-	if identityChanged {
-		if target.TMDBID == nil {
-			movie.TMDBID = nil
-		} else {
-			id := *target.TMDBID
-			movie.TMDBID = &id
-		}
-		if target.IMDbID == nil {
-			movie.IMDbID = nil
-		} else {
-			id := *target.IMDbID
-			movie.IMDbID = &id
-		}
-	}
-
-	copyMovie := *movie
-	return &copyMovie, identityChanged, nil
+func (r *testMovieRepo) CorrectMovie(context.Context, int, domain.MovieCorrection) (*domain.Movie, bool, error) {
+	panic("unexpected call")
 }
 
 func (r *testMovieRepo) List(context.Context) ([]*domain.Movie, error) { panic("unexpected call") }
@@ -929,85 +879,6 @@ func TestStaleAutoRevealDoesNotRevealReplacementDraw(t *testing.T) {
 	}
 	if ap, ok := svc.ActiveDraw(); !ok || ap.Revealed {
 		t.Fatal("draw B must remain unrevealed after draw A's stale timer fired")
-	}
-}
-
-func TestEditRejectsWatchedAtForNonWatchedMovie(t *testing.T) {
-	t.Parallel()
-
-	repo := &testMovieRepo{
-		movies: map[int]*domain.Movie{
-			42: {
-				ID:     42,
-				Title:  "Before",
-				Status: string(domain.MovieStatusPool),
-			},
-		},
-	}
-	svc := NewService(repo, DrawConfig{})
-	watchedAt := time.Date(2026, 2, 8, 10, 30, 0, 0, time.UTC)
-
-	imdbID := "tt0000042"
-	_, _, err := svc.Edit(
-		context.Background(),
-		42,
-		0,
-		"After",
-		domain.MovieIdentityTarget{IMDbID: &imdbID},
-		&watchedAt,
-	)
-	if !errors.Is(err, domain.ErrInvalidInput) {
-		t.Fatalf("expected ErrInvalidInput, got %v", err)
-	}
-
-	if repo.updateTitleHit != 0 {
-		t.Fatalf("expected title update not to run, got %d calls", repo.updateTitleHit)
-	}
-	if repo.updateWatchedAtHit != 0 {
-		t.Fatalf("expected watchedAt update not to run, got %d calls", repo.updateWatchedAtHit)
-	}
-}
-
-func TestEditWatchedMovieAllowsWatchedAt(t *testing.T) {
-	t.Parallel()
-
-	repo := &testMovieRepo{
-		movies: map[int]*domain.Movie{
-			7: {
-				ID:     7,
-				Title:  "Before",
-				Status: string(domain.MovieStatusWatched),
-			},
-		},
-	}
-	svc := NewService(repo, DrawConfig{})
-	watchedAt := time.Date(2026, 2, 8, 18, 45, 0, 0, time.UTC)
-
-	imdbID := "tt0000007"
-	updated, _, err := svc.Edit(
-		context.Background(),
-		7,
-		0,
-		"After",
-		domain.MovieIdentityTarget{IMDbID: &imdbID},
-		&watchedAt,
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if updated.Title != "After" {
-		t.Fatalf("expected title updated, got %q", updated.Title)
-	}
-	if updated.WatchedAt == nil || !updated.WatchedAt.Equal(watchedAt) {
-		t.Fatalf("expected watchedAt %v, got %v", watchedAt, updated.WatchedAt)
-	}
-
-	if repo.updateTitleHit != 1 {
-		t.Fatalf("expected title update once, got %d", repo.updateTitleHit)
-	}
-	if repo.updateWatchedAtHit != 1 {
-		t.Fatalf("expected watchedAt update once, got %d", repo.updateWatchedAtHit)
 	}
 }
 

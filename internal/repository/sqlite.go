@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -39,27 +38,6 @@ func canonicalIMDbIDPtr(value *string) *string {
 		return nil
 	}
 	return &normalized
-}
-
-var canonicalIMDbIDRegex = regexp.MustCompile(`^tt\d{7,8}$`)
-
-func canonicalMovieIdentityTarget(target domain.MovieIdentityTarget) (domain.MovieIdentityTarget, error) {
-	if (target.TMDBID == nil) == (target.IMDbID == nil) {
-		return domain.MovieIdentityTarget{}, domain.ErrInvalidInput
-	}
-
-	imdbID := canonicalIMDbIDPtr(target.IMDbID)
-	if target.TMDBID != nil {
-		if *target.TMDBID <= 0 {
-			return domain.MovieIdentityTarget{}, domain.ErrInvalidInput
-		}
-		tmdbID := *target.TMDBID
-		return domain.MovieIdentityTarget{TMDBID: &tmdbID}, nil
-	}
-	if imdbID == nil || !canonicalIMDbIDRegex.MatchString(*imdbID) {
-		return domain.MovieIdentityTarget{}, domain.ErrInvalidInput
-	}
-	return domain.MovieIdentityTarget{IMDbID: imdbID}, nil
 }
 
 func scanUser(scanner rowScanner) (*domain.User, error) {
@@ -664,18 +642,16 @@ func (d *SqliteMoviesRepository) SetExternalIDs(ctx context.Context, id int, tmd
 	return nil
 }
 
-// EditMovie commits one authored edit, including authorization and identity
-// cleanup, in one tx so no reader sees a partial edit.
-func (d *SqliteMoviesRepository) EditMovie(
+// CorrectMovie commits one admin Movie correction, including identity cleanup
+// and the open Acquisition's identity copy, in one tx so no reader sees a
+// partial correction.
+func (d *SqliteMoviesRepository) CorrectMovie(
 	ctx context.Context,
-	movieID, actorID int,
-	title string,
-	target domain.MovieIdentityTarget,
-	watchedAt *time.Time,
+	movieID int,
+	correction domain.MovieCorrection,
 ) (*domain.Movie, bool, error) {
-	target, err := canonicalMovieIdentityTarget(target)
-	if err != nil {
-		return nil, false, err
+	if correction.TMDBID != nil && (*correction.TMDBID <= 0 || strings.TrimSpace(correction.Title) == "") {
+		return nil, false, fmt.Errorf("%w: a TMDB correction needs tmdbId and title", domain.ErrInvalidInput)
 	}
 
 	tx, err := d.pool.Write.BeginTx(ctx, nil)
@@ -691,73 +667,40 @@ func (d *SqliteMoviesRepository) EditMovie(
 	if err != nil {
 		return nil, false, err
 	}
-	if current.AddedByID != actorID {
-		return nil, false, domain.ErrForbidden
+	if correction.WatchedAt != nil && current.Status != string(domain.MovieStatusWatched) {
+		return nil, false, fmt.Errorf("%w: only a watched movie has a watched date", domain.ErrInvalidInput)
 	}
-	if watchedAt != nil && current.Status != string(domain.MovieStatusWatched) {
-		return nil, false, domain.ErrInvalidInput
-	}
-
-	storedIMDb := ""
-	if current.IMDbID != nil {
-		storedIMDb = *current.IMDbID
-	}
-	currentIMDb := canonicalIMDbID(storedIMDb)
-	matchingTMDB := target.TMDBID != nil && current.TMDBID != nil &&
-		*target.TMDBID == *current.TMDBID
-	matchingIMDb := target.IMDbID != nil && currentIMDb != "" &&
-		*target.IMDbID == currentIMDb
-	identityChanged := !matchingTMDB && !matchingIMDb
-	identityNeedsNormalization := current.IMDbID != nil &&
-		(storedIMDb != currentIMDb || currentIMDb == "")
-
-	query := "UPDATE movies SET title = ?"
-	args := []any{title}
-	if watchedAt != nil {
-		query += ", watched_at = ?"
-		args = append(args, db.ToUnix(watchedAt.UTC()))
-	}
-	if identityChanged {
-		query += ", tmdb_id = ?, imdb_id = ?"
-		args = append(args, target.TMDBID, target.IMDbID)
-	} else if identityNeedsNormalization {
-		query += ", imdb_id = ?"
-		if currentIMDb == "" {
-			args = append(args, nil)
-		} else {
-			args = append(args, currentIMDb)
-		}
-	}
-	query += " WHERE id = ?"
-	args = append(args, movieID)
-
-	result, err := tx.ExecContext(ctx, query, args...)
-	if err != nil {
-		if db.IsUniqueViolation(err) {
-			return nil, false, fmt.Errorf("%w: another movie already has this identity", domain.ErrConflict)
-		}
-		return nil, false, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return nil, false, err
-	}
-	if affected == 0 {
-		return nil, false, fmt.Errorf("%w: movie id %d", domain.ErrNotFound, movieID)
-	}
+	identityChanged := correction.TMDBID != nil &&
+		(current.TMDBID == nil || *current.TMDBID != *correction.TMDBID)
 
 	if identityChanged {
-		// Credits and metadata describe the prior movie. Delete only the joins:
-		// people are shared across movies.
-		if _, err := tx.ExecContext(ctx,
-			"DELETE FROM movie_credits WHERE movie_id = ?",
-			movieID,
-		); err != nil {
+		if err := retargetOpenAcquisitionsTx(ctx, tx, movieID, *correction.TMDBID, correction.Title); err != nil {
 			return nil, false, err
 		}
 		if _, err := tx.ExecContext(ctx,
+			"UPDATE movies SET title = ?, tmdb_id = ?, imdb_id = NULL WHERE id = ?",
+			strings.TrimSpace(correction.Title), *correction.TMDBID, movieID,
+		); err != nil {
+			if db.IsUniqueViolation(err) {
+				return nil, false, fmt.Errorf("%w: another movie already has this identity", domain.ErrConflict)
+			}
+			return nil, false, err
+		}
+		// Credits and metadata describe the prior movie. Delete only the joins:
+		// people are shared across movies.
+		for _, query := range []string{
+			"DELETE FROM movie_credits WHERE movie_id = ?",
 			"DELETE FROM movie_metadata WHERE movie_id = ?",
-			movieID,
+		} {
+			if _, err := tx.ExecContext(ctx, query, movieID); err != nil {
+				return nil, false, err
+			}
+		}
+	}
+	if correction.WatchedAt != nil {
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE movies SET watched_at = ? WHERE id = ?",
+			db.ToUnix(correction.WatchedAt.UTC()), movieID,
 		); err != nil {
 			return nil, false, err
 		}
@@ -775,6 +718,42 @@ func (d *SqliteMoviesRepository) EditMovie(
 	}
 
 	return updated, identityChanged, nil
+}
+
+// retargetOpenAcquisitionsTx points an open Acquisition's identity copy at the
+// corrected movie. Before target lock nothing exists in Radarr, so the copy can
+// follow; after lock, or during a Radarr call, the admin must abandon first
+// (ADR 0007, #383).
+func retargetOpenAcquisitionsTx(ctx context.Context, tx *sql.Tx, movieID, tmdbID int, title string) error {
+	var blocked bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM radarr_acquisitions
+			WHERE movie_id = ? AND status NOT IN ('downloaded', 'abandoned')
+			  AND (target_locked_at IS NOT NULL OR mutation_state != 'idle')
+		)
+	`, movieID).Scan(&blocked); err != nil {
+		return err
+	}
+	if blocked {
+		return domain.ErrAcquisitionLocked
+	}
+
+	// An identity_required wait ends: the copy now has the TMDB id it lacked.
+	nowMillis := time.Now().UTC().UnixMilli()
+	_, err := tx.ExecContext(ctx, `
+		UPDATE radarr_acquisitions
+		SET movie_title = ?, movie_year = NULL, tmdb_id = ?, imdb_id = NULL,
+		    identity_source = 'tmdb', identity_override_tmdb_id = NULL,
+		    status = CASE WHEN action_reason = 'identity_required' THEN 'waiting_for_radarr' ELSE status END,
+		    action_started_at = CASE WHEN action_reason = 'identity_required' THEN NULL ELSE action_started_at END,
+		    action_reason = CASE WHEN action_reason = 'identity_required' THEN NULL ELSE action_reason END,
+		    target_preview_existing = 0, target_previewed_at = NULL,
+		    effective_configuration = '{}',
+		    revision = revision + 1, updated_at = ?
+		WHERE movie_id = ? AND status NOT IN ('downloaded', 'abandoned')
+	`, strings.TrimSpace(title), tmdbID, nowMillis, movieID)
+	return err
 }
 
 func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, status string) error {
@@ -797,7 +776,7 @@ func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, statu
 }
 
 // StartDraw moves the movie from pool to current and snapshots its concealed
-// Acquisition in one tx, so a later edit cannot retarget Radarr work.
+// Acquisition in one tx; only a Movie correction before target lock retargets it.
 func (d *SqliteMoviesRepository) StartDraw(
 	ctx context.Context,
 	movieID int,

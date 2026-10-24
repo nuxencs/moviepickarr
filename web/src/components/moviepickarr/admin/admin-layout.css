@@ -49,7 +49,8 @@
 }
 
 .admin-layout[data-section="roster"] .admin-layout__indicator::before,
-.admin-layout[data-section="runs"] .admin-layout__indicator::before {
+.admin-layout[data-section="runs"] .admin-layout__indicator::before,
+.admin-layout[data-section="maintenance"] .admin-layout__indicator::before {
   transform: scaleY(0.2);
 }
 
@@ -59,6 +60,10 @@
 
 .admin-layout[data-section="runs"] .admin-layout__indicator {
   transform: translateY(calc(var(--admin-nav-step) + var(--admin-nav-step)));
+}
+
+.admin-layout[data-section="maintenance"] .admin-layout__indicator {
+  transform: translateY(calc(var(--admin-nav-step) * 3));
 }
 
 .admin-layout__link {

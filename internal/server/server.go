@@ -651,15 +651,15 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/members/:memberID/pool", h.handleGetPool)
 	v1.Get("/members/:memberID/stash", h.handleGetStash)
 
-	// The adder is the session member. Edit, delete and move are adder-only (403
-	// not_adder, no admin override).
+	// The adder is the session member. Delete and move are adder-only (403
+	// not_adder, no admin override). Members cannot edit a movie; an admin
+	// corrects it (ADR 0013).
 	v1.Post("/movies", h.handleAddMovie)
 	// Before the :movieID routes, else DELETE /movies/wildcard parses as an id.
 	v1.Get("/movies/wildcard", h.handleGetActiveWildcard)
 	v1.Post("/movies/wildcard", h.handleSelectWildcard)
 	v1.Delete("/movies/wildcard", h.handleCancelWildcard)
 	v1.Post("/movies/wildcard/watch", h.handleWatchWildcard)
-	v1.Put("/movies/:movieID", h.handleEditMovie)
 	v1.Delete("/movies/:movieID", h.handleDeleteMovie)
 	v1.Post("/movies/:movieID/move", h.handleMove)
 
@@ -670,7 +670,10 @@ func registerV1Routes(v1 fiber.Router, h *handler) {
 	v1.Get("/movies/watched", h.handleGetWatchedMovies)
 	// Literal GETs before the :movieID route so they take precedence.
 	v1.Get("/movies/filter-options", h.handleGetFilterOptions)
+	// Admin-only (ADR 0013): the Maintenance tab's library and Movie correction.
+	v1.Get("/movies/library", h.handleGetMovieLibrary)
 	v1.Get("/movies/:movieID", h.handleGetMovie)
+	v1.Put("/movies/:movieID/correction", h.handleCorrectMovie)
 	v1.Post("/movies/current/watch", h.handleWatchMovie)
 	v1.Get("/stats", h.handleGetStats)
 

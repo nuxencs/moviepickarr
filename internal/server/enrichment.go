@@ -121,6 +121,7 @@ func (s *enrichmentService) EnrichOne(ctx context.Context, movieID int) (enrichR
 	credits := mapCredits(movieID, details.Credits, s.castLimit)
 	applied, err := s.movies.ApplyEnrichment(ctx, domain.MovieEnrichmentWrite{
 		MovieID:  movieID,
+		Title:    details.Title,
 		Expected: expected,
 		Resolved: domain.MovieIdentity{TMDBID: &tmdbID, IMDbID: imdbPtr},
 		Metadata: mapDetailsToMetadata(movieID, details),
@@ -235,16 +236,17 @@ func mapDetailsToMetadata(movieID int, d tmdbMovieDetails) domain.MovieMetadata 
 	}
 
 	return domain.MovieMetadata{
-		MovieID:      movieID,
-		Overview:     d.Overview,
-		PosterPath:   d.PosterPath,
-		BackdropPath: d.BackdropPath,
-		ReleaseDate:  d.ReleaseDate,
-		Runtime:      runtime,
-		Genres:       genres,
-		VoteAverage:  d.VoteAverage,
-		VoteCount:    d.VoteCount,
-		Tagline:      d.Tagline,
+		MovieID:       movieID,
+		Overview:      d.Overview,
+		PosterPath:    d.PosterPath,
+		BackdropPath:  d.BackdropPath,
+		ReleaseDate:   d.ReleaseDate,
+		Runtime:       runtime,
+		Genres:        genres,
+		VoteAverage:   d.VoteAverage,
+		VoteCount:     d.VoteCount,
+		Tagline:       d.Tagline,
+		OriginalTitle: d.OriginalTitle,
 		// EnrichedAt is set by SQL (unixepoch()) on upsert.
 	}
 }

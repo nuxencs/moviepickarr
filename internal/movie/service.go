@@ -36,15 +36,13 @@ type watchCurrentDrawStore interface {
 	) (watched *domain.Movie, next *domain.User, err error)
 }
 
-// editMovieStore runs the whole edit in one writer transaction, so a failed
-// edit leaves no durable fragment.
-type editMovieStore interface {
-	EditMovie(
+// correctMovieStore runs the whole correction in one writer transaction, so a
+// failed correction leaves no durable fragment.
+type correctMovieStore interface {
+	CorrectMovie(
 		ctx context.Context,
-		movieID, actorID int,
-		title string,
-		target domain.MovieIdentityTarget,
-		watchedAt *time.Time,
+		movieID int,
+		correction domain.MovieCorrection,
 	) (movie *domain.Movie, identityChanged bool, err error)
 }
 
@@ -79,7 +77,7 @@ type wildcardLifecycleStore interface {
 type movieStore interface {
 	domain.MovieRepo
 	watchCurrentDrawStore
-	editMovieStore
+	correctMovieStore
 	drawLifecycleStore
 	wildcardLifecycleStore
 }
@@ -417,14 +415,20 @@ func (s *Service) Delete(ctx context.Context, id int, poolLocked bool) error {
 	return nil
 }
 
-func (s *Service) Edit(
+// Correct applies an admin Movie correction. It is refused while a draw is
+// unrevealed, so no tile changes under the reel.
+func (s *Service) Correct(
 	ctx context.Context,
-	movieID, actorID int,
-	title string,
-	target domain.MovieIdentityTarget,
-	watchedAt *time.Time,
+	movieID int,
+	correction domain.MovieCorrection,
 ) (*domain.Movie, bool, error) {
-	return s.movieRepo.EditMovie(ctx, movieID, actorID, title, target, watchedAt)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.heldDrawLocked(); ok {
+		return nil, false, domain.ErrDrawInProgress
+	}
+	return s.movieRepo.CorrectMovie(ctx, movieID, correction)
 }
 
 func (s *Service) Get(ctx context.Context, id int) (*domain.Movie, error) {
@@ -449,6 +453,23 @@ func (s *Service) GetForDisplay(ctx context.Context, id int) (*domain.Movie, err
 
 func (s *Service) List(ctx context.Context) ([]*domain.Movie, error) {
 	return s.movieRepo.List(ctx)
+}
+
+// ListForDisplay is every movie as clients may see it: the held winner reads as
+// pooled until reveal.
+func (s *Service) ListForDisplay(ctx context.Context) ([]*domain.Movie, error) {
+	movies, err := s.movieRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	held, ok := s.heldDraw()
+	if !ok {
+		return movies, nil
+	}
+	for i, movie := range movies {
+		movies[i], _ = asHeldPoolMovie(movie, held)
+	}
+	return movies, nil
 }
 
 // Pooled is the pool as clients may see it, including the held draw (see

@@ -126,6 +126,13 @@ export const FilterOptionsQueryOptions = () =>
     staleTime: 300_000,
   })
 
+// Admin Maintenance. SSE stales it with every movie lifecycle event.
+export const MovieLibraryQueryOptions = () =>
+  queryOptions({
+    queryKey: MoviesKeys.library(),
+    queryFn: ({ signal }) => APIClient.maintenance.library(signal),
+  })
+
 export const SettingsGetPoolStateQueryOptions = (enabled = true) =>
   queryOptions({
     queryKey: SettingsKeys.poolLock(),

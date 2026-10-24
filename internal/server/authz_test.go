@@ -112,7 +112,6 @@ func TestAuthz_AdderOnlyMutations(t *testing.T) {
 		name string
 		req  *http.Request
 	}{
-		{"edit", jsonReq(http.MethodPut, fmt.Sprintf("/api/v1/movies/%d", movie.ID), `{"title":"X","link":"https://www.imdb.com/title/tt0113277/"}`)},
 		{"delete", jsonReq(http.MethodDelete, fmt.Sprintf("/api/v1/movies/%d", movie.ID), ``)},
 		{"move", jsonReq(http.MethodPost, fmt.Sprintf("/api/v1/movies/%d/move", movie.ID), `{"target":"pool"}`)},
 	}
@@ -153,6 +152,8 @@ func TestAuthz_AdminOnlyActions(t *testing.T) {
 		{"create_member", jsonReq(http.MethodPost, "/api/v1/members", `{"name":"New"}`)},
 		{"delete_member", jsonReq(http.MethodDelete, fmt.Sprintf("/api/v1/members/%d", victim.ID), ``)},
 		{"set_pool_lock", jsonReq(http.MethodPut, "/api/v1/settings/pool-lock", `{"poolLocked":true}`)},
+		{"correct_movie", jsonReq(http.MethodPut, "/api/v1/movies/1/correction", `{"watchedAt":"2026-02-08T16:45:00Z"}`)},
+		{"movie_library", jsonReq(http.MethodGet, "/api/v1/movies/library", ``)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"moviepickarr/internal/db"
 	"moviepickarr/internal/domain"
@@ -29,15 +30,18 @@ func (d *SqliteMoviesRepository) ApplyEnrichment(
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// A blank TMDB title keeps the stored one: movies.title is never empty.
+	title := strings.TrimSpace(write.Title)
 	var matchedID int
 	err = tx.QueryRowContext(ctx, `
 		UPDATE movies
-		SET tmdb_id = ?, imdb_id = ?
+		SET tmdb_id = ?, imdb_id = ?, title = COALESCE(NULLIF(?, ''), title)
 		WHERE id = ? AND tmdb_id IS ? AND imdb_id IS ?
 		RETURNING id
 	`,
 		write.Resolved.TMDBID,
 		write.Resolved.IMDbID,
+		title,
 		write.MovieID,
 		write.Expected.TMDBID,
 		write.Expected.IMDbID,
@@ -47,6 +51,12 @@ func (d *SqliteMoviesRepository) ApplyEnrichment(
 	case db.IsUniqueViolation(err):
 		// Another movie owns the resolved identity: enrich without changing ids,
 		// so this row does not loop in the backlog.
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE movies SET title = COALESCE(NULLIF(?, ''), title) WHERE id = ?",
+			title, write.MovieID,
+		); err != nil {
+			return false, err
+		}
 	case errors.Is(err, sql.ErrNoRows):
 		var exists bool
 		if err := tx.QueryRowContext(ctx,

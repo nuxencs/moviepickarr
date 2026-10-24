@@ -110,9 +110,9 @@ old shadcn primitives.
   `aria-invalid` and `data-invalid`.
   `.fieldgroup` keeps the field and its specific `.field-error` together, with
   `aria-describedby` linking the input to the message. There is no bare input style.
-  A watched movie's date-time field is required. When its minute-level display value
-  is unchanged, the edit request omits `watchedAt` instead of rounding the stored
-  timestamp through `datetime-local`.
+  A watched movie's date-time field in the Movie correction is required. When its
+  minute-level display value is unchanged, the correction omits `watchedAt` instead
+  of rounding the stored timestamp through `datetime-local`.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
 - **Section head:** `.sec-head` holds a `.sec-title` (the `h2` plus its data) on the left
   and the section's controls on the right. The data slot is mono `--ink-3` text: a count
@@ -207,9 +207,10 @@ old shadcn primitives.
   takes focus only after an admin creates or replaces a link, when it must be copied
   and delivered. Loading or failed invite metadata must not turn every roster row into
   a repeated status card.
-- Admin uses one persistent nested index for Roster, Integrations, and Runs, without
-  a repeated Admin heading. The active Integrations branch reveals TMDB in the same
-  index. One vertical accent indicator moves between the three top-level destinations
+- Admin uses one persistent nested index for Roster, Integrations, Runs, and
+  Maintenance, without a repeated Admin heading. The active Integrations branch
+  reveals TMDB in the same index. One vertical accent indicator moves between the
+  four top-level destinations
   using the primary tabs' duration and easing. Each desktop destination owns its full
   row hit target and uses the same background hover. Its standard 22px line grows across the
   full parent-and-child branch while Integrations is active. The child slot derives
@@ -223,7 +224,8 @@ old shadcn primitives.
   the next lazy route resolves. The shared scroller resets from the committed leaf
   route, not the pending location, so the painted outgoing page remains still. Below
   901px, the index becomes horizontal and the
-  document owns vertical scrolling. Radarr adds compact Acquisitions, Setup, and
+  document owns vertical scrolling. The selected tab scrolls into view again once
+  web fonts load, because they widen the tabs after the first pass. Radarr adds compact Acquisitions, Setup, and
   Webhooks tabs without repeating the integration name. Its selected destination uses
   the same measured, sliding gold underline as the primary tabs. The persistent tab
   header and the first child enter together on arrival. Later nested route changes
@@ -257,6 +259,12 @@ old shadcn primitives.
   Waits longer than the browser timer range are split into safe chunks and rechecked
   before the request is sent.
   Progress polling then runs only while that run is active and the document is visible.
+  Maintenance is the movie library as a flat register like Run history: every movie
+  of any status, sorted by title, with one search field over title and adder. Each
+  row opens the Movie correction dialog (ADR 0013): a TMDB search whose results are
+  native radios (the current entry stays visible but disabled, the pick carries a
+  check and a gold tint), and a watched date for a watched movie only. A refused
+  correction keeps the dialog open and states the reason in place.
   Run history is a terminal-result register with Integration, Type, and Result filters.
   It uses 50-row keyset pages and keeps the previous page in memory while the next page
   loads. Active progress remains on the integration detail. Each result row opens a
@@ -368,9 +376,11 @@ old shadcn primitives.
   Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
-- **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`) — rename
-  and delete as two labelled rows (`.moviemodal__act`) at the foot of the rail, stacked
-  under the links at every width and sharing their 13px icon column. They read as
+- **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`) — delete
+  as a labelled row (`.moviemodal__act`) at the foot of the rail, stacked under the
+  links at every width and sharing their 13px icon column. Members cannot edit a movie:
+  titles come from TMDB and an admin corrects a movie on the Maintenance tab (ADR 0013).
+  A movie that cannot be deleted (current or watched) renders no actions block. They read as
   controls, not references: the label is sans where the links are mono, and the row
   lights a background on hover and focus where a link only changes colour, so the
   destructive red arrives on the pointer instead of sitting at rest. Whether it is drawn
@@ -407,7 +417,7 @@ edit/delete dialogs, which created two visibly different design languages (diffe
 button weight, input height, focus ring, backdrop, radius, motion) that a user hit at
 the moment of editing/deleting. We removed them:
 - `EditMovieDialog` and `DeletionDialog` were re-authored on the bespoke `Modal` with
-  `.field` + `.btn`.
+  `.field` + `.btn`. `EditMovieDialog` was later removed with member editing (ADR 0013).
 - `web/src/components/ui/{alert-dialog,button,input}.tsx` were **deleted**.
 - The user "more actions" menu is the bespoke `Menu` (`moviepickarr/Menu.tsx`): a
   portalled floating surface (`.mg-menu`) on the shared `mg-scaleIn` / `mg-scaleOut`

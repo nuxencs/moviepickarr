@@ -98,11 +98,11 @@ func candidateIncludes(candidates []domain.EnrichmentCandidate, movieID int) boo
 	return false
 }
 
-func TestEnrichOne_IdentityEditDuringTMDBRequestRejectsOldResult(t *testing.T) {
+func TestEnrichOne_IdentityCorrectionDuringTMDBRequestRejectsOldResult(t *testing.T) {
 	ctx, repos := setupEnrichmentTestRepos(t)
 	const oldIMDb = "tt0000101"
-	newIMDb := "tt0000102"
-	userID, movieID := seedEnrichmentMovie(t, ctx, repos, "Identity race", oldIMDb)
+	newTMDB := 202
+	_, movieID := seedEnrichmentMovie(t, ctx, repos, "Identity race", oldIMDb)
 
 	if err := repos.meta.UpsertMetadata(ctx, domain.MovieMetadata{
 		MovieID:  movieID,
@@ -155,21 +155,17 @@ func TestEnrichOne_IdentityEditDuringTMDBRequestRejectsOldResult(t *testing.T) {
 	}()
 
 	waitForSignal(t, detailsStarted, "old identity TMDB request")
-	_, changed, err := repos.movies.EditMovie(
-		ctx,
-		movieID,
-		userID,
-		"Identity edited",
-		domain.MovieIdentityTarget{IMDbID: &newIMDb},
-		nil,
-	)
+	_, changed, err := repos.movies.CorrectMovie(ctx, movieID, domain.MovieCorrection{
+		TMDBID: &newTMDB,
+		Title:  "Identity corrected",
+	})
 	if err != nil {
 		close(releaseDetails)
-		t.Fatalf("edit movie identity: %v", err)
+		t.Fatalf("correct movie identity: %v", err)
 	}
 	if !changed {
 		close(releaseDetails)
-		t.Fatal("identity edit was not reported as changed")
+		t.Fatal("identity correction was not reported as changed")
 	}
 	close(releaseDetails)
 
@@ -181,8 +177,9 @@ func TestEnrichOne_IdentityEditDuringTMDBRequestRejectsOldResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read edited movie: %v", err)
 	}
-	if movie.TMDBID != nil || movie.IMDbID == nil || *movie.IMDbID != newIMDb {
-		t.Fatalf("identity after stale enrichment = %v/%v, want nil/%s", movie.TMDBID, movie.IMDbID, newIMDb)
+	if movie.TMDBID == nil || *movie.TMDBID != newTMDB || movie.IMDbID != nil || movie.Title != "Identity corrected" {
+		t.Fatalf("movie after stale enrichment = %q %v/%v, want Identity corrected %d/nil",
+			movie.Title, movie.TMDBID, movie.IMDbID, newTMDB)
 	}
 
 	if _, err := repos.meta.GetMetadata(ctx, movieID); !errors.Is(err, domain.ErrNotFound) {

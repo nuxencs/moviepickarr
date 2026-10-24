@@ -38,6 +38,19 @@ export interface MovieTile {
     voteAverage?: number;
 }
 
+// One admin Maintenance row. A held winner stays projected as pooled until reveal.
+export interface LibraryMovie extends MovieTile {
+    status: MovieStatus;
+}
+
+// An admin Movie correction. tmdbId and title travel together; the title is the
+// TMDB search result's until enrichment replaces it.
+export interface MovieCorrection {
+    tmdbId?: number;
+    title?: string;
+    watchedAt?: string;
+}
+
 // Full wire class. A held winner stays projected as pooled until reveal.
 export interface MovieDetail extends MovieTile {
     status: MovieStatus;

@@ -139,7 +139,7 @@ Use the Acquisition detail when action is required:
   select a new valid preset.
 - `Identity required`: for an unlocked target, search from the Acquisition and
   select the correct TMDB result. This is an Acquisition-only override and does
-  not edit the movie. For a locked target, restore the exact movie in Radarr or
+  not change the movie. To fix the movie itself, use Admin > Maintenance. For a locked target, restore the exact movie in Radarr or
   abandon the Acquisition.
 - `Add failed`: a definite unlocked failure returns the target to review. Correct
   the condition, then review and confirm the target again. If the add response

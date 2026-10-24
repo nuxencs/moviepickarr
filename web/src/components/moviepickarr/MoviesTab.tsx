@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { LayoutGridIcon, ListIcon, LinkIcon, LockIcon, LockOpenIcon, PencilIcon, SearchIcon } from "lucide-react";
+import { LayoutGridIcon, ListIcon, LinkIcon, LockIcon, LockOpenIcon, SearchIcon } from "lucide-react";
 import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useDeferredValue, useMemo, useRef, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
@@ -11,7 +11,6 @@ import {
   SettingsGetPoolStateQueryOptions,
 } from "@/api/queries";
 
-import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar, AdderTag, Rating } from "@/components/moviepickarr/Bits";
 import {
   dateTimeParts,
@@ -22,7 +21,6 @@ import {
 } from "@/components/moviepickarr/lib";
 import { MovieModal } from "@/components/moviepickarr/MovieModal";
 import { StatNumber } from "@/components/moviepickarr/numberRoll";
-import { isSelf } from "@/components/moviepickarr/ownership";
 import { canLockPool, ROUND_CLOSED, ROUND_OPEN } from "@/components/moviepickarr/poolLock";
 import { Poster } from "@/components/moviepickarr/Poster";
 import { chunkRows, filterWatched } from "@/components/moviepickarr/search";
@@ -30,7 +28,6 @@ import { toast } from "@/components/ui/toast-api";
 
 import type { MovieTile } from "@/types/Response";
 
-import { useToggle } from "@/hooks/hooks";
 import { useFlipRail } from "@/hooks/useFlipRail";
 import { useGridMetrics, virtualRowStyle } from "@/hooks/useGridMetrics";
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
@@ -325,75 +322,43 @@ function VirtualWatched({
 }
 
 function WatchedRow({ movie, onOpen }: { movie: MovieTile; onOpen: () => void }) {
-  const [editOpen, toggleEdit] = useToggle(false);
   const { date, time } = dateTimeParts(movie.watchedAt);
-  // Editing is adder-only server-side, with no admin override.
-  const { data: me } = useQuery(MeQueryOptions());
-  const canEdit = isSelf(me?.id, movie.addedByID);
-
-  const editMutation = useMutation({
-    mutationFn: (payload: { title: string; link: string; watchedAt?: string }) =>
-      APIClient.board.updateMovie(movie.movieID, payload.title, payload.link, payload.watchedAt),
-    onSuccess: () => {
-      toast.success(`${movie.title} updated`);
-      toggleEdit();
-    },
-    onError: () => toast.error("Failed to update movie"),
-  });
 
   const year = yearOf(movie.releaseDate);
   const runtime = runtimeLabel(movie.runtime);
   const sub = [year, runtime, `added by ${movie.addedByName}`].filter(Boolean).join(" · ");
 
   return (
-    <>
-      <EditMovieDialog
-        isOpen={editOpen}
-        onClose={toggleEdit}
-        initialTitle={movie.title}
-        initialLink={movie.link}
-        initialWatchedAt={movie.watchedAt}
-        allowWatchedAtEdit
-        isSaving={editMutation.isPending}
-        onSubmit={(payload) => editMutation.mutate(payload)}
-      />
-
-      <div className="wrow">
-        <button type="button" className="wr-open" onClick={onOpen} aria-label={`Details for ${movie.title}`}>
-          <Poster
-            title={movie.title}
-            hue={hueOf(movie.title)}
-            posterPath={movie.posterPath}
-            showTitle={false}
-            sizes="auto, 44px"
-          />
-          <div className="wr-main">
-            <span className="wr-title">
-              {movie.title}
-              <Rating voteAverage={movie.voteAverage} />
-              {movie.wildcardOfMovieId && <span className="wildcard-mark">Wildcard</span>}
-            </span>
-            <span className="wr-sub">{sub}</span>
-          </div>
-        </button>
-        <div className="wr-actions">
-          {movie.link && (
-            <a className="iconbtn" href={movie.link} target="_blank" rel="noopener noreferrer" aria-label="Open link">
-              <LinkIcon />
-            </a>
-          )}
-          {canEdit && (
-            <button type="button" className="iconbtn" onClick={toggleEdit} aria-label="Edit">
-              <PencilIcon />
-            </button>
-          )}
+    <div className="wrow">
+      <button type="button" className="wr-open" onClick={onOpen} aria-label={`Details for ${movie.title}`}>
+        <Poster
+          title={movie.title}
+          hue={hueOf(movie.title)}
+          posterPath={movie.posterPath}
+          showTitle={false}
+          sizes="auto, 44px"
+        />
+        <div className="wr-main">
+          <span className="wr-title">
+            {movie.title}
+            <Rating voteAverage={movie.voteAverage} />
+            {movie.wildcardOfMovieId && <span className="wildcard-mark">Wildcard</span>}
+          </span>
+          <span className="wr-sub">{sub}</span>
         </div>
-        <div className="wr-date">
-          {date}
-          <br />
-          {time}
-        </div>
+      </button>
+      <div className="wr-actions">
+        {movie.link && (
+          <a className="iconbtn" href={movie.link} target="_blank" rel="noopener noreferrer" aria-label="Open link">
+            <LinkIcon />
+          </a>
+        )}
       </div>
-    </>
+      <div className="wr-date">
+        {date}
+        <br />
+        {time}
+      </div>
+    </div>
   );
 }

@@ -97,7 +97,9 @@ type MovieMetadata struct {
 	VoteAverage  float64
 	VoteCount    int
 	Tagline      string
-	EnrichedAt   *time.Time
+	// OriginalTitle is stored only; no response carries it yet (ADR 0013).
+	OriginalTitle string
+	EnrichedAt    *time.Time
 }
 
 // EnrichmentCandidate identifies a movie that needs enrichment.
@@ -112,17 +114,21 @@ type MovieIdentity struct {
 	IMDbID *string
 }
 
-// MovieIdentityTarget selects the one provider identity an edit asks for.
-// Matching the stored provider keeps all ids; a different one replaces them.
-type MovieIdentityTarget struct {
-	TMDBID *int
-	IMDbID *string
+// MovieCorrection is an admin repair of one movie (ADR 0013). A nil field
+// stays unchanged; Title is the TMDB search result's and goes with TMDBID until
+// enrichment replaces it.
+type MovieCorrection struct {
+	TMDBID    *int
+	Title     string
+	WatchedAt *time.Time
 }
 
 // MovieEnrichmentWrite is one enrichment commit. It applies only while the
 // identity still matches Expected, observed before the TMDB call.
 type MovieEnrichmentWrite struct {
-	MovieID  int
+	MovieID int
+	// Title is the TMDB title; enrichment owns it (ADR 0013).
+	Title    string
 	Expected MovieIdentity
 	Resolved MovieIdentity
 	Metadata MovieMetadata

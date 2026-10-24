@@ -43,6 +43,7 @@ func scanMetadata(scanner rowScanner) (*domain.MovieMetadata, error) {
 		&md.VoteAverage,
 		&md.VoteCount,
 		&md.Tagline,
+		&md.OriginalTitle,
 		&enrichedAt,
 	); err != nil {
 		return nil, err
@@ -94,8 +95,9 @@ func upsertMovieMetadata(
 	query := `
 			INSERT INTO movie_metadata (
 				movie_id, overview, poster_path, backdrop_path,
-				release_date, runtime, genres, vote_average, vote_count, tagline, enriched_at` + creditsColumn + `
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch()` + creditsValue + `)
+				release_date, runtime, genres, vote_average, vote_count, tagline, original_title,
+				enriched_at` + creditsColumn + `
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch()` + creditsValue + `)
 			ON CONFLICT(movie_id) DO UPDATE SET
 				overview      = excluded.overview,
 				poster_path   = excluded.poster_path,
@@ -106,12 +108,14 @@ func upsertMovieMetadata(
 				vote_average  = excluded.vote_average,
 				vote_count    = excluded.vote_count,
 				tagline       = excluded.tagline,
+				original_title = excluded.original_title,
 				enriched_at   = unixepoch()` + creditsUpdate + `
 		`
 
 	_, err := exec.ExecContext(ctx, query,
 		md.MovieID, md.Overview, md.PosterPath, md.BackdropPath,
 		md.ReleaseDate, md.Runtime, genresJSON, md.VoteAverage, md.VoteCount, md.Tagline,
+		md.OriginalTitle,
 	)
 	return err
 }
@@ -137,6 +141,7 @@ func (d *SqliteMovieMetadataRepository) GetMetadata(ctx context.Context, movieID
 			vote_average,
 			vote_count,
 			tagline,
+			original_title,
 			enriched_at
 		FROM movie_metadata
 		WHERE movie_id = ?
@@ -178,6 +183,7 @@ func (d *SqliteMovieMetadataRepository) GetMetadataByMovieIDs(ctx context.Contex
 			vote_average,
 			vote_count,
 			tagline,
+			original_title,
 			enriched_at
 		FROM movie_metadata
 		WHERE movie_id IN (%s)

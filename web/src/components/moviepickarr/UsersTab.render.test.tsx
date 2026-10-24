@@ -19,7 +19,7 @@ import { renderWithProviders } from "@/test/providers";
 
 vi.mock("@/api/APIClient", () => ({
   APIClient: {
-    board: { getAll: vi.fn(), moveMovie: vi.fn(), deleteMovie: vi.fn(), updateMovie: vi.fn() },
+    board: { getAll: vi.fn(), moveMovie: vi.fn(), deleteMovie: vi.fn() },
     settings: { getPoolState: vi.fn() },
     auth: { me: vi.fn() },
     // Never resolves, so the modal shows the clicked tile's own lean object.

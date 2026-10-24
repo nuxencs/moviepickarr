@@ -125,7 +125,7 @@ export function MovieCorrectionDialog({
           </div>
 
           <div className="modal__scroll correction__scroll">
-            <section className="correction__section" aria-labelledby={tmdbHeadingID}>
+            <section className="correction__section correction__section--tmdb" aria-labelledby={tmdbHeadingID}>
               <div className="correction__section-head">
                 <h4 id={tmdbHeadingID}>TMDB movie</h4>
                 <span className="correction__current mono">

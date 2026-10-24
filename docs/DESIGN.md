@@ -169,8 +169,8 @@ old shadcn primitives.
 - **Long lists are virtualized (`@tanstack/react-virtual`).** Three lists grow with the
   library and would otherwise render every row: the Movies **watched grid/list**, the
   **filter menus** (1500+ actors on a mature library), and the Admin **Maintenance
-  library**. The Maintenance list virtualizes against `pageScrollOwner`: the Admin body
-  at 901px and up, the document below it. Each feeds its search
+  library**. The Maintenance list virtualizes against `pageScrollOwner`: its register
+  viewport at 901px and up, the document below it. Each feeds its search
   box through `useDeferredValue` into a memoized filter, so a keystroke updates the
   input immediately and the list at React's convenience, then renders the matches
   through a virtualizer — a screenful of DOM instead of the whole result set, flat per
@@ -262,9 +262,18 @@ old shadcn primitives.
   before the request is sent.
   Progress polling then runs only while that run is active and the document is visible.
   Maintenance is the movie library as a flat register like Run history: every movie
-  of any status, sorted by title, with one search field over title and adder. Each
+  of any status, sorted by title, with one search field over title and adder. At 901px
+  and up only the rows scroll, with the scrollbar beside them under the column head; the
+  head reserves the same scrollbar gutter, so its labels stay over their cells. The section
+  is a still, clipping frame the height of the Admin body, and the rise runs on a wrapper
+  inside it: a full-height box that rises itself overflows the body for the length of the
+  entrance and flashes the body's scrollbar. A pinned header over the body's own scroll was
+  also tried and rejected, because the body's scrollbar then spans the heading and sits off
+  the table's edge. Below 901px the document scrolls. Each
   row opens the Movie correction dialog (ADR 0013): a TMDB search whose results are
-  native radios, and a watched date for a watched movie only. The current entry and
+  native radios, and a watched date for a watched movie only. From three results the
+  results list scrolls on its own, so the search and the watched date stay in view,
+  down to a floor of about two rows where the dialog body scrolls. The current entry and
   any entry another library movie already uses stay visible but disabled, with the
   reason in their meta line ("in library as Heat"). The pick gets a neutral fill and a
   check, not gold: it is a choice inside a form, not app state. A refused correction

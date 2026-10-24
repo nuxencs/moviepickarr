@@ -1,4 +1,6 @@
 .admin-maintenance {
+  --library-register-columns: 44px minmax(180px, 1.6fr) minmax(96px, 0.6fr) minmax(110px, 0.7fr) minmax(72px, 0.4fr) 18px;
+
   min-width: 0;
 }
 
@@ -26,8 +28,6 @@
 }
 
 .library-register {
-  --library-register-columns: 44px minmax(180px, 1.6fr) minmax(96px, 0.6fr) minmax(110px, 0.7fr) minmax(72px, 0.4fr) 18px;
-
   min-width: 0;
   border-block: 1px solid var(--line);
 }
@@ -42,6 +42,7 @@
 
 .library-register__head {
   padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -58,6 +59,11 @@
 
 .library-register__item {
   border-top: 1px solid var(--line);
+}
+
+/* The head's or the register's own line sits above the first row. */
+.library-register__item:first-child {
+  border-top: 0;
 }
 
 .library-row {
@@ -163,8 +169,8 @@
 }
 
 .modal--correction .correction__scroll {
-  display: grid;
-  gap: 0;
+  display: flex;
+  flex-direction: column;
   padding: 0 26px 6px;
   /* A reserved gutter would end the fields short of the footer buttons. */
   scrollbar-gutter: auto;
@@ -172,9 +178,22 @@
 
 .correction__section {
   display: grid;
+  flex: none;
   gap: 14px;
   padding: 20px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.correction__section--tmdb {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+}
+
+/* Only the results shrink, so the search and the watched date stay in view. The floor
+   keeps about two rows and must exceed the head and search; .modal__scroll takes over below it. */
+.correction__section--tmdb:has(.correction__results > :nth-child(3)) {
+  min-height: 320px;
 }
 
 .correction__section:last-of-type {
@@ -218,6 +237,9 @@
 
 .correction__results {
   display: grid;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   border-top: 1px solid var(--line);
 }
 
@@ -286,10 +308,6 @@
     display: none;
   }
 
-  .library-register__item:first-child {
-    border-top: 0;
-  }
-
   .library-row {
     grid-template-columns: 44px minmax(0, 1fr) 18px;
     grid-template-rows: auto auto;
@@ -316,6 +334,51 @@
   .library-row__chevron {
     grid-column: 3;
     grid-row: 1 / 3;
+  }
+}
+
+/* Only the rows scroll, so the scrollbar sits beside them. The section is a still frame
+   the height of the Admin body: it clips, so the content's 10px mg-rise lands in its
+   bottom padding and never overflows the body (a rising full-height box flashed the
+   body's scrollbar). */
+@media (min-width: 901px) {
+  .admin-maintenance {
+    height: 100%;
+    /* Below this a short window scrolls the Admin body instead of a sliver of rows. */
+    min-height: 400px;
+    overflow: clip;
+    padding-bottom: 24px;
+  }
+
+  .admin-maintenance__content {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+  }
+
+  .admin-maintenance__content > * {
+    flex: none;
+  }
+
+  .admin-maintenance__content > .library-register {
+    display: flex;
+    flex: 0 1 auto;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  /* The same gutter as the viewport keeps the columns over their cells. */
+  .library-register__head {
+    flex: none;
+    overflow: hidden;
+    scrollbar-gutter: stable;
+  }
+
+  .library-register__viewport {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 }
 

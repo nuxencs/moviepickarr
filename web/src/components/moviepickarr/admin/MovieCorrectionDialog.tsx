@@ -128,9 +128,6 @@ export function MovieCorrectionDialog({
             <section className="correction__section correction__section--tmdb" aria-labelledby={tmdbHeadingID}>
               <div className="correction__section-head">
                 <h4 id={tmdbHeadingID}>TMDB movie</h4>
-                <span className="correction__current mono">
-                  {movie.tmdbId ? `Now TMDB ${movie.tmdbId}` : "No TMDB id"}
-                </span>
               </div>
               <form className="correction__search" onSubmit={search}>
                 <label className="field">
@@ -193,7 +190,6 @@ export function MovieCorrectionDialog({
                           <span className="mono">
                             {[
                               resultYear,
-                              `TMDB ${result.id}`,
                               isCurrent ? "current" : undefined,
                               takenBy !== undefined ? `in library as ${takenBy}` : undefined,
                             ]

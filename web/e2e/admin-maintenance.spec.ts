@@ -78,9 +78,9 @@ test.describe("desktop", () => {
     expect(viewportBox.y + viewportBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     const gutter = (locator: typeof head) => locator.evaluate((element) => element.offsetWidth - element.clientWidth);
     expect(await gutter(head)).toBe(await gutter(viewport));
-    const tmdbLabel = (await head.getByText("TMDB", { exact: true }).boundingBox())!;
-    const tmdbCell = (await rows.first().locator(".library-row__tmdb").boundingBox())!;
-    expect(Math.abs(tmdbLabel.x - tmdbCell.x)).toBeLessThanOrEqual(0.5);
+    const adderLabel = (await head.getByText("Added by", { exact: true }).boundingBox())!;
+    const adderCell = (await rows.first().locator(".library-row__adder").boundingBox())!;
+    expect(Math.abs(adderLabel.x - adderCell.x)).toBeLessThanOrEqual(0.5);
 
     await rows.first().hover();
     await page.mouse.wheel(0, 2_000);

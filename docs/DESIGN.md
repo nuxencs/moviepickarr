@@ -264,9 +264,12 @@ old shadcn primitives.
   Maintenance is the movie library as a flat register like Run history: every movie
   of any status, sorted by title, with one search field over title and adder. Each
   row opens the Movie correction dialog (ADR 0013): a TMDB search whose results are
-  native radios (the current entry stays visible but disabled, the pick carries a
-  check and a gold tint), and a watched date for a watched movie only. A refused
-  correction keeps the dialog open and states the reason in place.
+  native radios, and a watched date for a watched movie only. The current entry and
+  any entry another library movie already uses stay visible but disabled, with the
+  reason in their meta line ("in library as Heat"). The pick gets a neutral fill and a
+  check, not gold: it is a choice inside a form, not app state. A refused correction
+  keeps the dialog open and reports the reason in a toast, because an inline line
+  would sit below the scrolling results.
   Run history is a terminal-result register with Integration, Type, and Result filters.
   It uses 50-row keyset pages and keeps the previous page in memory while the next page
   loads. Active progress remains on the integration detail. Each result row opens a

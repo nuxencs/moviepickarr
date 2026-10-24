@@ -182,6 +182,13 @@ export function AdminMaintenancePage() {
   }, [movies, deferredQuery]);
   // Resolved from the live list, so a deleted movie closes its dialog.
   const selected = movies.find((movie) => movie.movieID === selectedID);
+  const libraryTitles = useMemo(
+    () =>
+      new Map(
+        movies.flatMap((movie) => (movie.tmdbId ? [[movie.tmdbId, movie.title] as const] : [])),
+      ),
+    [movies],
+  );
 
   return (
     <section className="admin-section admin-maintenance mg-rise" aria-labelledby="admin-maintenance-title">
@@ -237,7 +244,13 @@ export function AdminMaintenancePage() {
         </div>
       )}
 
-      {selected && <MovieCorrectionDialog movie={selected} onClose={() => setSelectedID(null)} />}
+      {selected && (
+        <MovieCorrectionDialog
+          movie={selected}
+          libraryTitles={libraryTitles}
+          onClose={() => setSelectedID(null)}
+        />
+      )}
     </section>
   );
 }

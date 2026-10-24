@@ -184,6 +184,27 @@ describe("AdminMaintenancePage correction", () => {
     expect(current.hasAttribute("disabled")).toBe(true);
   });
 
+  it("marks a TMDB result that another library movie already uses", async () => {
+    vi.mocked(APIClient.tmdb.search).mockResolvedValue([
+      rightPick,
+      { ...rightPick, id: 348, title: "Alien" },
+    ]);
+    renderPage();
+    const dialog = await openCorrection("Wrong Pick");
+
+    fireEvent.change(within(dialog).getByRole("searchbox", { name: "TMDB title" }), {
+      target: { value: "alien" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Search TMDB" }));
+
+    const taken = await within(dialog).findByRole("radio", { name: /Alien/ });
+    expect(taken.hasAttribute("disabled")).toBe(true);
+    expect(taken.closest("label")?.textContent).toContain("in library as Alien");
+    expect(within(dialog).getByRole("radio", { name: /Right Pick/ }).hasAttribute("disabled")).toBe(
+      false,
+    );
+  });
+
   it("shows the watched date only for a watched movie", async () => {
     renderPage();
     const stash = await openCorrection("Wrong Pick");
@@ -271,7 +292,7 @@ describe("AdminMaintenancePage correction", () => {
       ).toBe(true);
     }));
 
-  it("keeps the dialog open and explains a locked acquisition", async () => {
+  it("keeps the dialog open and toasts a locked acquisition", async () => {
     vi.mocked(APIClient.maintenance.correctMovie).mockRejectedValue(
       new ApiError(409, "abandon the acquisition first", "acquisition_locked"),
     );
@@ -285,8 +306,10 @@ describe("AdminMaintenancePage correction", () => {
     fireEvent.click(await within(dialog).findByRole("radio", { name: /Right Pick/ }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Save correction" }));
 
-    expect((await within(dialog).findByRole("alert")).textContent).toBe(
-      "Radarr already holds this movie. Abandon its acquisition first.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Radarr already holds this movie. Abandon its acquisition first.",
+      ),
     );
     expect(screen.getByRole("dialog", { name: "Correct movie" })).not.toBeNull();
   });

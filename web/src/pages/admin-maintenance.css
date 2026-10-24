@@ -241,17 +241,17 @@
   outline-offset: -2px;
 }
 
+/* Neutral, like a hovered row: the check mark carries the selection. */
 .correction-result:has(input:checked) {
-  background: var(--accent-soft);
-  box-shadow: inset 2px 0 var(--accent);
+  background: color-mix(in oklab, var(--surface-3) 55%, transparent);
 }
 
-.correction-result[data-current] {
+.correction-result[data-unavailable] {
   cursor: default;
   opacity: 0.6;
 }
 
-.correction-result[data-current]:hover {
+.correction-result[data-unavailable]:hover {
   background: transparent;
 }
 
@@ -278,12 +278,7 @@
 .correction-result__check svg {
   width: 16px;
   height: 16px;
-  /* Plain gold fails contrast on the light theme's gold tint. */
-  color: color-mix(in oklab, var(--accent) 55%, var(--ink));
-}
-
-.correction__error {
-  margin: 0 0 14px;
+  color: var(--ink);
 }
 
 @container admin-integration (max-width: 720px) {

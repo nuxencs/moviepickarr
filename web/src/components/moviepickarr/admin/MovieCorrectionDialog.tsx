@@ -27,7 +27,16 @@ function correctionErrorMessage(error: unknown): string {
 }
 
 /** An admin Movie correction (ADR 0013): a new TMDB identity, a watched date, or both. */
-export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie; onClose: () => void }) {
+export function MovieCorrectionDialog({
+  movie,
+  libraryTitles,
+  onClose,
+}: {
+  movie: LibraryMovie;
+  /** Library titles by TMDB id, so a pick that another movie owns is refused before save. */
+  libraryTitles: ReadonlyMap<number, string>;
+  onClose: () => void;
+}) {
   const isWatched = movie.status === "watched";
   const initialWatchedAtLocal = useMemo(
     () => toLocalDateTimeInputValue(movie.watchedAt),
@@ -155,20 +164,21 @@ export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie;
                 <div className="correction__results" role="radiogroup" aria-label="TMDB results">
                   {results.map((result) => {
                     const isCurrent = result.id === movie.tmdbId;
+                    const takenBy = isCurrent ? undefined : libraryTitles.get(result.id);
                     const isPicked = picked?.id === result.id;
                     const resultYear = yearOf(result.release_date);
                     return (
                       <label
                         key={result.id}
                         className="correction-result"
-                        data-current={isCurrent || undefined}
+                        data-unavailable={isCurrent || takenBy !== undefined || undefined}
                       >
                         <input
                           type="radio"
                           className="vis-hidden"
                           name={resultsName}
                           checked={isPicked}
-                          disabled={isCurrent || correction.isPending}
+                          disabled={isCurrent || takenBy !== undefined || correction.isPending}
                           onChange={() => setPicked(result)}
                         />
                         <Poster
@@ -181,7 +191,12 @@ export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie;
                         <span className="correction-result__text">
                           <strong>{result.title}</strong>
                           <span className="mono">
-                            {[resultYear, `TMDB ${result.id}`, isCurrent ? "current" : undefined]
+                            {[
+                              resultYear,
+                              `TMDB ${result.id}`,
+                              isCurrent ? "current" : undefined,
+                              takenBy !== undefined ? `in library as ${takenBy}` : undefined,
+                            ]
                               .filter(Boolean)
                               .join(" · ")}
                           </span>
@@ -227,11 +242,6 @@ export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie;
               </section>
             )}
 
-            {correction.isError && (
-              <p className="field-error correction__error" role="alert">
-                {correctionErrorMessage(correction.error)}
-              </p>
-            )}
           </div>
 
           <div className="modal__foot">
@@ -248,6 +258,8 @@ export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie;
                     toast.success(`${movie.title} corrected`);
                     close();
                   },
+                  // A toast stays in view; an inline line sat under the scrolling results.
+                  onError: (error) => toast.error(correctionErrorMessage(error)),
                 })
               }
             >

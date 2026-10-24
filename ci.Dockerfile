@@ -1,5 +1,5 @@
 # build app
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine3.23@sha256:7fd63dd7c37f5ddaef15bd8fd3f3e4f90f0d50cd9cae255c7cf73887a494d8df AS app-builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine3.23@sha256:754d5200fc3edae76d3b6598a9a3fac7e74981ee6a5413ab955025f185753ef2 AS app-builder
 RUN apk add --no-cache git tzdata
 
 ENV SERVICE=moviepickarr

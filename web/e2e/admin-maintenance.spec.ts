@@ -127,12 +127,12 @@ test.describe("short desktop", () => {
     expect(results.y + results.height).toBeLessThanOrEqual(dateSection.y + 0.5);
 
     // The results chain to the dialog body at their end, so the date stays reachable by wheel.
+    // Set the end directly: Firefox caps one wheel event at about a page.
     const outer = dialog.locator(".correction__scroll");
+    await group.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
     await group.hover();
-    await page.mouse.wheel(0, 10_000);
-    await expect
-      .poll(() => group.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
-      .toBeLessThanOrEqual(1);
     await page.mouse.wheel(0, 1_000);
     await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   });

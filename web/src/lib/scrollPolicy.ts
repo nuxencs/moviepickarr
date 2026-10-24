@@ -22,7 +22,8 @@ export function installDocumentScrollPolicy(doc: Document = document): number {
 
 /**
  * The element that scrolls the page around `element`: the nearest marked page
- * owner whose CSS makes it scroll (the Admin body at 901px and up), else the body.
+ * owner whose CSS makes it scroll (at 901px and up the Admin body, or a bounded
+ * register viewport inside it), else the body.
  */
 export function pageScrollOwner(element: HTMLElement): HTMLElement {
   for (let node = element.parentElement; node; node = node.parentElement) {

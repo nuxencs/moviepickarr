@@ -60,7 +60,7 @@ export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie;
   // An unchanged minute-level value is omitted, so the stored seconds survive.
   const watchedAtChanged = isWatched && watchedAtLocal !== initialWatchedAtLocal;
   const payload: MovieCorrection = {
-    ...(picked ? { tmdbId: picked.id, title: picked.title } : {}),
+    ...(picked ? { tmdbId: picked.id, title: picked.title, year: yearOf(picked.release_date) } : {}),
     ...(watchedAtChanged && watchedAtISO ? { watchedAt: watchedAtISO } : {}),
   };
   const canSave =
@@ -129,7 +129,7 @@ export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie;
                   <input
                     type="search"
                     name="tmdb-search"
-                    aria-label="Search TMDB"
+                    aria-label="TMDB title"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Movie title"
@@ -141,8 +141,8 @@ export function MovieCorrectionDialog({ movie, onClose }: { movie: LibraryMovie;
                   className="btn btn--ghost"
                   disabled={!query.trim() || isSearching || correction.isPending}
                 >
-                  {isSearching ? <Loader2Icon className="animate-spin mg-spin" /> : <SearchIcon />}
-                  Search
+                  {isSearching && <Loader2Icon className="animate-spin mg-spin" />}
+                  Search TMDB
                 </button>
               </form>
 

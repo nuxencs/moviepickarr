@@ -140,7 +140,7 @@ func (c *tmdbClient) FindByIMDb(ctx context.Context, imdbID string) (tmdbMovie, 
 // MovieDetails fetches the full detail record for a TMDB movie id, with the
 // credits appended so it stays a single API call.
 func (c *tmdbClient) MovieDetails(ctx context.Context, tmdbID int) (tmdbMovieDetails, error) {
-	u := fmt.Sprintf("%s/movie/%d?append_to_response=credits", c.baseURL, tmdbID)
+	u := fmt.Sprintf("%s/movie/%d?append_to_response=credits&language=en-US", c.baseURL, tmdbID)
 
 	var payload tmdbMovieDetails
 	if err := c.doRequest(ctx, u, &payload); err != nil {

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronRightIcon, SearchIcon } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useId, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "@/api/APIClient";
 import { MovieLibraryQueryOptions } from "@/api/queries";
@@ -10,6 +11,10 @@ import { hueOf, plural, yearOf } from "@/components/moviepickarr/lib";
 import { Poster } from "@/components/moviepickarr/Poster";
 
 import type { LibraryMovie, MovieStatus } from "@/types/Response";
+
+import { virtualRowStyle } from "@/hooks/useGridMetrics";
+import { documentOffsetTop, pageScrollOwner } from "@/lib/scrollPolicy";
+
 
 import "@/pages/admin-maintenance.css";
 
@@ -23,20 +28,33 @@ const STATUS_LABELS: Record<MovieStatus, string> = {
 
 const titleCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
-// Memoized so a keystroke in the search field re-renders only rows that enter
-// or leave the match set (DESIGN.md §4).
 const LibraryRow = memo(function LibraryRow({
   movie,
   onOpen,
+  index,
+  setSize,
+  top,
+  measure,
 }: {
   movie: LibraryMovie;
   onOpen: (movieID: number) => void;
+  index: number;
+  setSize: number;
+  top: number;
+  measure: (node: HTMLLIElement | null) => void;
 }) {
   const factsID = useId();
   const year = yearOf(movie.releaseDate);
 
   return (
-    <li className="library-register__item">
+    <li
+      ref={measure}
+      data-index={index}
+      className="library-register__item"
+      style={virtualRowStyle(top)}
+      aria-setsize={setSize}
+      aria-posinset={index + 1}
+    >
       <button
         type="button"
         className="library-row"
@@ -75,6 +93,71 @@ const LibraryRow = memo(function LibraryRow({
     </li>
   );
 });
+
+/**
+ * The library grows with every movie added, so it is virtualized (DESIGN.md §4).
+ * The scroll owner is the Admin body at 901px and up and the document below it.
+ */
+function LibraryList({
+  movies,
+  onOpen,
+}: {
+  movies: readonly LibraryMovie[];
+  onOpen: (movieID: number) => void;
+}) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const [scroll, setScroll] = useState<{ owner: HTMLElement | null; offset: number }>({
+    owner: null,
+    offset: 0,
+  });
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const read = () => {
+      const owner = pageScrollOwner(list);
+      const offset = documentOffsetTop(list, owner);
+      setScroll((prev) => (prev.owner === owner && prev.offset === offset ? prev : { owner, offset }));
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(list);
+    observer.observe(document.getElementById("root") ?? document.body);
+    return () => observer.disconnect();
+  }, []);
+
+  const virtualizer = useVirtualizer({
+    count: movies.length,
+    getScrollElement: () => scroll.owner,
+    estimateSize: () => 81,
+    overscan: 6,
+    scrollMargin: scroll.offset,
+  });
+
+  return (
+    <ul
+      ref={listRef}
+      className="library-register__list"
+      aria-label="Movie library"
+      style={{ position: "relative", height: virtualizer.getTotalSize() }}
+    >
+      {virtualizer.getVirtualItems().map((item) => {
+        const movie = movies[item.index];
+        return (
+          <LibraryRow
+            key={movie.movieID}
+            movie={movie}
+            onOpen={onOpen}
+            index={item.index}
+            setSize={movies.length}
+            top={item.start - scroll.offset}
+            measure={virtualizer.measureElement}
+          />
+        );
+      })}
+    </ul>
+  );
+}
 
 /** The admin Maintenance tab: every movie, and the Movie correction (ADR 0013). */
 export function AdminMaintenancePage() {
@@ -150,11 +233,7 @@ export function AdminMaintenancePage() {
             <span>TMDB</span>
             <span />
           </div>
-          <ul className="library-register__list" aria-label="Movie library">
-            {visible.map((movie) => (
-              <LibraryRow key={movie.movieID} movie={movie} onOpen={openMovie} />
-            ))}
-          </ul>
+          <LibraryList movies={visible} onOpen={openMovie} />
         </div>
       )}
 

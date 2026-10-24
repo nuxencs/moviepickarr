@@ -68,7 +68,6 @@ type WildcardSelection struct {
 	ExistingMovieID     *int
 	Title               string
 	TMDBID              *int
-	IMDbID              *string
 }
 
 type Wildcard struct {
@@ -115,11 +114,13 @@ type MovieIdentity struct {
 }
 
 // MovieCorrection is an admin repair of one movie (ADR 0013). A nil field
-// stays unchanged; Title is the TMDB search result's and goes with TMDBID until
-// enrichment replaces it.
+// stays unchanged. Title and Year are the TMDB search result's and go with
+// TMDBID: Title until enrichment replaces it, Year for an open Acquisition's
+// identity copy, which enrichment never refreshes.
 type MovieCorrection struct {
 	TMDBID    *int
 	Title     string
+	Year      *int
 	WatchedAt *time.Time
 }
 

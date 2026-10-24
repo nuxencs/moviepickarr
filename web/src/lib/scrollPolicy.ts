@@ -20,6 +20,19 @@ export function installDocumentScrollPolicy(doc: Document = document): number {
   return width;
 }
 
+/**
+ * The element that scrolls the page around `element`: the nearest marked page
+ * owner whose CSS makes it scroll (the Admin body at 901px and up), else the body.
+ */
+export function pageScrollOwner(element: HTMLElement): HTMLElement {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (!node.matches(PAGE_OWNER_SELECTOR)) continue;
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+  }
+  return documentScrollOwner(element.ownerDocument);
+}
+
 /** Offset from the body scroll owner's content origin. */
 export function documentOffsetTop(
   element: HTMLElement,

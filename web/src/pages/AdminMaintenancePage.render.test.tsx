@@ -18,6 +18,16 @@ vi.mock("@/api/APIClient", async (importOriginal) => ({
   },
 }));
 
+// jsdom has no layout, so every row renders; Playwright checks the real window.
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: (options: { count: number }) => ({
+    getTotalSize: () => options.count * 81,
+    getVirtualItems: () =>
+      Array.from({ length: options.count }, (_, index) => ({ key: index, index, start: index * 81 })),
+    measureElement: () => {},
+  }),
+}));
+
 vi.mock("@/components/ui/toast-api", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -138,10 +148,10 @@ describe("AdminMaintenancePage correction", () => {
     const save = within(dialog).getByRole("button", { name: "Save correction" });
     expect(save.hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(within(dialog).getByRole("searchbox", { name: "Search TMDB" }), {
+    fireEvent.change(within(dialog).getByRole("searchbox", { name: "TMDB title" }), {
       target: { value: "right pick" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Search" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Search TMDB" }));
     fireEvent.click(await within(dialog).findByRole("radio", { name: /Right Pick/ }));
     fireEvent.click(save);
 
@@ -149,6 +159,7 @@ describe("AdminMaintenancePage correction", () => {
       expect(APIClient.maintenance.correctMovie).toHaveBeenCalledWith(1, {
         tmdbId: 200,
         title: "Right Pick",
+        year: 1999,
       }),
     );
     await waitFor(() =>
@@ -164,10 +175,10 @@ describe("AdminMaintenancePage correction", () => {
     renderPage();
     const dialog = await openCorrection("Wrong Pick");
 
-    fireEvent.change(within(dialog).getByRole("searchbox", { name: "Search TMDB" }), {
+    fireEvent.change(within(dialog).getByRole("searchbox", { name: "TMDB title" }), {
       target: { value: "wrong" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Search" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Search TMDB" }));
 
     const current = await within(dialog).findByRole("radio", { name: /Wrong Pick/ });
     expect(current.hasAttribute("disabled")).toBe(true);
@@ -207,10 +218,10 @@ describe("AdminMaintenancePage correction", () => {
     renderPage();
     const dialog = await openCorrection("Alien");
 
-    fireEvent.change(within(dialog).getByRole("searchbox", { name: "Search TMDB" }), {
+    fireEvent.change(within(dialog).getByRole("searchbox", { name: "TMDB title" }), {
       target: { value: "right pick" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Search" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Search TMDB" }));
     fireEvent.click(await within(dialog).findByRole("radio", { name: /Right Pick/ }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Save correction" }));
 
@@ -218,6 +229,7 @@ describe("AdminMaintenancePage correction", () => {
       expect(APIClient.maintenance.correctMovie).toHaveBeenCalledWith(2, {
         tmdbId: 200,
         title: "Right Pick",
+        year: 1999,
       }),
     );
   });
@@ -266,10 +278,10 @@ describe("AdminMaintenancePage correction", () => {
     renderPage();
     const dialog = await openCorrection("Wrong Pick");
 
-    fireEvent.change(within(dialog).getByRole("searchbox", { name: "Search TMDB" }), {
+    fireEvent.change(within(dialog).getByRole("searchbox", { name: "TMDB title" }), {
       target: { value: "right pick" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Search" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Search TMDB" }));
     fireEvent.click(await within(dialog).findByRole("radio", { name: /Right Pick/ }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Save correction" }));
 

@@ -417,12 +417,15 @@ func TestCorrectMovie_RetargetsUnlockedAcquisition(t *testing.T) {
 	}
 	before := readAcquisition(t, ctx, dbConn, acquisitionID)
 
-	resp := putCorrection(t, app, current.AddedByID, "admin", current.ID, `{"tmdbId":200,"title":"Right pick"}`)
+	resp := putCorrection(t, app, current.AddedByID, "admin", current.ID, `{"tmdbId":200,"title":"Right pick","year":1999}`)
 	if resp.StatusCode != fiber.StatusOK {
 		t.Fatalf("status %d, want 200", resp.StatusCode)
 	}
 
 	got := readAcquisition(t, ctx, dbConn, acquisitionID)
+	if got.MovieYear != 1999 {
+		t.Fatalf("acquisition year = %d, want 1999 from the TMDB pick", got.MovieYear)
+	}
 	if got.MovieTitle != "Right pick" || got.TMDBID == nil || *got.TMDBID != 200 || got.IMDbID != "" {
 		t.Fatalf("acquisition identity = %q %v/%q, want Right pick 200/empty", got.MovieTitle, got.TMDBID, got.IMDbID)
 	}
@@ -611,5 +614,27 @@ func TestMovieLibrary_ListsEveryStatusAndHidesHeldDraw(t *testing.T) {
 	}
 	if !maps.Equal(got, want) {
 		t.Fatalf("library statuses = %v, want %v", got, want)
+	}
+}
+
+func TestSelectWildcard_NewMovieRequiresTMDBID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	_, app, userRepo, movieRepo := setupEditMovieTest(t)
+	current := seedRevealedDraw(t, ctx, app, userRepo, movieRepo)
+
+	resp := doAs(t, app, jsonReq(http.MethodPost, "/api/v1/movies/wildcard",
+		fmt.Sprintf(`{"hostMovieId":%d,"title":"Custom","imdbId":"tt0133093"}`, current.ID),
+	), current.AddedByID, "member")
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("IMDb-only wildcard: status %d, want 400", resp.StatusCode)
+	}
+	movies, err := movieRepo.List(ctx)
+	if err != nil {
+		t.Fatalf("list movies: %v", err)
+	}
+	if len(movies) != 1 {
+		t.Fatalf("IMDb-only wildcard left %d movies, want 1", len(movies))
 	}
 }

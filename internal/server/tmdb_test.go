@@ -98,8 +98,13 @@ func TestMovieDetails_Decode(t *testing.T) {
 		if got := r.URL.Query().Get("append_to_response"); got != "credits" {
 			t.Errorf("expected append_to_response=credits, got %q (url %s)", got, r.URL)
 		}
+		// The title enrichment writes is the English one (ADR 0013).
+		if got := r.URL.Query().Get("language"); got != "en-US" {
+			t.Errorf("expected language=en-US, got %q (url %s)", got, r.URL)
+		}
 		_, _ = w.Write([]byte(`{
 			"id":603,"imdb_id":"tt0133093","overview":"ov",
+			"title":"The Matrix","original_title":"The Matrix",
 			"poster_path":null,"backdrop_path":"/bd.jpg",
 			"release_date":"1999-03-30","runtime":136,
 			"genres":[{"id":28,"name":"Action"},{"id":878,"name":"Science Fiction"}],
@@ -115,6 +120,9 @@ func TestMovieDetails_Decode(t *testing.T) {
 	got, err := testClient(srv.URL).MovieDetails(context.Background(), 603)
 	if err != nil {
 		t.Fatalf("MovieDetails: %v", err)
+	}
+	if got.Title != "The Matrix" || got.OriginalTitle != "The Matrix" {
+		t.Fatalf("titles = %q / %q, want The Matrix", got.Title, got.OriginalTitle)
 	}
 	if got.PosterPath != nil {
 		t.Fatalf("expected null poster -> nil, got %v", *got.PosterPath)

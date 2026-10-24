@@ -155,6 +155,7 @@ func (h *handler) handleCorrectMovie(c *fiber.Ctx) error {
 	var body struct {
 		TMDBID    *int    `json:"tmdbId"`
 		Title     string  `json:"title"`
+		Year      *int    `json:"year"`
 		WatchedAt *string `json:"watchedAt"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -164,6 +165,7 @@ func (h *handler) handleCorrectMovie(c *fiber.Ctx) error {
 	correction := domain.MovieCorrection{
 		TMDBID: body.TMDBID,
 		Title:  sanitizeInput(body.Title),
+		Year:   body.Year,
 	}
 	if body.WatchedAt != nil {
 		parsed, err := time.Parse(timeFormat, sanitizeInput(*body.WatchedAt))
@@ -517,11 +519,10 @@ func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
 		return err
 	}
 	var body struct {
-		HostMovieID int     `json:"hostMovieId"`
-		MovieID     *int    `json:"movieId"`
-		Title       string  `json:"title"`
-		TMDBID      *int    `json:"tmdbId"`
-		IMDbID      *string `json:"imdbId"`
+		HostMovieID int    `json:"hostMovieId"`
+		MovieID     *int   `json:"movieId"`
+		Title       string `json:"title"`
+		TMDBID      *int   `json:"tmdbId"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
@@ -529,7 +530,7 @@ func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
 	if body.HostMovieID <= 0 {
 		return writeError(c, fmt.Errorf("%w: hostMovieId is required", domain.ErrInvalidInput))
 	}
-	if body.MovieID != nil && (sanitizeInput(body.Title) != "" || body.TMDBID != nil || body.IMDbID != nil) {
+	if body.MovieID != nil && (sanitizeInput(body.Title) != "" || body.TMDBID != nil) {
 		return writeError(c, fmt.Errorf("%w: movieId cannot be combined with movie identity fields", domain.ErrInvalidInput))
 	}
 
@@ -545,7 +546,6 @@ func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
 			ExistingMovieID:     body.MovieID,
 			Title:               sanitizeInput(body.Title),
 			TMDBID:              body.TMDBID,
-			IMDbID:              body.IMDbID,
 		}, poolLocked)
 		return err
 	})

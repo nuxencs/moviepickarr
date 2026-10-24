@@ -438,7 +438,7 @@ always the session member, never a path id: member-scoped routes carry no
 `:userID`, so no one can act as someone else by editing a URL.
 
 - Surface: `/members` (`:memberID`) replaces the old `/users`/`:userID`. Movie
-  mutations carry no actor id — `POST /movies` (adder = session), `DELETE
+  mutations carry no actor id: `POST /movies` (adder = session), `DELETE
   /movies/:movieID`, `POST /movies/:movieID/move`. Members cannot edit a movie.
   The admin-only `GET /movies/library` and `PUT /movies/:movieID/correction`
   serve the Maintenance tab (ADR 0013). Member pool/stash reads are

@@ -43,11 +43,12 @@ export interface LibraryMovie extends MovieTile {
     status: MovieStatus;
 }
 
-// An admin Movie correction. tmdbId and title travel together; the title is the
-// TMDB search result's until enrichment replaces it.
+// An admin Movie correction. tmdbId, title, and year travel together from the
+// TMDB pick; the title holds until enrichment replaces it.
 export interface MovieCorrection {
     tmdbId?: number;
     title?: string;
+    year?: number;
     watchedAt?: string;
 }
 

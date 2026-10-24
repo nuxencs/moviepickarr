@@ -674,7 +674,7 @@ func (d *SqliteMoviesRepository) CorrectMovie(
 		(current.TMDBID == nil || *current.TMDBID != *correction.TMDBID)
 
 	if identityChanged {
-		if err := retargetOpenAcquisitionsTx(ctx, tx, movieID, *correction.TMDBID, correction.Title); err != nil {
+		if err := retargetOpenAcquisitionsTx(ctx, tx, movieID, correction); err != nil {
 			return nil, false, err
 		}
 		if _, err := tx.ExecContext(ctx,
@@ -724,7 +724,7 @@ func (d *SqliteMoviesRepository) CorrectMovie(
 // corrected movie. Before target lock nothing exists in Radarr, so the copy can
 // follow; after lock, or during a Radarr call, the admin must abandon first
 // (ADR 0007, #383).
-func retargetOpenAcquisitionsTx(ctx context.Context, tx *sql.Tx, movieID, tmdbID int, title string) error {
+func retargetOpenAcquisitionsTx(ctx context.Context, tx *sql.Tx, movieID int, correction domain.MovieCorrection) error {
 	var blocked bool
 	if err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS(
@@ -743,7 +743,7 @@ func retargetOpenAcquisitionsTx(ctx context.Context, tx *sql.Tx, movieID, tmdbID
 	nowMillis := time.Now().UTC().UnixMilli()
 	_, err := tx.ExecContext(ctx, `
 		UPDATE radarr_acquisitions
-		SET movie_title = ?, movie_year = NULL, tmdb_id = ?, imdb_id = NULL,
+		SET movie_title = ?, movie_year = ?, tmdb_id = ?, imdb_id = NULL,
 		    identity_source = 'tmdb', identity_override_tmdb_id = NULL,
 		    status = CASE WHEN action_reason = 'identity_required' THEN 'waiting_for_radarr' ELSE status END,
 		    action_started_at = CASE WHEN action_reason = 'identity_required' THEN NULL ELSE action_started_at END,
@@ -752,8 +752,17 @@ func retargetOpenAcquisitionsTx(ctx context.Context, tx *sql.Tx, movieID, tmdbID
 		    effective_configuration = '{}',
 		    revision = revision + 1, updated_at = ?
 		WHERE movie_id = ? AND status NOT IN ('downloaded', 'abandoned')
-	`, strings.TrimSpace(title), tmdbID, nowMillis, movieID)
+	`, strings.TrimSpace(correction.Title), acquisitionYear(correction.Year), *correction.TMDBID, nowMillis, movieID)
 	return err
+}
+
+// acquisitionYear keeps a year inside the radarr_acquisitions CHECK range, or
+// stores none, as the draw-time copy does for an unusable release date.
+func acquisitionYear(year *int) any {
+	if year == nil || *year < 1870 || *year > 2100 {
+		return nil
+	}
+	return *year
 }
 
 func (d *SqliteMoviesRepository) UpdateStatus(ctx context.Context, id int, status string) error {

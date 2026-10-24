@@ -11,7 +11,7 @@ import {
   SettingsGetPoolStateQueryOptions,
 } from "@/api/queries";
 
-import { Avatar, AdderTag, Rating } from "@/components/moviepickarr/Bits";
+import { PosterCaption, Rating } from "@/components/moviepickarr/Bits";
 import {
   dateTimeParts,
   hueOf,
@@ -113,12 +113,7 @@ export function MoviesTab() {
                   posterPath={movie.posterPath}
                   sizes="auto, 342px"
                 />
-                <div className="t-meta">
-                  <span className="t-title">{movie.title}</span>
-                  <div className="t-sub">
-                    <AdderTag name={movie.addedByName} />
-                  </div>
-                </div>
+                <PosterCaption title={movie.title} adder={movie.addedByName} />
               </article>
             ))}
           </div>
@@ -232,7 +227,7 @@ function WatchedSection({
           key="grid"
           className="watch-body tile-grid"
           movies={filtered}
-          estimateSize={300}
+          estimateSize={250}
           render={(movie) => (
             <article className="tile" key={movie.movieID} {...openProps(() => onOpen(movie))}>
               <Poster
@@ -241,16 +236,16 @@ function WatchedSection({
                 posterPath={movie.posterPath}
                 sizes="auto, 342px"
               />
-              <div className="t-meta">
-                <span className="t-title">{movie.title}</span>
-                <div className="t-sub">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Avatar name={movie.addedByName} size={20} />
-                    <span className="t-date">{relativeDate(movie.watchedAt)}</span>
-                  </span>
-                  {movie.wildcardOfMovieId && <span className="wildcard-mark">Wildcard</span>}
-                </div>
-              </div>
+              <PosterCaption
+                title={movie.title}
+                adder={movie.addedByName}
+                meta={
+                  <>
+                    <span>{relativeDate(movie.watchedAt)}</span>
+                    {movie.wildcardOfMovieId && <span className="wildcard-mark">Wildcard</span>}
+                  </>
+                }
+              />
             </article>
           )}
         />

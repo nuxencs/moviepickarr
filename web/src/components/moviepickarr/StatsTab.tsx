@@ -14,7 +14,7 @@ import { type CSSProperties, useCallback, useEffect, useId, useMemo, useRef, use
 
 import { FilterOptionsQueryOptions, MoviesGetWatchedQueryOptions, StatsGetQueryOptions } from "@/api/queries";
 
-import { Avatar } from "@/components/moviepickarr/Bits";
+import { Avatar, PosterCaption } from "@/components/moviepickarr/Bits";
 import { DateRangePopover } from "@/components/moviepickarr/DateRange";
 import { shortRange } from "@/components/moviepickarr/dateRangeFormat";
 import { FilterBar, FilterSelect } from "@/components/moviepickarr/FilterBar";
@@ -442,32 +442,25 @@ function MatchedMoviesRail({
         </p>
       ) : (
         <div className="movierail" ref={containerRef}>
-          {entries.map(({ key, item: movie, exiting }) => {
-            const sub = [yearOf(movie.releaseDate), movie.addedByName].filter(Boolean).join(" · ");
-            return (
-              <button
-                type="button"
-                className="movietile"
-                key={key}
-                data-flip-exit={exiting || undefined}
-                {...itemProps(key)}
-                onClick={() => onSelect(movie)}
+          {entries.map(({ key, item: movie, exiting }) => (
+            <button
+              type="button"
+              className="movietile"
+              key={key}
+              data-flip-exit={exiting || undefined}
+              {...itemProps(key)}
+              onClick={() => onSelect(movie)}
+            >
+              <Poster
                 title={movie.title}
-              >
-                <Poster
-                  title={movie.title}
-                  hue={hueOf(movie.title)}
-                  posterPath={movie.posterPath}
-                  showTitle={false}
-                  sizes={GENERAL_POSTER_SIZES}
-                />
-                <span className="movietile__meta">
-                  <span className="movietile__title">{movie.title}</span>
-                  <span className="movietile__sub">{sub}</span>
-                </span>
-              </button>
-            );
-          })}
+                hue={hueOf(movie.title)}
+                posterPath={movie.posterPath}
+                showTitle={false}
+                sizes={GENERAL_POSTER_SIZES}
+              />
+              <PosterCaption title={movie.title} adder={movie.addedByName} meta={yearOf(movie.releaseDate)} />
+            </button>
+          ))}
         </div>
       )}
     </section>

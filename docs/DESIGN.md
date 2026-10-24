@@ -318,10 +318,19 @@ old shadcn primitives.
   is state). A ring on the photo doesn't work here: `.avatar` is positioned and
   opaque, so it paints over the outline of its non-positioned parent, and an outward
   ring gets shaved by the rail's overflow clip at the edge cards.
+- **Poster caption:** `PosterCaption` (`.postercap`) on the Movies pool grid, the watched
+  grid, and the stats rail. Those walls show bare posters, like the Members stash wall. The
+  caption is a bottom scrim over the poster: title, the adder's avatar and name, and an
+  optional mono meta line (watched date and Wildcard mark, or the release year). It fades
+  in on hover (gated to `hover: hover`, so a tap's sticky `:hover` cannot leave it up) and
+  on `:focus-visible`, and never shows on touch, where a tap opens the modal. Opacity, not
+  `display`, hides it, so it still names the tile to screen readers. On an artless poster
+  the painted `.poster__title` fades out while the caption is up. The stash wall has no
+  caption. `e2e/poster-caption.spec.ts` guards all of this.
 - **Movies-in-filter-view rail:** `.movierail` + `.movietile` (stats, under the KPI strip,
   heading "Movies in Filter View") — the concrete movies behind the count (the active
-  window AND all filters) as a horizontally scrollable strip of `Poster` tiles (title +
-  year·adder caption), each a button that opens the movie modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
+  window AND all filters) as a horizontally scrollable strip of bare `Poster` tiles (a
+  `PosterCaption` with the year), each a button that opens the movie modal. Same inline-padding / negative-margin edge trick as `.peoplerail` so the
   first tile's hover/focus ring isn't clipped. The set
   comes from the stats endpoint's `matchedMovieIDs` joined to the cached watched list,
   so its count can't drift from the KPI. The rail always renders and owns the filter
@@ -1209,8 +1218,9 @@ without a pointer. On touch: watched/stash row actions (`.wr-actions`, `.sr-acti
 are always visible; the pool **demote** control becomes a small persistent bottom-right
 button instead of the full-cover hover scrim (poster art stays visible); and search
 results show a persistent **Add** button (the hover overlay's caption is dropped, since
-the `.r-info` caption already sits below the poster). The desktop hover-reveal is
-unchanged.
+the `.r-info` caption already sits below the poster). The poster caption (§4) is the
+one hover reveal with no touch fallback: it carries no control, and the modal shows the
+same facts. The desktop hover-reveal is unchanged.
 
 **Tap targets (`@media (pointer: coarse)`).** `.iconbtn`, `.btn--sm`, and segmented
 buttons grow toward the 44px touch minimum.

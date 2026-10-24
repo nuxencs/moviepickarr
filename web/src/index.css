@@ -761,9 +761,9 @@
   /* The search fills the stacked header on phones (640px block below). */
   .watched-controls { display: flex; flex-wrap: wrap; align-items: stretch; gap: 12px; }
   .watched-controls__search { width: 230px; }
-  .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 28px 18px; }
+  .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 18px; }
   .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
-  .tile { display: flex; flex-direction: column; gap: 12px; cursor: pointer; }
+  .tile { position: relative; display: block; border-radius: var(--r-md); cursor: pointer; }
   /* No content-visibility: it would feed VirtualWatched's row measurement the
      intrinsic size, not the real height. */
   /* Zoom the image inside the clipped frame, not the frame, so the tile paints in
@@ -771,10 +771,35 @@
   .tile:hover .poster__img,
   .tile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .tile:active .poster__img { transform: scale(var(--poster-zoom-press)); }
-  .tile .t-meta { display: flex; flex-direction: column; gap: 6px; }
-  .tile .t-title { font-weight: 600; font-size: 14.5px; letter-spacing: -0.01em; line-height: 1.2; }
-  .tile .t-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
-  .tile .t-date { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); }
+
+  /* Poster tile caption (`PosterCaption`), on the pool, watched grid, and stats rail.
+     Opacity, never display, keeps it in the accessibility tree. */
+  .postercap {
+    position: absolute; inset: auto 0 0; z-index: 1;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 48px 10px 10px; border-radius: 0 0 var(--r-md) var(--r-md);
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,0.6) 45%, rgba(0,0,0,0.88));
+    color: #fff; text-align: left; pointer-events: none;
+    opacity: 0; transition: opacity var(--dur-fast) var(--ease);
+  }
+  .postercap__title {
+    font-weight: 600; font-size: 13.5px; line-height: 1.2; letter-spacing: -0.01em;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+  .postercap__adder { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: rgba(255,255,255,0.82); }
+  .postercap__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .postercap__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,0.7); }
+  /* An artless poster paints its own title; it yields to the caption, never overlaps it. */
+  .poster__title { transition: opacity var(--dur-fast) var(--ease); }
+  .tile:focus-visible .postercap,
+  .movietile:focus-visible .postercap { opacity: 1; }
+  .tile:focus-visible .poster__title { opacity: 0; }
+  /* Gated, or a tap's sticky :hover would leave it up behind the modal. */
+  @media (hover: hover) {
+    .tile:hover .postercap,
+    .movietile:hover .postercap { opacity: 1; }
+    .tile:hover .poster__title { opacity: 0; }
+  }
 
   .watch-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
   .wrow { display: flex; align-items: center; gap: 16px; padding: 13px 6px; border-bottom: 1px solid var(--line); transition: background var(--dur) var(--ease); }
@@ -957,19 +982,13 @@
      stop aspect-ratio from inflating min-width under stretch (uneven tiles). */
   .movierail { display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; padding: 10px 4px 8px; margin-inline: -4px; scroll-padding-inline: 4px; }
   .movietile {
-    flex: 0 0 var(--poster-general); min-width: 0; display: flex; flex-direction: column; gap: 9px;
+    position: relative; flex: 0 0 var(--poster-general); min-width: 0; display: block;
     background: none; border: none; padding: 0; font: inherit; color: inherit;
-    text-align: left; cursor: pointer; border-radius: var(--r-sm);
+    cursor: pointer; border-radius: var(--r-md);
   }
   .movietile:hover .poster__img,
   .movietile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .movietile:active .poster__img { transform: scale(var(--poster-zoom-press)); }
-  .movietile:focus-visible { outline-offset: -2px; }
-  .movietile__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .movietile__title { font-size: 12.5px; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--dur-fast) var(--ease); }
-  .movietile__sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .movietile:hover .movietile__title,
-  .movietile:focus-visible .movietile__title { color: var(--accent); }
 
   /* useFlipRail sets data-flip-enter and the glide transforms; callers set data-flip-exit. */
   .movierail .movietile[data-flip-enter],
@@ -1319,7 +1338,7 @@
     .donut-legend { max-width: none; width: 100%; }
 
     /* Poster grids become thumbnail grids, not one giant column. */
-    .tile-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 20px 12px; }
+    .tile-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; }
     .tile-grid--pool { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
     .result-grid { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 18px 12px; }
 

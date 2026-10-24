@@ -75,18 +75,13 @@ const LibraryRow = memo(function LibraryRow({
           <span>{year ?? "Year unknown"}</span>
         </span>
         <span id={factsID} className="vis-hidden">
-          {[
-            STATUS_LABELS[movie.status],
-            `added by ${movie.addedByName}`,
-            movie.tmdbId ? `TMDB ${movie.tmdbId}` : "no TMDB id",
-          ].join(", ")}
+          {`${STATUS_LABELS[movie.status]}, added by ${movie.addedByName}`}
         </span>
         <span className="library-row__facts" aria-hidden="true">
           <span className="library-row__status" data-status={movie.status}>
             {STATUS_LABELS[movie.status]}
           </span>
           <span className="library-row__adder">{movie.addedByName}</span>
-          <span className="library-row__tmdb mono">{movie.tmdbId ?? "No TMDB id"}</span>
         </span>
         <ChevronRightIcon className="library-row__chevron" aria-hidden="true" />
       </button>
@@ -239,7 +234,6 @@ export function AdminMaintenancePage() {
               <span>Movie</span>
               <span>Status</span>
               <span>Added by</span>
-              <span>TMDB</span>
               <span />
             </div>
             <div className="library-register__viewport" data-page-scroll-owner>

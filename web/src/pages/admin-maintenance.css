@@ -1,5 +1,5 @@
 .admin-maintenance {
-  --library-register-columns: 44px minmax(180px, 1.6fr) minmax(96px, 0.6fr) minmax(110px, 0.7fr) minmax(72px, 0.4fr) 18px;
+  --library-register-columns: 44px minmax(180px, 2fr) minmax(96px, 0.6fr) minmax(110px, 0.7fr) 18px;
 
   min-width: 0;
 }
@@ -121,7 +121,7 @@
   font-size: 11px;
 }
 
-/* The facts are one description for the row's button and three grid cells. */
+/* The facts are one description for the row's button and two grid cells. */
 .library-row__facts {
   display: contents;
 }
@@ -143,12 +143,6 @@
 .library-row__status[data-status="current"],
 .library-row__status[data-status="wildcard"] {
   color: color-mix(in oklab, var(--accent) 60%, var(--ink));
-}
-
-.library-row__tmdb {
-  color: var(--ink-3);
-  font-size: 11px;
-  font-feature-settings: "tnum" 1;
 }
 
 .library-row__chevron {
@@ -212,11 +206,6 @@
   color: var(--ink);
   font-size: 14px;
   font-weight: 620;
-}
-
-.correction__current {
-  color: var(--ink-3);
-  font-size: 11px;
 }
 
 .correction__search {

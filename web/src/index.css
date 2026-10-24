@@ -324,6 +324,7 @@
     text-transform: uppercase; color: #fff;
     font-size: 11.5cqw; text-wrap: balance;
     text-shadow: 0 2px 14px rgba(0,0,0,0.5);
+    transition: opacity var(--dur-fast) var(--ease);
   }
   .poster__rule { width: 22cqw; height: 2.4cqw; background: var(--accent); margin-bottom: 5cqw; border-radius: 2px; z-index: 3; position: relative; }
   /* ---- Rating ---- */
@@ -772,12 +773,12 @@
   .tile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }
   .tile:active .poster__img { transform: scale(var(--poster-zoom-press)); }
 
-  /* Poster tile caption (`PosterCaption`), on the pool, watched grid, and stats rail.
-     Opacity, never display, keeps it in the accessibility tree. */
+  /* Opacity, never display, keeps `PosterCaption` in the accessibility tree.
+     The percentage top padding scales the fade with the tile width. */
   .postercap {
     position: absolute; inset: auto 0 0; z-index: 1;
     display: flex; flex-direction: column; gap: 6px;
-    padding: 48px 10px 10px; border-radius: 0 0 var(--r-md) var(--r-md);
+    padding: 26% 10px 10px; border-radius: 0 0 var(--r-md) var(--r-md);
     background: linear-gradient(180deg, transparent, rgba(0,0,0,0.6) 45%, rgba(0,0,0,0.88));
     color: #fff; text-align: left; pointer-events: none;
     opacity: 0; transition: opacity var(--dur-fast) var(--ease);
@@ -786,19 +787,22 @@
     font-weight: 600; font-size: 13.5px; line-height: 1.2; letter-spacing: -0.01em;
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   }
-  .postercap__adder { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: rgba(255,255,255,0.82); }
+  /* Meta sits beside the adder and wraps under it when the tile is too narrow. */
+  .postercap__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+  .postercap__adder { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: 12px; color: rgba(255,255,255,0.82); }
   .postercap__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .postercap__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,0.7); }
-  /* An artless poster paints its own title; it yields to the caption, never overlaps it. */
-  .poster__title { transition: opacity var(--dur-fast) var(--ease); }
+  .postercap__meta { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,0.7); }
+  /* An artless poster's painted title yields to the caption, never overlaps it. */
   .tile:focus-visible .postercap,
   .movietile:focus-visible .postercap { opacity: 1; }
-  .tile:focus-visible .poster__title { opacity: 0; }
+  .tile:focus-visible .poster__title,
+  .movietile:focus-visible .poster__title { opacity: 0; }
   /* Gated, or a tap's sticky :hover would leave it up behind the modal. */
   @media (hover: hover) {
     .tile:hover .postercap,
     .movietile:hover .postercap { opacity: 1; }
-    .tile:hover .poster__title { opacity: 0; }
+    .tile:hover .poster__title,
+    .movietile:hover .poster__title { opacity: 0; }
   }
 
   .watch-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
@@ -984,7 +988,7 @@
   .movietile {
     position: relative; flex: 0 0 var(--poster-general); min-width: 0; display: block;
     background: none; border: none; padding: 0; font: inherit; color: inherit;
-    cursor: pointer; border-radius: var(--r-md);
+    text-align: left; cursor: pointer; border-radius: var(--r-md);
   }
   .movietile:hover .poster__img,
   .movietile:focus-visible .poster__img { transform: scale(var(--poster-zoom)); }

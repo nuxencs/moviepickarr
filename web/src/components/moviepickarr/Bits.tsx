@@ -74,19 +74,18 @@ export function Rating({ voteAverage }: { voteAverage?: number }) {
   );
 }
 
-/**
- * The hover caption over a poster tile: title, adder, and an optional meta line.
- * Hidden by opacity, never display, so it still names the tile to screen readers.
- */
+/** The hover caption over a poster tile: title, then the adder and optional meta on one line. */
 export function PosterCaption({ title, adder, meta }: { title: string; adder: string; meta?: ReactNode }) {
   return (
     <span className="postercap">
       <span className="postercap__title">{title}</span>
-      <span className="postercap__adder">
-        <Avatar name={adder} size={18} />
-        <span className="postercap__name">{adder}</span>
+      <span className="postercap__sub">
+        <span className="postercap__adder">
+          <Avatar name={adder} size={18} />
+          <span className="postercap__name">{adder}</span>
+        </span>
+        {meta && <span className="postercap__meta">{meta}</span>}
       </span>
-      {meta && <span className="postercap__meta">{meta}</span>}
     </span>
   );
 }

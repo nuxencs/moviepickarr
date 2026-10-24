@@ -227,7 +227,7 @@ function WatchedSection({
           key="grid"
           className="watch-body tile-grid"
           movies={filtered}
-          estimateSize={250}
+          estimateSize={250 /* a 2:3 poster at the 164px .tile-grid column minimum */}
           render={(movie) => (
             <article className="tile" key={movie.movieID} {...openProps(() => onOpen(movie))}>
               <Poster

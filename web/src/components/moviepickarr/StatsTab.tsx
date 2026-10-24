@@ -455,7 +455,6 @@ function MatchedMoviesRail({
                 title={movie.title}
                 hue={hueOf(movie.title)}
                 posterPath={movie.posterPath}
-                showTitle={false}
                 sizes={GENERAL_POSTER_SIZES}
               />
               <PosterCaption title={movie.title} adder={movie.addedByName} meta={yearOf(movie.releaseDate)} />

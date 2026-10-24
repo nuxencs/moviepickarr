@@ -320,13 +320,15 @@ old shadcn primitives.
   ring gets shaved by the rail's overflow clip at the edge cards.
 - **Poster caption:** `PosterCaption` (`.postercap`) on the Movies pool grid, the watched
   grid, and the stats rail. Those walls show bare posters, like the Members stash wall. The
-  caption is a bottom scrim over the poster: title, the adder's avatar and name, and an
-  optional mono meta line (watched date and Wildcard mark, or the release year). It fades
-  in on hover (gated to `hover: hover`, so a tap's sticky `:hover` cannot leave it up) and
-  on `:focus-visible`, and never shows on touch, where a tap opens the modal. Opacity, not
-  `display`, hides it, so it still names the tile to screen readers. On an artless poster
-  the painted `.poster__title` fades out while the caption is up. The stash wall has no
-  caption. `e2e/poster-caption.spec.ts` guards all of this.
+  caption is a bottom scrim over the poster. It holds the title, then the adder's avatar and
+  name. Optional mono meta sits beside the adder and wraps under it on a narrow tile: the
+  watched date and Wildcard mark, or the release year. The scrim's top padding is a
+  percentage, so the fade scales with the tile. The caption fades in on hover and on
+  `:focus-visible`. The hover reveal is gated to `hover: hover`, because a tap's sticky
+  `:hover` would leave it up. On touch it never shows, and a tap opens the modal. Opacity,
+  not `display`, hides it, so it still names the tile to screen readers. An artless poster
+  keeps its painted `.poster__title` at rest, and the title fades out while the caption is
+  up. The stash wall has no caption. `e2e/poster-caption.spec.ts` guards this behavior.
 - **Movies-in-filter-view rail:** `.movierail` + `.movietile` (stats, under the KPI strip,
   heading "Movies in Filter View") — the concrete movies behind the count (the active
   window AND all filters) as a horizontally scrollable strip of bare `Poster` tiles (a

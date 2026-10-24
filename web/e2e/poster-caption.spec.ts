@@ -1,10 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const surfaces = [
-  // Dev fixtures carry no TMDB art, so pool and watched posters paint their own title.
-  { name: "pool", path: "/", tile: ".tile-grid--pool .tile", paintsTitle: true },
-  { name: "watched grid", path: "/", tile: ".watch-body .tile", paintsTitle: true },
-  { name: "stats rail", path: "/stats", tile: ".movierail .movietile", paintsTitle: false },
+  { name: "pool", path: "/", tile: ".tile-grid--pool .tile" },
+  { name: "watched grid", path: "/", tile: ".watch-body .tile" },
+  { name: "stats rail", path: "/stats", tile: ".movierail .movietile" },
 ];
 
 async function firstTile(page: Page, path: string, selector: string): Promise<Locator> {
@@ -31,11 +30,14 @@ for (const surface of surfaces) {
       expect(captionBox.width).toBeCloseTo(posterBox.width, 0);
 
       await expect(caption).toHaveCSS("opacity", "0");
+      // Dev fixtures carry no TMDB art, so every poster paints its own title at rest.
       const painted = tile.locator(".poster__title");
-      await expect(painted).toHaveCount(surface.paintsTitle ? 1 : 0);
+      await expect(painted).toHaveCSS("opacity", "1");
+      // A button tile would otherwise center it.
+      await expect(painted).not.toHaveCSS("text-align", "center");
       await tile.hover();
       await expect(caption).toHaveCSS("opacity", "1");
-      if (surface.paintsTitle) await expect(painted).toHaveCSS("opacity", "0");
+      await expect(painted).toHaveCSS("opacity", "0");
 
       await page.mouse.move(0, 0);
       await expect(caption).toHaveCSS("opacity", "0");

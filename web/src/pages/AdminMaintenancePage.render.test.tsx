@@ -101,7 +101,7 @@ afterEach(() => {
 });
 
 describe("AdminMaintenancePage library", () => {
-  it("lists every movie A to Z with its status, adder, and TMDB id", async () => {
+  it("lists every movie A to Z with its status and adder", async () => {
     renderPage();
 
     const list = await screen.findByRole("list", { name: "Movie library" });
@@ -112,7 +112,7 @@ describe("AdminMaintenancePage library", () => {
     ]);
     expect(within(rows[0]).getByText("Watched")).not.toBeNull();
     expect(within(rows[0]).getByText("Grace")).not.toBeNull();
-    expect(within(rows[0]).getByText("348")).not.toBeNull();
+    expect(rows[0].textContent).not.toMatch(/348|TMDB/);
     expect(screen.getByText("2 movies")).not.toBeNull();
   });
 
@@ -200,6 +200,7 @@ describe("AdminMaintenancePage correction", () => {
     const taken = await within(dialog).findByRole("radio", { name: /Alien/ });
     expect(taken.hasAttribute("disabled")).toBe(true);
     expect(taken.closest("label")?.textContent).toContain("in library as Alien");
+    expect(dialog.textContent).not.toMatch(/TMDB \d|No TMDB id/);
     expect(within(dialog).getByRole("radio", { name: /Right Pick/ }).hasAttribute("disabled")).toBe(
       false,
     );

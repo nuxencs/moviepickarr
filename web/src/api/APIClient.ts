@@ -1,5 +1,5 @@
 import { getClientId } from "@/lib/clientId";
-import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, MeResponse, MemberRole, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User, Wildcard } from "@/types/Response";
+import { AuthConfig, ClaimInfo, FilterOptionsResponse, InviteResult, InvitesResponse, LibraryMovie, MeResponse, MemberRole, MovieCorrection, MovieDetail, MovieDrawPayload, MovieTile, MoveTarget, RemoveResult, RosterMember, SessionSummary, Settings, StatsResponse, StatsWindow, TMDBMovie, User, Wildcard } from "@/types/Response";
 
 // Carries the HTTP status so callers can branch on it (login shows its banner only on a 401).
 export class ApiError extends Error {
@@ -290,7 +290,8 @@ export const APIClient = {
             appClient.Post(`api/v1/invites/${encodeRFC3986URIComponent(inviteID)}/dismiss`),
     },
     // Movie mutations are adder-only server-side (403 not_adder, no admin override),
-    // so none take a member id. Member lifecycle lives under `members`.
+    // so none take a member id. Member lifecycle lives under `members`. Members
+    // cannot edit a movie; `maintenance` holds the admin correction.
     board: {
         getAll: () => appClient.Get<User[]>("api/v1/members"),
         // Adds always land in the session member's stash.
@@ -303,14 +304,6 @@ export const APIClient = {
             }),
         deleteMovie: (movieID: number) =>
             appClient.Delete(`api/v1/movies/${movieID}`),
-        updateMovie: (movieID: number, title: string, link: string, watchedAt?: string) =>
-            appClient.Put<MovieDetail>(`api/v1/movies/${movieID}`, {
-                body: {
-                    title,
-                    link,
-                    watchedAt,
-                },
-            }),
         moveMovie: (movieID: number, target: MoveTarget) =>
             appClient.Post<void>(`api/v1/movies/${movieID}/move`, {
                 body: { target },
@@ -386,6 +379,15 @@ export const APIClient = {
                     decade,
                 },
                 signal,
+            }),
+    },
+    // Admin-only (403 admin_required).
+    maintenance: {
+        library: (signal?: AbortSignal) =>
+            appClient.Get<LibraryMovie[]>("api/v1/movies/library", { signal }),
+        correctMovie: (movieID: number, correction: MovieCorrection) =>
+            appClient.Put<MovieDetail>(`api/v1/movies/${movieID}/correction`, {
+                body: correction,
             }),
     },
     tmdb: {

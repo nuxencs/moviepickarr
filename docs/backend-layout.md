@@ -402,14 +402,13 @@
   `domain.ErrConflict` → HTTP 409. A stash add inserts the title and stable
   identity in one statement, then reads its response projection through the
   same writer transaction before commit. A duplicate `tmdbId` creates no row,
-  and a failed response read rolls the insert back. An authored edit similarly
-  reads authorization and status, updates its title, optional watched time and
-  identity, removes metadata and credit joins from the prior identity, and reads
-  its response on one writer transaction. A uniqueness or cleanup failure
-  returns without committing the other edit fields. Shared `people` rows remain.
-  Same-identity edits use three SQL statements. Identity changes use five,
-  adding two primary-key-indexed deletes and one statement over the prior
-  marker-based flow. The guarded enrichment write treats a resolved-identity
+  and a failed response read rolls the insert back. An admin Movie correction
+  (`CorrectMovie`, ADR 0013) similarly reads the status, updates the optional
+  TMDB identity and watched time, removes metadata and credit joins from the
+  prior identity, retargets an open unlocked Acquisition's identity copy, and
+  reads its response on one writer transaction. A uniqueness or cleanup failure
+  returns without committing the other fields. Shared `people` rows remain. The
+  guarded enrichment write treats a resolved-identity
   conflict as non-fatal (metadata/credits still persist without changing the
   stored ids, so the row leaves the backlog).
 - Migration files: `-- migrate:fk_off` on the first line makes the runner wrap
@@ -439,8 +438,10 @@ always the session member, never a path id: member-scoped routes carry no
 `:userID`, so no one can act as someone else by editing a URL.
 
 - Surface: `/members` (`:memberID`) replaces the old `/users`/`:userID`. Movie
-  mutations carry no actor id — `POST /movies` (adder = session), `PUT`/`DELETE
-  /movies/:movieID`, `POST /movies/:movieID/move`. Member pool/stash reads are
+  mutations carry no actor id: `POST /movies` (adder = session), `DELETE
+  /movies/:movieID`, `POST /movies/:movieID/move`. Members cannot edit a movie.
+  The admin-only `GET /movies/library` and `PUT /movies/:movieID/correction`
+  serve the Maintenance tab (ADR 0013). Member pool/stash reads are
   `GET /members/:memberID/pool` and `/stash`.
 - Status matrix: `401` not authenticated (from `requireSession`); `403` with a
   machine `code` in the problem `title` (`admin_required`, `not_next_up`,
@@ -531,29 +532,35 @@ of `{id, name, profilePath?, character?|job?}` (`omitempty`; absent until
 ingested). `cast` is in billing order; `crew` carries whitelisted jobs only.
 SSE payloads stay credits-free, like metadata.
 
-Add: a search add sends `tmdbId` (the `external_ids` endpoint is gone). A
-manual add or edit accepts `link` only when it is an exact HTTPS IMDb title or
-TMDB movie URL. The handler parses it into a one-provider identity target;
-nothing is stored as a link. Other links return 400 before any repository
-write. On edit, a target matching either stored provider preserves both stored
-ids, metadata, and credit joins. A different target replaces the external
-identity with the selected provider and deletes the prior movie's metadata and
-credit joins in the same transaction. The missing metadata row keeps the movie
-in the backfill set even when the live enrichment worker is disabled. Shared
-people remain available to other movies.
+Add: an add sends `tmdbId` and the search result's title. No link is accepted
+or stored; the displayed link is derived from the ids. The title is temporary:
+every enrichment overwrites `movies.title` with the TMDB en-US `title` and
+stores `original_title` in `movie_metadata` (ADR 0013). A blank TMDB title keeps
+the stored one. Re-enrich all is therefore also the sweep that restores every
+TMDB title.
+
+Correction: a TMDB id that matches the stored one changes nothing. A different
+id replaces the external identity (the IMDb id clears until enrichment resolves
+it) and deletes the prior movie's metadata and credit joins in the same
+transaction. The missing metadata row keeps the movie in the backfill set even
+when the live enrichment worker is disabled. Shared people remain available to
+other movies. The correction is refused while a draw is unrevealed
+(`draw_in_progress`), and an identity change is refused while an open
+Acquisition is target-locked or mid-mutation (`acquisition_locked`). A watched
+date correction never checks Acquisitions.
 
 Enrichment (`EnrichOne`): if the movie already has a `tmdb_id` (search add /
 prior enrichment) it goes straight to `GET /3/movie/{tmdb_id}`; otherwise it
 reverse-looks-up `GET /3/find/{imdb_id}?external_source=imdb_id` first. Either
 way it snapshots the exact stored `tmdb_id`/`imdb_id` before network work.
-`ApplyEnrichment` uses that pair as a NULL-safe compare-and-set token. If an edit
-changed either id while TMDB was in flight, the old result is discarded without
+`ApplyEnrichment` uses that pair as a NULL-safe compare-and-set token. If a
+correction changed either id while TMDB was in flight, the old result is discarded without
 writing or publishing. A matching result persists the resolved ids and all
 derived rows atomically, so the costly `/find` runs at most once per stable
 identity and a credit failure cannot leave new metadata beside old credits.
 
 The per-movie worker (`enrichRunner`) owns fire-and-forget enqueue when a movie
-is added or its link is edited. The TMDB run controller owns startup, scheduled,
+is added or its identity is corrected. The TMDB run controller owns startup, scheduled,
 and manual library scans, including durable progress and cancellation. Backlog
 scans skip rows with neither external id because no remote lookup can resolve
 them. Assigning either id makes the row eligible on the next scan. TMDB requests
@@ -562,7 +569,7 @@ enrichment. Calls are retried (429 `Retry-After`,
 exponential backoff + jitter on 5xx/network). Successful upserts are coalesced
 into a single `movies:enriched-batch` SSE event per burst (debounced, with a hard
 ceiling) rather than one event per movie. A backfill of many rows used to trigger
-one invalidate-refetch wave per movie. An edit enqueue received while that movie
+one invalidate-refetch wave per movie. A correction enqueue received while that movie
 is actively processing records one coalesced rerun; queued duplicates remain
 deduped. Superseded and deleted attempts are skipped without publishing, and
 only the final successful attempt enters the event batch. New work is rejected
@@ -751,9 +758,9 @@ resolved from the credit rows).
 Responses are cached per `window|tz|start|end|genre|actorIds|crewIds|releaseYear|decade|addedByIds`
 key (genre lowercased; id lists in canonical sorted form, so request order
 can't split the cache) with a short TTL. The cache is invalidated when a movie is
-watched/edited/user-deleted **and** once per enrichment burst
+watched/corrected/user-deleted **and** once per enrichment burst
 (`enrichRunner.onEnriched` → `invalidateStatsCache`, fired on each batch flush so
 the TTL stays useful during a backfill), since stats now depend on
 metadata/credits; the frontend hears the matching `movies:enriched-batch` SSE.
-Every successful edit of a watched movie invalidates after commit, including a
-title-only edit where `watchedAt` was omitted.
+Every successful correction of a watched movie invalidates after commit,
+including an identity-only correction where `watchedAt` was omitted.

@@ -1,12 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ExternalLinkIcon, PencilIcon, Trash2Icon, XIcon } from "lucide-react";
+import { ExternalLinkIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { APIClient } from "@/api/APIClient";
 import { MeQueryOptions, MovieDetailQueryOptions, SettingsGetPoolStateQueryOptions } from "@/api/queries";
 
-import { EditMovieDialog } from "@/components/EditMovieDialog";
 import { Avatar, MetaChips } from "@/components/moviepickarr/Bits";
 import { backdropBg, backdropUrl, externalLinks, fullDate, hueOf, posterUrl, profileUrl, tmdbPersonUrl } from "@/components/moviepickarr/lib";
 import { Modal } from "@/components/moviepickarr/Modal";
@@ -147,8 +146,9 @@ function HeroBackdrop({
 }
 
 /**
- * Rename and delete, adder-only. Drawn from the movie in hand, not a prop, so
- * every surface that opens the modal offers the same actions (#237).
+ * Delete, adder-only. Drawn from the movie in hand, not a prop, so every
+ * surface that opens the modal offers the same action (#237). Members cannot
+ * edit a movie; an admin corrects it on the Maintenance tab (ADR 0013).
  */
 function MovieActions({
   movie,
@@ -164,7 +164,6 @@ function MovieActions({
   /** False while the lifecycle-bearing detail is refreshing or failed. */
   recordStateKnown: boolean;
 }) {
-  const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Only a pool movie's delete reads the pool gates.
@@ -187,16 +186,6 @@ function MovieActions({
   });
   const label = deleteLabel(refusal);
 
-  const editMutation = useMutation({
-    mutationFn: (payload: { title: string; link: string }) =>
-      APIClient.board.updateMovie(movie.movieID, payload.title, payload.link),
-    onSuccess: () => {
-      toast.success(`${movie.title} updated`);
-      setEditOpen(false);
-    },
-    onError: () => toast.error("Failed to update movie"),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: () => APIClient.board.deleteMovie(movie.movieID),
     onSuccess: () => {
@@ -209,39 +198,22 @@ function MovieActions({
 
   return (
     <div className="moviemodal__actions">
-      <button type="button" className="moviemodal__act" onClick={() => setEditOpen(true)} title="Edit">
-        <PencilIcon />
-        Edit
+      <button
+        type="button"
+        className="moviemodal__act moviemodal__act--danger"
+        // Not `disabled`: it must stay focusable to speak its reason.
+        aria-disabled={refusal ? true : undefined}
+        onClick={() => {
+          if (refusal) return;
+          setDeleteOpen(true);
+        }}
+        // Reason not in the visible label: it would wrap in the 172px rail.
+        aria-label={label}
+        title={label}
+      >
+        <Trash2Icon />
+        Delete
       </button>
-
-      {/* Stays while a lifecycle read is unknown; its refusal blocks the confirm. */}
-      {isDeletable(movie.status) && (
-        <button
-          type="button"
-          className="moviemodal__act moviemodal__act--danger"
-          // Not `disabled`: it must stay focusable to speak its reason.
-          aria-disabled={refusal ? true : undefined}
-          onClick={() => {
-            if (refusal) return;
-            setDeleteOpen(true);
-          }}
-          // Reason not in the visible label: it would wrap in the 172px rail.
-          aria-label={label}
-          title={label}
-        >
-          <Trash2Icon />
-          Delete
-        </button>
-      )}
-
-      <EditMovieDialog
-        isOpen={open && editOpen}
-        onClose={() => setEditOpen(false)}
-        initialTitle={movie.title}
-        initialLink={movie.link}
-        isSaving={editMutation.isPending}
-        onSubmit={(payload) => editMutation.mutate({ title: payload.title, link: payload.link })}
-      />
 
       <DeletionDialog
         isOpen={open && deleteOpen}
@@ -348,7 +320,8 @@ export function MovieModal({
                     </div>
                   )}
 
-                  {detail && canAct && (
+                  {/* Stays while a lifecycle read is unknown; its refusal blocks the confirm. */}
+                  {detail && canAct && isDeletable(detail.status) && (
                     <MovieActions
                       movie={detail}
                       open={open}

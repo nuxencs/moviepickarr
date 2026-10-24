@@ -60,7 +60,6 @@ vi.mock("@/api/APIClient", () => ({
     auth: { me: vi.fn(() => new Promise<never>(() => {})) },
     settings: { getPoolState: vi.fn(() => new Promise<never>(() => {})) },
     board: {
-      updateMovie: vi.fn(() => Promise.resolve()),
       deleteMovie: vi.fn(() => Promise.resolve()),
     },
   },
@@ -368,27 +367,27 @@ describe("MovieModal hero", () => {
   });
 });
 
-/* The action pair (#237): rename and delete on the record. Refusal reasons
-   are refusals.test.ts's table. */
+/* Delete on the record (#237). Members cannot edit a movie; an admin corrects
+   it on the Maintenance tab (ADR 0013). Refusal reasons are refusals.test.ts's
+   table. */
 describe("MovieModal actions", () => {
   const edit = () => screen.queryByRole("button", { name: "Edit" });
   const del = () => screen.queryByRole("button", { name: /^Delete/ });
 
-  it("offers the adder both actions once the detail lands", () => {
+  it("offers the adder Delete once the detail lands, and never Edit", () => {
     renderModal({ meID: ADDER_ID, locked: false, detail: detailed({ status: "stash" }) });
 
-    expect(edit()).not.toBeNull();
+    expect(edit()).toBeNull();
     expect(del()).not.toBeNull();
     // At the foot of the rail: after the last link, before the title.
-    expect(comesBefore(screen.getByRole("link", { name: "Letterboxd" }), edit()!)).toBe(true);
-    expect(comesBefore(edit()!, title())).toBe(true);
+    expect(comesBefore(screen.getByRole("link", { name: "Letterboxd" }), del()!)).toBe(true);
+    expect(comesBefore(del()!, title())).toBe(true);
   });
 
   it("keeps delete inert until the round state is known", () => {
     // No lock seeded: a delete the server might refuse must not be offered yet.
     renderModal({ meID: ADDER_ID, detail: detailed({ status: "pool" }) });
 
-    expect(edit()).not.toBeNull();
     expect(del()?.getAttribute("aria-disabled")).toBe("true");
     expect(del()?.getAttribute("aria-label")).toBe("Delete, round state unavailable");
   });
@@ -506,14 +505,15 @@ describe("MovieModal actions", () => {
     expect(APIClient.settings.getPoolState).not.toHaveBeenCalled();
   });
 
-  it("says nothing about deleting a watched movie, but still lets it be renamed", () => {
-    renderModal({
+  it("offers no action on a watched movie", () => {
+    const { dialog } = renderModal({
       meID: ADDER_ID,
       detail: detailed({ status: "watched", watchedAt: "2026-07-21T20:00:00Z" }),
     });
 
-    expect(edit()).not.toBeNull();
+    expect(edit()).toBeNull();
     expect(del()).toBeNull();
+    expect(dialog.querySelector(".moviemodal__actions")).toBeNull();
   });
 
   it("refuses a pooled movie in place while the round is closed", () => {
@@ -560,22 +560,19 @@ describe("MovieModal actions", () => {
     expect(screen.queryByRole("heading", { name: "Delete movie" })).toBeNull();
   });
 
-  it.each([
-    ["edit", "Edit", "Edit movie"],
-    ["delete", "Delete", "Delete movie"],
-  ])("exposes only the %s dialog while it covers the record", (_action, trigger, heading) => {
+  it("exposes only the delete dialog while it covers the record", () => {
     const { dialog: record } = renderModal({
       meID: ADDER_ID,
       detail: detailed({ status: "stash" }),
     });
 
-    const action = screen.getByRole("button", { name: trigger });
+    const action = screen.getByRole("button", { name: "Delete" });
     action.focus();
     fireEvent.click(action);
 
     const [visible] = screen.getAllByRole("dialog");
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(visible).getByRole("heading", { name: heading })).not.toBeNull();
+    expect(within(visible).getByRole("heading", { name: "Delete movie" })).not.toBeNull();
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
     expect(record.getAttribute("aria-modal")).toBeNull();
     expect(record.getAttribute("aria-hidden")).toBe("true");
@@ -645,36 +642,6 @@ describe("MovieModal actions", () => {
     expect(closeDisabled).toBe(true);
   });
 
-  it("keeps the link field on the edit dialog, so the re-point path survives", () => {
-    renderModal({
-      meID: ADDER_ID,
-      detail: detailed({ status: "stash", link: "https://www.imdb.com/title/tt0078788/" }),
-    });
-
-    fireEvent.click(edit()!);
-
-    const link = screen.getByLabelText("Movie link") as HTMLInputElement;
-    expect(link.value).toBe("https://www.imdb.com/title/tt0078788/");
-  });
-
-  it("keeps the record open when an edit saves", async () => {
-    const link = "https://www.imdb.com/title/tt0078788/";
-    const { onRequestClose } = renderModal({
-      meID: ADDER_ID,
-      detail: detailed({ status: "stash", link }),
-    });
-
-    fireEvent.click(edit()!);
-    fireEvent.change(screen.getByLabelText("Movie title"), { target: { value: "Apocalypse Now Redux" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await vi.waitFor(() =>
-      expect(APIClient.board.updateMovie).toHaveBeenCalledWith(MOVIE_ID, "Apocalypse Now Redux", link),
-    );
-    expect(onRequestClose).not.toHaveBeenCalled();
-    expect(screen.getAllByRole("heading", { name: "Apocalypse Now" }).length).toBeGreaterThan(0);
-  });
-
   it("closes a record remotely deleted while it is open without retrying 404", async () => {
     vi.mocked(APIClient.movies.get).mockRejectedValueOnce(
       new ApiError(404, "Not Found"),
@@ -692,7 +659,10 @@ describe("MovieModal actions", () => {
   });
 
   it("takes a child dialog with it when the record's own entry goes", () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Fresh detail, so the stash Delete is not held inert by a refetch.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
     client.setQueryData(MoviesKeys.detail(MOVIE_ID), detailed({ status: "stash" }));
     client.setQueryData(AuthKeys.me(), session(ADDER_ID));
 
@@ -702,8 +672,8 @@ describe("MovieModal actions", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(edit()!);
-    expect(screen.getByRole("heading", { name: "Edit movie" })).not.toBeNull();
+    fireEvent.click(del()!);
+    expect(screen.getByRole("heading", { name: "Delete movie" })).not.toBeNull();
 
     // Browser Back arrives as `open` going false: the child dialog goes at once
     // while the record plays its exit.
@@ -713,6 +683,6 @@ describe("MovieModal actions", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.queryByRole("heading", { name: "Edit movie" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Delete movie" })).toBeNull();
   });
 });

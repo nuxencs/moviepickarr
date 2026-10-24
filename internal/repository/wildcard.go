@@ -217,26 +217,17 @@ func (d *SqliteMoviesRepository) StartWildcard(
 			return nil, domain.ErrNotFound
 		}
 	} else {
+		// Like a stash add: TMDB identity only, title held until enrichment (ADR 0013).
 		title := strings.TrimSpace(selection.Title)
-		selection.IMDbID = canonicalIMDbIDPtr(selection.IMDbID)
-		if title == "" || (selection.TMDBID == nil && selection.IMDbID == nil) {
+		if title == "" || selection.TMDBID == nil || *selection.TMDBID <= 0 {
 			return nil, domain.ErrInvalidInput
 		}
-		if selection.TMDBID != nil && *selection.TMDBID <= 0 {
-			return nil, domain.ErrInvalidInput
-		}
-		var existingRow *sql.Row
-		if selection.TMDBID != nil {
-			existingRow = tx.QueryRowContext(ctx, movieSelect+" WHERE m.tmdb_id = ?", *selection.TMDBID)
-		} else {
-			existingRow = tx.QueryRowContext(ctx, movieSelect+" WHERE m.imdb_id = ? COLLATE NOCASE", *selection.IMDbID)
-		}
-		movie, err = scanMovie(existingRow)
+		movie, err = scanMovie(tx.QueryRowContext(ctx, movieSelect+" WHERE m.tmdb_id = ?", *selection.TMDBID))
 		if errors.Is(err, sql.ErrNoRows) {
 			result, insertErr := tx.ExecContext(ctx, `
-				INSERT INTO movies (title, status, added_by_id, tmdb_id, imdb_id)
-				VALUES (?, 'wildcard', ?, ?, ?)
-			`, title, actorID, selection.TMDBID, selection.IMDbID)
+				INSERT INTO movies (title, status, added_by_id, tmdb_id)
+				VALUES (?, 'wildcard', ?, ?)
+			`, title, actorID, *selection.TMDBID)
 			if insertErr != nil {
 				if db.IsUniqueViolation(insertErr) {
 					return nil, domain.ErrConflict

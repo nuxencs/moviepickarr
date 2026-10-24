@@ -66,38 +66,24 @@ func writeNotAdder(c *fiber.Ctx) error {
 func (h *handler) handleAddMovie(c *fiber.Ctx) error {
 	actorID := actorMemberID(c)
 
+	// The title is the TMDB search result's, held until enrichment replaces it.
 	var body struct {
 		Title  string `json:"title"`
-		Link   string `json:"link"`
-		TMDBID *int   `json:"tmdbId"`
+		TMDBID int    `json:"tmdbId"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
 	}
 
 	title := sanitizeInput(body.Title)
-
-	// No link is stored; it is derived from the id.
-	var tmdbID *int
-	var imdbID *string
-	if body.TMDBID != nil && *body.TMDBID > 0 {
-		tmdbID = body.TMDBID
-	} else if sanitizeInput(body.Link) != "" {
-		target, err := parseMovieLink(body.Link)
-		if err != nil {
-			return writeError(c, err)
-		}
-		tmdbID = target.TMDBID
-		imdbID = target.IMDbID
-	}
-	if title == "" || (tmdbID == nil && imdbID == nil) {
-		return writeError(c, fmt.Errorf("%w: title and a tmdbId or movie link are required", domain.ErrInvalidInput))
+	if title == "" || body.TMDBID <= 0 {
+		return writeError(c, fmt.Errorf("%w: title and tmdbId are required", domain.ErrInvalidInput))
 	}
 
 	ctx := c.UserContext()
 
 	// Identity is in the same INSERT, so a duplicate fails before any row exists.
-	movieRecord, err := h.movieService.AddToStash(ctx, title, actorID, tmdbID, imdbID)
+	movieRecord, err := h.movieService.AddToStash(ctx, title, actorID, &body.TMDBID, nil)
 	if err != nil {
 		if errors.Is(err, domain.ErrConflict) {
 			return writeError(c, fmt.Errorf("%w: movie is already in the library", domain.ErrConflict))
@@ -134,65 +120,70 @@ func (h *handler) handleGetPool(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(toLeanTiles(movies, h.metaFor(c, movies)))
 }
 
-func (h *handler) handleEditMovie(c *fiber.Ctx) error {
+// handleGetMovieLibrary lists every movie for the admin Maintenance tab.
+func (h *handler) handleGetMovieLibrary(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
+	movies, err := h.movieService.ListForDisplay(c.UserContext())
+	if err != nil {
+		return writeError(c, err)
+	}
+
+	meta := h.metaFor(c, movies)
+	rows := make([]libraryMovie, 0, len(movies))
+	for _, movie := range movies {
+		rows = append(rows, libraryMovie{
+			leanMovieTile: toLeanTile(movie, meta[movie.ID]),
+			Status:        domain.MovieStatus(movie.Status),
+		})
+	}
+	return c.JSON(rows)
+}
+
+// handleCorrectMovie applies an admin Movie correction: a new TMDB identity, a
+// watched date, or both (ADR 0013).
+func (h *handler) handleCorrectMovie(c *fiber.Ctx) error {
+	if ok, err := h.requireAdmin(c); !ok {
+		return err
+	}
 	movieID, err := resolveMovieID(c)
 	if err != nil {
 		return writeError(c, err)
 	}
-	actorID := actorMemberID(c)
 
 	var body struct {
+		TMDBID    *int    `json:"tmdbId"`
 		Title     string  `json:"title"`
-		Link      string  `json:"link"`
+		Year      *int    `json:"year"`
 		WatchedAt *string `json:"watchedAt"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
 	}
 
-	title := sanitizeInput(body.Title)
-	link := sanitizeInput(body.Link)
-	if title == "" || link == "" {
-		return writeError(c, fmt.Errorf("%w: title and link are required", domain.ErrInvalidInput))
+	correction := domain.MovieCorrection{
+		TMDBID: body.TMDBID,
+		Title:  sanitizeInput(body.Title),
+		Year:   body.Year,
 	}
-	target, err := parseMovieLink(link)
-	if err != nil {
-		return writeError(c, err)
-	}
-
-	var watchedAt *time.Time
 	if body.WatchedAt != nil {
-		raw := sanitizeInput(*body.WatchedAt)
-		if raw == "" {
-			return writeError(c, fmt.Errorf("%w: watchedAt must be a valid RFC3339 timestamp", domain.ErrInvalidInput))
-		}
-
-		parsed, err := time.Parse(timeFormat, raw)
+		parsed, err := time.Parse(timeFormat, sanitizeInput(*body.WatchedAt))
 		if err != nil {
 			return writeError(c, fmt.Errorf("%w: watchedAt must be a valid RFC3339 timestamp", domain.ErrInvalidInput))
 		}
-
-		parsedUTC := parsed.UTC()
-		watchedAt = &parsedUTC
+		correction.WatchedAt = new(parsed.UTC())
+	}
+	if correction.TMDBID == nil && correction.WatchedAt == nil {
+		return writeError(c, fmt.Errorf("%w: tmdbId or watchedAt is required", domain.ErrInvalidInput))
 	}
 
-	ctx := c.UserContext()
-	updatedMovie, identityChanged, err := h.movieService.Edit(
-		ctx,
-		movieID,
-		actorID,
-		title,
-		target,
-		watchedAt,
-	)
+	updatedMovie, identityChanged, err := h.movieService.Correct(c.UserContext(), movieID, correction)
 	if err != nil {
-		if errors.Is(err, domain.ErrForbidden) {
-			return writeNotAdder(c)
-		}
 		return writeError(c, err)
 	}
 
-	// Watched stats include the title, so any watched edit invalidates them.
+	// Watched stats include the title and date, so any watched correction invalidates them.
 	if updatedMovie.Status == string(domain.MovieStatusWatched) {
 		h.invalidateStatsCache()
 	}
@@ -200,7 +191,7 @@ func (h *handler) handleEditMovie(c *fiber.Ctx) error {
 	payload := toFullMovieBare(updatedMovie)
 	h.broker.Broadcast(event{Type: "movie:updated", Data: payload})
 
-	// Publish the committed edit before background work can publish its
+	// Publish the committed correction before background work can publish its
 	// movies:enriched-batch follow-up.
 	if identityChanged && h.enrichRunner != nil {
 		h.enrichRunner.EnqueueWithTrigger(movieID, integration.RunTriggerMovieUpdated)
@@ -528,11 +519,10 @@ func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
 		return err
 	}
 	var body struct {
-		HostMovieID int     `json:"hostMovieId"`
-		MovieID     *int    `json:"movieId"`
-		Title       string  `json:"title"`
-		TMDBID      *int    `json:"tmdbId"`
-		IMDbID      *string `json:"imdbId"`
+		HostMovieID int    `json:"hostMovieId"`
+		MovieID     *int   `json:"movieId"`
+		Title       string `json:"title"`
+		TMDBID      *int   `json:"tmdbId"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return writeError(c, fmt.Errorf("%w: invalid request body", domain.ErrInvalidInput))
@@ -540,7 +530,7 @@ func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
 	if body.HostMovieID <= 0 {
 		return writeError(c, fmt.Errorf("%w: hostMovieId is required", domain.ErrInvalidInput))
 	}
-	if body.MovieID != nil && (sanitizeInput(body.Title) != "" || body.TMDBID != nil || body.IMDbID != nil) {
+	if body.MovieID != nil && (sanitizeInput(body.Title) != "" || body.TMDBID != nil) {
 		return writeError(c, fmt.Errorf("%w: movieId cannot be combined with movie identity fields", domain.ErrInvalidInput))
 	}
 
@@ -556,7 +546,6 @@ func (h *handler) handleSelectWildcard(c *fiber.Ctx) error {
 			ExistingMovieID:     body.MovieID,
 			Title:               sanitizeInput(body.Title),
 			TMDBID:              body.TMDBID,
-			IMDbID:              body.IMDbID,
 		}, poolLocked)
 		return err
 	})

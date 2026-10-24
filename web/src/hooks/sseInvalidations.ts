@@ -19,6 +19,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.filterOptions(),
     SettingsKeys.nextUp(),
     StatsKeys.all,
+    MoviesKeys.library(),
   ],
   "user:deleted": [
     UsersKeys.list(),
@@ -30,6 +31,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.filterOptions(),
     SettingsKeys.nextUp(),
     StatsKeys.all,
+    MoviesKeys.library(),
   ],
   "user:role-changed": [
     AuthKeys.me(),
@@ -38,9 +40,9 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     SettingsKeys.nextUp(),
   ],
 
-  "movie:added": [UsersKeys.list(), MoviesKeys.listpool()],
-  "movie:deleted": [UsersKeys.list(), MoviesKeys.listpool(), MoviesKeys.details()],
-  "movie:moved": [UsersKeys.list(), MoviesKeys.listpool(), MoviesKeys.details()],
+  "movie:added": [UsersKeys.list(), MoviesKeys.listpool(), MoviesKeys.library()],
+  "movie:deleted": [UsersKeys.list(), MoviesKeys.listpool(), MoviesKeys.details(), MoviesKeys.library()],
+  "movie:moved": [UsersKeys.list(), MoviesKeys.listpool(), MoviesKeys.details(), MoviesKeys.library()],
 
   "movie:updated": [
     UsersKeys.list(),
@@ -49,6 +51,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.listwatched(),
     MoviesKeys.details(),
     StatsKeys.all,
+    MoviesKeys.library(),
   ],
 
   // One coalesced event per enrichment burst: every cache that embeds TMDB fields.
@@ -61,6 +64,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.details(),
     MoviesKeys.filterOptions(),
     StatsKeys.all,
+    MoviesKeys.library(),
   ],
 
   // No pool: the server keeps the winner in pool reads until reveal, and
@@ -79,6 +83,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.listpool(),
     MoviesKeys.details(),
     SettingsKeys.poolLock(),
+    MoviesKeys.library(),
   ],
 
   // Releases the pool and gate too, in case this client missed the reveal.
@@ -91,6 +96,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.filterOptions(),
     SettingsKeys.poolLock(),
     StatsKeys.all,
+    MoviesKeys.library(),
   ],
 
   "wildcard:selected": [
@@ -98,12 +104,14 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.listpool(),
     MoviesKeys.wildcard(),
     MoviesKeys.details(),
+    MoviesKeys.library(),
   ],
   "wildcard:canceled": [
     UsersKeys.list(),
     MoviesKeys.listpool(),
     MoviesKeys.wildcard(),
     MoviesKeys.details(),
+    MoviesKeys.library(),
   ],
   "wildcard:watched": [
     UsersKeys.list(),
@@ -113,6 +121,7 @@ export const SSE_INVALIDATIONS: Record<SSEEventType, QueryKey[]> = {
     MoviesKeys.details(),
     MoviesKeys.filterOptions(),
     StatsKeys.all,
+    MoviesKeys.library(),
   ],
 
   "settings:pool-lock-changed": [SettingsKeys.poolLock()],

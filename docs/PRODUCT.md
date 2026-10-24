@@ -43,7 +43,10 @@ pass on top (bottom tab bar, touch-reachable actions; see DESIGN.md §13).
   and drills the whole page down (every aggregate is computed server-side over
   the filtered subset); each card also carries a corner link to the person's
   TMDB page.
-- Admin: a shared shell for the Roster, Integrations, and Runs destinations.
+- Admin: a shared shell for the Roster, Integrations, Runs, and Maintenance
+  destinations. Maintenance lists every movie and lets an Admin correct one that
+  points at the wrong TMDB movie or has the wrong watched date. Members cannot
+  edit a movie: its title always comes from TMDB (ADR 0013).
   The primary app Members tab keeps its existing name. A nested index selects
   TMDB or Radarr without adding a second integration rail. Every desktop Admin
   page scrolls inside that shell. The TMDB detail owns typed settings, source

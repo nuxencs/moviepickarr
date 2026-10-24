@@ -20,24 +20,24 @@ test("a server broadcast refreshes a movie modal that is already open", async ({
     return response.json();
   }, movieID);
   const changedTitle = `${original.title} (live)`;
-  const link = `https://www.themoviedb.org/movie/${original.tmdbId}`;
-  const update = (title: string) =>
+  // An admin Movie correction is the one title write a client can make (ADR 0013).
+  const correct = (tmdbId: number, title: string) =>
     page.evaluate(
-      async ({ id, nextTitle, nextLink }) => {
-        const response = await fetch(`/api/v1/movies/${id}`, {
+      async ({ id, nextTMDBID, nextTitle }) => {
+        const response = await fetch(`/api/v1/movies/${id}/correction`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: nextTitle, link: nextLink }),
+          body: JSON.stringify({ tmdbId: nextTMDBID, title: nextTitle }),
         });
-        if (!response.ok) throw new Error(`movie update failed: ${response.status}`);
+        if (!response.ok) throw new Error(`movie correction failed: ${response.status}`);
       },
-      { id: movieID, nextTitle: title, nextLink: link },
+      { id: movieID, nextTMDBID: tmdbId, nextTitle: title },
     );
 
-  await update(changedTitle);
+  await correct(999_999_001, changedTitle);
   await expect(dialog.getByRole("heading", { name: changedTitle })).toBeVisible();
 
-  await update(original.title);
+  await correct(original.tmdbId, original.title);
   await expect(dialog.getByRole("heading", { name: original.title })).toBeVisible();
 });
 

@@ -35,6 +35,8 @@ export const MoviesKeys = {
     details: () => [...MoviesKeys.all, "detail"] as const,
     detail: (movieID: number) => [...MoviesKeys.details(), movieID] as const,
     filterOptions: () => [...MoviesKeys.all, "filterOptions"] as const,
+    // Admin Maintenance: every movie, any status.
+    library: () => [...MoviesKeys.all, "library"] as const,
 }
 
 export const SettingsKeys = {

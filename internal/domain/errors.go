@@ -11,6 +11,7 @@ var (
 	ErrNoCurrentDraw                   = errors.New("no current draw")
 	ErrCurrentDrawExists               = errors.New("current draw exists")
 	ErrDrawInProgress                  = errors.New("a draw is in progress")
+	ErrAcquisitionLocked               = errors.New("abandon the acquisition first: Radarr already holds this movie")
 	ErrNoActiveWildcard                = errors.New("no active wildcard")
 	ErrActiveWildcard                  = errors.New("an active wildcard exists")
 	ErrDrawNotRevealed                 = errors.New("the current draw is not revealed")

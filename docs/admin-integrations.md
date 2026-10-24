@@ -25,8 +25,10 @@ Admin uses internal pages rather than dashboard cards:
 - `/admin/integrations/radarr/webhooks`: Generic and Discord destinations.
 - `/admin/runs`: shared Integration run history. Individual Acquisitions are
   excluded.
+- `/admin/maintenance`: the movie library and the admin Movie correction
+  (ADR 0013).
 
-Admin uses one nested index for Roster, Integrations, and Runs. TMDB and Radarr
+Admin uses one nested index for Roster, Integrations, Runs, and Maintenance. TMDB and Radarr
 appear inside the active Integrations branch, so integrations do not add a
 second rail or repeat an integration heading. Radarr adds a local section switch
 for Acquisitions, Setup, and Webhooks. At widths of 901px and up, the index stays
@@ -34,9 +36,9 @@ on the left and every selected Admin page scrolls independently on the right.
 Below 901px, the index becomes horizontal and the document owns vertical
 scrolling. Integration and Acquisition routes remain shareable deep links.
 
-One vertical indicator slides between Roster, Integrations, and Runs with the
-same duration and easing as the primary tabs. It keeps the standard 22px line on
-Roster and Runs, then grows across the full Integrations branch while an
+One vertical indicator slides between Roster, Integrations, Runs, and
+Maintenance with the same duration and easing as the primary tabs. It keeps the
+standard 22px line on Roster, Runs, and Maintenance, then grows across the full Integrations branch while an
 integration is visible. The child slot derives from the same row step, including
 coarse-pointer targets, so the line and branch share one geometry. The selected
 integration uses a weighted, gold-tinted label without a selected fill or
@@ -219,7 +221,8 @@ disclosure:
 - Current or latest run with progress and counts
 - `Test connection`
 - `Refresh stale now`
-- `Re-enrich all`, with confirmation
+- `Re-enrich all`, with confirmation. TMDB owns movie titles, so this run also
+  replaces every title with the TMDB title (ADR 0013).
 - `Cancel run` while a library-wide run is active
 
 Active runs, configuration warnings, errors, and recovery reasons remain

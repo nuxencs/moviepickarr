@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
-import { HistoryIcon, PlugIcon, UsersIcon } from "lucide-react";
+import { HistoryIcon, PlugIcon, UsersIcon, WrenchIcon } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 
 import { RadarrAttentionBadge } from "@/components/moviepickarr/admin/RadarrAttentionBadge";
@@ -7,12 +7,13 @@ import { Shell } from "@/components/moviepickarr/AppShell";
 
 import "@/components/moviepickarr/admin/admin-layout.css";
 
-type AdminSection = "roster" | "integrations" | "runs";
+type AdminSection = "roster" | "integrations" | "runs" | "maintenance";
 
 const ADMIN_BODY_LABELS: Record<AdminSection, string> = {
   roster: "Member roster",
   integrations: "Selected integration configuration",
   runs: "Integration run history",
+  maintenance: "Movie library maintenance",
 };
 
 function adminBodyLabel(pathname: string, active?: AdminSection) {
@@ -28,6 +29,7 @@ function adminSectionFromPath(pathname: string): AdminSection | undefined {
   if (pathname.startsWith("/admin/integrations")) return "integrations";
   if (pathname === "/admin/runs") return "runs";
   if (pathname === "/admin/roster") return "roster";
+  if (pathname === "/admin/maintenance") return "maintenance";
   return undefined;
 }
 
@@ -56,8 +58,20 @@ export function AdminLayout() {
   useLayoutEffect(() => {
     // The Admin index scrolls sideways on mobile. Keep the committed leaf in
     // view on direct loads and route changes without moving the page vertically.
-    const selected = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
-    selected?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const reveal = () => {
+      const selected = navRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+      selected?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    };
+    reveal();
+    // Web fonts widen the tabs after the first pass and can push the last leaf
+    // back out of view on a direct load.
+    let cancelled = false;
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) reveal();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   const openIntegrations = () => {
@@ -141,6 +155,17 @@ export function AdminLayout() {
           >
             <HistoryIcon aria-hidden="true" />
             <span>Runs</span>
+          </Link>
+
+          <Link
+            to="/admin/maintenance"
+            activeOptions={{ exact: true }}
+            className="admin-layout__link"
+            data-active={active === "maintenance"}
+            aria-current={active === "maintenance" ? "page" : undefined}
+          >
+            <WrenchIcon aria-hidden="true" />
+            <span>Maintenance</span>
           </Link>
         </nav>
 

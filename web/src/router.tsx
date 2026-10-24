@@ -197,6 +197,15 @@ const adminRunsRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/AdminRunsPage"), "AdminRunsPage"),
 });
 
+const adminMaintenanceRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "maintenance",
+  component: lazyRouteComponent(
+    () => import("@/pages/AdminMaintenancePage"),
+    "AdminMaintenancePage",
+  ),
+});
+
 // Path must stay /settings: the OIDC link flow redirects to /settings?linked=1
 // (or ?error=<bucket>).
 const settingsRoute = createRoute({
@@ -235,6 +244,7 @@ const routeTree = rootRoute.addChildren([
         ]),
       ]),
       adminRunsRoute,
+      adminMaintenanceRoute,
     ]),
     settingsRoute,
     statsRoute,

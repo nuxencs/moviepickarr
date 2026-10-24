@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,14 @@ type leanMovieTile struct {
 	Runtime     int      `json:"runtime,omitzero"`
 	Genres      []string `json:"genres,omitempty"`
 	VoteAverage float64  `json:"voteAverage,omitzero"`
+}
+
+// libraryMovie is one row of the admin Maintenance library: the tile plus its
+// client-visible status.
+type libraryMovie struct {
+	leanMovieTile
+
+	Status domain.MovieStatus `json:"status"`
 }
 
 // fullMovie is the detail class: the tile plus draw fields, modal-only
@@ -104,6 +113,8 @@ func formatTime(value *time.Time) string {
 func formatTimePrecise(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
 }
+
+var canonicalIMDbIDRegex = regexp.MustCompile(`^tt\d{7,8}$`)
 
 // movieLink prefers IMDb, then TMDB.
 func movieLink(movie *domain.Movie) string {

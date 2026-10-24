@@ -1,0 +1,338 @@
+.admin-maintenance {
+  min-width: 0;
+}
+
+.library-lede {
+  max-width: 62ch;
+  margin: -10px 0 18px;
+  color: var(--ink-3);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.library-search {
+  max-width: 420px;
+  margin-bottom: 18px;
+}
+
+.admin-maintenance .adm-state {
+  min-height: 92px;
+  margin: 0;
+  padding: 32px 4px;
+  border-block: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.library-register {
+  --library-register-columns: 44px minmax(180px, 1.6fr) minmax(96px, 0.6fr) minmax(110px, 0.7fr) minmax(72px, 0.4fr) 18px;
+
+  min-width: 0;
+  border-block: 1px solid var(--line);
+}
+
+.library-register__head,
+.library-row {
+  display: grid;
+  grid-template-columns: var(--library-register-columns);
+  align-items: center;
+  gap: 18px;
+}
+
+.library-register__head {
+  padding: 10px 4px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.library-register__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-register__item {
+  border-top: 1px solid var(--line);
+}
+
+.library-row {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.library-row:hover {
+  background: color-mix(in oklab, var(--surface-2) 46%, transparent);
+  color: var(--ink);
+}
+
+.library-row:active {
+  background: color-mix(in oklab, var(--surface-3) 54%, transparent);
+}
+
+.library-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.library-row .poster,
+.correction-result .poster {
+  width: 44px;
+  flex: none;
+}
+
+.library-row__movie {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.library-row__movie strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-row__movie > span {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* The facts are one description for the row's button and three grid cells. */
+.library-row__facts {
+  display: contents;
+}
+
+.library-row__status,
+.library-row__adder {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-row__status {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.library-row__status[data-status="current"],
+.library-row__status[data-status="wildcard"] {
+  color: color-mix(in oklab, var(--accent) 60%, var(--ink));
+}
+
+.library-row__tmdb {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-feature-settings: "tnum" 1;
+}
+
+.library-row__chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.library-row:hover .library-row__chevron,
+.library-row:focus-visible .library-row__chevron {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+.modal--correction {
+  width: min(600px, 100%);
+}
+
+.modal--correction .correction__scroll {
+  display: grid;
+  gap: 0;
+  padding: 0 26px 6px;
+  /* A reserved gutter would end the fields short of the footer buttons. */
+  scrollbar-gutter: auto;
+}
+
+.correction__section {
+  display: grid;
+  gap: 14px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.correction__section:last-of-type {
+  border-bottom: 0;
+}
+
+.correction__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.correction__section-head h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.correction__current {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.correction__search {
+  display: flex;
+  gap: 10px;
+}
+
+.correction__search .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.correction__empty {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.correction__results {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.correction-result {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.correction-result:hover {
+  background: color-mix(in oklab, var(--surface-2) 46%, transparent);
+}
+
+.correction-result:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Neutral, like a hovered row: the check mark carries the selection. */
+.correction-result:has(input:checked) {
+  background: color-mix(in oklab, var(--surface-3) 55%, transparent);
+}
+
+.correction-result[data-unavailable] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.correction-result[data-unavailable]:hover {
+  background: transparent;
+}
+
+.correction-result__text {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.correction-result__text strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.correction-result__text > span {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.correction-result__check svg {
+  width: 16px;
+  height: 16px;
+  color: var(--ink);
+}
+
+@container admin-integration (max-width: 720px) {
+  .library-register__head {
+    display: none;
+  }
+
+  .library-register__item:first-child {
+    border-top: 0;
+  }
+
+  .library-row {
+    grid-template-columns: 44px minmax(0, 1fr) 18px;
+    grid-template-rows: auto auto;
+    gap: 4px 14px;
+  }
+
+  .library-row .poster {
+    grid-row: 1 / 3;
+  }
+
+  .library-row__movie {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .library-row__facts {
+    display: flex;
+    grid-column: 2;
+    grid-row: 2;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+  }
+
+  .library-row__chevron {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+}
+
+@media (max-width: 640px) {
+  .library-search {
+    max-width: none;
+  }
+
+  .modal--correction .correction__scroll {
+    padding: 0 18px 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-row,
+  .library-row__chevron,
+  .correction-result {
+    transition: none;
+  }
+}

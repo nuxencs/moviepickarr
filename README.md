@@ -37,7 +37,8 @@
   decades, and most-watched directors and actors. Filter by time range, genre,
   release year, member, actors, or crew.
 - **Group administration**: manage members and invites, lock the pool, configure
-  integrations, and review run history.
+  integrations, review run history, and correct a movie that points at the wrong
+  film.
 - **Private by design**: host it yourself and invite your friends. No public
   signup.
 

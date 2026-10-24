@@ -110,9 +110,9 @@ old shadcn primitives.
   `aria-invalid` and `data-invalid`.
   `.fieldgroup` keeps the field and its specific `.field-error` together, with
   `aria-describedby` linking the input to the message. There is no bare input style.
-  A watched movie's date-time field is required. When its minute-level display value
-  is unchanged, the edit request omits `watchedAt` instead of rounding the stored
-  timestamp through `datetime-local`.
+  A watched movie's date-time field in the Movie correction is required. When its
+  minute-level display value is unchanged, the correction omits `watchedAt` instead
+  of rounding the stored timestamp through `datetime-local`.
 - **Icon buttons:** `.iconbtn` (34px), `.iconbtn--danger` for destructive.
 - **Section head:** `.sec-head` holds a `.sec-title` (the `h2` plus its data) on the left
   and the section's controls on the right. The data slot is mono `--ink-3` text: a count
@@ -166,9 +166,11 @@ old shadcn primitives.
   headers (`.filtermenu__item--decade`) with their years indented beneath
   (`.filtermenu__item--year`), where a decade and an exact year are mutually exclusive
   (picking one clears the other) and the chip reads `Release year · 1990s` or `· 1994`.
-- **Long lists are virtualized (`@tanstack/react-virtual`).** Two lists grow with the
-  library and both would otherwise render every row: the Movies **watched grid/list**
-  and the **filter menus** (1500+ actors on a mature library). Each feeds its search
+- **Long lists are virtualized (`@tanstack/react-virtual`).** Three lists grow with the
+  library and would otherwise render every row: the Movies **watched grid/list**, the
+  **filter menus** (1500+ actors on a mature library), and the Admin **Maintenance
+  library**. The Maintenance list virtualizes against `pageScrollOwner`: the Admin body
+  at 901px and up, the document below it. Each feeds its search
   box through `useDeferredValue` into a memoized filter, so a keystroke updates the
   input immediately and the list at React's convenience, then renders the matches
   through a virtualizer — a screenful of DOM instead of the whole result set, flat per
@@ -207,9 +209,10 @@ old shadcn primitives.
   takes focus only after an admin creates or replaces a link, when it must be copied
   and delivered. Loading or failed invite metadata must not turn every roster row into
   a repeated status card.
-- Admin uses one persistent nested index for Roster, Integrations, and Runs, without
-  a repeated Admin heading. The active Integrations branch reveals TMDB in the same
-  index. One vertical accent indicator moves between the three top-level destinations
+- Admin uses one persistent nested index for Roster, Integrations, Runs, and
+  Maintenance, without a repeated Admin heading. The active Integrations branch
+  reveals TMDB in the same index. One vertical accent indicator moves between the
+  four top-level destinations
   using the primary tabs' duration and easing. Each desktop destination owns its full
   row hit target and uses the same background hover. Its standard 22px line grows across the
   full parent-and-child branch while Integrations is active. The child slot derives
@@ -223,7 +226,8 @@ old shadcn primitives.
   the next lazy route resolves. The shared scroller resets from the committed leaf
   route, not the pending location, so the painted outgoing page remains still. Below
   901px, the index becomes horizontal and the
-  document owns vertical scrolling. Radarr adds compact Acquisitions, Setup, and
+  document owns vertical scrolling. The selected tab scrolls into view again once
+  web fonts load, because they widen the tabs after the first pass. Radarr adds compact Acquisitions, Setup, and
   Webhooks tabs without repeating the integration name. Its selected destination uses
   the same measured, sliding gold underline as the primary tabs. The persistent tab
   header and the first child enter together on arrival. Later nested route changes
@@ -257,6 +261,15 @@ old shadcn primitives.
   Waits longer than the browser timer range are split into safe chunks and rechecked
   before the request is sent.
   Progress polling then runs only while that run is active and the document is visible.
+  Maintenance is the movie library as a flat register like Run history: every movie
+  of any status, sorted by title, with one search field over title and adder. Each
+  row opens the Movie correction dialog (ADR 0013): a TMDB search whose results are
+  native radios, and a watched date for a watched movie only. The current entry and
+  any entry another library movie already uses stay visible but disabled, with the
+  reason in their meta line ("in library as Heat"). The pick gets a neutral fill and a
+  check, not gold: it is a choice inside a form, not app state. A refused correction
+  keeps the dialog open and reports the reason in a toast, because an inline line
+  would sit below the scrolling results.
   Run history is a terminal-result register with Integration, Type, and Result filters.
   It uses 50-row keyset pages and keeps the previous page in memory while the next page
   loads. Active progress remains on the integration detail. Each result row opens a
@@ -368,9 +381,11 @@ old shadcn primitives.
   Below 700px the rail becomes a row
   (links bottom-aligned beside the poster, clearing the backdrop the poster overlaps) and
   the credit columns stack with the rule turning into a top border.
-- **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`) — rename
-  and delete as two labelled rows (`.moviemodal__act`) at the foot of the rail, stacked
-  under the links at every width and sharing their 13px icon column. They read as
+- **Movie actions:** `.moviemodal__actions` (`MovieActions` in `MovieModal.tsx`): delete
+  as a labelled row (`.moviemodal__act`) at the foot of the rail, stacked under the
+  links at every width and sharing their 13px icon column. Members cannot edit a movie:
+  titles come from TMDB and an admin corrects a movie on the Maintenance tab (ADR 0013).
+  A movie that cannot be deleted (current or watched) renders no actions block. They read as
   controls, not references: the label is sans where the links are mono, and the row
   lights a background on hover and focus where a link only changes colour, so the
   destructive red arrives on the pointer instead of sitting at rest. Whether it is drawn
@@ -407,7 +422,7 @@ edit/delete dialogs, which created two visibly different design languages (diffe
 button weight, input height, focus ring, backdrop, radius, motion) that a user hit at
 the moment of editing/deleting. We removed them:
 - `EditMovieDialog` and `DeletionDialog` were re-authored on the bespoke `Modal` with
-  `.field` + `.btn`.
+  `.field` + `.btn`. `EditMovieDialog` was later removed with member editing (ADR 0013).
 - `web/src/components/ui/{alert-dialog,button,input}.tsx` were **deleted**.
 - The user "more actions" menu is the bespoke `Menu` (`moviepickarr/Menu.tsx`): a
   portalled floating surface (`.mg-menu`) on the shared `mg-scaleIn` / `mg-scaleOut`
@@ -984,12 +999,12 @@ actually has movies.
 - **Buttons:** verb + object, sentence case ("Save changes", "Add user", "Mark as
   watched", "Draw random movie", "Lock pool"). Only the object keeps any proper-noun
   capital ("Add to Felix's stash"). Nav tabs are the deliberate uppercase exception.
-- **Error toasts:** one voice, "Failed to <verb> <thing>" ("Failed to update movie").
+- **Error toasts:** one voice, "Failed to <verb> <thing>" ("Failed to delete movie").
   Not "Error <x>ing".
 - **Success toasts:** terse, past tense, no exclamation ("Marked as watched",
   "<title> updated"). The draw itself shows no toast: the reel is its feedback.
 - **Loading labels:** present participle + ellipsis ("Searching…", "Adding…").
-- **Modal headers:** sentence case ("Edit movie", "Delete movie").
+- **Modal headers:** sentence case ("Correct movie", "Delete movie").
 - **Pluralization:** use `plural(n, noun, pluralForm?)` from `lib.ts` for any
   count + noun, so "1 movie" / "2 movies" (never "1 movies"). Covers movies, people, etc.
 - **No em dashes** anywhere in UI copy. Use periods, commas, colons, or parentheses.

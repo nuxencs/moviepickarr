@@ -21,14 +21,15 @@ func TestFrontendMemberMovieRoutesRegistered(t *testing.T) {
 
 	// Each entry maps a frontend APIClient call to the route it must hit.
 	required := []string{
-		"GET /api/v1/members",                 // users.getAll (board)
-		"DELETE /api/v1/members/:memberID",    // members.remove (delete member)
-		"GET /api/v1/members/:memberID/pool",  // users.getPool
-		"GET /api/v1/members/:memberID/stash", // users.getStash
-		"POST /api/v1/movies",                 // users.addMovie
-		"PUT /api/v1/movies/:movieID",         // users.updateMovie
-		"DELETE /api/v1/movies/:movieID",      // users.deleteMovie
-		"POST /api/v1/movies/:movieID/move",   // users.moveMovie
+		"GET /api/v1/members",                    // users.getAll (board)
+		"DELETE /api/v1/members/:memberID",       // members.remove (delete member)
+		"GET /api/v1/members/:memberID/pool",     // users.getPool
+		"GET /api/v1/members/:memberID/stash",    // users.getStash
+		"POST /api/v1/movies",                    // users.addMovie
+		"DELETE /api/v1/movies/:movieID",         // users.deleteMovie
+		"POST /api/v1/movies/:movieID/move",      // users.moveMovie
+		"GET /api/v1/movies/library",             // maintenance.library
+		"PUT /api/v1/movies/:movieID/correction", // maintenance.correctMovie
 	}
 	for _, want := range required {
 		if !registered[want] {
@@ -41,6 +42,7 @@ func TestFrontendMemberMovieRoutesRegistered(t *testing.T) {
 		"GET /api/v1/users",
 		"POST /api/v1/users/:userID/movies",
 		"POST /api/v1/users/:userID/movies/:movieID/move",
+		"PUT /api/v1/movies/:movieID", // members cannot edit a movie (ADR 0013)
 	} {
 		if registered[gone] {
 			t.Errorf("stale route %q is registered; the frontend no longer calls it", gone)

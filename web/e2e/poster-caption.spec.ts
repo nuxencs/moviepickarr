@@ -22,9 +22,12 @@ for (const surface of surfaces) {
       await expect(caption.locator(".postercap__adder")).not.toBeEmpty();
 
       // The tile is the poster: nothing hangs below it, and the caption is inside it.
-      const tileBox = (await tile.boundingBox())!;
-      const posterBox = (await tile.locator(".poster").boundingBox())!;
-      const captionBox = (await caption.boundingBox())!;
+      // One frame: the entrance animation moves the tile between separate boundingBox() calls.
+      const { tileBox, posterBox, captionBox } = await tile.evaluate((el) => ({
+        tileBox: el.getBoundingClientRect().toJSON() as DOMRect,
+        posterBox: el.querySelector(".poster")!.getBoundingClientRect().toJSON() as DOMRect,
+        captionBox: el.querySelector(".postercap")!.getBoundingClientRect().toJSON() as DOMRect,
+      }));
       expect(Math.abs(tileBox.height - posterBox.height)).toBeLessThanOrEqual(1);
       expect(Math.abs(captionBox.y + captionBox.height - (posterBox.y + posterBox.height))).toBeLessThanOrEqual(1);
       expect(captionBox.width).toBeCloseTo(posterBox.width, 0);

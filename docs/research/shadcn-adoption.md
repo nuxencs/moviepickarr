@@ -318,7 +318,7 @@ scroll CSS. Results match across both engines.
 | Popup to veil, veil to popup drag | **Pass** | No close |
 | Veil scrollbar press is not a dismiss | **Pass [source only]** | `useDismiss.ts` checks scrollbars. Headless has overlay scrollbars |
 | Focus returns to opener | **Pass** | Plain open, and menu to dialog returns to the menu trigger |
-| First field gets focus, not the close X (DESIGN §5) | **Fail stock** | Default is the first tabbable, the close X. Pass an `initialFocus` function |
+| First field gets focus, not the close X (DESIGN §5) | **Differs** | Default is the first tabbable in DOM order. `Modal` takes the first field, else the surface. Pass an `initialFocus` function |
 | Opener gone: fall back to its region (`Modal`) | **Not tested** | Base UI falls back to previous focus. Pass a `finalFocus` function if a spec needs it |
 
 ### ADR 0008: can it hold?

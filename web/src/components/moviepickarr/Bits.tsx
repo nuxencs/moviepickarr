@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { StarIcon } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import {
   avatarBg,
@@ -74,11 +74,18 @@ export function Rating({ voteAverage }: { voteAverage?: number }) {
   );
 }
 
-export function AdderTag({ name, size = 20 }: { name: string; size?: number }) {
+/** The hover caption over a poster tile: title, then the adder and optional meta on one line. */
+export function PosterCaption({ title, adder, meta }: { title: string; adder: string; meta?: ReactNode }) {
   return (
-    <span className="flex min-w-0 items-center gap-2">
-      <Avatar name={name} size={size} />
-      <span className="truncate text-[13px] text-ink-2">{name}</span>
+    <span className="postercap">
+      <span className="postercap__title">{title}</span>
+      <span className="postercap__sub">
+        <span className="postercap__adder">
+          <Avatar name={adder} size={18} />
+          <span className="postercap__name">{adder}</span>
+        </span>
+        {meta && <span className="postercap__meta">{meta}</span>}
+      </span>
     </span>
   );
 }

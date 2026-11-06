@@ -35,7 +35,7 @@ COPY --from=web-builder /web/dist ./web/dist
 RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o bin/moviepickarr main.go
 
 # build runner
-FROM alpine:latest@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:latest@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a
 
 LABEL org.opencontainers.image.source="https://github.com/nuxencs/moviepickarr"
 

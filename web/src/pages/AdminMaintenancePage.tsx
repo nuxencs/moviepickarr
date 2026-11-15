@@ -14,6 +14,7 @@ import type { LibraryMovie, MovieStatus } from "@/types/Response";
 
 import { virtualRowStyle } from "@/hooks/useGridMetrics";
 import { documentOffsetTop, pageScrollOwner } from "@/lib/scrollPolicy";
+import { compareTitles } from "@/lib/titleOrder";
 
 
 import "@/pages/admin-maintenance.css";
@@ -25,8 +26,6 @@ const STATUS_LABELS: Record<MovieStatus, string> = {
   wildcard: "Wildcard",
   watched: "Watched",
 };
-
-const titleCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
 const LibraryRow = memo(function LibraryRow({
   movie,
@@ -163,7 +162,7 @@ export function AdminMaintenancePage() {
   const openMovie = useCallback((movieID: number) => setSelectedID(movieID), []);
 
   const movies = useMemo(
-    () => [...(library.data ?? [])].sort((a, b) => titleCollator.compare(a.title, b.title)),
+    () => [...(library.data ?? [])].sort((a, b) => compareTitles(a.title, b.title)),
     [library.data],
   );
   const visible = useMemo(() => {

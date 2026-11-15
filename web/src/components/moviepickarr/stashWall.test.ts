@@ -66,6 +66,39 @@ describe("sortStash", () => {
     expect(ids("added-asc")).toEqual([2, 1, 3, 5, 4]);
   });
 
+  describe("with article titles", () => {
+    const articles = [
+      movie(1, "The Matrix", "2026-07-01T00:00:00Z"),
+      movie(2, "Memento", "2026-07-02T00:00:00Z"),
+      movie(3, "A Quiet Place", "2026-07-02T00:00:00Z"),
+      movie(4, "Alien", "2026-07-02T00:00:00Z"),
+      movie(5, "Blade Runner", "2026-07-03T00:00:00Z"),
+      movie(6, "The Batman", "2026-07-02T00:00:00Z"),
+    ];
+    const titles = (order: Parameters<typeof sortStash>[1]) =>
+      sortStash(articles, order).map((m) => m.title);
+    const byTitle = ["Alien", "The Batman", "Blade Runner", "The Matrix", "Memento", "A Quiet Place"];
+
+    it("orders by title without the leading article", () => {
+      expect(titles("title-asc")).toEqual(byTitle);
+    });
+
+    it("orders Z to A as the exact reverse", () => {
+      expect(titles("title-desc")).toEqual([...byTitle].reverse());
+    });
+
+    it("breaks a date tie by title without the article", () => {
+      expect(titles("added-desc")).toEqual([
+        "Blade Runner",
+        "Alien",
+        "The Batman",
+        "Memento",
+        "A Quiet Place",
+        "The Matrix",
+      ]);
+    });
+  });
+
   it("leaves the stash it was given in place", () => {
     const before = wall.map((m) => m.movieID);
     sortStash(wall, "added-desc");

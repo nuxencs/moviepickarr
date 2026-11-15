@@ -450,12 +450,13 @@ These are answers, not gaps. Recorded so a later reader does not restore them as
 features.
 
 - **Sort by title or date added only.** The sort button beside the search field offers
-  Title A–Z (default), Title Z–A, Newest added, and Oldest added. These are the only keys
-  every movie has from the start; year, rating, and runtime arrive with enrichment and
-  would reorder the wall under the reader as SSE lands. The order is the viewer's
-  **Stash order** (GLOSSARY.md): kept per browser and used on every member's wall. Its
-  glyph changes with the order, so the button needs no other mark of a non-default sort.
-  The search field above the wall stays the find-a-movie path.
+  Title A–Z (default), Title Z–A, Newest added, and Oldest added. A leading "The", "A", or
+  "An" does not count in the title order, here and in every client title sort (#413).
+  These are the only keys every movie has from the start; year, rating, and runtime arrive
+  with enrichment and would reorder the wall under the reader as SSE lands. The order is
+  the viewer's **Stash order** (GLOSSARY.md): kept per browser and used on every member's
+  wall. Its glyph changes with the order, so the button needs no other mark of a
+  non-default sort. The search field above the wall stays the find-a-movie path.
 - **No self-mark in the rail** — no chip, no tint, no border. On arrival your row is
   first and selected, and selection already speaks three times (the active row, its
   `aria-current`, and the pane beside it). The positive self-mark is the pane's

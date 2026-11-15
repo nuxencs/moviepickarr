@@ -58,6 +58,7 @@ import type { MovieTile, MoveTarget, User } from "@/types/Response";
 import type { RefObject } from "react";
 
 import { useMovieModal } from "@/hooks/useMovieModalHistory";
+import { compareTitles } from "@/lib/titleOrder";
 
 import "@/components/moviepickarr/members.css";
 
@@ -414,7 +415,7 @@ function RailRow({
   requestMove: RequestMove;
 }) {
   const pool = useMemo(
-    () => Object.values(user.currentPool).sort((a, b) => a.title.localeCompare(b.title)),
+    () => Object.values(user.currentPool).sort((a, b) => compareTitles(a.title, b.title)),
     [user.currentPool],
   );
   const stashCount = Object.keys(user.stash).length;

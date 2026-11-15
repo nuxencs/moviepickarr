@@ -172,7 +172,8 @@ but the contents stay readable by any authenticated member.
 **Stash order**:
 The order a viewer sees a stash wall in: by title or by date added, either
 direction. A viewer's own preference, kept per browser, never a property of the
-stash. Other members see their own choice.
+stash. Other members see their own choice. The title order ignores a leading
+English article ("The", "A", "An").
 
 **Pool**:
 The shared set of movies eligible for the next draw. Each member may hold at

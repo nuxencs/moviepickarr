@@ -17,6 +17,8 @@ import { toast } from "@/components/ui/toast-api";
 
 import type { MovieTile, TMDBMovie } from "@/types/Response";
 
+import { compareTitles } from "@/lib/titleOrder";
+
 interface WildcardModalProps {
   hostMovieID: number;
   onClose: () => void;
@@ -45,7 +47,7 @@ export function WildcardModal({ hostMovieID, onClose }: WildcardModalProps) {
         byID.set(movie.movieID, movie);
       }
     }
-    return [...byID.values()].sort((a, b) => a.title.localeCompare(b.title));
+    return [...byID.values()].sort((a, b) => compareTitles(a.title, b.title));
   }, [members]);
 
   const localMatches = useMemo(() => {

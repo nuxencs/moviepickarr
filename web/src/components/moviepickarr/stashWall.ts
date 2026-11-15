@@ -1,5 +1,7 @@
 import type { MovieTile } from "@/types/Response";
 
+import { compareTitles } from "@/lib/titleOrder";
+
 /**
  * Search, order, and keyboard rules for the untitled stash wall, kept out of the markup
  * so they test without rendering (#235).
@@ -52,7 +54,7 @@ export function writeStashOrder(order: StashOrder): void {
 }
 
 const byTitle = (a: MovieTile, b: MovieTile) =>
-  a.title.localeCompare(b.title) || a.movieID - b.movieID;
+  compareTitles(a.title, b.title) || a.movieID - b.movieID;
 const byAdded = (a: MovieTile, b: MovieTile) => Date.parse(a.addedAt) - Date.parse(b.addedAt);
 
 /**

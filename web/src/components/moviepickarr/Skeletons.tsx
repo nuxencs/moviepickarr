@@ -67,8 +67,6 @@ export function StatsBodySkeleton() {
         {range(12).map((_, i) => (
           <div className="movietile" key={i}>
             <SkeletonPoster />
-            <SkeletonText w="85%" h={11} />
-            <SkeletonText w="55%" h={10} />
           </div>
         ))}
       </div>

@@ -23,7 +23,7 @@ test("movie detail loads lazily and its genre deep-link persists through history
   await page.goto("/");
   const opener = page.locator(".watch-body article[role=button]").first();
   await expect(opener).toBeVisible();
-  const title = (await opener.locator(".t-title").textContent())?.trim();
+  const title = (await opener.locator(".postercap__title").textContent())?.trim();
   expect(title).toBeTruthy();
   await opener.click();
 
